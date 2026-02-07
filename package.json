@@ -1,0 +1,25 @@
+{
+  "name": "tour-guide",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Wikipedia-powered tour guide using spherical nearest-neighbor search",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "pipeline": "tsx src/pipeline/build.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChrisSteinbach/tour-guide.git"
+  },
+  "license": "ISC",
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vite": "^5.4.21",
+    "vitest": "^2.1.9"
+  }
+}
