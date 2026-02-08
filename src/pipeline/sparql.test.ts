@@ -1,37 +1,35 @@
 import { buildQuery, executeSparql, SparqlError } from "./sparql.js";
 
 describe("buildQuery", () => {
+  const defaultBounds = { south: 40, north: 50, west: 0, east: 10 };
+
   it("produces SPARQL with correct LIMIT and OFFSET", () => {
-    const query = buildQuery({ limit: 1000, offset: 5000 });
+    const query = buildQuery({ limit: 1000, offset: 5000, bounds: defaultBounds });
     expect(query).toContain("LIMIT 1000");
     expect(query).toContain("OFFSET 5000");
   });
 
-  it("includes ORDER BY ?item for deterministic pagination", () => {
-    const query = buildQuery({ limit: 100, offset: 0 });
-    expect(query).toContain("ORDER BY ?item");
-  });
-
-  it("omits FILTER clause when no bounds provided", () => {
-    const query = buildQuery({ limit: 100, offset: 0 });
-    expect(query).not.toMatch(/FILTER\(\?lat/);
-  });
-
-  it("adds lat/lon FILTER clause when bounds provided", () => {
+  it("uses wikibase:box service with correct corners", () => {
     const query = buildQuery({
       limit: 100,
       offset: 0,
       bounds: { south: 49.44, north: 50.19, west: 5.73, east: 6.53 },
     });
-    expect(query).toContain("FILTER(?lat >= 49.44 && ?lat <= 50.19");
-    expect(query).toContain("?lon >= 5.73 && ?lon <= 6.53)");
+    expect(query).toContain("SERVICE wikibase:box");
+    expect(query).toContain("Point(5.73 49.44)");
+    expect(query).toContain("Point(6.53 50.19)");
   });
 
-  it("queries English Wikipedia articles with P625 coordinates", () => {
-    const query = buildQuery({ limit: 100, offset: 0 });
+  it("queries English Wikipedia articles with P625 coordinates via label service", () => {
+    const query = buildQuery({ limit: 100, offset: 0, bounds: defaultBounds });
     expect(query).toContain("wdt:P625");
     expect(query).toContain("en.wikipedia.org");
-    expect(query).toContain('FILTER(LANG(?itemLabel) = "en")');
+    expect(query).toContain("SERVICE wikibase:label");
+  });
+
+  it("does not include ORDER BY", () => {
+    const query = buildQuery({ limit: 100, offset: 0, bounds: defaultBounds });
+    expect(query).not.toContain("ORDER BY");
   });
 });
 
@@ -43,7 +41,7 @@ describe("executeSparql", () => {
 
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve(mockResponse),
+      text: () => Promise.resolve(JSON.stringify(mockResponse)),
     });
 
     const result = await executeSparql("SELECT ?x WHERE { }", "https://example.org/sparql", mockFetch);
@@ -81,7 +79,7 @@ describe("executeSparql", () => {
   it("uses GET method", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ results: { bindings: [] } }),
+      text: () => Promise.resolve(JSON.stringify({ results: { bindings: [] } })),
     });
 
     await executeSparql("SELECT ?x WHERE { }", "https://example.org/sparql", mockFetch);

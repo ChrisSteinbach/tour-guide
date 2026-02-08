@@ -20,6 +20,7 @@ export interface ExtractOptions {
   fetchFn?: typeof fetch;
   onBatch?: (info: { batch: number; articlesInBatch: number; totalSoFar: number }) => void;
   maxRetries?: number;
+  tileDelayMs?: number;
 }
 
 // ---------- Pure functions ----------
@@ -38,7 +39,7 @@ export function parseBinding(binding: SparqlBinding): Article | null {
   }
   if (!title) return null;
 
-  const desc = binding.desc?.value ?? "";
+  const desc = binding.itemDescription?.value ?? "";
 
   return { title, lat, lon, desc };
 }
@@ -62,15 +63,38 @@ export function deduplicateArticles(articles: Article[]): Article[] {
   return Array.from(seen.values());
 }
 
+// ---------- Geographic tiling ----------
+
+type Bounds = NonNullable<ExtractOptions["bounds"]>;
+
+const TILE_LAT_SIZE = 10;
+const TILE_LON_SIZE = 10;
+
+export function generateTiles(latSize: number = TILE_LAT_SIZE, lonSize: number = TILE_LON_SIZE): Bounds[] {
+  const tiles: Bounds[] = [];
+  for (let south = -90; south < 90; south += latSize) {
+    for (let west = -180; west < 180; west += lonSize) {
+      tiles.push({
+        south,
+        north: Math.min(south + latSize, 90),
+        west,
+        east: Math.min(west + lonSize, 180),
+      });
+    }
+  }
+  return tiles;
+}
+
 // ---------- Orchestrator ----------
 
 const DEFAULT_ENDPOINT = "https://query.wikidata.org/sparql";
 const DEFAULT_BATCH_SIZE = 50_000;
-const DEFAULT_MAX_RETRIES = 3;
+const DEFAULT_MAX_RETRIES = 5;
 const BATCH_DELAY_MS = 1500;
+const TILE_DELAY_MS = 200;
 const MAX_BACKOFF_MS = 30_000;
 
-const RETRYABLE_STATUSES = new Set([429, 500, 503]);
+const RETRYABLE_STATUSES = new Set([0, 429, 500, 503, 504]);
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -84,52 +108,80 @@ export async function extractArticles(options: ExtractOptions = {}): Promise<Art
     fetchFn = fetch,
     onBatch,
     maxRetries = DEFAULT_MAX_RETRIES,
+    tileDelayMs = TILE_DELAY_MS,
   } = options;
 
+  // Every query goes through wikibase:box (spatial index). When no bounds
+  // specified, tile the globe into a grid of small regions.
+  const regions = bounds ? [bounds] : generateTiles();
+  const isTiled = regions.length > 1;
+
   const allArticles: Article[] = [];
-  let offset = 0;
+  const failedTiles: Bounds[] = [];
   let batchNum = 0;
 
-  while (true) {
-    batchNum++;
-    const query = buildQuery({ limit: batchSize, offset, bounds });
+  for (const region of regions) {
+    let offset = 0;
 
-    let response: SparqlResponse;
-    let attempt = 0;
+    try {
+      while (true) {
+        batchNum++;
+        const query = buildQuery({ limit: batchSize, offset, bounds: region });
 
-    while (true) {
-      try {
-        response = await executeSparql(query, endpoint, fetchFn);
-        break;
-      } catch (err) {
-        attempt++;
-        if (err instanceof SparqlError) {
-          // Fail immediately on non-retryable errors
-          if (!RETRYABLE_STATUSES.has(err.status)) throw err;
+        let response: SparqlResponse;
+        let attempt = 0;
+
+        while (true) {
+          try {
+            response = await executeSparql(query, endpoint, fetchFn);
+            break;
+          } catch (err) {
+            attempt++;
+            if (err instanceof SparqlError) {
+              // Fail immediately on non-retryable errors
+              if (!RETRYABLE_STATUSES.has(err.status)) throw err;
+            }
+            if (attempt >= maxRetries) throw err;
+
+            const backoff = Math.min(1000 * 2 ** (attempt - 1), MAX_BACKOFF_MS);
+            await sleep(backoff);
+          }
         }
-        if (attempt >= maxRetries) throw err;
 
-        const backoff = Math.min(1000 * 2 ** (attempt - 1), MAX_BACKOFF_MS);
-        await sleep(backoff);
+        const bindings = response.results.bindings;
+        if (bindings.length === 0) break;
+
+        const parsed: Article[] = [];
+        for (const binding of bindings) {
+          const article = parseBinding(binding);
+          if (article) parsed.push(article);
+        }
+
+        allArticles.push(...parsed);
+        onBatch?.({ batch: batchNum, articlesInBatch: parsed.length, totalSoFar: allArticles.length });
+
+        offset += batchSize;
+
+        if (bindings.length < batchSize) break;
+        await sleep(BATCH_DELAY_MS);
       }
+    } catch (err) {
+      if (!isTiled) throw err;
+      // In tiled mode, skip failed tiles and continue
+      failedTiles.push(region);
     }
 
-    const bindings = response.results.bindings;
-    if (bindings.length === 0) break;
-
-    const parsed: Article[] = [];
-    for (const binding of bindings) {
-      const article = parseBinding(binding);
-      if (article) parsed.push(article);
+    // Small delay between tiles to avoid overwhelming the endpoint
+    if (isTiled && tileDelayMs > 0) {
+      await sleep(tileDelayMs);
     }
+  }
 
-    allArticles.push(...parsed);
-    onBatch?.({ batch: batchNum, articlesInBatch: parsed.length, totalSoFar: allArticles.length });
-
-    offset += batchSize;
-
-    if (bindings.length < batchSize) break;
-    await sleep(BATCH_DELAY_MS);
+  if (failedTiles.length > 0) {
+    console.error(
+      `Warning: ${failedTiles.length} tile(s) failed and were skipped:`,
+      failedTiles.map((t) => `[${t.south},${t.north}]×[${t.west},${t.east}]`).join(", "),
+    );
   }
 
   return deduplicateArticles(allArticles);
@@ -151,7 +203,12 @@ async function main() {
     bounds = { south: parts[0], north: parts[1], west: parts[2], east: parts[3] };
   }
 
-  console.log(bounds ? `Extracting articles within bounds: ${JSON.stringify(bounds)}` : "Extracting all geotagged articles...");
+  if (bounds) {
+    console.log(`Extracting articles within bounds: ${JSON.stringify(bounds)}`);
+  } else {
+    const tiles = generateTiles();
+    console.log(`Extracting all geotagged articles (${tiles.length} geographic tiles)...`);
+  }
 
   const articles = await extractArticles({
     bounds,

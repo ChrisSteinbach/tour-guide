@@ -14,10 +14,31 @@ npm run test:watch    # Run tests in watch mode
 npm run dev           # Start Vite dev server (app frontend)
 npm run build         # Production build → dist/app/
 npm run pipeline      # Run offline build pipeline (tsx src/pipeline/build.ts)
+npm run extract       # Extract geotagged articles from Wikidata → data/articles.json
 npx tsc               # Type-check without emitting
 ```
 
 Run a single test file: `npx vitest run src/geometry/index.test.ts`
+
+### Extraction
+
+`npm run extract` queries the Wikidata SPARQL endpoint for all English Wikipedia articles with geographic coordinates and writes NDJSON to `data/articles.json`. A full global run fetches ~1.2M articles in batches of 50k and takes roughly 5–7 minutes.
+
+Use `--bounds=south,north,west,east` to extract a geographic subset:
+
+```bash
+# Luxembourg (~500 articles, single batch, a few seconds)
+npm run extract -- --bounds=49.44,50.19,5.73,6.53
+
+# Inspect output
+head -3 data/articles.json
+wc -l data/articles.json
+```
+
+Output format (one JSON object per line):
+```
+{"title":"Eiffel Tower","lat":48.8584,"lon":2.2945,"desc":"iron lattice tower in Paris, France"}
+```
 
 ## Architecture
 

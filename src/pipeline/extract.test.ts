@@ -11,7 +11,7 @@ function makeBinding(overrides: Partial<Record<keyof SparqlBinding, { type: stri
     lat: { type: "literal", value: "48.8584" },
     lon: { type: "literal", value: "2.2945" },
     article: { type: "uri", value: "https://en.wikipedia.org/wiki/Eiffel_Tower" },
-    desc: { type: "literal", value: "iron lattice tower in Paris" },
+    itemDescription: { type: "literal", value: "iron lattice tower in Paris" },
     ...overrides,
   };
 }
@@ -64,7 +64,7 @@ describe("parseBinding", () => {
 
   it("uses empty string when desc is missing", () => {
     const binding = makeBinding();
-    delete (binding as unknown as Record<string, unknown>).desc;
+    delete (binding as unknown as Record<string, unknown>).itemDescription;
     const result = parseBinding(binding);
     expect(result?.desc).toBe("");
   });
@@ -160,17 +160,25 @@ describe("extractArticles", () => {
     return { results: { bindings } };
   }
 
+  // Use explicit bounds so tests exercise single-region pagination, not global tiling
+  const testBounds = { south: 40, north: 50, west: 0, east: 10 };
+
+  function mockOk(data: SparqlResponse) {
+    return { ok: true, text: () => Promise.resolve(JSON.stringify(data)) };
+  }
+
   it("fetches batches until empty result", async () => {
     const batch1 = [makeBinding(), makeBinding({ itemLabel: { type: "literal", value: "Louvre" } })];
     const batch2: SparqlBinding[] = [];
 
     const mockFetch = vi.fn()
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(makeSparqlResponse(batch1)) })
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(makeSparqlResponse(batch2)) });
+      .mockResolvedValueOnce(mockOk(makeSparqlResponse(batch1)))
+      .mockResolvedValueOnce(mockOk(makeSparqlResponse(batch2)));
 
     const result = await extractArticles({
       endpoint: "https://example.org/sparql",
       batchSize: 2, // equals batch1.length so the loop continues to fetch batch2
+      bounds: testBounds,
       fetchFn: mockFetch,
     });
 
@@ -182,11 +190,12 @@ describe("extractArticles", () => {
     const batch = [makeBinding()];
 
     const mockFetch = vi.fn()
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(makeSparqlResponse(batch)) });
+      .mockResolvedValueOnce(mockOk(makeSparqlResponse(batch)));
 
     const result = await extractArticles({
       endpoint: "https://example.org/sparql",
       batchSize: 100,
+      bounds: testBounds,
       fetchFn: mockFetch,
     });
 
@@ -197,13 +206,14 @@ describe("extractArticles", () => {
   it("calls onBatch callback with progress info", async () => {
     const batch = [makeBinding()];
     const mockFetch = vi.fn()
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(makeSparqlResponse(batch)) });
+      .mockResolvedValueOnce(mockOk(makeSparqlResponse(batch)));
 
     const batches: { batch: number; articlesInBatch: number; totalSoFar: number }[] = [];
 
     await extractArticles({
       endpoint: "https://example.org/sparql",
       batchSize: 100,
+      bounds: testBounds,
       fetchFn: mockFetch,
       onBatch: (info) => batches.push(info),
     });
@@ -217,13 +227,14 @@ describe("extractArticles", () => {
     const batchSize = 1;
 
     const mockFetch = vi.fn()
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(makeSparqlResponse([binding])) })
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(makeSparqlResponse([binding])) })
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(makeSparqlResponse([])) });
+      .mockResolvedValueOnce(mockOk(makeSparqlResponse([binding])))
+      .mockResolvedValueOnce(mockOk(makeSparqlResponse([binding])))
+      .mockResolvedValueOnce(mockOk(makeSparqlResponse([])));
 
     const result = await extractArticles({
       endpoint: "https://example.org/sparql",
       batchSize,
+      bounds: testBounds,
       fetchFn: mockFetch,
     });
 
@@ -233,11 +244,12 @@ describe("extractArticles", () => {
   it("retries on 500 and succeeds", async () => {
     const mockFetch = vi.fn()
       .mockResolvedValueOnce({ ok: false, status: 500, statusText: "Internal Server Error", text: () => Promise.resolve("") })
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(makeSparqlResponse([makeBinding()])) });
+      .mockResolvedValueOnce(mockOk(makeSparqlResponse([makeBinding()])));
 
     const result = await extractArticles({
       endpoint: "https://example.org/sparql",
       batchSize: 100,
+      bounds: testBounds,
       fetchFn: mockFetch,
       maxRetries: 3,
     });
@@ -254,11 +266,27 @@ describe("extractArticles", () => {
       extractArticles({
         endpoint: "https://example.org/sparql",
         batchSize: 100,
+        bounds: testBounds,
         fetchFn: mockFetch,
         maxRetries: 3,
       }),
     ).rejects.toThrow("403");
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("tiles the globe into geographic tiles when no bounds provided", async () => {
+    const mockFetch = vi.fn()
+      .mockResolvedValue(mockOk(makeSparqlResponse([])));
+
+    await extractArticles({
+      endpoint: "https://example.org/sparql",
+      batchSize: 100,
+      fetchFn: mockFetch,
+      tileDelayMs: 0,
+    });
+
+    // 18 lat bands × 36 lon bands = 648 tiles, each gets one query returning empty
+    expect(mockFetch).toHaveBeenCalledTimes(648);
   });
 });
