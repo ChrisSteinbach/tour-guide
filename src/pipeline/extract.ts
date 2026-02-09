@@ -69,6 +69,7 @@ type Bounds = NonNullable<ExtractOptions["bounds"]>;
 
 const TILE_LAT_SIZE = 10;
 const TILE_LON_SIZE = 10;
+const MIN_TILE_DEG = 1.25;
 
 export function generateTiles(latSize: number = TILE_LAT_SIZE, lonSize: number = TILE_LON_SIZE): Bounds[] {
   const tiles: Bounds[] = [];
@@ -83,6 +84,21 @@ export function generateTiles(latSize: number = TILE_LAT_SIZE, lonSize: number =
     }
   }
   return tiles;
+}
+
+export function subdivideTile(tile: Bounds): Bounds[] {
+  const midLat = (tile.south + tile.north) / 2;
+  const midLon = (tile.west + tile.east) / 2;
+  return [
+    { south: tile.south, north: midLat, west: tile.west, east: midLon },
+    { south: tile.south, north: midLat, west: midLon, east: tile.east },
+    { south: midLat, north: tile.north, west: tile.west, east: midLon },
+    { south: midLat, north: tile.north, west: midLon, east: tile.east },
+  ];
+}
+
+function canSubdivide(tile: Bounds): boolean {
+  return (tile.north - tile.south) > MIN_TILE_DEG && (tile.east - tile.west) > MIN_TILE_DEG;
 }
 
 // ---------- Orchestrator ----------
@@ -100,6 +116,81 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isRetryableError(err: unknown): boolean {
+  if (err instanceof SparqlError) return RETRYABLE_STATUSES.has(err.status);
+  return true; // Network errors, timeouts, etc. are retryable
+}
+
+interface ExtractContext {
+  endpoint: string;
+  batchSize: number;
+  fetchFn: typeof fetch;
+  maxRetries: number;
+  tileDelayMs: number;
+  onBatch?: ExtractOptions["onBatch"];
+  allArticles: Article[];
+  failedTiles: Bounds[];
+  batchNum: number;
+}
+
+async function extractRegion(region: Bounds, ctx: ExtractContext): Promise<void> {
+  try {
+    let offset = 0;
+
+    while (true) {
+      ctx.batchNum++;
+      const query = buildQuery({ limit: ctx.batchSize, offset, bounds: region });
+
+      let response: SparqlResponse;
+      let attempt = 0;
+
+      while (true) {
+        try {
+          response = await executeSparql(query, ctx.endpoint, ctx.fetchFn);
+          break;
+        } catch (err) {
+          attempt++;
+          if (!isRetryableError(err)) throw err;
+          if (attempt >= ctx.maxRetries) throw err;
+
+          const backoff = Math.min(1000 * 2 ** (attempt - 1), MAX_BACKOFF_MS);
+          await sleep(backoff);
+        }
+      }
+
+      const bindings = response.results.bindings;
+      if (bindings.length === 0) break;
+
+      const parsed: Article[] = [];
+      for (const binding of bindings) {
+        const article = parseBinding(binding);
+        if (article) parsed.push(article);
+      }
+
+      ctx.allArticles.push(...parsed);
+      ctx.onBatch?.({ batch: ctx.batchNum, articlesInBatch: parsed.length, totalSoFar: ctx.allArticles.length });
+
+      offset += ctx.batchSize;
+
+      if (bindings.length < ctx.batchSize) break;
+      await sleep(BATCH_DELAY_MS);
+    }
+  } catch (err) {
+    if (!isRetryableError(err)) throw err;
+
+    // Adaptive subdivision: split the failed tile into 4 smaller quadrants
+    if (canSubdivide(region)) {
+      const subTiles = subdivideTile(region);
+      for (const sub of subTiles) {
+        await extractRegion(sub, ctx);
+        if (ctx.tileDelayMs > 0) await sleep(ctx.tileDelayMs);
+      }
+    } else {
+      ctx.failedTiles.push(region);
+    }
+  }
+}
+
 export async function extractArticles(options: ExtractOptions = {}): Promise<Article[]> {
   const {
     endpoint = DEFAULT_ENDPOINT,
@@ -111,80 +202,35 @@ export async function extractArticles(options: ExtractOptions = {}): Promise<Art
     tileDelayMs = TILE_DELAY_MS,
   } = options;
 
-  // Every query goes through wikibase:box (spatial index). When no bounds
-  // specified, tile the globe into a grid of small regions.
   const regions = bounds ? [bounds] : generateTiles();
-  const isTiled = regions.length > 1;
 
-  const allArticles: Article[] = [];
-  const failedTiles: Bounds[] = [];
-  let batchNum = 0;
+  const ctx: ExtractContext = {
+    endpoint,
+    batchSize,
+    fetchFn,
+    maxRetries,
+    tileDelayMs,
+    onBatch,
+    allArticles: [],
+    failedTiles: [],
+    batchNum: 0,
+  };
 
   for (const region of regions) {
-    let offset = 0;
-
-    try {
-      while (true) {
-        batchNum++;
-        const query = buildQuery({ limit: batchSize, offset, bounds: region });
-
-        let response: SparqlResponse;
-        let attempt = 0;
-
-        while (true) {
-          try {
-            response = await executeSparql(query, endpoint, fetchFn);
-            break;
-          } catch (err) {
-            attempt++;
-            if (err instanceof SparqlError) {
-              // Fail immediately on non-retryable errors
-              if (!RETRYABLE_STATUSES.has(err.status)) throw err;
-            }
-            if (attempt >= maxRetries) throw err;
-
-            const backoff = Math.min(1000 * 2 ** (attempt - 1), MAX_BACKOFF_MS);
-            await sleep(backoff);
-          }
-        }
-
-        const bindings = response.results.bindings;
-        if (bindings.length === 0) break;
-
-        const parsed: Article[] = [];
-        for (const binding of bindings) {
-          const article = parseBinding(binding);
-          if (article) parsed.push(article);
-        }
-
-        allArticles.push(...parsed);
-        onBatch?.({ batch: batchNum, articlesInBatch: parsed.length, totalSoFar: allArticles.length });
-
-        offset += batchSize;
-
-        if (bindings.length < batchSize) break;
-        await sleep(BATCH_DELAY_MS);
-      }
-    } catch (err) {
-      if (!isTiled) throw err;
-      // In tiled mode, skip failed tiles and continue
-      failedTiles.push(region);
-    }
-
-    // Small delay between tiles to avoid overwhelming the endpoint
-    if (isTiled && tileDelayMs > 0) {
+    await extractRegion(region, ctx);
+    if (regions.length > 1 && tileDelayMs > 0) {
       await sleep(tileDelayMs);
     }
   }
 
-  if (failedTiles.length > 0) {
+  if (ctx.failedTiles.length > 0) {
     console.error(
-      `Warning: ${failedTiles.length} tile(s) failed and were skipped:`,
-      failedTiles.map((t) => `[${t.south},${t.north}]×[${t.west},${t.east}]`).join(", "),
+      `Warning: ${ctx.failedTiles.length} tile(s) failed at minimum size and were skipped:`,
+      ctx.failedTiles.map((t) => `[${t.south},${t.north}]×[${t.west},${t.east}]`).join(", "),
     );
   }
 
-  return deduplicateArticles(allArticles);
+  return deduplicateArticles(ctx.allArticles);
 }
 
 // ---------- CLI runner ----------
@@ -207,7 +253,7 @@ async function main() {
     console.log(`Extracting articles within bounds: ${JSON.stringify(bounds)}`);
   } else {
     const tiles = generateTiles();
-    console.log(`Extracting all geotagged articles (${tiles.length} geographic tiles)...`);
+    console.log(`Extracting all geotagged articles (${tiles.length} initial tiles, adaptive subdivision)...`);
   }
 
   const articles = await extractArticles({
