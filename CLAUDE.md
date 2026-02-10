@@ -11,7 +11,7 @@ Wikipedia-powered tour guide that uses spherical nearest-neighbor search to find
 ```bash
 npm test              # Run tests once (vitest run)
 npm run test:watch    # Run tests in watch mode
-npm run dev           # Start Vite dev server (app frontend)
+npm run dev           # Start Vite dev server (binds 0.0.0.0 for phone testing)
 npm run build         # Production build → dist/app/
 npm run pipeline      # Run offline build pipeline (tsx src/pipeline/build.ts)
 npm run extract       # Extract geotagged articles from Wikidata → data/articles.json

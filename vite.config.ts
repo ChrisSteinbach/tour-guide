@@ -4,6 +4,9 @@ import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
   root: "src/app",
+  server: {
+    host: "0.0.0.0",
+  },
   build: {
     outDir: "../../dist/app",
     emptyOutDir: true,
