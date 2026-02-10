@@ -18,20 +18,20 @@ function clamp(x: number, lo: number, hi: number): number {
   return x < lo ? lo : x > hi ? hi : x;
 }
 
-function vecLength(v: Point3D): number {
+export function vecLength(v: Point3D): number {
   return Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
 }
 
-function normalize(v: Point3D): Point3D {
+export function normalize(v: Point3D): Point3D {
   const len = vecLength(v);
   return [v[0] / len, v[1] / len, v[2] / len];
 }
 
-function dot(a: Point3D, b: Point3D): number {
+export function dot(a: Point3D, b: Point3D): number {
   return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 }
 
-function cross(a: Point3D, b: Point3D): Point3D {
+export function cross(a: Point3D, b: Point3D): Point3D {
   return [
     a[1] * b[2] - a[2] * b[1],
     a[2] * b[0] - a[0] * b[2],
@@ -132,3 +132,8 @@ export function sphericalCircumcenter(
   }
   return n;
 }
+
+// ---------- Convex hull (re-exports) ----------
+
+export { convexHull, orient3D } from "./convex-hull";
+export type { HullFace, ConvexHull } from "./convex-hull";
