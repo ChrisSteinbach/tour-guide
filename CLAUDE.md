@@ -22,12 +22,18 @@ Run a single test file: `npx vitest run src/geometry/index.test.ts`
 
 ### Extraction
 
-`npm run extract` queries the Wikidata SPARQL endpoint for all English Wikipedia articles with geographic coordinates and writes NDJSON to `data/articles.json`. A full global run fetches ~1.2M articles in batches of 50k and takes roughly 5–7 minutes.
+`npm run extract` queries the Wikidata SPARQL endpoint for all English Wikipedia articles with geographic coordinates and writes NDJSON to `data/articles.json`. A full global run fetches ~1.2M articles using adaptive tile subdivision.
 
-Use `--bounds=south,north,west,east` to extract a geographic subset:
+The extractor tiles the globe into 10° cells, then recursively subdivides failed tiles into quadrants (down to 0.3° minimum) to handle dense regions like Western Europe. A tile cache (`data/tile-cache.json`) saves the learned tile sizes so subsequent runs skip the retry/subdivision overhead.
 
 ```bash
-# Luxembourg (~500 articles, single batch, a few seconds)
+# Full extraction (first run: ~7h with retries; cached: much faster)
+npm run extract
+
+# Skip cache and force fresh tiling
+npm run extract -- --no-cache
+
+# Geographic subset (cache not used)
 npm run extract -- --bounds=49.44,50.19,5.73,6.53
 
 # Inspect output

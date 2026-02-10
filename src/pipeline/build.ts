@@ -9,12 +9,12 @@ async function main() {
 
   // Step 1: Extract geotagged articles from Wikidata
   console.log("Step 1: Extracting Wikipedia coordinates...");
-  const articles = await extractArticles({
+  const result = await extractArticles({
     onBatch({ batch, articlesInBatch, totalSoFar }) {
       console.log(`  Batch ${batch}: ${articlesInBatch} articles (${totalSoFar} total)`);
     },
   });
-  console.log(`  → ${articles.length} unique articles extracted\n`);
+  console.log(`  → ${result.articles.length} unique articles extracted\n`);
 
   // Step 2: Build Delaunay triangulation (not yet implemented)
   console.log("Step 2: Delaunay triangulation — not yet implemented");

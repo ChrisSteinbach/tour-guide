@@ -1,5 +1,5 @@
 import { parseBinding, isValidCoordinate, deduplicateArticles, extractArticles, subdivideTile, generateTiles } from "./extract.js";
-import type { Article } from "./extract.js";
+import type { Article, ExtractResult } from "./extract.js";
 import type { SparqlBinding, SparqlResponse } from "./sparql.js";
 
 // ---------- Helpers ----------
@@ -228,7 +228,7 @@ describe("extractArticles", () => {
       fetchFn: mockFetch,
     });
 
-    expect(result).toHaveLength(2);
+    expect(result.articles).toHaveLength(2);
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
@@ -245,7 +245,7 @@ describe("extractArticles", () => {
       fetchFn: mockFetch,
     });
 
-    expect(result).toHaveLength(1);
+    expect(result.articles).toHaveLength(1);
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
@@ -284,7 +284,7 @@ describe("extractArticles", () => {
       fetchFn: mockFetch,
     });
 
-    expect(result).toHaveLength(1);
+    expect(result.articles).toHaveLength(1);
   });
 
   it("retries on 500 and succeeds", async () => {
@@ -300,7 +300,7 @@ describe("extractArticles", () => {
       maxRetries: 3,
     });
 
-    expect(result).toHaveLength(1);
+    expect(result.articles).toHaveLength(1);
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
@@ -348,32 +348,33 @@ describe("extractArticles", () => {
       tileDelayMs: 0,
     });
 
-    expect(result).toHaveLength(1);
+    expect(result.articles).toHaveLength(1);
+    expect(result.leafTiles).toHaveLength(4);
     // 1 failed parent + 4 sub-tiles = 5 calls
     expect(mockFetch).toHaveBeenCalledTimes(5);
   });
 
   it("recursively subdivides through multiple levels", async () => {
-    // Use a 4°×4° tile (just above MIN_TILE_DEG of 1.25°)
-    // that fails, subdivides to 2°×2°, those succeed
-    const smallBounds = { south: 40, north: 44, west: 0, east: 4 };
+    // Use a 1°×1° tile (just above MIN_TILE_DEG of 0.3°)
+    // that fails, subdivides to 0.5°×0.5°, those succeed
+    const smallBounds = { south: 40, north: 41, west: 0, east: 1 };
     let callCount = 0;
 
     const mockFetch = vi.fn().mockImplementation(() => {
       callCount++;
       if (callCount === 1) {
-        // Parent 4°×4° fails
+        // Parent 1°×1° fails
         return Promise.resolve(mock500());
       }
       if (callCount === 2) {
-        // First 2°×2° sub-tile also fails
+        // First 0.5°×0.5° sub-tile also fails
         return Promise.resolve(mock500());
       }
-      // All 1°×1° sub-sub-tiles and remaining 2°×2° tiles succeed empty
+      // All 0.25°×0.25° sub-sub-tiles and remaining 0.5°×0.5° tiles succeed empty
       return Promise.resolve(mockOk(makeSparqlResponse([])));
     });
 
-    await extractArticles({
+    const result = await extractArticles({
       endpoint: "https://example.org/sparql",
       batchSize: 100,
       bounds: smallBounds,
@@ -384,6 +385,51 @@ describe("extractArticles", () => {
 
     // 1 failed parent + (1 failed sub + 4 sub-sub-tiles) + 3 successful sub-tiles = 9
     expect(mockFetch).toHaveBeenCalledTimes(9);
+    expect(result.leafTiles).toHaveLength(7); // 4 sub-sub-tiles + 3 sub-tiles
+    expect(result.failedTiles).toHaveLength(0); // all succeeded at 0.25° level
+  });
+
+  it("reports failed tiles at minimum subdivision size", async () => {
+    // Use a 0.5°×0.5° tile — can subdivide once to 0.25° (below MIN_TILE_DEG of 0.3°)
+    const tinyBounds = { south: 48, north: 48.5, west: 2, east: 2.5 };
+
+    const mockFetch = vi.fn()
+      .mockResolvedValue(mock500());
+
+    const result = await extractArticles({
+      endpoint: "https://example.org/sparql",
+      batchSize: 100,
+      bounds: tinyBounds,
+      fetchFn: mockFetch,
+      maxRetries: 1,
+      tileDelayMs: 0,
+    });
+
+    // Parent 0.5° fails → subdivides to 4 × 0.25° → all fail at min size
+    expect(result.articles).toHaveLength(0);
+    expect(result.leafTiles).toHaveLength(0);
+    expect(result.failedTiles).toHaveLength(4);
+  });
+
+  it("uses explicit regions when provided", async () => {
+    const customRegions = [
+      { south: 48, north: 49, west: 2, east: 3 },
+      { south: 40, north: 41, west: -74, east: -73 },
+    ];
+
+    const mockFetch = vi.fn()
+      .mockResolvedValue(mockOk(makeSparqlResponse([])));
+
+    await extractArticles({
+      endpoint: "https://example.org/sparql",
+      batchSize: 100,
+      regions: customRegions,
+      fetchFn: mockFetch,
+      tileDelayMs: 0,
+    });
+
+    // One query per region (both return empty)
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
   it("tiles the globe into geographic tiles when no bounds provided", async () => {

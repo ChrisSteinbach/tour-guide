@@ -17,10 +17,17 @@ export interface ExtractOptions {
   endpoint?: string;
   batchSize?: number;
   bounds?: { south: number; north: number; west: number; east: number };
+  regions?: { south: number; north: number; west: number; east: number }[];
   fetchFn?: typeof fetch;
   onBatch?: (info: { batch: number; articlesInBatch: number; totalSoFar: number }) => void;
   maxRetries?: number;
   tileDelayMs?: number;
+}
+
+export interface ExtractResult {
+  articles: Article[];
+  leafTiles: { south: number; north: number; west: number; east: number }[];
+  failedTiles: { south: number; north: number; west: number; east: number }[];
 }
 
 // ---------- Pure functions ----------
@@ -69,7 +76,7 @@ type Bounds = NonNullable<ExtractOptions["bounds"]>;
 
 const TILE_LAT_SIZE = 10;
 const TILE_LON_SIZE = 10;
-const MIN_TILE_DEG = 1.25;
+const MIN_TILE_DEG = 0.3;
 
 export function generateTiles(latSize: number = TILE_LAT_SIZE, lonSize: number = TILE_LON_SIZE): Bounds[] {
   const tiles: Bounds[] = [];
@@ -129,6 +136,7 @@ interface ExtractContext {
   tileDelayMs: number;
   onBatch?: ExtractOptions["onBatch"];
   allArticles: Article[];
+  leafTiles: Bounds[];
   failedTiles: Bounds[];
   batchNum: number;
 }
@@ -175,6 +183,7 @@ async function extractRegion(region: Bounds, ctx: ExtractContext): Promise<void>
       if (bindings.length < ctx.batchSize) break;
       await sleep(BATCH_DELAY_MS);
     }
+    ctx.leafTiles.push(region);
   } catch (err) {
     if (!isRetryableError(err)) throw err;
 
@@ -191,18 +200,19 @@ async function extractRegion(region: Bounds, ctx: ExtractContext): Promise<void>
   }
 }
 
-export async function extractArticles(options: ExtractOptions = {}): Promise<Article[]> {
+export async function extractArticles(options: ExtractOptions = {}): Promise<ExtractResult> {
   const {
     endpoint = DEFAULT_ENDPOINT,
     batchSize = DEFAULT_BATCH_SIZE,
     bounds,
+    regions: explicitRegions,
     fetchFn = fetch,
     onBatch,
     maxRetries = DEFAULT_MAX_RETRIES,
     tileDelayMs = TILE_DELAY_MS,
   } = options;
 
-  const regions = bounds ? [bounds] : generateTiles();
+  const regions = explicitRegions ?? (bounds ? [bounds] : generateTiles());
 
   const ctx: ExtractContext = {
     endpoint,
@@ -212,6 +222,7 @@ export async function extractArticles(options: ExtractOptions = {}): Promise<Art
     tileDelayMs,
     onBatch,
     allArticles: [],
+    leafTiles: [],
     failedTiles: [],
     batchNum: 0,
   };
@@ -230,50 +241,85 @@ export async function extractArticles(options: ExtractOptions = {}): Promise<Art
     );
   }
 
-  return deduplicateArticles(ctx.allArticles);
+  return {
+    articles: deduplicateArticles(ctx.allArticles),
+    leafTiles: ctx.leafTiles,
+    failedTiles: ctx.failedTiles,
+  };
 }
 
 // ---------- CLI runner ----------
 
 async function main() {
   const args = process.argv.slice(2);
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const outDir = path.resolve("data");
+  const cachePath = path.join(outDir, "tile-cache.json");
+
   let bounds: ExtractOptions["bounds"];
+  let regions: Bounds[] | undefined;
+  const noCache = args.includes("--no-cache");
 
   const boundsArg = args.find((a) => a.startsWith("--bounds="));
   if (boundsArg) {
     const parts = boundsArg.slice("--bounds=".length).split(",").map((s: string) => Number(s));
     if (parts.length !== 4 || parts.some(Number.isNaN)) {
-      console.error("Usage: --bounds=south,north,west,east");
+      console.error("Usage: --bounds=south,north,west,east [--no-cache]");
       process.exit(1);
     }
     bounds = { south: parts[0], north: parts[1], west: parts[2], east: parts[3] };
   }
 
+  // Load tile cache for full-globe extraction
+  if (!bounds && !noCache) {
+    try {
+      const cache = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
+      const cached = cache.tiles?.length ?? 0;
+      const failed = cache.failedTiles?.length ?? 0;
+      regions = [...(cache.tiles ?? []), ...(cache.failedTiles ?? [])];
+      console.log(`Loaded tile cache: ${regions.length} regions (${cached} cached + ${failed} previously failed)`);
+    } catch {
+      // No cache file — will use default tiling
+    }
+  }
+
   if (bounds) {
     console.log(`Extracting articles within bounds: ${JSON.stringify(bounds)}`);
-  } else {
+  } else if (!regions) {
     const tiles = generateTiles();
     console.log(`Extracting all geotagged articles (${tiles.length} initial tiles, adaptive subdivision)...`);
   }
 
-  const articles = await extractArticles({
+  const result = await extractArticles({
     bounds,
+    regions,
     onBatch({ batch, articlesInBatch, totalSoFar }) {
       console.log(`  Batch ${batch}: ${articlesInBatch} articles (${totalSoFar} total)`);
     },
   });
 
-  console.log(`Extraction complete: ${articles.length} unique articles`);
+  console.log(`Extraction complete: ${result.articles.length} unique articles`);
+
+  // Write tile cache for full-globe extraction
+  if (!bounds) {
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.writeFileSync(cachePath, JSON.stringify({
+      version: 1,
+      createdAt: new Date().toISOString(),
+      articleCount: result.articles.length,
+      tiles: result.leafTiles,
+      failedTiles: result.failedTiles,
+    }));
+    console.log(`Saved tile cache: ${result.leafTiles.length} tiles + ${result.failedTiles.length} failed → ${cachePath}`);
+  }
 
   // Write NDJSON output
-  const fs = await import("node:fs");
-  const path = await import("node:path");
-  const outDir = path.resolve("data");
   fs.mkdirSync(outDir, { recursive: true });
 
   const outPath = path.join(outDir, "articles.json");
   const stream = fs.createWriteStream(outPath);
-  for (const article of articles) {
+  for (const article of result.articles) {
     stream.write(JSON.stringify(article) + "\n");
   }
   stream.end();
@@ -283,7 +329,7 @@ async function main() {
     stream.on("error", reject);
   });
 
-  console.log(`Wrote ${articles.length} articles to ${outPath}`);
+  console.log(`Wrote ${result.articles.length} articles to ${outPath}`);
 }
 
 // Run when executed directly
