@@ -146,3 +146,7 @@ export type {
   DelaunayVertex,
   SphericalDelaunay,
 } from "./delaunay";
+
+// ---------- Point location (re-exports) ----------
+
+export { locateTriangle, findNearest } from "./point-location";
