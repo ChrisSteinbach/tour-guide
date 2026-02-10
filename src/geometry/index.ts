@@ -137,3 +137,12 @@ export function sphericalCircumcenter(
 
 export { convexHull, orient3D } from "./convex-hull";
 export type { HullFace, ConvexHull } from "./convex-hull";
+
+// ---------- Delaunay triangulation (re-exports) ----------
+
+export { buildTriangulation } from "./delaunay";
+export type {
+  DelaunayTriangle,
+  DelaunayVertex,
+  SphericalDelaunay,
+} from "./delaunay";
