@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <circle cx="256" cy="256" r="240" fill="#1a73e8"/>
+  <g fill="none" stroke="#fff" stroke-width="16" stroke-linecap="round">
+    <!-- Compass rose -->
+    <polygon points="256,80 288,240 256,272 224,240" fill="#fff" stroke="none"/>
+    <polygon points="256,432 224,272 256,240 288,272" fill="#ccc" stroke="none"/>
+    <polygon points="80,256 240,224 272,256 240,288" fill="#ccc" stroke="none"/>
+    <polygon points="432,256 272,288 240,256 272,224" fill="#fff" stroke="none"/>
+    <!-- Center dot -->
+    <circle cx="256" cy="256" r="12" fill="#1a73e8" stroke="#fff" stroke-width="8"/>
+  </g>
+</svg>
