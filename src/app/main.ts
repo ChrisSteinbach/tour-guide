@@ -6,6 +6,12 @@ import { distanceMeters } from "./format";
 import { renderNearbyList } from "./render";
 import { renderLoading, renderError } from "./status";
 import { watchLocation, type StopFn } from "./location";
+import { fetchArticleSummary } from "./wiki-api";
+import {
+  renderDetailLoading,
+  renderDetailReady,
+  renderDetailError,
+} from "./detail";
 
 /** Brute-force nearest-neighbor: compute distances and sort ascending. */
 function findNearby(position: UserPosition, articles: Article[]): NearbyArticle[] {
@@ -16,6 +22,27 @@ function findNearby(position: UserPosition, articles: Article[]): NearbyArticle[
 
 const app = document.getElementById("app")!;
 let stopWatcher: StopFn | null = null;
+let currentArticles: NearbyArticle[] = [];
+let selectedArticle: NearbyArticle | null = null;
+
+function showList(): void {
+  selectedArticle = null;
+  renderNearbyList(app, currentArticles, showDetail);
+}
+
+async function showDetail(article: NearbyArticle): Promise<void> {
+  selectedArticle = article;
+  renderDetailLoading(app, article, showList);
+  try {
+    const summary = await fetchArticleSummary(article.title);
+    if (selectedArticle !== article) return;
+    renderDetailReady(app, article, summary, showList);
+  } catch (err) {
+    if (selectedArticle !== article) return;
+    const message = err instanceof Error ? err.message : "Unknown error";
+    renderDetailError(app, article, message, showList, () => showDetail(article));
+  }
+}
 
 function renderState(state: AppState): void {
   switch (state.kind) {
@@ -26,8 +53,9 @@ function renderState(state: AppState): void {
       renderError(app, state.error, useMockData);
       break;
     case "ready": {
-      const nearby = findNearby(state.position, mockArticles);
-      renderNearbyList(app, nearby);
+      currentArticles = findNearby(state.position, mockArticles);
+      if (selectedArticle) return; // don't clobber detail view on position update
+      renderNearbyList(app, currentArticles, showDetail);
       break;
     }
   }

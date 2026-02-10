@@ -1,10 +1,11 @@
 import type { NearbyArticle } from "./types";
-import { formatDistance, wikipediaUrl } from "./format";
+import { formatDistance } from "./format";
 
 /** Build and replace the contents of `container` with a nearby-articles list. */
 export function renderNearbyList(
   container: HTMLElement,
   articles: NearbyArticle[],
+  onSelectArticle: (article: NearbyArticle) => void,
 ): void {
   container.innerHTML = "";
 
@@ -21,11 +22,17 @@ export function renderNearbyList(
 
   for (const article of articles) {
     const li = document.createElement("li");
-    const a = document.createElement("a");
-    a.href = wikipediaUrl(article.title);
-    a.target = "_blank";
-    a.rel = "noopener";
-    a.className = "nearby-item";
+    const item = document.createElement("div");
+    item.className = "nearby-item";
+    item.setAttribute("role", "button");
+    item.tabIndex = 0;
+    item.addEventListener("click", () => onSelectArticle(article));
+    item.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        onSelectArticle(article);
+      }
+    });
 
     const info = document.createElement("div");
     info.className = "nearby-info";
@@ -41,8 +48,8 @@ export function renderNearbyList(
     badge.className = "nearby-distance";
     badge.textContent = formatDistance(article.distanceM);
 
-    a.append(info, badge);
-    li.appendChild(a);
+    item.append(info, badge);
+    li.appendChild(item);
     list.appendChild(li);
   }
 
