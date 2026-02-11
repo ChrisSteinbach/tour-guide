@@ -150,3 +150,8 @@ export type {
 // ---------- Point location (re-exports) ----------
 
 export { locateTriangle, findNearest } from "./point-location";
+
+// ---------- Serialization (re-exports) ----------
+
+export { serialize, deserialize } from "./serialization";
+export type { TriangulationFile, ArticleMeta } from "./serialization";
