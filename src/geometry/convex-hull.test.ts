@@ -224,6 +224,50 @@ describe("convexHull", () => {
     });
   });
 
+  describe("BFS optimization", () => {
+    /** Generate n random unit-sphere points with a seeded PRNG */
+    function generateRandomSpherePoints(n: number, seed: number): Point3D[] {
+      let state = seed | 0;
+      function rand(): number {
+        state = (Math.imul(state, 1664525) + 1013904223) | 0;
+        return (state >>> 0) / 0x100000000;
+      }
+
+      const points: Point3D[] = [];
+      for (let i = 0; i < n; i++) {
+        // Marsaglia method for uniform sphere sampling
+        let x: number, y: number, s: number;
+        do {
+          x = 2 * rand() - 1;
+          y = 2 * rand() - 1;
+          s = x * x + y * y;
+        } while (s >= 1 || s === 0);
+        const z = 1 - 2 * s;
+        const r = 2 * Math.sqrt(1 - s);
+        points.push([x * r, y * r, z]);
+      }
+      return points;
+    }
+
+    it("handles 1,000 random sphere points with full validation", () => {
+      const points = generateRandomSpherePoints(1000, 42);
+      const hull = convexHull(points);
+      const nV = new Set(hull.faces.flatMap((f) => f.vertices)).size;
+      expect(hull.faces.length).toBe(2 * nV - 4);
+      validateHull(hull);
+    });
+
+    it("handles 10,000 random sphere points (F = 2V - 4)", () => {
+      const points = generateRandomSpherePoints(10000, 123);
+      const t0 = performance.now();
+      const hull = convexHull(points);
+      const elapsed = performance.now() - t0;
+      const nV = new Set(hull.faces.flatMap((f) => f.vertices)).size;
+      expect(hull.faces.length).toBe(2 * nV - 4);
+      expect(elapsed).toBeLessThan(10_000); // Must complete within 10s
+    });
+  });
+
   describe("edge cases", () => {
     it("throws for fewer than 4 points", () => {
       expect(() => convexHull([[1, 0, 0]])).toThrow();

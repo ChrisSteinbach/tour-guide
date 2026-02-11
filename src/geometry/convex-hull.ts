@@ -84,6 +84,122 @@ function removeFaceEdges(
   }
 }
 
+// ---------- Randomized insertion order ----------
+
+/**
+ * Fisher-Yates shuffle of indices 0..n-1, excluding a given set.
+ * Uses a fixed-seed LCG for deterministic ordering.
+ */
+function shuffleIndices(n: number, exclude: Set<number>): number[] {
+  const arr: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (!exclude.has(i)) arr.push(i);
+  }
+
+  // LCG: state = state * 1664525 + 1013904223 (mod 2^32)
+  let state = 0x9e3779b9 | 0;
+  for (let i = arr.length - 1; i > 0; i--) {
+    state = (Math.imul(state, 1664525) + 1013904223) | 0;
+    const j = ((state >>> 0) % (i + 1)) | 0;
+    const tmp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = tmp;
+  }
+
+  return arr;
+}
+
+// ---------- Seed walk + BFS ----------
+
+/**
+ * Greedy walk from a hint face toward a face visible from point p.
+ * Returns the face index of a visible face, or -1 if the walk fails.
+ */
+function findSeedFace(
+  points: Point3D[],
+  faces: (HullFace | null)[],
+  p: Point3D,
+  hintFace: number,
+): number {
+  // Find a live starting face (hint may have been deleted)
+  let current = -1;
+  for (let i = hintFace; i < faces.length; i++) {
+    if (faces[i]) {
+      current = i;
+      break;
+    }
+  }
+  if (current === -1) {
+    for (let i = 0; i < hintFace; i++) {
+      if (faces[i]) {
+        current = i;
+        break;
+      }
+    }
+  }
+  if (current === -1) return -1;
+
+  const maxSteps = 6 * Math.ceil(Math.sqrt(faces.length));
+
+  for (let step = 0; step < maxSteps; step++) {
+    const f = faces[current]!;
+    const [va, vb, vc] = f.vertices;
+    const vol = orient3D(points[va], points[vb], points[vc], p);
+    if (vol > 0) return current; // Found a visible face
+
+    // Step to the neighbor with the highest orient3D value (least negative)
+    let bestVol = -Infinity;
+    let bestNeighbor = -1;
+    for (let e = 0; e < 3; e++) {
+      const ni = f.neighbor[e];
+      if (ni < 0 || !faces[ni]) continue;
+      const nf = faces[ni]!;
+      const [na, nb, nc] = nf.vertices;
+      const nv = orient3D(points[na], points[nb], points[nc], p);
+      if (nv > 0) return ni; // Short-circuit: neighbor is visible
+      if (nv > bestVol) {
+        bestVol = nv;
+        bestNeighbor = ni;
+      }
+    }
+
+    if (bestNeighbor === -1 || bestNeighbor === current) break;
+    current = bestNeighbor;
+  }
+
+  return -1; // Walk failed, caller should fall back to linear scan
+}
+
+/**
+ * BFS from a seed visible face to find all connected visible faces.
+ * Visible faces on a convex hull form a connected region.
+ */
+function bfsVisibleFaces(
+  points: Point3D[],
+  faces: (HullFace | null)[],
+  p: Point3D,
+  seed: number,
+): number[] {
+  const visible = [seed];
+  const visited = new Set([seed]);
+
+  for (let head = 0; head < visible.length; head++) {
+    const f = faces[visible[head]]!;
+    for (let e = 0; e < 3; e++) {
+      const ni = f.neighbor[e];
+      if (ni < 0 || visited.has(ni)) continue;
+      visited.add(ni);
+      const nf = faces[ni]!;
+      const [na, nb, nc] = nf.vertices;
+      if (orient3D(points[na], points[nb], points[nc], p) > 0) {
+        visible.push(ni);
+      }
+    }
+  }
+
+  return visible;
+}
+
 // ---------- Algorithm ----------
 
 /**
@@ -184,10 +300,11 @@ export function convexHull(points: Point3D[]): ConvexHull {
   for (let fi = 0; fi < 4; fi++) registerFaceEdges(faces, halfEdges, fi);
   linkAllAdjacency(faces, halfEdges);
 
-  // Insert remaining points
-  for (let pi = 0; pi < points.length; pi++) {
-    if (seedSet.has(pi)) continue;
-    addPoint(points, faces, halfEdges, pi);
+  // Insert remaining points in shuffled order for O(n log n) expected time
+  const insertionOrder = shuffleIndices(points.length, seedSet);
+  let hintFace = 0;
+  for (const pi of insertionOrder) {
+    hintFace = addPoint(points, faces, halfEdges, pi, hintFace);
   }
 
   // Compact: remove deleted slots
@@ -218,27 +335,38 @@ function linkAllAdjacency(
 /**
  * Insert a single point into the hull. If the point is inside (no visible faces),
  * it's silently skipped.
+ *
+ * Returns a face index hint for the next insertion (one of the newly created faces),
+ * or the original hintFace if the point was inside the hull.
  */
 function addPoint(
   points: Point3D[],
   faces: (HullFace | null)[],
   halfEdges: Map<string, HalfEdgeInfo>,
   pi: number,
-) {
+  hintFace: number,
+): number {
   const p = points[pi];
 
-  // Find all visible faces
-  const visible: number[] = [];
-  for (let fi = 0; fi < faces.length; fi++) {
-    const f = faces[fi];
-    if (!f) continue;
-    const [va, vb, vc] = f.vertices;
-    if (orient3D(points[va], points[vb], points[vc], p) > 0) {
-      visible.push(fi);
+  // Find all visible faces via seed walk + BFS
+  let visible: number[];
+  const seed = findSeedFace(points, faces, p, hintFace);
+  if (seed >= 0) {
+    visible = bfsVisibleFaces(points, faces, p, seed);
+  } else {
+    // Fallback: linear scan (should be rare)
+    visible = [];
+    for (let fi = 0; fi < faces.length; fi++) {
+      const f = faces[fi];
+      if (!f) continue;
+      const [va, vb, vc] = f.vertices;
+      if (orient3D(points[va], points[vb], points[vc], p) > 0) {
+        visible.push(fi);
+      }
     }
   }
 
-  if (visible.length === 0) return; // Point inside hull
+  if (visible.length === 0) return hintFace; // Point inside hull
 
   const visibleSet = new Set(visible);
 
@@ -308,6 +436,8 @@ function addPoint(
       }
     }
   }
+
+  return newFaceIndices[0];
 }
 
 /**
