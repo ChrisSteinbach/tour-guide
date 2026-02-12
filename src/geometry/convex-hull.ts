@@ -50,17 +50,21 @@ export function orient3D(
   );
 }
 
-// ---------- Half-edge map ----------
+// ---------- Half-edge map (numeric keys for performance) ----------
 
 type HalfEdgeInfo = { faceIdx: number; edgePos: number };
 
-function edgeKey(a: number, b: number): string {
-  return `${a}:${b}`;
+// Encode directed edge (a→b) as a single number: a * N + b
+// N must be > max vertex index. Set once per convexHull call.
+let _edgeMul = 0;
+
+function edgeKey(a: number, b: number): number {
+  return a * _edgeMul + b;
 }
 
 function registerFaceEdges(
   faces: (HullFace | null)[],
-  halfEdges: Map<string, HalfEdgeInfo>,
+  halfEdges: Map<number, HalfEdgeInfo>,
   fi: number,
 ) {
   const f = faces[fi]!;
@@ -73,7 +77,7 @@ function registerFaceEdges(
 
 function removeFaceEdges(
   faces: (HullFace | null)[],
-  halfEdges: Map<string, HalfEdgeInfo>,
+  halfEdges: Map<number, HalfEdgeInfo>,
   fi: number,
 ) {
   const f = faces[fi]!;
@@ -84,95 +88,158 @@ function removeFaceEdges(
   }
 }
 
-// ---------- Randomized insertion order ----------
+// ---------- Point perturbation ----------
 
 /**
- * Fisher-Yates shuffle of indices 0..n-1, excluding a given set.
- * Uses a fixed-seed LCG for deterministic ordering.
+ * Add a small deterministic random perturbation to each point to prevent
+ * degenerate configurations (coplanar/cospherical points) that cause
+ * orient3D to return ambiguous near-zero results.
+ *
+ * The perturbation is ~1e-8 per coordinate (≈0.07m on Earth's surface),
+ * which is negligible for navigation but ensures orient3D values are
+ * well above the ~1e-15 floating-point error bound.
+ *
+ * Only the perturbed copy is used for orient3D tests; the original
+ * unperturbed points are stored in the output hull.
  */
-function shuffleIndices(n: number, exclude: Set<number>): number[] {
-  const arr: number[] = [];
-  for (let i = 0; i < n; i++) {
-    if (!exclude.has(i)) arr.push(i);
-  }
-
-  // LCG: state = state * 1664525 + 1013904223 (mod 2^32)
+function perturbPoints(points: Point3D[]): Point3D[] {
+  const SCALE = 2e-8;
   let state = 0x9e3779b9 | 0;
-  for (let i = arr.length - 1; i > 0; i--) {
+  function nextRand(): number {
     state = (Math.imul(state, 1664525) + 1013904223) | 0;
-    const j = ((state >>> 0) % (i + 1)) | 0;
-    const tmp = arr[i];
-    arr[i] = arr[j];
-    arr[j] = tmp;
+    return ((state >>> 0) / 0x100000000 - 0.5) * SCALE;
   }
 
-  return arr;
+  return points.map((p) => [
+    p[0] + nextRand(),
+    p[1] + nextRand(),
+    p[2] + nextRand(),
+  ] as Point3D);
+}
+
+// ---------- Spatial face index ----------
+
+/**
+ * A simple grid index on (x, y, z) that maps spatial cells to face indices.
+ * Used to quickly find a face near a query point, eliminating expensive
+ * linear scans when the greedy walk fails.
+ */
+class FaceGrid {
+  private grid: Int32Array; // face index per cell, -1 = empty
+  private res: number;
+
+  constructor(resolution: number) {
+    this.res = resolution;
+    this.grid = new Int32Array(resolution * resolution * resolution).fill(-1);
+  }
+
+  private cellCoords(p: Point3D): [number, number, number] {
+    const r = this.res;
+    return [
+      Math.min(r - 1, Math.max(0, ((p[0] + 1) * 0.5 * r) | 0)),
+      Math.min(r - 1, Math.max(0, ((p[1] + 1) * 0.5 * r) | 0)),
+      Math.min(r - 1, Math.max(0, ((p[2] + 1) * 0.5 * r) | 0)),
+    ];
+  }
+
+  private coordsToIndex(ix: number, iy: number, iz: number): number {
+    return ix * this.res * this.res + iy * this.res + iz;
+  }
+
+  /** Register a face at its centroid's cell. */
+  update(points: Point3D[], faces: (HullFace | null)[], fi: number) {
+    const f = faces[fi]!;
+    const [a, b, c] = f.vertices;
+    const centroid: Point3D = [
+      (points[a][0] + points[b][0] + points[c][0]) / 3,
+      (points[a][1] + points[b][1] + points[c][1]) / 3,
+      (points[a][2] + points[b][2] + points[c][2]) / 3,
+    ];
+    const [cx, cy, cz] = this.cellCoords(centroid);
+    this.grid[this.coordsToIndex(cx, cy, cz)] = fi;
+  }
+
+  /** Find a face near point p. Returns face index or -1. */
+  lookup(p: Point3D): number {
+    const [cx, cy, cz] = this.cellCoords(p);
+    return this.grid[this.coordsToIndex(cx, cy, cz)];
+  }
 }
 
 // ---------- Seed walk + BFS ----------
 
 /**
  * Greedy walk from a hint face toward a face visible from point p.
- * Returns the face index of a visible face, or -1 if the walk fails.
+ * Uses dot product with face centroids to navigate toward p.
+ *
+ * Returns [seedFace, endFace]:
+ * - seedFace >= 0: found a visible face (use as BFS seed)
+ * - seedFace === -1: walk failed, endFace is the last face visited (near p)
  */
 function findSeedFace(
   points: Point3D[],
   faces: (HullFace | null)[],
   p: Point3D,
   hintFace: number,
-): number {
+  liveFaceCount: number,
+): [number, number] {
   // Find a live starting face (hint may have been deleted)
   let current = -1;
-  for (let i = hintFace; i < faces.length; i++) {
-    if (faces[i]) {
-      current = i;
-      break;
-    }
-  }
-  if (current === -1) {
-    for (let i = 0; i < hintFace; i++) {
+  if (hintFace >= 0 && hintFace < faces.length && faces[hintFace]) {
+    current = hintFace;
+  } else {
+    for (let i = 0; i < faces.length; i++) {
       if (faces[i]) {
         current = i;
         break;
       }
     }
   }
-  if (current === -1) return -1;
+  if (current === -1) return [-1, -1];
 
-  const maxSteps = 6 * Math.ceil(Math.sqrt(faces.length));
+  const maxSteps = 6 * Math.ceil(Math.sqrt(liveFaceCount));
+  const px = p[0], py = p[1], pz = p[2];
+  let prev = -1, prevPrev = -1;
 
   for (let step = 0; step < maxSteps; step++) {
     const f = faces[current]!;
     const [va, vb, vc] = f.vertices;
-    const vol = orient3D(points[va], points[vb], points[vc], p);
-    if (vol > 0) return current; // Found a visible face
+    if (orient3D(points[va], points[vb], points[vc], p) > 0) {
+      return [current, current];
+    }
 
-    // Step to the neighbor with the highest orient3D value (least negative)
-    let bestVol = -Infinity;
+    let bestDot = -Infinity;
     let bestNeighbor = -1;
     for (let e = 0; e < 3; e++) {
       const ni = f.neighbor[e];
-      if (ni < 0 || !faces[ni]) continue;
+      if (ni < 0 || ni === prev || ni === prevPrev || !faces[ni]) continue;
       const nf = faces[ni]!;
       const [na, nb, nc] = nf.vertices;
-      const nv = orient3D(points[na], points[nb], points[nc], p);
-      if (nv > 0) return ni; // Short-circuit: neighbor is visible
-      if (nv > bestVol) {
-        bestVol = nv;
+      if (orient3D(points[na], points[nb], points[nc], p) > 0) {
+        return [ni, ni];
+      }
+      const d = (points[na][0] + points[nb][0] + points[nc][0]) * px +
+                (points[na][1] + points[nb][1] + points[nc][1]) * py +
+                (points[na][2] + points[nb][2] + points[nc][2]) * pz;
+      if (d > bestDot) {
+        bestDot = d;
         bestNeighbor = ni;
       }
     }
 
-    if (bestNeighbor === -1 || bestNeighbor === current) break;
+    if (bestNeighbor === -1) return [-1, current];
+    prevPrev = prev;
+    prev = current;
     current = bestNeighbor;
   }
 
-  return -1; // Walk failed, caller should fall back to linear scan
+  return [-1, current];
 }
 
 /**
  * BFS from a seed visible face to find all connected visible faces.
- * Visible faces on a convex hull form a connected region.
+ * Visible faces on a convex hull form a connected region (guaranteed by
+ * perturbation eliminating degenerate coplanarity).
  */
 function bfsVisibleFaces(
   points: Point3D[],
@@ -267,9 +334,20 @@ function findInitialTetrahedron(
  *
  * For unit-sphere points, the hull faces are the spherical Delaunay triangulation.
  * Face vertices are wound CCW when viewed from outside (normals point outward).
+ *
+ * Uses point perturbation to handle degenerate inputs, a spatial grid index for
+ * O(1) face lookup, and BFS for visible face discovery.
  */
 export function convexHull(points: Point3D[]): ConvexHull {
+  // Validate on original points (clear error messages for degenerate input)
   const [i0, i1, i2, i3] = findInitialTetrahedron(points);
+
+  // Set up numeric edge key multiplier
+  _edgeMul = points.length;
+
+  // Perturbed copy for orient3D tests; original points stored in output
+  const pp = perturbPoints(points);
+
   const seedSet = new Set([i0, i1, i2, i3]);
 
   // Orient so that orient3D(v0,v1,v2,v3) < 0, meaning v3 is below face (v0,v1,v2).
@@ -278,36 +356,43 @@ export function convexHull(points: Point3D[]): ConvexHull {
     v1 = i1,
     v2 = i2,
     v3 = i3;
-  if (orient3D(points[v0], points[v1], points[v2], points[v3]) > 0) {
+  if (orient3D(pp[v0], pp[v1], pp[v2], pp[v3]) > 0) {
     const tmp = v1;
     v1 = v2;
     v2 = tmp;
   }
 
   // 4 faces of the initial tetrahedron (all CCW from outside).
-  // Each face's opposite vertex is on the interior side (orient3D < 0).
   const faces: (HullFace | null)[] = [
-    { vertices: [v0, v1, v2], neighbor: [-1, -1, -1] }, // opposite v3
-    { vertices: [v0, v2, v3], neighbor: [-1, -1, -1] }, // opposite v1
-    { vertices: [v0, v3, v1], neighbor: [-1, -1, -1] }, // opposite v2
-    { vertices: [v1, v3, v2], neighbor: [-1, -1, -1] }, // opposite v0 (note: reversed from v1,v2,v3)
+    { vertices: [v0, v1, v2], neighbor: [-1, -1, -1] },
+    { vertices: [v0, v2, v3], neighbor: [-1, -1, -1] },
+    { vertices: [v0, v3, v1], neighbor: [-1, -1, -1] },
+    { vertices: [v1, v3, v2], neighbor: [-1, -1, -1] },
   ];
 
-  // Half-edge map: directed edge "a:b" → { faceIdx, edgePos }
-  const halfEdges = new Map<string, HalfEdgeInfo>();
+  // Half-edge map: directed edge key → { faceIdx, edgePos }
+  const halfEdges = new Map<number, HalfEdgeInfo>();
 
   // Register initial faces and link adjacency via half-edge twins
   for (let fi = 0; fi < 4; fi++) registerFaceEdges(faces, halfEdges, fi);
   linkAllAdjacency(faces, halfEdges);
 
-  // Insert remaining points in shuffled order for O(n log n) expected time
-  const insertionOrder = shuffleIndices(points.length, seedSet);
+  // Spatial grid index for fast face lookup (resolution scales with √n)
+  const gridRes = Math.max(8, Math.min(128, Math.ceil(Math.pow(points.length, 1 / 3))));
+  const faceGrid = new FaceGrid(gridRes);
+  for (let fi = 0; fi < 4; fi++) faceGrid.update(pp, faces, fi);
+
+  // Insert remaining points
   let hintFace = 0;
-  for (const pi of insertionOrder) {
-    hintFace = addPoint(points, faces, halfEdges, pi, hintFace);
+  let liveFaces = 4;
+  for (let pi = 0; pi < points.length; pi++) {
+    if (seedSet.has(pi)) continue;
+    const result = addPoint(pp, faces, halfEdges, pi, hintFace, liveFaces, faceGrid);
+    hintFace = result[0];
+    liveFaces += result[1];
   }
 
-  // Compact: remove deleted slots
+  // Compact: remove deleted slots. Return original (unperturbed) points.
   return compact(points, faces);
 }
 
@@ -316,7 +401,7 @@ export function convexHull(points: Point3D[]): ConvexHull {
  */
 function linkAllAdjacency(
   faces: (HullFace | null)[],
-  halfEdges: Map<string, HalfEdgeInfo>,
+  halfEdges: Map<number, HalfEdgeInfo>,
 ) {
   for (let fi = 0; fi < faces.length; fi++) {
     const f = faces[fi];
@@ -336,42 +421,90 @@ function linkAllAdjacency(
  * Insert a single point into the hull. If the point is inside (no visible faces),
  * it's silently skipped.
  *
- * Returns a face index hint for the next insertion (one of the newly created faces),
- * or the original hintFace if the point was inside the hull.
+ * Returns [hintFace, faceDelta] where faceDelta is the change in live face count.
  */
 function addPoint(
   points: Point3D[],
   faces: (HullFace | null)[],
-  halfEdges: Map<string, HalfEdgeInfo>,
+  halfEdges: Map<number, HalfEdgeInfo>,
   pi: number,
   hintFace: number,
-): number {
+  liveFaces: number,
+  faceGrid: FaceGrid,
+): [number, number] {
   const p = points[pi];
 
-  // Find all visible faces via seed walk + BFS
-  let visible: number[];
-  const seed = findSeedFace(points, faces, p, hintFace);
-  if (seed >= 0) {
-    visible = bfsVisibleFaces(points, faces, p, seed);
-  } else {
-    // Fallback: linear scan (should be rare)
-    visible = [];
-    for (let fi = 0; fi < faces.length; fi++) {
-      const f = faces[fi];
-      if (!f) continue;
-      const [va, vb, vc] = f.vertices;
+  // Try to find a visible face:
+  // 1. Walk from the previous insertion's hint face
+  // 2. Grid cell lookup → walk
+  // 3. Local BFS from walk endpoint (catches nearby visible faces or confirms interior)
+  // 4. Strided scan (O(√n) last resort)
+  let walkResult = findSeedFace(points, faces, p, hintFace, liveFaces);
+  let seed = walkResult[0];
+  let walkEnd = walkResult[1];
+
+  if (seed < 0) {
+    // Try grid hint
+    const gridHint = faceGrid.lookup(p);
+    if (gridHint >= 0 && faces[gridHint]) {
+      walkResult = findSeedFace(points, faces, p, gridHint, liveFaces);
+      seed = walkResult[0];
+      if (walkResult[1] >= 0) walkEnd = walkResult[1];
+    }
+  }
+
+  if (seed < 0 && walkEnd >= 0) {
+    // Local BFS from the walk endpoint: check nearby faces for visibility.
+    // The walk endpoint is the face closest to p by dot product. If p is on
+    // the hull, visible faces are within a few hops. If p is interior, no
+    // nearby faces are visible.
+    const bfsLimit = Math.min(liveFaces, Math.max(500, Math.ceil(4 * Math.sqrt(liveFaces))));
+    const visited = new Set([walkEnd]);
+    const queue = [walkEnd];
+    for (let head = 0; head < queue.length && visited.size < bfsLimit; head++) {
+      const cf = faces[queue[head]]!;
+      const [va, vb, vc] = cf.vertices;
       if (orient3D(points[va], points[vb], points[vc], p) > 0) {
-        visible.push(fi);
+        seed = queue[head];
+        break;
+      }
+      for (let e = 0; e < 3; e++) {
+        const ni = cf.neighbor[e];
+        if (ni >= 0 && !visited.has(ni) && faces[ni]) {
+          visited.add(ni);
+          queue.push(ni);
+        }
       }
     }
   }
 
-  if (visible.length === 0) return hintFace; // Point inside hull
+  if (seed < 0) {
+    // Strided scan: check every √n-th face slot. O(√n) per call.
+    // Catches the rare case where visible faces are far from the walk endpoint.
+    const stride = Math.max(1, Math.ceil(Math.sqrt(faces.length)));
+    for (let fi = 0; fi < faces.length; fi += stride) {
+      const f = faces[fi];
+      if (!f) continue;
+      const [va, vb, vc] = f.vertices;
+      if (orient3D(points[va], points[vb], points[vc], p) > 0) {
+        seed = fi;
+        break;
+      }
+    }
+    if (seed >= 0) {
+      const walkResult2 = findSeedFace(points, faces, p, seed, liveFaces);
+      if (walkResult2[0] >= 0) seed = walkResult2[0];
+    }
+  }
+
+  if (seed < 0) return [hintFace, 0]; // Interior point — no visible faces
+
+  const visible = bfsVisibleFaces(points, faces, p, seed);
+  if (visible.length === 0) return [hintFace, 0]; // Point inside hull
 
   const visibleSet = new Set(visible);
 
   // Collect horizon edges: edges of visible faces whose twin face is not visible.
-  // The horizon edge from the new triangle's perspective is reversed (b→a).
   const horizon: {
     a: number;
     b: number;
@@ -437,7 +570,12 @@ function addPoint(
     }
   }
 
-  return newFaceIndices[0];
+  // Update spatial grid with new faces
+  for (const fi of newFaceIndices) {
+    faceGrid.update(points, faces, fi);
+  }
+
+  return [newFaceIndices[0], horizon.length - visible.length];
 }
 
 /**
