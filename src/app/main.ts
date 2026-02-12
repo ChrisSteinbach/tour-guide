@@ -89,6 +89,7 @@ function useMockData(): void {
 /** User clicked "Find nearby articles" — start GPS and show loading states. */
 function startLocating(): void {
   started = true;
+  sessionStorage.setItem("tour-guide-started", "1");
   render();
   if (!navigator.geolocation) {
     useMockData();
@@ -107,10 +108,15 @@ function startLocating(): void {
   });
 }
 
-// Bootstrap: load data in the background, show welcome screen
+// Bootstrap: load data in the background
 loadQuery("/triangulation.json")
   .then((q) => { query = q; console.log(`Loaded ${q.size} articles`); })
   .catch((err) => { console.error("Failed to load triangulation data:", err); })
   .finally(() => { dataReady = true; if (started) render(); });
 
-renderWelcome(app, startLocating, useMockData);
+// Skip welcome screen on reload if user already opted in this session
+if (sessionStorage.getItem("tour-guide-started")) {
+  startLocating();
+} else {
+  renderWelcome(app, startLocating, useMockData);
+}
