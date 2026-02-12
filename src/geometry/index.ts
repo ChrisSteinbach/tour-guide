@@ -149,7 +149,7 @@ export type {
 
 // ---------- Point location (re-exports) ----------
 
-export { locateTriangle, findNearest } from "./point-location";
+export { locateTriangle, findNearest, vertexNeighbors } from "./point-location";
 
 // ---------- Serialization (re-exports) ----------
 

@@ -49,7 +49,7 @@ export function locateTriangle(
  * Collect all vertex indices adjacent to `vIdx` in the Delaunay graph
  * by walking the triangle fan around the vertex.
  */
-function vertexNeighbors(tri: SphericalDelaunay, vIdx: number): number[] {
+export function vertexNeighbors(tri: SphericalDelaunay, vIdx: number): number[] {
   const startTri = tri.vertices[vIdx].triangle;
   const neighbors: number[] = [];
   let currentTri = startTri;
