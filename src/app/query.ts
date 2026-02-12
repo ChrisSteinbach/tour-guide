@@ -87,14 +87,28 @@ export class NearestQuery {
 }
 
 export async function loadQuery(url: string): Promise<NearestQuery> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15_000);
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    const data: TriangulationFile = await response.json();
-    const { tri, articles } = deserialize(data);
-    return new NearestQuery(tri, articles);
-  } finally {
-    clearTimeout(timeoutId);
+  const cache = typeof caches !== "undefined"
+    ? await caches.open("triangulation-data")
+    : null;
+
+  // Try cache first
+  const cached = cache ? await cache.match(url) : null;
+  let response: Response;
+
+  if (cached) {
+    response = cached;
+  } else {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15_000);
+    try {
+      response = await fetch(url, { signal: controller.signal });
+      if (cache) cache.put(url, response.clone());
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
+
+  const data: TriangulationFile = await response.json();
+  const { tri, articles } = deserialize(data);
+  return new NearestQuery(tri, articles);
 }
