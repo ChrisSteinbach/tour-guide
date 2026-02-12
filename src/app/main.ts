@@ -89,8 +89,8 @@ function useMockData(): void {
 render();
 
 loadQuery("/triangulation.json")
-  .then((q) => { query = q; })
-  .catch(() => { /* fall back to mock articles */ })
+  .then((q) => { query = q; console.log(`Loaded ${q.size} articles`); })
+  .catch((err) => { console.error("Failed to load triangulation data:", err); })
   .finally(() => { dataReady = true; render(); });
 
 if (!navigator.geolocation) {

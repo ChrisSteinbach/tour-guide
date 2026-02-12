@@ -134,8 +134,8 @@ describe("watchLocation", () => {
       expect.any(Function),
       {
         enableHighAccuracy: true,
-        timeout: 10_000,
-        maximumAge: 5_000,
+        timeout: 30_000,
+        maximumAge: 60_000,
       },
     );
   });
