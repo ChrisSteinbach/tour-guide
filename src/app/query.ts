@@ -86,29 +86,64 @@ export class NearestQuery {
   }
 }
 
+// ---------- IndexedDB helpers ----------
+
+const IDB_NAME = "tour-guide";
+const IDB_STORE = "cache";
+
+interface CachedTriangulation {
+  tri: SphericalDelaunay;
+  articles: ArticleMeta[];
+}
+
+function idbOpen(): Promise<IDBDatabase | null> {
+  return new Promise((resolve) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => resolve(null);
+  });
+}
+
+function idbGet(db: IDBDatabase, key: string): Promise<CachedTriangulation | undefined> {
+  return new Promise((resolve) => {
+    const tx = db.transaction(IDB_STORE, "readonly");
+    const req = tx.objectStore(IDB_STORE).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => resolve(undefined);
+  });
+}
+
+function idbPut(db: IDBDatabase, key: string, value: CachedTriangulation): void {
+  const tx = db.transaction(IDB_STORE, "readwrite");
+  tx.objectStore(IDB_STORE).put(value, key);
+}
+
+// ---------- Loader ----------
+
 export async function loadQuery(url: string): Promise<NearestQuery> {
-  const cache = typeof caches !== "undefined"
-    ? await caches.open("triangulation-data")
-    : null;
-
-  // Try cache first
-  const cached = cache ? await cache.match(url) : null;
-  let response: Response;
-
-  if (cached) {
-    response = cached;
-  } else {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15_000);
-    try {
-      response = await fetch(url, { signal: controller.signal });
-      if (cache) cache.put(url, response.clone());
-    } finally {
-      clearTimeout(timeoutId);
+  // Try IndexedDB for pre-deserialized data (skips JSON parse + deserialize)
+  const db = typeof indexedDB !== "undefined" ? await idbOpen() : null;
+  if (db) {
+    const cached = await idbGet(db, "triangulation");
+    if (cached) {
+      return new NearestQuery(cached.tri, cached.articles);
     }
   }
 
-  const data: TriangulationFile = await response.json();
-  const { tri, articles } = deserialize(data);
-  return new NearestQuery(tri, articles);
+  // First load: fetch from network
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    const data: TriangulationFile = await response.json();
+    const { tri, articles } = deserialize(data);
+
+    // Cache deserialized data for next load
+    if (db) idbPut(db, "triangulation", { tri, articles });
+
+    return new NearestQuery(tri, articles);
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }

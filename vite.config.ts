@@ -19,7 +19,6 @@ function serveData(): Plugin {
           const stat = statSync(filePath);
           res.setHeader("Content-Type", "application/json");
           res.setHeader("Content-Length", stat.size);
-          res.setHeader("Cache-Control", "max-age=3600");
           createReadStream(filePath).pipe(res);
         } catch {
           next();
@@ -61,15 +60,6 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg}"],
-        runtimeCaching: [
-          {
-            urlPattern: /\/triangulation\.json$/,
-            handler: "CacheFirst",
-            options: {
-              cacheName: "triangulation-data",
-            },
-          },
-        ],
       },
     }),
   ],
