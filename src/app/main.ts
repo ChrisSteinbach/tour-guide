@@ -1,6 +1,6 @@
 import "./style.css";
-import type { NearbyArticle, UserPosition, Article } from "./types";
-import type { AppState } from "./status";
+import type { NearbyArticle, UserPosition } from "./types";
+import type { LocationError } from "./location";
 import { mockPosition, mockArticles } from "./mock-data";
 import { distanceMeters } from "./format";
 import { renderNearbyList } from "./render";
@@ -12,18 +12,31 @@ import {
   renderDetailReady,
   renderDetailError,
 } from "./detail";
+import { loadQuery, type NearestQuery } from "./query";
 
-/** Brute-force nearest-neighbor: compute distances and sort ascending. */
-function findNearby(position: UserPosition, articles: Article[]): NearbyArticle[] {
-  return articles
-    .map((a) => ({ ...a, distanceM: distanceMeters(position, a) }))
-    .sort((a, b) => a.distanceM - b.distanceM);
-}
+const NEARBY_COUNT = 10;
 
 const app = document.getElementById("app")!;
 let stopWatcher: StopFn | null = null;
 let currentArticles: NearbyArticle[] = [];
 let selectedArticle: NearbyArticle | null = null;
+
+// Dual-loading state: triangulation data + GPS position
+let query: NearestQuery | null = null;
+let dataReady = false;
+let position: UserPosition | null = null;
+let locError: LocationError | null = null;
+
+/** Compute nearby articles using query module or brute-force fallback. */
+function getNearby(pos: UserPosition): NearbyArticle[] {
+  if (query) {
+    return query.findNearest(pos.lat, pos.lon, NEARBY_COUNT);
+  }
+  // Data failed to load — fall back to mock articles with brute-force
+  return mockArticles
+    .map((a) => ({ ...a, distanceM: distanceMeters(pos, a) }))
+    .sort((a, b) => a.distanceM - b.distanceM);
+}
 
 function showList(): void {
   selectedArticle = null;
@@ -44,21 +57,23 @@ async function showDetail(article: NearbyArticle): Promise<void> {
   }
 }
 
-function renderState(state: AppState): void {
-  switch (state.kind) {
-    case "loading":
-      renderLoading(app);
-      break;
-    case "error":
-      renderError(app, state.error, useMockData);
-      break;
-    case "ready": {
-      currentArticles = findNearby(state.position, mockArticles);
-      if (selectedArticle) return; // don't clobber detail view on position update
-      renderNearbyList(app, currentArticles, showDetail);
-      break;
-    }
+/** Re-render based on current data + location state. */
+function render(): void {
+  if (!dataReady) {
+    renderLoading(app, "Loading article data\u2026");
+    return;
   }
+  if (locError && !position) {
+    renderError(app, locError, useMockData);
+    return;
+  }
+  if (!position) {
+    renderLoading(app);
+    return;
+  }
+  currentArticles = getNearby(position);
+  if (selectedArticle) return; // don't clobber detail view on position update
+  renderNearbyList(app, currentArticles, showDetail);
 }
 
 function useMockData(): void {
@@ -66,16 +81,30 @@ function useMockData(): void {
     stopWatcher();
     stopWatcher = null;
   }
-  renderState({ kind: "ready", position: mockPosition });
+  position = mockPosition;
+  render();
 }
 
-// Bootstrap
+// Bootstrap: load triangulation data and watch GPS in parallel
+render();
+
+loadQuery("/triangulation.json")
+  .then((q) => { query = q; })
+  .catch(() => { /* fall back to mock articles */ })
+  .finally(() => { dataReady = true; render(); });
+
 if (!navigator.geolocation) {
   useMockData();
 } else {
-  renderState({ kind: "loading" });
   stopWatcher = watchLocation({
-    onPosition: (position) => renderState({ kind: "ready", position }),
-    onError: (error) => renderState({ kind: "error", error }),
+    onPosition: (pos) => {
+      position = pos;
+      locError = null;
+      render();
+    },
+    onError: (error) => {
+      locError = error;
+      render();
+    },
   });
 }

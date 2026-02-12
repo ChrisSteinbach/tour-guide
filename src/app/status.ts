@@ -27,13 +27,13 @@ function renderStatusScreen(
 }
 
 /** Render the loading state with a pulsing dot. */
-export function renderLoading(container: HTMLElement): void {
+export function renderLoading(container: HTMLElement, message = "Finding your location\u2026"): void {
   const dot = document.createElement("div");
   dot.className = "loading-dot";
 
   const msg = document.createElement("p");
   msg.className = "status-message";
-  msg.textContent = "Finding your location\u2026";
+  msg.textContent = message;
 
   renderStatusScreen(container, [dot, msg]);
 }
