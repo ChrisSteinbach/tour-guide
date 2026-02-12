@@ -38,6 +38,29 @@ export function renderLoading(container: HTMLElement, message = "Finding your lo
   renderStatusScreen(container, [dot, msg]);
 }
 
+/** Render the welcome/landing screen before requesting location. */
+export function renderWelcome(
+  container: HTMLElement,
+  onStart: () => void,
+  onDemo: () => void,
+): void {
+  const tagline = document.createElement("p");
+  tagline.className = "status-message";
+  tagline.textContent = "Discover Wikipedia articles about places near you.";
+
+  const startBtn = document.createElement("button");
+  startBtn.className = "status-action";
+  startBtn.textContent = "Find nearby articles";
+  startBtn.addEventListener("click", onStart);
+
+  const demoLink = document.createElement("button");
+  demoLink.className = "welcome-demo-link";
+  demoLink.textContent = "Or try with demo data";
+  demoLink.addEventListener("click", onDemo);
+
+  renderStatusScreen(container, [tagline, startBtn, demoLink]);
+}
+
 /** Render the error state with a message and fallback button. */
 export function renderError(
   container: HTMLElement,

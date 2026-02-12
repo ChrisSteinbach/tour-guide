@@ -4,7 +4,7 @@ import type { LocationError } from "./location";
 import { mockPosition, mockArticles } from "./mock-data";
 import { distanceMeters } from "./format";
 import { renderNearbyList } from "./render";
-import { renderLoading, renderError } from "./status";
+import { renderLoading, renderError, renderWelcome } from "./status";
 import { watchLocation, type StopFn } from "./location";
 import { fetchArticleSummary } from "./wiki-api";
 import {
@@ -21,9 +21,10 @@ let stopWatcher: StopFn | null = null;
 let currentArticles: NearbyArticle[] = [];
 let selectedArticle: NearbyArticle | null = null;
 
-// Dual-loading state: triangulation data + GPS position
+// State
 let query: NearestQuery | null = null;
 let dataReady = false;
+let started = false; // true once user opts in to location
 let position: UserPosition | null = null;
 let locError: LocationError | null = null;
 
@@ -32,7 +33,6 @@ function getNearby(pos: UserPosition): NearbyArticle[] {
   if (query) {
     return query.findNearest(pos.lat, pos.lon, NEARBY_COUNT);
   }
-  // Data failed to load — fall back to mock articles with brute-force
   return mockArticles
     .map((a) => ({ ...a, distanceM: distanceMeters(pos, a) }))
     .sort((a, b) => a.distanceM - b.distanceM);
@@ -72,7 +72,7 @@ function render(): void {
     return;
   }
   currentArticles = getNearby(position);
-  if (selectedArticle) return; // don't clobber detail view on position update
+  if (selectedArticle) return;
   renderNearbyList(app, currentArticles, showDetail);
 }
 
@@ -81,21 +81,19 @@ function useMockData(): void {
     stopWatcher();
     stopWatcher = null;
   }
+  started = true;
   position = mockPosition;
   render();
 }
 
-// Bootstrap: load triangulation data and watch GPS in parallel
-render();
-
-loadQuery("/triangulation.json")
-  .then((q) => { query = q; console.log(`Loaded ${q.size} articles`); })
-  .catch((err) => { console.error("Failed to load triangulation data:", err); })
-  .finally(() => { dataReady = true; render(); });
-
-if (!navigator.geolocation) {
-  useMockData();
-} else {
+/** User clicked "Find nearby articles" — start GPS and show loading states. */
+function startLocating(): void {
+  started = true;
+  render();
+  if (!navigator.geolocation) {
+    useMockData();
+    return;
+  }
   stopWatcher = watchLocation({
     onPosition: (pos) => {
       position = pos;
@@ -108,3 +106,11 @@ if (!navigator.geolocation) {
     },
   });
 }
+
+// Bootstrap: load data in the background, show welcome screen
+loadQuery("/triangulation.json")
+  .then((q) => { query = q; console.log(`Loaded ${q.size} articles`); })
+  .catch((err) => { console.error("Failed to load triangulation data:", err); })
+  .finally(() => { dataReady = true; if (started) render(); });
+
+renderWelcome(app, startLocating, useMockData);

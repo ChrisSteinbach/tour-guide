@@ -140,6 +140,15 @@ body {
   background: #1557b0;
 }
 
+.welcome-demo-link {
+  background: none;
+  border: none;
+  color: #1a73e8;
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 /* Detail view */
 
 .detail-header {
