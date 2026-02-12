@@ -1,6 +1,32 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import basicSsl from "@vitejs/plugin-basic-ssl";
 import { VitePWA } from "vite-plugin-pwa";
+import { createReadStream, statSync } from "node:fs";
+import { resolve } from "node:path";
+
+/**
+ * Serve data/triangulation.json directly, bypassing Vite's JSON module
+ * transform which is extremely slow for large data files.
+ */
+function serveData(): Plugin {
+  return {
+    name: "serve-data",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.url !== "/triangulation.json") return next();
+        try {
+          const filePath = resolve("data/triangulation.json");
+          const stat = statSync(filePath);
+          res.setHeader("Content-Type", "application/json");
+          res.setHeader("Content-Length", stat.size);
+          createReadStream(filePath).pipe(res);
+        } catch {
+          next();
+        }
+      });
+    },
+  };
+}
 
 export default defineConfig({
   root: "src/app",
@@ -12,6 +38,7 @@ export default defineConfig({
     emptyOutDir: true,
   },
   plugins: [
+    serveData(),
     basicSsl(),
     VitePWA({
       registerType: "autoUpdate",
