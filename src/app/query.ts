@@ -1,10 +1,10 @@
 // Client-side nearest-neighbor query module
 // Uses flat typed arrays to avoid GC pressure from millions of small objects.
-// On first load: fetch JSON → deserialize → flatten to typed arrays → cache in IDB.
-// On reload: read typed arrays from IDB (fast structured clone, no JSON parse).
+// On first load: fetch binary → deserialize typed arrays → cache in IDB.
+// On reload: read typed arrays from IDB (fast structured clone, no parse).
 
-import type { TriangulationFile, ArticleMeta } from "../geometry";
-import { deserialize, toCartesian } from "../geometry";
+import type { ArticleMeta, FlatDelaunay, TriangulationFile } from "../geometry";
+import { deserializeBinary, toCartesian } from "../geometry";
 
 const EARTH_RADIUS_M = 6_371_000;
 const RAD_TO_DEG = 180 / Math.PI;
@@ -17,14 +17,6 @@ export interface QueryResult {
   lat: number;
   lon: number;
   distanceM: number;
-}
-
-/** Flat typed-array representation of a spherical Delaunay triangulation. */
-export interface FlatDelaunay {
-  vertexPoints: Float64Array;    // [x0,y0,z0, x1,y1,z1, ...] — 3 per vertex
-  vertexTriangles: Uint32Array;  // incident triangle index per vertex
-  triangleVertices: Uint32Array; // [v0,v1,v2, ...] — 3 per triangle
-  triangleNeighbors: Uint32Array; // [n0,n1,n2, ...] — 3 per triangle
 }
 
 // ---------- Flat geometry functions ----------
@@ -226,10 +218,10 @@ function idbPut(db: IDBDatabase, key: string, value: CachedData): void {
 // ---------- Loader ----------
 
 export async function loadQuery(url: string): Promise<NearestQuery> {
-  // Try IDB for cached typed arrays (no JSON parse, no deserialize)
+  // Try IDB for cached typed arrays (no parse, no deserialize)
   const db = typeof indexedDB !== "undefined" ? await idbOpen() : null;
   if (db) {
-    const cached = await idbGet(db, "triangulation");
+    const cached = await idbGet(db, "triangulation-v2");
     if (cached) {
       const fd: FlatDelaunay = {
         vertexPoints: cached.vertexPoints,
@@ -242,22 +234,21 @@ export async function loadQuery(url: string): Promise<NearestQuery> {
     }
   }
 
-  // First load: fetch → parse → flatten → cache
+  // First load: fetch binary → deserialize → cache
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 60_000);
+  const timeoutId = setTimeout(() => controller.abort(), 120_000);
   try {
     const response = await fetch(url, { signal: controller.signal });
-    const data: TriangulationFile = await response.json();
-    const fd = toFlatDelaunay(data);
-    const articles: ArticleMeta[] = data.articles.map(([title, desc]) => ({ title, desc }));
+    const buf = await response.arrayBuffer();
+    const { fd, articles } = deserializeBinary(buf);
 
     if (db) {
-      idbPut(db, "triangulation", {
+      idbPut(db, "triangulation-v2", {
         vertexPoints: fd.vertexPoints,
         vertexTriangles: fd.vertexTriangles,
         triangleVertices: fd.triangleVertices,
         triangleNeighbors: fd.triangleNeighbors,
-        articles: data.articles,
+        articles: articles.map((a) => [a.title, a.desc] as [string, string]),
       });
     }
 

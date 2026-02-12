@@ -1,5 +1,6 @@
 // Serialization/deserialization for SphericalDelaunay triangulations
 // Converts the object graph to flat arrays for compact JSON storage
+// Also supports compact binary format for efficient network transfer
 
 import type { SphericalDelaunay, DelaunayVertex, DelaunayTriangle } from "./delaunay";
 import type { Point3D } from "./index";
@@ -19,6 +20,14 @@ export interface TriangulationFile {
   triangleVertices: number[]; // flat [v0,v1,v2, ...] — 3 per triangle
   triangleNeighbors: number[]; // flat [n0,n1,n2, ...] — 3 per triangle
   articles: [string, string][]; // [title, desc] per vertex
+}
+
+/** Flat typed-array representation of a spherical Delaunay triangulation. */
+export interface FlatDelaunay {
+  vertexPoints: Float64Array;    // [x0,y0,z0, x1,y1,z1, ...] — 3 per vertex
+  vertexTriangles: Uint32Array;  // incident triangle index per vertex
+  triangleVertices: Uint32Array; // [v0,v1,v2, ...] — 3 per triangle
+  triangleNeighbors: Uint32Array; // [n0,n1,n2, ...] — 3 per triangle
 }
 
 // ---------- Serialize ----------
@@ -141,4 +150,145 @@ export function deserialize(data: TriangulationFile): {
   }));
 
   return { tri: { vertices, triangles }, articles };
+}
+
+// ---------- Binary format ----------
+//
+// Header (24 bytes):
+//   [0..3]   vertexCount      uint32
+//   [4..7]   triangleCount    uint32
+//   [8..11]  articlesOffset   uint32
+//   [12..15] articlesLength   uint32
+//   [16..23] reserved         (zero-filled)
+//
+// Numeric data (4-byte aligned, typed array views):
+//   vertexPoints      Float32[V * 3]
+//   vertexTriangles   Uint32[V]
+//   triangleVertices  Uint32[T * 3]
+//   triangleNeighbors Uint32[T * 3]
+//
+// Articles section (at articlesOffset):
+//   UTF-8 JSON of [string, string][]
+
+const HEADER_SIZE = 24;
+
+/**
+ * Serialize a TriangulationFile to a compact binary ArrayBuffer.
+ * Vertices are stored as Float32 (sub-meter precision on unit sphere).
+ */
+export function serializeBinary(data: TriangulationFile): ArrayBuffer {
+  const V = data.vertexCount;
+  const T = data.triangleCount;
+
+  // Encode articles as UTF-8 JSON
+  const encoder = new TextEncoder();
+  const articlesBytes = encoder.encode(JSON.stringify(data.articles));
+
+  // Compute section sizes (all 4-byte aligned)
+  const vertexPointsSize = V * 3 * 4;  // Float32
+  const vertexTrianglesSize = V * 4;     // Uint32
+  const triangleVerticesSize = T * 3 * 4; // Uint32
+  const triangleNeighborsSize = T * 3 * 4; // Uint32
+  const numericSize = vertexPointsSize + vertexTrianglesSize + triangleVerticesSize + triangleNeighborsSize;
+
+  const articlesOffset = HEADER_SIZE + numericSize;
+  // Pad articles to 4-byte alignment
+  const articlesPadded = Math.ceil(articlesBytes.byteLength / 4) * 4;
+  const totalSize = articlesOffset + articlesPadded;
+
+  const buf = new ArrayBuffer(totalSize);
+  const view = new DataView(buf);
+
+  // Write header
+  view.setUint32(0, V, true);
+  view.setUint32(4, T, true);
+  view.setUint32(8, articlesOffset, true);
+  view.setUint32(12, articlesBytes.byteLength, true);
+  // [16..23] reserved, already zero
+
+  // Write vertex points as Float32
+  const vertexPointsArr = new Float32Array(buf, HEADER_SIZE, V * 3);
+  for (let i = 0; i < V * 3; i++) {
+    vertexPointsArr[i] = data.vertices[i];
+  }
+
+  // Write vertex triangles
+  const vertexTrianglesArr = new Uint32Array(buf, HEADER_SIZE + vertexPointsSize, V);
+  for (let i = 0; i < V; i++) {
+    vertexTrianglesArr[i] = data.vertexTriangles[i];
+  }
+
+  // Write triangle vertices
+  const triangleVerticesArr = new Uint32Array(buf, HEADER_SIZE + vertexPointsSize + vertexTrianglesSize, T * 3);
+  for (let i = 0; i < T * 3; i++) {
+    triangleVerticesArr[i] = data.triangleVertices[i];
+  }
+
+  // Write triangle neighbors
+  const triangleNeighborsArr = new Uint32Array(buf, HEADER_SIZE + vertexPointsSize + vertexTrianglesSize + triangleVerticesSize, T * 3);
+  for (let i = 0; i < T * 3; i++) {
+    triangleNeighborsArr[i] = data.triangleNeighbors[i];
+  }
+
+  // Write articles JSON bytes
+  new Uint8Array(buf, articlesOffset, articlesBytes.byteLength).set(articlesBytes);
+
+  return buf;
+}
+
+/**
+ * Deserialize a binary ArrayBuffer to FlatDelaunay + articles.
+ * Creates zero-copy typed array views for Uint32 data.
+ * Upcasts Float32 vertex data to Float64Array for the app's math.
+ */
+export function deserializeBinary(buf: ArrayBuffer): { fd: FlatDelaunay; articles: ArticleMeta[] } {
+  if (buf.byteLength < HEADER_SIZE) {
+    throw new Error(`Binary triangulation too small: ${buf.byteLength} bytes (need at least ${HEADER_SIZE})`);
+  }
+
+  const view = new DataView(buf);
+  const V = view.getUint32(0, true);
+  const T = view.getUint32(4, true);
+  const articlesOffset = view.getUint32(8, true);
+  const articlesLength = view.getUint32(12, true);
+
+  // Validate sizes
+  const vertexPointsSize = V * 3 * 4;
+  const vertexTrianglesSize = V * 4;
+  const triangleVerticesSize = T * 3 * 4;
+  const triangleNeighborsSize = T * 3 * 4;
+  const expectedNumericEnd = HEADER_SIZE + vertexPointsSize + vertexTrianglesSize + triangleVerticesSize + triangleNeighborsSize;
+
+  if (articlesOffset < expectedNumericEnd) {
+    throw new Error(`Invalid binary: articles offset ${articlesOffset} overlaps numeric data ending at ${expectedNumericEnd}`);
+  }
+  if (articlesOffset + articlesLength > buf.byteLength) {
+    throw new Error(`Invalid binary: articles section extends beyond buffer`);
+  }
+
+  // Read vertex points: Float32 → Float64
+  const f32 = new Float32Array(buf, HEADER_SIZE, V * 3);
+  const vertexPoints = new Float64Array(V * 3);
+  for (let i = 0; i < V * 3; i++) {
+    vertexPoints[i] = f32[i];
+  }
+
+  // Zero-copy typed array views for Uint32 data
+  let offset = HEADER_SIZE + vertexPointsSize;
+  const vertexTriangles = new Uint32Array(buf, offset, V);
+  offset += vertexTrianglesSize;
+  const triangleVertices = new Uint32Array(buf, offset, T * 3);
+  offset += triangleVerticesSize;
+  const triangleNeighbors = new Uint32Array(buf, offset, T * 3);
+
+  // Parse articles JSON
+  const decoder = new TextDecoder();
+  const articlesJson = decoder.decode(new Uint8Array(buf, articlesOffset, articlesLength));
+  const articleTuples: [string, string][] = JSON.parse(articlesJson);
+  const articles = articleTuples.map(([title, desc]) => ({ title, desc }));
+
+  return {
+    fd: { vertexPoints, vertexTriangles, triangleVertices, triangleNeighbors },
+    articles,
+  };
 }

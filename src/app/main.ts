@@ -109,7 +109,7 @@ function startLocating(): void {
 }
 
 // Bootstrap: load data in the background
-loadQuery("/triangulation.json")
+loadQuery("/triangulation.bin")
   .then((q) => { query = q; console.log(`Loaded ${q.size} articles`); })
   .catch((err) => { console.error("Failed to load triangulation data:", err); })
   .finally(() => { dataReady = true; if (started) render(); });

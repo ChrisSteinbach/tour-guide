@@ -2,6 +2,8 @@ import {
   convexHull,
   buildTriangulation,
   serialize,
+  serializeBinary,
+  deserializeBinary,
 } from "../geometry";
 import type { Point3D } from "../geometry";
 import { NearestQuery, loadQuery, toFlatDelaunay } from "./query";
@@ -93,20 +95,21 @@ describe("NearestQuery", () => {
 });
 
 describe("loadQuery", () => {
-  it("loads from mocked fetch", async () => {
+  it("loads from mocked fetch (binary)", async () => {
     const points = OCTAHEDRON.map((o) => o.point);
     const hull = convexHull(points);
     const tri = buildTriangulation(hull);
     const articles = OCTAHEDRON.map((o) => ({ title: o.title, desc: o.desc }));
     const data = serialize(tri, articles);
+    const binData = serializeBinary(data);
 
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () => ({
-      json: async () => data,
+      arrayBuffer: async () => binData,
     })) as unknown as typeof fetch;
 
     try {
-      const query = await loadQuery("http://test/triangulation.json");
+      const query = await loadQuery("http://test/triangulation.bin");
       expect(query.size).toBe(6);
       const results = query.findNearest(90, 0);
       expect(results[0].title).toBe("Point +Z");

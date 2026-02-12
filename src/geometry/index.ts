@@ -153,5 +153,5 @@ export { locateTriangle, findNearest, vertexNeighbors } from "./point-location";
 
 // ---------- Serialization (re-exports) ----------
 
-export { serialize, deserialize } from "./serialization";
-export type { TriangulationFile, ArticleMeta } from "./serialization";
+export { serialize, deserialize, serializeBinary, deserializeBinary } from "./serialization";
+export type { TriangulationFile, ArticleMeta, FlatDelaunay } from "./serialization";

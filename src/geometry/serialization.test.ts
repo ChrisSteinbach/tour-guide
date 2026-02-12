@@ -6,6 +6,8 @@ import {
   findNearest,
   serialize,
   deserialize,
+  serializeBinary,
+  deserializeBinary,
 } from "./index";
 import type { Point3D, SphericalDelaunay, ArticleMeta } from "./index";
 
@@ -207,5 +209,69 @@ describe("round-trip", () => {
     const result = findNearest(restored, query);
     const brute = bruteForceNearest(restored, query);
     expect(result).toBe(brute);
+  });
+});
+
+// ---------- binary serialization ----------
+
+describe("binary serialization", () => {
+  let data: ReturnType<typeof serialize>;
+  let buf: ArrayBuffer;
+
+  beforeAll(() => {
+    const { tri, articles } = buildFixture();
+    data = serialize(tri, articles);
+    buf = serializeBinary(data);
+  });
+
+  it("header counts match input", () => {
+    const view = new DataView(buf);
+    expect(view.getUint32(0, true)).toBe(data.vertexCount);
+    expect(view.getUint32(4, true)).toBe(data.triangleCount);
+  });
+
+  it("round-trips vertex positions within Float32 tolerance", () => {
+    const { fd } = deserializeBinary(buf);
+    expect(fd.vertexPoints.length).toBe(data.vertices.length);
+    for (let i = 0; i < data.vertices.length; i++) {
+      expect(fd.vertexPoints[i]).toBeCloseTo(data.vertices[i], 6);
+    }
+  });
+
+  it("round-trips integer topology exactly", () => {
+    const { fd } = deserializeBinary(buf);
+    expect(Array.from(fd.vertexTriangles)).toEqual(data.vertexTriangles);
+    expect(Array.from(fd.triangleVertices)).toEqual(data.triangleVertices);
+    expect(Array.from(fd.triangleNeighbors)).toEqual(data.triangleNeighbors);
+  });
+
+  it("round-trips article metadata exactly", () => {
+    const { articles } = deserializeBinary(buf);
+    const expected = WORLD_CITIES.map((c) => ({ title: c.title, desc: c.desc }));
+    expect(articles).toEqual(expected);
+  });
+
+  it("produces Float64Array vertex points (upcast from Float32)", () => {
+    const { fd } = deserializeBinary(buf);
+    expect(fd.vertexPoints).toBeInstanceOf(Float64Array);
+  });
+
+  it("rejects buffer too small for header", () => {
+    expect(() => deserializeBinary(new ArrayBuffer(16))).toThrow(/too small/);
+  });
+
+  it("rejects articles section extending beyond buffer", () => {
+    const badBuf = new ArrayBuffer(24);
+    const view = new DataView(badBuf);
+    view.setUint32(0, 0, true);    // V=0
+    view.setUint32(4, 0, true);    // T=0
+    view.setUint32(8, 24, true);   // articlesOffset=24
+    view.setUint32(12, 100, true); // articlesLength=100 — extends beyond
+    expect(() => deserializeBinary(badBuf)).toThrow(/extends beyond/);
+  });
+
+  it("binary is smaller than JSON", () => {
+    const jsonSize = JSON.stringify(data).length;
+    expect(buf.byteLength).toBeLessThan(jsonSize);
   });
 });

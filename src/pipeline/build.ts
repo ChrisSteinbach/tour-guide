@@ -2,7 +2,7 @@
 // Reads pre-extracted NDJSON articles, builds Delaunay triangulation, outputs static data
 // Run with: npm run pipeline [--limit=N] [--bounds=south,north,west,east]
 
-import { createReadStream, writeFileSync } from "node:fs";
+import { createReadStream, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { resolve } from "node:path";
 import {
@@ -10,8 +10,9 @@ import {
   convexHull,
   buildTriangulation,
   serialize,
+  serializeBinary,
 } from "../geometry/index.js";
-import type { ArticleMeta } from "../geometry/index.js";
+import type { ArticleMeta, TriangulationFile } from "../geometry/index.js";
 
 // ---------- Types ----------
 
@@ -31,9 +32,11 @@ interface Bounds {
 
 // ---------- CLI arg parsing ----------
 
-function parseArgs(): { limit: number; bounds: Bounds | null } {
+function parseArgs(): { limit: number; bounds: Bounds | null; json: boolean; convert: boolean } {
   let limit = Infinity;
   let bounds: Bounds | null = null;
+  let json = false;
+  let convert = false;
 
   for (const arg of process.argv.slice(2)) {
     if (arg.startsWith("--limit=")) {
@@ -47,10 +50,14 @@ function parseArgs(): { limit: number; bounds: Bounds | null } {
         throw new Error(`Invalid --bounds (expected south,north,west,east): ${arg}`);
       }
       bounds = { south: parts[0], north: parts[1], west: parts[2], east: parts[3] };
+    } else if (arg === "--json") {
+      json = true;
+    } else if (arg === "--convert") {
+      convert = true;
     }
   }
 
-  return { limit, bounds };
+  return { limit, bounds, json, convert };
 }
 
 // ---------- NDJSON reader ----------
@@ -94,15 +101,46 @@ async function readArticles(
 
 // ---------- Main ----------
 
+function writeBinary(data: TriangulationFile, outputPath: string): void {
+  const buf = serializeBinary(data);
+  writeFileSync(outputPath, Buffer.from(buf));
+  const sizeMB = (buf.byteLength / 1024 / 1024).toFixed(1);
+  console.log(`  → ${sizeMB} MB binary written to ${outputPath}`);
+}
+
+function writeJson(data: TriangulationFile, outputPath: string): void {
+  const json = JSON.stringify(data);
+  writeFileSync(outputPath, json, "utf-8");
+  const sizeMB = (Buffer.byteLength(json) / 1024 / 1024).toFixed(1);
+  console.log(`  → ${sizeMB} MB JSON written to ${outputPath}`);
+}
+
 async function main() {
-  const { limit, bounds } = parseArgs();
+  const { limit, bounds, json, convert } = parseArgs();
 
   console.log("tour-guide build pipeline\n");
   if (Number.isFinite(limit)) console.log(`  --limit=${limit}`);
   if (bounds) console.log(`  --bounds=${bounds.south},${bounds.north},${bounds.west},${bounds.east}`);
+  if (json) console.log(`  --json (JSON output)`);
+  if (convert) console.log(`  --convert (converting existing JSON to binary)`);
+
+  // --convert mode: read existing JSON → write binary
+  if (convert) {
+    const jsonPath = resolve("data/triangulation.json");
+    const binPath = resolve("data/triangulation.bin");
+    console.log(`\nReading ${jsonPath}...`);
+    const t0 = performance.now();
+    const data: TriangulationFile = JSON.parse(readFileSync(jsonPath, "utf-8"));
+    const t1 = performance.now();
+    console.log(`  → Parsed in ${((t1 - t0) / 1000).toFixed(1)}s (${data.vertexCount} vertices, ${data.triangleCount} triangles)`);
+    console.log("\nWriting binary...");
+    writeBinary(data, binPath);
+    const t2 = performance.now();
+    console.log(`\nDone in ${((t2 - t0) / 1000).toFixed(1)}s`);
+    return;
+  }
 
   const inputPath = resolve("data/articles.json");
-  const outputPath = resolve("data/triangulation.json");
 
   // Step 1: Read NDJSON articles
   console.log("\nStep 1: Reading articles from data/articles.json...");
@@ -142,18 +180,23 @@ async function main() {
   );
 
   // Step 5: Serialize and write output
-  console.log("\nStep 5: Serializing to data/triangulation.json...");
-  const t8 = performance.now();
   const meta: ArticleMeta[] = articles.map((a) => ({
     title: a.title,
     desc: a.desc,
   }));
   const data = serialize(tri, meta);
-  const json = JSON.stringify(data);
-  writeFileSync(outputPath, json, "utf-8");
+  const t8 = performance.now();
+
+  if (json) {
+    console.log("\nStep 5: Serializing to data/triangulation.json...");
+    writeJson(data, resolve("data/triangulation.json"));
+  } else {
+    console.log("\nStep 5: Serializing to data/triangulation.bin...");
+    writeBinary(data, resolve("data/triangulation.bin"));
+  }
+
   const t9 = performance.now();
-  const sizeMB = (Buffer.byteLength(json) / 1024 / 1024).toFixed(1);
-  console.log(`  → ${sizeMB} MB written in ${((t9 - t8) / 1000).toFixed(1)}s`);
+  console.log(`  Written in ${((t9 - t8) / 1000).toFixed(1)}s`);
 
   const totalTime = ((t9 - t0) / 1000).toFixed(1);
   console.log(`\nDone in ${totalTime}s`);
