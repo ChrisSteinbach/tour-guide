@@ -1,17 +1,15 @@
 // Client-side nearest-neighbor query module
-// Loads serialized triangulation data and answers k-nearest queries in O(√N) time
+// Uses flat typed arrays to avoid GC pressure from millions of small objects.
+// On first load: fetch JSON → deserialize → flatten to typed arrays → cache in IDB.
+// On reload: read typed arrays from IDB (fast structured clone, no JSON parse).
 
-import type { SphericalDelaunay, ArticleMeta, TriangulationFile } from "../geometry";
-import {
-  deserialize,
-  toCartesian,
-  toLatLon,
-  sphericalDistance,
-  findNearest,
-  vertexNeighbors,
-} from "../geometry";
+import type { TriangulationFile, ArticleMeta } from "../geometry";
+import { deserialize, toCartesian } from "../geometry";
 
 const EARTH_RADIUS_M = 6_371_000;
+const RAD_TO_DEG = 180 / Math.PI;
+
+// ---------- Types ----------
 
 export interface QueryResult {
   title: string;
@@ -21,79 +19,185 @@ export interface QueryResult {
   distanceM: number;
 }
 
+/** Flat typed-array representation of a spherical Delaunay triangulation. */
+export interface FlatDelaunay {
+  vertexPoints: Float64Array;    // [x0,y0,z0, x1,y1,z1, ...] — 3 per vertex
+  vertexTriangles: Uint32Array;  // incident triangle index per vertex
+  triangleVertices: Uint32Array; // [v0,v1,v2, ...] — 3 per triangle
+  triangleNeighbors: Uint32Array; // [n0,n1,n2, ...] — 3 per triangle
+}
+
+// ---------- Flat geometry functions ----------
+
+/** dot(cross(a, b), q) — sign test without allocating Point3D arrays. */
+function side(
+  vp: Float64Array, ai: number, bi: number,
+  qx: number, qy: number, qz: number,
+): number {
+  const a0 = vp[ai], a1 = vp[ai + 1], a2 = vp[ai + 2];
+  const b0 = vp[bi], b1 = vp[bi + 1], b2 = vp[bi + 2];
+  return (a1 * b2 - a2 * b1) * qx + (a2 * b0 - a0 * b2) * qy + (a0 * b1 - a1 * b0) * qz;
+}
+
+/** Spherical distance (radians) from vertex at offset vi to query point. */
+function dist(
+  vp: Float64Array, vi: number,
+  qx: number, qy: number, qz: number,
+): number {
+  const d = vp[vi] * qx + vp[vi + 1] * qy + vp[vi + 2] * qz;
+  return Math.acos(d < -1 ? -1 : d > 1 ? 1 : d);
+}
+
+function flatLocate(
+  fd: FlatDelaunay, qx: number, qy: number, qz: number, start?: number,
+): number {
+  let cur = start ?? fd.vertexTriangles[0];
+  const maxSteps = Math.max(fd.triangleVertices.length / 3, 100);
+  for (let step = 0; step < maxSteps; step++) {
+    const ti = cur * 3;
+    let crossed = false;
+    for (let e = 0; e < 3; e++) {
+      const ai = fd.triangleVertices[ti + e] * 3;
+      const bi = fd.triangleVertices[ti + (e + 1) % 3] * 3;
+      if (side(fd.vertexPoints, ai, bi, qx, qy, qz) < 0) {
+        cur = fd.triangleNeighbors[ti + e];
+        crossed = true;
+        break;
+      }
+    }
+    if (!crossed) return cur;
+  }
+  return cur;
+}
+
+function flatNeighbors(fd: FlatDelaunay, vIdx: number): number[] {
+  const startTri = fd.vertexTriangles[vIdx];
+  const neighbors: number[] = [];
+  let cur = startTri;
+  do {
+    const ti = cur * 3;
+    let k = 0;
+    for (let i = 0; i < 3; i++) {
+      if (fd.triangleVertices[ti + i] === vIdx) { k = i; break; }
+    }
+    neighbors.push(fd.triangleVertices[ti + (k + 1) % 3]);
+    cur = fd.triangleNeighbors[ti + k];
+  } while (cur !== startTri);
+  return neighbors;
+}
+
+function flatFindNearest(
+  fd: FlatDelaunay, qx: number, qy: number, qz: number, startTri?: number,
+): number {
+  const tIdx = flatLocate(fd, qx, qy, qz, startTri);
+  const ti = tIdx * 3;
+
+  let bestV = fd.triangleVertices[ti];
+  let bestD = dist(fd.vertexPoints, bestV * 3, qx, qy, qz);
+  for (let i = 1; i < 3; i++) {
+    const v = fd.triangleVertices[ti + i];
+    const d = dist(fd.vertexPoints, v * 3, qx, qy, qz);
+    if (d < bestD) { bestD = d; bestV = v; }
+  }
+
+  let improved = true;
+  while (improved) {
+    improved = false;
+    for (const nIdx of flatNeighbors(fd, bestV)) {
+      const d = dist(fd.vertexPoints, nIdx * 3, qx, qy, qz);
+      if (d < bestD) { bestD = d; bestV = nIdx; improved = true; break; }
+    }
+  }
+
+  return bestV;
+}
+
+// ---------- Conversion ----------
+
+/** Convert a TriangulationFile's flat number arrays to typed arrays. */
+export function toFlatDelaunay(data: TriangulationFile): FlatDelaunay {
+  return {
+    vertexPoints: Float64Array.from(data.vertices),
+    vertexTriangles: Uint32Array.from(data.vertexTriangles),
+    triangleVertices: Uint32Array.from(data.triangleVertices),
+    triangleNeighbors: Uint32Array.from(data.triangleNeighbors),
+  };
+}
+
+// ---------- NearestQuery ----------
+
 export class NearestQuery {
   readonly size: number;
-  private tri: SphericalDelaunay;
+  private fd: FlatDelaunay;
   private articles: ArticleMeta[];
   private lastTriangle: number;
 
-  constructor(tri: SphericalDelaunay, articles: ArticleMeta[]) {
-    this.tri = tri;
+  constructor(fd: FlatDelaunay, articles: ArticleMeta[]) {
+    this.fd = fd;
     this.articles = articles;
-    this.size = tri.vertices.length;
-    this.lastTriangle = tri.vertices[0].triangle;
+    this.size = fd.vertexTriangles.length;
+    this.lastTriangle = fd.vertexTriangles[0];
   }
 
   findNearest(lat: number, lon: number, k = 1): QueryResult[] {
-    const query = toCartesian({ lat, lon });
-    const nearestIdx = findNearest(this.tri, query, this.lastTriangle);
+    const [qx, qy, qz] = toCartesian({ lat, lon });
+    const nearestIdx = flatFindNearest(this.fd, qx, qy, qz, this.lastTriangle);
 
-    // Update walk cache for spatial locality
-    this.lastTriangle = this.tri.vertices[nearestIdx].triangle;
+    this.lastTriangle = this.fd.vertexTriangles[nearestIdx];
 
     if (k <= 1) {
-      return [this.buildResult(nearestIdx, query)];
+      return [this.buildResult(nearestIdx, qx, qy, qz)];
     }
 
     // BFS expansion on Delaunay vertex neighbors for k > 1
     const visited = new Set<number>([nearestIdx]);
     const frontier = [nearestIdx];
-    const candidates: { idx: number; dist: number }[] = [
-      { idx: nearestIdx, dist: sphericalDistance(this.tri.vertices[nearestIdx].point, query) },
+    const candidates: { idx: number; d: number }[] = [
+      { idx: nearestIdx, d: dist(this.fd.vertexPoints, nearestIdx * 3, qx, qy, qz) },
     ];
 
-    // Expand until we have enough candidates (~2k vertices)
     const target = Math.max(k * 2, k + 6);
     while (frontier.length > 0 && candidates.length < target) {
       const current = frontier.shift()!;
-      for (const nIdx of vertexNeighbors(this.tri, current)) {
+      for (const nIdx of flatNeighbors(this.fd, current)) {
         if (visited.has(nIdx)) continue;
         visited.add(nIdx);
         candidates.push({
           idx: nIdx,
-          dist: sphericalDistance(this.tri.vertices[nIdx].point, query),
+          d: dist(this.fd.vertexPoints, nIdx * 3, qx, qy, qz),
         });
         frontier.push(nIdx);
       }
     }
 
-    // Sort by distance and take top k
-    candidates.sort((a, b) => a.dist - b.dist);
-    return candidates.slice(0, k).map((c) => this.buildResult(c.idx, query));
+    candidates.sort((a, b) => a.d - b.d);
+    return candidates.slice(0, k).map((c) => this.buildResult(c.idx, qx, qy, qz));
   }
 
-  private buildResult(vIdx: number, query: import("../geometry").Point3D): QueryResult {
-    const article = this.articles[vIdx];
-    const pos = toLatLon(this.tri.vertices[vIdx].point);
-    const dist = sphericalDistance(this.tri.vertices[vIdx].point, query);
+  private buildResult(vIdx: number, qx: number, qy: number, qz: number): QueryResult {
+    const vi = vIdx * 3;
+    const vp = this.fd.vertexPoints;
     return {
-      title: article.title,
-      desc: article.desc,
-      lat: pos.lat,
-      lon: pos.lon,
-      distanceM: dist * EARTH_RADIUS_M,
+      title: this.articles[vIdx].title,
+      desc: this.articles[vIdx].desc,
+      lat: Math.asin(Math.max(-1, Math.min(1, vp[vi + 2]))) * RAD_TO_DEG,
+      lon: Math.atan2(vp[vi + 1], vp[vi]) * RAD_TO_DEG,
+      distanceM: dist(vp, vi, qx, qy, qz) * EARTH_RADIUS_M,
     };
   }
 }
 
-// ---------- IndexedDB helpers ----------
+// ---------- IndexedDB cache ----------
 
 const IDB_NAME = "tour-guide";
 const IDB_STORE = "cache";
 
-interface CachedTriangulation {
-  tri: SphericalDelaunay;
-  articles: ArticleMeta[];
+interface CachedData {
+  vertexPoints: Float64Array;
+  vertexTriangles: Uint32Array;
+  triangleVertices: Uint32Array;
+  triangleNeighbors: Uint32Array;
+  articles: [string, string][]; // [title, desc] tuples — lighter for structured clone than objects
 }
 
 function idbOpen(): Promise<IDBDatabase | null> {
@@ -105,7 +209,7 @@ function idbOpen(): Promise<IDBDatabase | null> {
   });
 }
 
-function idbGet(db: IDBDatabase, key: string): Promise<CachedTriangulation | undefined> {
+function idbGet(db: IDBDatabase, key: string): Promise<CachedData | undefined> {
   return new Promise((resolve) => {
     const tx = db.transaction(IDB_STORE, "readonly");
     const req = tx.objectStore(IDB_STORE).get(key);
@@ -114,7 +218,7 @@ function idbGet(db: IDBDatabase, key: string): Promise<CachedTriangulation | und
   });
 }
 
-function idbPut(db: IDBDatabase, key: string, value: CachedTriangulation): void {
+function idbPut(db: IDBDatabase, key: string, value: CachedData): void {
   const tx = db.transaction(IDB_STORE, "readwrite");
   tx.objectStore(IDB_STORE).put(value, key);
 }
@@ -122,27 +226,42 @@ function idbPut(db: IDBDatabase, key: string, value: CachedTriangulation): void 
 // ---------- Loader ----------
 
 export async function loadQuery(url: string): Promise<NearestQuery> {
-  // Try IndexedDB for pre-deserialized data (skips JSON parse + deserialize)
+  // Try IDB for cached typed arrays (no JSON parse, no deserialize)
   const db = typeof indexedDB !== "undefined" ? await idbOpen() : null;
   if (db) {
     const cached = await idbGet(db, "triangulation");
     if (cached) {
-      return new NearestQuery(cached.tri, cached.articles);
+      const fd: FlatDelaunay = {
+        vertexPoints: cached.vertexPoints,
+        vertexTriangles: cached.vertexTriangles,
+        triangleVertices: cached.triangleVertices,
+        triangleNeighbors: cached.triangleNeighbors,
+      };
+      const articles = cached.articles.map(([title, desc]) => ({ title, desc }));
+      return new NearestQuery(fd, articles);
     }
   }
 
-  // First load: fetch from network
+  // First load: fetch → parse → flatten → cache
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15_000);
+  const timeoutId = setTimeout(() => controller.abort(), 60_000);
   try {
     const response = await fetch(url, { signal: controller.signal });
     const data: TriangulationFile = await response.json();
-    const { tri, articles } = deserialize(data);
+    const fd = toFlatDelaunay(data);
+    const articles: ArticleMeta[] = data.articles.map(([title, desc]) => ({ title, desc }));
 
-    // Cache deserialized data for next load
-    if (db) idbPut(db, "triangulation", { tri, articles });
+    if (db) {
+      idbPut(db, "triangulation", {
+        vertexPoints: fd.vertexPoints,
+        vertexTriangles: fd.vertexTriangles,
+        triangleVertices: fd.triangleVertices,
+        triangleNeighbors: fd.triangleNeighbors,
+        articles: data.articles,
+      });
+    }
 
-    return new NearestQuery(tri, articles);
+    return new NearestQuery(fd, articles);
   } finally {
     clearTimeout(timeoutId);
   }
