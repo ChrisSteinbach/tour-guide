@@ -13,8 +13,11 @@ import {
   renderDetailError,
 } from "./detail";
 import { loadQuery, type NearestQuery } from "./query";
+import { DEFAULT_LANG, SUPPORTED_LANGS } from "../lang";
+import type { Lang } from "../lang";
 
 const NEARBY_COUNT = 10;
+const LANG_STORAGE_KEY = "tour-guide-lang";
 
 const app = document.getElementById("app")!;
 let stopWatcher: StopFn | null = null;
@@ -27,6 +30,19 @@ let dataReady = false;
 let started = false; // true once user opts in to location
 let position: UserPosition | null = null;
 let locError: LocationError | null = null;
+let currentLang: Lang = getStoredLang();
+
+function getStoredLang(): Lang {
+  const stored = localStorage.getItem(LANG_STORAGE_KEY);
+  if (stored && (SUPPORTED_LANGS as readonly string[]).includes(stored)) {
+    return stored as Lang;
+  }
+  return DEFAULT_LANG;
+}
+
+function storeLang(lang: Lang): void {
+  localStorage.setItem(LANG_STORAGE_KEY, lang);
+}
 
 /** Compute nearby articles using query module or brute-force fallback. */
 function getNearby(pos: UserPosition): NearbyArticle[] {
@@ -47,13 +63,13 @@ async function showDetail(article: NearbyArticle): Promise<void> {
   selectedArticle = article;
   renderDetailLoading(app, article, showList);
   try {
-    const summary = await fetchArticleSummary(article.title);
+    const summary = await fetchArticleSummary(article.title, currentLang);
     if (selectedArticle !== article) return;
     renderDetailReady(app, article, summary, showList);
   } catch (err) {
     if (selectedArticle !== article) return;
     const message = err instanceof Error ? err.message : "Unknown error";
-    renderDetailError(app, article, message, showList, () => showDetail(article));
+    renderDetailError(app, article, message, showList, () => showDetail(article), currentLang);
   }
 }
 
@@ -86,6 +102,22 @@ function useMockData(): void {
   render();
 }
 
+function loadLanguageData(lang: Lang): void {
+  dataReady = false;
+  query = null;
+  if (started) render(); // show loading state
+  loadQuery(`/triangulation-${lang}.bin`, `triangulation-v2-${lang}`)
+    .then((q) => { query = q; console.log(`Loaded ${q.size} articles (${lang})`); })
+    .catch((err) => { console.error(`Failed to load triangulation data (${lang}):`, err); })
+    .finally(() => { dataReady = true; if (started) render(); });
+}
+
+function handleLangChange(lang: Lang): void {
+  currentLang = lang;
+  storeLang(lang);
+  loadLanguageData(lang);
+}
+
 /** User clicked "Find nearby articles" — start GPS and show loading states. */
 function startLocating(): void {
   started = true;
@@ -109,14 +141,11 @@ function startLocating(): void {
 }
 
 // Bootstrap: load data in the background
-loadQuery("/triangulation.bin")
-  .then((q) => { query = q; console.log(`Loaded ${q.size} articles`); })
-  .catch((err) => { console.error("Failed to load triangulation data:", err); })
-  .finally(() => { dataReady = true; if (started) render(); });
+loadLanguageData(currentLang);
 
 // Skip welcome screen on reload if user already opted in this session
 if (sessionStorage.getItem("tour-guide-started")) {
   startLocating();
 } else {
-  renderWelcome(app, startLocating, useMockData);
+  renderWelcome(app, startLocating, useMockData, currentLang, handleLangChange);
 }

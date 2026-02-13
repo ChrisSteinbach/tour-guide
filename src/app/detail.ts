@@ -1,6 +1,7 @@
 import type { NearbyArticle } from "./types";
 import type { ArticleSummary } from "./wiki-api";
 import { formatDistance, wikipediaUrl } from "./format";
+import type { Lang } from "../lang";
 
 /** Render a detail header with back button, title, and distance. */
 function renderDetailHeader(
@@ -101,6 +102,7 @@ export function renderDetailError(
   message: string,
   onBack: () => void,
   onRetry: () => void,
+  lang: Lang = "en",
 ): void {
   container.innerHTML = "";
 
@@ -119,7 +121,7 @@ export function renderDetailError(
 
   const fallback = document.createElement("a");
   fallback.className = "detail-wiki-link";
-  fallback.href = wikipediaUrl(article.title);
+  fallback.href = wikipediaUrl(article.title, lang);
   fallback.target = "_blank";
   fallback.rel = "noopener";
   fallback.textContent = "Open on Wikipedia";

@@ -1,23 +1,13 @@
 import { defineConfig, type Plugin } from "vite";
 import basicSsl from "@vitejs/plugin-basic-ssl";
 import { VitePWA } from "vite-plugin-pwa";
-import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
-import { createHash } from "node:crypto";
+import { createReadStream, statSync } from "node:fs";
 import { createGzip } from "node:zlib";
 import { pipeline } from "node:stream";
 import { resolve } from "node:path";
 
-/** Compute MD5 revision hash for a file in data/, or null if it doesn't exist. */
-function dataRevision(filename: string): string | null {
-  const path = resolve("data", filename);
-  if (!existsSync(path)) return null;
-  return createHash("md5").update(readFileSync(path)).digest("hex");
-}
-
-const binRevision = dataRevision("triangulation.bin");
-
 /**
- * Serve data/triangulation.bin with gzip compression.
+ * Serve data/triangulation-*.bin with gzip compression.
  * Falls back to data/triangulation.json for backwards compatibility.
  */
 function serveData(): Plugin {
@@ -25,9 +15,10 @@ function serveData(): Plugin {
     name: "serve-data",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        if (req.url === "/triangulation.bin") {
+        const match = req.url?.match(/^\/(triangulation-\w+\.bin)$/);
+        if (match) {
           try {
-            const filePath = resolve("data/triangulation.bin");
+            const filePath = resolve(`data/${match[1]}`);
             statSync(filePath); // ensure file exists
             const acceptGzip = (req.headers["accept-encoding"] ?? "").includes("gzip");
             res.setHeader("Content-Type", "application/octet-stream");
@@ -94,12 +85,20 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg}"],
-        additionalManifestEntries: binRevision
-          ? [{ url: "triangulation.bin", revision: binRevision }]
-          : [],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/en\.wikipedia\.org\/api\/rest_v1\//,
+            urlPattern: /\/triangulation-\w+\.bin$/,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "triangulation-data",
+              expiration: {
+                maxEntries: 3,
+                maxAgeSeconds: 30 * 24 * 60 * 60, // 30 days
+              },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/\w+\.wikipedia\.org\/api\/rest_v1\//,
             handler: "StaleWhileRevalidate",
             options: {
               cacheName: "wikipedia-api",

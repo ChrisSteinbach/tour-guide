@@ -217,11 +217,11 @@ function idbPut(db: IDBDatabase, key: string, value: CachedData): void {
 
 // ---------- Loader ----------
 
-export async function loadQuery(url: string): Promise<NearestQuery> {
+export async function loadQuery(url: string, cacheKey = "triangulation-v2"): Promise<NearestQuery> {
   // Try IDB for cached typed arrays (no parse, no deserialize)
   const db = typeof indexedDB !== "undefined" ? await idbOpen() : null;
   if (db) {
-    const cached = await idbGet(db, "triangulation-v2");
+    const cached = await idbGet(db, cacheKey);
     if (cached) {
       const fd: FlatDelaunay = {
         vertexPoints: cached.vertexPoints,
@@ -243,7 +243,7 @@ export async function loadQuery(url: string): Promise<NearestQuery> {
     const { fd, articles } = deserializeBinary(buf);
 
     if (db) {
-      idbPut(db, "triangulation-v2", {
+      idbPut(db, cacheKey, {
         vertexPoints: fd.vertexPoints,
         vertexTriangles: fd.vertexTriangles,
         triangleVertices: fd.triangleVertices,

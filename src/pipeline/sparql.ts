@@ -19,21 +19,22 @@ export interface QueryOptions {
   limit: number;
   offset: number;
   bounds: { south: number; north: number; west: number; east: number };
+  lang?: string;
 }
 
 const WIKIDATA_ENDPOINT = "https://query.wikidata.org/sparql";
 
-export function buildQuery({ limit, offset, bounds }: QueryOptions): string {
+export function buildQuery({ limit, offset, bounds, lang = "en" }: QueryOptions): string {
   return `SELECT ?item ?itemLabel ?lat ?lon ?itemDescription ?article WHERE {
   SERVICE wikibase:box {
     ?item wdt:P625 ?coord .
     bd:serviceParam wikibase:cornerSouthWest "Point(${bounds.west} ${bounds.south})"^^geo:wktLiteral .
     bd:serviceParam wikibase:cornerNorthEast "Point(${bounds.east} ${bounds.north})"^^geo:wktLiteral .
   }
-  ?article schema:about ?item ; schema:isPartOf <https://en.wikipedia.org/> .
+  ?article schema:about ?item ; schema:isPartOf <https://${lang}.wikipedia.org/> .
   BIND(geof:latitude(?coord) AS ?lat)
   BIND(geof:longitude(?coord) AS ?lon)
-  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "${lang}". }
 } LIMIT ${limit} OFFSET ${offset}`;
 }
 

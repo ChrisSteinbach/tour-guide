@@ -1,3 +1,5 @@
+import type { Lang } from "../lang";
+
 export interface ArticleSummary {
   title: string;
   extract: string;
@@ -11,19 +13,21 @@ export interface ArticleSummary {
 const cache = new Map<string, ArticleSummary>();
 
 /** Build the Wikipedia REST API summary URL for a given article title. */
-export function summaryUrl(title: string): string {
+export function summaryUrl(title: string, lang: Lang = "en"): string {
   const slug = encodeURIComponent(title.replace(/ /g, "_"));
-  return `https://en.wikipedia.org/api/rest_v1/page/summary/${slug}`;
+  return `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${slug}`;
 }
 
 /** Fetch an article summary from the Wikipedia REST API (cached). */
 export async function fetchArticleSummary(
   title: string,
+  lang: Lang = "en",
 ): Promise<ArticleSummary> {
-  const cached = cache.get(title);
+  const cacheKey = `${lang}:${title}`;
+  const cached = cache.get(cacheKey);
   if (cached) return cached;
 
-  const res = await fetch(summaryUrl(title));
+  const res = await fetch(summaryUrl(title, lang));
   if (res.status === 404) throw new Error("Article not found");
   if (!res.ok) throw new Error(`Wikipedia API error: ${res.status}`);
 
@@ -35,10 +39,10 @@ export async function fetchArticleSummary(
     thumbnailUrl: data.thumbnail?.source ?? null,
     thumbnailWidth: data.thumbnail?.width ?? null,
     thumbnailHeight: data.thumbnail?.height ?? null,
-    pageUrl: data.content_urls?.desktop?.page ?? `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`,
+    pageUrl: data.content_urls?.desktop?.page ?? `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`,
   };
 
-  cache.set(title, summary);
+  cache.set(cacheKey, summary);
   return summary;
 }
 

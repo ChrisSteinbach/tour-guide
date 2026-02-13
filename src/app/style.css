@@ -140,6 +140,16 @@ body {
   background: #1557b0;
 }
 
+.lang-select {
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  color: #1a1a1a;
+  cursor: pointer;
+}
+
 .welcome-demo-link {
   background: none;
   border: none;

@@ -3,6 +3,8 @@
 
 import { buildQuery, executeSparql, SparqlError } from "./sparql.js";
 import type { SparqlBinding, SparqlResponse } from "./sparql.js";
+import { SUPPORTED_LANGS, DEFAULT_LANG } from "../lang.js";
+import type { Lang } from "../lang.js";
 
 // ---------- Types ----------
 
@@ -22,6 +24,7 @@ export interface ExtractOptions {
   onBatch?: (info: { batch: number; articlesInBatch: number; totalSoFar: number }) => void;
   maxRetries?: number;
   tileDelayMs?: number;
+  lang?: Lang;
 }
 
 export interface ExtractResult {
@@ -134,6 +137,7 @@ interface ExtractContext {
   fetchFn: typeof fetch;
   maxRetries: number;
   tileDelayMs: number;
+  lang: Lang;
   onBatch?: ExtractOptions["onBatch"];
   allArticles: Article[];
   leafTiles: Bounds[];
@@ -147,7 +151,7 @@ async function extractRegion(region: Bounds, ctx: ExtractContext): Promise<void>
 
     while (true) {
       ctx.batchNum++;
-      const query = buildQuery({ limit: ctx.batchSize, offset, bounds: region });
+      const query = buildQuery({ limit: ctx.batchSize, offset, bounds: region, lang: ctx.lang });
 
       let response: SparqlResponse;
       let attempt = 0;
@@ -210,6 +214,7 @@ export async function extractArticles(options: ExtractOptions = {}): Promise<Ext
     onBatch,
     maxRetries = DEFAULT_MAX_RETRIES,
     tileDelayMs = TILE_DELAY_MS,
+    lang = DEFAULT_LANG,
   } = options;
 
   const regions = explicitRegions ?? (bounds ? [bounds] : generateTiles());
@@ -220,6 +225,7 @@ export async function extractArticles(options: ExtractOptions = {}): Promise<Ext
     fetchFn,
     maxRetries,
     tileDelayMs,
+    lang,
     onBatch,
     allArticles: [],
     leafTiles: [],
@@ -255,7 +261,20 @@ async function main() {
   const fs = await import("node:fs");
   const path = await import("node:path");
   const outDir = path.resolve("data");
-  const cachePath = path.join(outDir, "tile-cache.json");
+
+  // Parse --lang
+  const langArg = args.find((a) => a.startsWith("--lang="));
+  const lang: Lang = (() => {
+    if (!langArg) return DEFAULT_LANG;
+    const val = langArg.slice("--lang=".length);
+    if (!(SUPPORTED_LANGS as readonly string[]).includes(val)) {
+      console.error(`Unsupported language "${val}". Supported: ${SUPPORTED_LANGS.join(", ")}`);
+      process.exit(1);
+    }
+    return val as Lang;
+  })();
+
+  const cachePath = path.join(outDir, `tile-cache-${lang}.json`);
 
   let bounds: ExtractOptions["bounds"];
   let regions: Bounds[] | undefined;
@@ -265,7 +284,7 @@ async function main() {
   if (boundsArg) {
     const parts = boundsArg.slice("--bounds=".length).split(",").map((s: string) => Number(s));
     if (parts.length !== 4 || parts.some(Number.isNaN)) {
-      console.error("Usage: --bounds=south,north,west,east [--no-cache]");
+      console.error("Usage: --bounds=south,north,west,east [--no-cache] [--lang=xx]");
       process.exit(1);
     }
     bounds = { south: parts[0], north: parts[1], west: parts[2], east: parts[3] };
@@ -284,6 +303,7 @@ async function main() {
     }
   }
 
+  console.log(`Language: ${lang}`);
   if (bounds) {
     console.log(`Extracting articles within bounds: ${JSON.stringify(bounds)}`);
   } else if (!regions) {
@@ -294,6 +314,7 @@ async function main() {
   const result = await extractArticles({
     bounds,
     regions,
+    lang,
     onBatch({ batch, articlesInBatch, totalSoFar }) {
       console.log(`  Batch ${batch}: ${articlesInBatch} articles (${totalSoFar} total)`);
     },
@@ -317,7 +338,7 @@ async function main() {
   // Write NDJSON output
   fs.mkdirSync(outDir, { recursive: true });
 
-  const outPath = path.join(outDir, "articles.json");
+  const outPath = path.join(outDir, `articles-${lang}.json`);
   const stream = fs.createWriteStream(outPath);
   for (const article of result.articles) {
     stream.write(JSON.stringify(article) + "\n");

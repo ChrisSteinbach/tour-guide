@@ -47,4 +47,18 @@ describe("wikipediaUrl", () => {
       "https://en.wikipedia.org/wiki/Pont_d'I%C3%A9na",
     );
   });
+
+  it("defaults to English Wikipedia", () => {
+    expect(wikipediaUrl("Test")).toContain("en.wikipedia.org");
+  });
+
+  it("uses specified language", () => {
+    expect(wikipediaUrl("Eiffel Tower", "sv")).toBe(
+      "https://sv.wikipedia.org/wiki/Eiffel_Tower",
+    );
+  });
+
+  it("supports Japanese", () => {
+    expect(wikipediaUrl("東京タワー", "ja")).toContain("ja.wikipedia.org");
+  });
 });

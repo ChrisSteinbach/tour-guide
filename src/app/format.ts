@@ -1,5 +1,6 @@
 import { haversineDistance } from "../geometry/index";
 import type { UserPosition, Article } from "./types";
+import type { Lang } from "../lang";
 
 const EARTH_RADIUS_M = 6_371_000;
 
@@ -18,6 +19,6 @@ export function formatDistance(meters: number): string {
 }
 
 /** Full Wikipedia article URL from a title. */
-export function wikipediaUrl(title: string): string {
-  return `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`;
+export function wikipediaUrl(title: string, lang: Lang = "en"): string {
+  return `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`;
 }

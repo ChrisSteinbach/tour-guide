@@ -13,6 +13,8 @@ import {
   serializeBinary,
 } from "../geometry/index.js";
 import type { ArticleMeta, TriangulationFile } from "../geometry/index.js";
+import { SUPPORTED_LANGS, DEFAULT_LANG } from "../lang.js";
+import type { Lang } from "../lang.js";
 
 // ---------- Types ----------
 
@@ -32,11 +34,12 @@ interface Bounds {
 
 // ---------- CLI arg parsing ----------
 
-function parseArgs(): { limit: number; bounds: Bounds | null; json: boolean; convert: boolean } {
+function parseArgs(): { limit: number; bounds: Bounds | null; json: boolean; convert: boolean; lang: Lang } {
   let limit = Infinity;
   let bounds: Bounds | null = null;
   let json = false;
   let convert = false;
+  let lang: Lang = DEFAULT_LANG;
 
   for (const arg of process.argv.slice(2)) {
     if (arg.startsWith("--limit=")) {
@@ -54,10 +57,16 @@ function parseArgs(): { limit: number; bounds: Bounds | null; json: boolean; con
       json = true;
     } else if (arg === "--convert") {
       convert = true;
+    } else if (arg.startsWith("--lang=")) {
+      const val = arg.slice("--lang=".length);
+      if (!(SUPPORTED_LANGS as readonly string[]).includes(val)) {
+        throw new Error(`Unsupported language "${val}". Supported: ${SUPPORTED_LANGS.join(", ")}`);
+      }
+      lang = val as Lang;
     }
   }
 
-  return { limit, bounds, json, convert };
+  return { limit, bounds, json, convert, lang };
 }
 
 // ---------- NDJSON reader ----------
@@ -116,9 +125,10 @@ function writeJson(data: TriangulationFile, outputPath: string): void {
 }
 
 async function main() {
-  const { limit, bounds, json, convert } = parseArgs();
+  const { limit, bounds, json, convert, lang } = parseArgs();
 
   console.log("tour-guide build pipeline\n");
+  console.log(`  --lang=${lang}`);
   if (Number.isFinite(limit)) console.log(`  --limit=${limit}`);
   if (bounds) console.log(`  --bounds=${bounds.south},${bounds.north},${bounds.west},${bounds.east}`);
   if (json) console.log(`  --json (JSON output)`);
@@ -126,8 +136,8 @@ async function main() {
 
   // --convert mode: read existing JSON → write binary
   if (convert) {
-    const jsonPath = resolve("data/triangulation.json");
-    const binPath = resolve("data/triangulation.bin");
+    const jsonPath = resolve(`data/triangulation-${lang}.json`);
+    const binPath = resolve(`data/triangulation-${lang}.bin`);
     console.log(`\nReading ${jsonPath}...`);
     const t0 = performance.now();
     const data: TriangulationFile = JSON.parse(readFileSync(jsonPath, "utf-8"));
@@ -140,10 +150,10 @@ async function main() {
     return;
   }
 
-  const inputPath = resolve("data/articles.json");
+  const inputPath = resolve(`data/articles-${lang}.json`);
 
   // Step 1: Read NDJSON articles
-  console.log("\nStep 1: Reading articles from data/articles.json...");
+  console.log(`\nStep 1: Reading articles from data/articles-${lang}.json...`);
   const t0 = performance.now();
   const articles = await readArticles(inputPath, limit, bounds);
   const t1 = performance.now();
@@ -188,11 +198,11 @@ async function main() {
   const t8 = performance.now();
 
   if (json) {
-    console.log("\nStep 5: Serializing to data/triangulation.json...");
-    writeJson(data, resolve("data/triangulation.json"));
+    console.log(`\nStep 5: Serializing to data/triangulation-${lang}.json...`);
+    writeJson(data, resolve(`data/triangulation-${lang}.json`));
   } else {
-    console.log("\nStep 5: Serializing to data/triangulation.bin...");
-    writeBinary(data, resolve("data/triangulation.bin"));
+    console.log(`\nStep 5: Serializing to data/triangulation-${lang}.bin...`);
+    writeBinary(data, resolve(`data/triangulation-${lang}.bin`));
   }
 
   const t9 = performance.now();

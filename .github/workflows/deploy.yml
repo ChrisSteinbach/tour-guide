@@ -36,16 +36,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p data
-          gh release download data-latest --pattern "triangulation.bin.gz" --dir data
+          gh release download data-latest --pattern "triangulation-*.bin.gz" --dir data
 
       - name: Decompress data
-        run: gzip --decompress --keep data/triangulation.bin.gz
+        run: gzip --decompress --keep data/triangulation-*.bin.gz
 
       - name: Build app
         run: npm run build
 
       - name: Copy data into build output
-        run: cp data/triangulation.bin dist/app/
+        run: cp data/triangulation-*.bin dist/app/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

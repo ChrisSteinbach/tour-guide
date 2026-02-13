@@ -31,6 +31,25 @@ describe("buildQuery", () => {
     const query = buildQuery({ limit: 100, offset: 0, bounds: defaultBounds });
     expect(query).not.toContain("ORDER BY");
   });
+
+  it("defaults to English Wikipedia when lang is not specified", () => {
+    const query = buildQuery({ limit: 100, offset: 0, bounds: defaultBounds });
+    expect(query).toContain("en.wikipedia.org");
+    expect(query).toContain('"en"');
+  });
+
+  it("uses specified language for Wikipedia and labels", () => {
+    const query = buildQuery({ limit: 100, offset: 0, bounds: defaultBounds, lang: "sv" });
+    expect(query).toContain("sv.wikipedia.org");
+    expect(query).toContain('"sv"');
+    expect(query).not.toContain("en.wikipedia.org");
+  });
+
+  it("supports Japanese", () => {
+    const query = buildQuery({ limit: 100, offset: 0, bounds: defaultBounds, lang: "ja" });
+    expect(query).toContain("ja.wikipedia.org");
+    expect(query).toContain('"ja"');
+  });
 });
 
 describe("executeSparql", () => {

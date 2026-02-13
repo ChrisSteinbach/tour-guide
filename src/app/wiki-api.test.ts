@@ -18,6 +18,16 @@ describe("summaryUrl", () => {
       "https://en.wikipedia.org/api/rest_v1/page/summary/Arc_de_Triomphe",
     );
   });
+
+  it("defaults to English Wikipedia", () => {
+    expect(summaryUrl("Test")).toContain("en.wikipedia.org");
+  });
+
+  it("uses specified language", () => {
+    expect(summaryUrl("Eiffel Tower", "sv")).toBe(
+      "https://sv.wikipedia.org/api/rest_v1/page/summary/Eiffel_Tower",
+    );
+  });
 });
 
 describe("fetchArticleSummary", () => {
@@ -129,5 +139,24 @@ describe("fetchArticleSummary", () => {
     const summary = await fetchArticleSummary("No Desc");
 
     expect(summary.description).toBe("");
+  });
+
+  it("uses specified language for API URL", async () => {
+    mockFetch({ status: 200, body: fullResponse });
+
+    await fetchArticleSummary("Test", "sv");
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("sv.wikipedia.org"),
+    );
+  });
+
+  it("caches separately per language", async () => {
+    mockFetch({ status: 200, body: fullResponse });
+
+    await fetchArticleSummary("Eiffel Tower", "en");
+    await fetchArticleSummary("Eiffel Tower", "sv");
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 });

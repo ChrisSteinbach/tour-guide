@@ -1,5 +1,7 @@
 import type { UserPosition } from "./types";
 import type { LocationError } from "./location";
+import { SUPPORTED_LANGS, LANG_NAMES } from "../lang";
+import type { Lang } from "../lang";
 
 export type AppState =
   | { kind: "loading" }
@@ -43,10 +45,26 @@ export function renderWelcome(
   container: HTMLElement,
   onStart: () => void,
   onDemo: () => void,
+  currentLang: Lang,
+  onLangChange: (lang: Lang) => void,
 ): void {
   const tagline = document.createElement("p");
   tagline.className = "status-message";
   tagline.textContent = "Discover Wikipedia articles about places near you.";
+
+  const langSelect = document.createElement("select");
+  langSelect.className = "lang-select";
+  langSelect.setAttribute("aria-label", "Wikipedia language");
+  for (const code of SUPPORTED_LANGS) {
+    const opt = document.createElement("option");
+    opt.value = code;
+    opt.textContent = LANG_NAMES[code];
+    if (code === currentLang) opt.selected = true;
+    langSelect.appendChild(opt);
+  }
+  langSelect.addEventListener("change", () => {
+    onLangChange(langSelect.value as Lang);
+  });
 
   const startBtn = document.createElement("button");
   startBtn.className = "status-action";
@@ -58,7 +76,7 @@ export function renderWelcome(
   demoLink.textContent = "Or try with demo data";
   demoLink.addEventListener("click", onDemo);
 
-  renderStatusScreen(container, [tagline, startBtn, demoLink]);
+  renderStatusScreen(container, [tagline, langSelect, startBtn, demoLink]);
 }
 
 /** Render the error state with a message and fallback button. */
