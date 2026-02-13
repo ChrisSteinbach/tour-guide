@@ -1,0 +1,45 @@
+name: Build Data Pipeline
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Monthly on the 1st at 03:00 UTC
+    - cron: "0 3 1 * *"
+
+jobs:
+  build-data:
+    runs-on: ubuntu-latest
+    # First uncached extraction can take hours; cached runs are much faster
+    timeout-minutes: 480
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Restore tile cache
+        uses: actions/cache@v4
+        with:
+          path: data/tile-cache.json
+          key: tile-cache-v1
+
+      - name: Extract articles from Wikidata
+        run: npm run extract
+
+      - name: Build triangulation data
+        run: npm run pipeline
+
+      - name: Upload data artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-data-${{ github.run_id }}
+          path: |
+            data/articles.json
+            data/triangulation.bin
+            data/tile-cache.json
+          retention-days: 90
