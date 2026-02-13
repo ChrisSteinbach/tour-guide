@@ -14,6 +14,8 @@ function dataRevision(filename: string): string | null {
   return createHash("md5").update(readFileSync(path)).digest("hex");
 }
 
+const binRevision = dataRevision("triangulation.bin");
+
 /**
  * Serve data/triangulation.bin with gzip compression.
  * Falls back to data/triangulation.json for backwards compatibility.
@@ -92,8 +94,8 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg}"],
-        additionalManifestEntries: dataRevision("triangulation.bin")
-          ? [{ url: "triangulation.bin", revision: dataRevision("triangulation.bin")! }]
+        additionalManifestEntries: binRevision
+          ? [{ url: "triangulation.bin", revision: binRevision }]
           : [],
         runtimeCaching: [
           {
