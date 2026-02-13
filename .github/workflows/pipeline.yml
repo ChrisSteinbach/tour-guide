@@ -34,12 +34,15 @@ jobs:
       - name: Build triangulation data
         run: npm run pipeline
 
+      - name: Compress data files
+        run: gzip --keep data/articles.json data/triangulation.bin
+
       - name: Upload data artifacts
         uses: actions/upload-artifact@v4
         with:
           name: pipeline-data-${{ github.run_id }}
           path: |
-            data/articles.json
-            data/triangulation.bin
+            data/articles.json.gz
+            data/triangulation.bin.gz
             data/tile-cache.json
           retention-days: 90
