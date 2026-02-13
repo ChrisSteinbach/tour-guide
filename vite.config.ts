@@ -1,10 +1,18 @@
 import { defineConfig, type Plugin } from "vite";
 import basicSsl from "@vitejs/plugin-basic-ssl";
 import { VitePWA } from "vite-plugin-pwa";
-import { createReadStream, statSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { createGzip } from "node:zlib";
 import { pipeline } from "node:stream";
 import { resolve } from "node:path";
+
+/** Compute MD5 revision hash for a file in data/, or null if it doesn't exist. */
+function dataRevision(filename: string): string | null {
+  const path = resolve("data", filename);
+  if (!existsSync(path)) return null;
+  return createHash("md5").update(readFileSync(path)).digest("hex");
+}
 
 /**
  * Serve data/triangulation.bin with gzip compression.
@@ -84,6 +92,22 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg}"],
+        additionalManifestEntries: dataRevision("triangulation.bin")
+          ? [{ url: "triangulation.bin", revision: dataRevision("triangulation.bin")! }]
+          : [],
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/en\.wikipedia\.org\/api\/rest_v1\//,
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "wikipedia-api",
+              expiration: {
+                maxEntries: 200,
+                maxAgeSeconds: 7 * 24 * 60 * 60, // 1 week
+              },
+            },
+          },
+        ],
       },
     }),
   ],
