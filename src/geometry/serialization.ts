@@ -149,7 +149,9 @@ export function deserialize(data: TriangulationFile): {
     desc,
   }));
 
-  return { tri: { vertices, triangles }, articles };
+  // After deserialization, originalIndices is identity (already compacted)
+  const originalIndices = Array.from({ length: vertexCount }, (_, i) => i);
+  return { tri: { vertices, triangles, originalIndices }, articles };
 }
 
 // ---------- Binary format ----------

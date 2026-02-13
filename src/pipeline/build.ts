@@ -190,9 +190,12 @@ async function main() {
   );
 
   // Step 5: Serialize and write output
-  const meta: ArticleMeta[] = articles.map((a) => ({
-    title: a.title,
-    desc: a.desc,
+  if (tri.originalIndices.length < articles.length) {
+    console.log(`  → ${tri.originalIndices.length} of ${articles.length} vertices on hull (interior points filtered)`);
+  }
+  const meta: ArticleMeta[] = tri.originalIndices.map((i) => ({
+    title: articles[i].title,
+    desc: articles[i].desc,
   }));
   const data = serialize(tri, meta);
   const t8 = performance.now();

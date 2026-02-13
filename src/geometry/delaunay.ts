@@ -28,6 +28,13 @@ export interface DelaunayVertex {
 export interface SphericalDelaunay {
   vertices: DelaunayVertex[];
   triangles: DelaunayTriangle[];
+  /**
+   * Original input index for each vertex.
+   * When all input points are on the hull, this is [0, 1, 2, ...].
+   * When some points are interior (e.g. regional data on a spherical cap),
+   * interior points are dropped and this maps new → original indices.
+   */
+  originalIndices: number[];
 }
 
 // ---------- Build ----------
@@ -67,10 +74,30 @@ export function buildTriangulation(hull: ConvexHull): SphericalDelaunay {
     }
   }
 
-  const vertices: DelaunayVertex[] = points.map((point, i) => ({
-    point,
-    triangle: vertexTriangle[i],
+  // Collect hull vertices (those that appear in at least one triangle)
+  // and remap indices so the output is compact with no gaps.
+  const originalIndices: number[] = [];
+  const oldToNew = new Int32Array(points.length).fill(-1);
+  for (let i = 0; i < points.length; i++) {
+    if (vertexTriangle[i] >= 0) {
+      oldToNew[i] = originalIndices.length;
+      originalIndices.push(i);
+    }
+  }
+
+  const vertices: DelaunayVertex[] = originalIndices.map((oldIdx) => ({
+    point: points[oldIdx],
+    triangle: vertexTriangle[oldIdx],
   }));
 
-  return { vertices, triangles };
+  // Remap triangle vertex indices from old → new
+  for (const tri of triangles) {
+    tri.vertices = [
+      oldToNew[tri.vertices[0]],
+      oldToNew[tri.vertices[1]],
+      oldToNew[tri.vertices[2]],
+    ];
+  }
+
+  return { vertices, triangles, originalIndices };
 }
