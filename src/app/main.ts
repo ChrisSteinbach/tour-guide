@@ -27,6 +27,7 @@ let selectedArticle: NearbyArticle | null = null;
 // State
 let query: NearestQuery | null = null;
 let dataReady = false;
+let loadGeneration = 0;
 let started = false; // true once user opts in to location
 let position: UserPosition | null = null;
 let locError: LocationError | null = null;
@@ -105,11 +106,23 @@ function useMockData(): void {
 function loadLanguageData(lang: Lang): void {
   dataReady = false;
   query = null;
+  const gen = ++loadGeneration;
   if (started) render(); // show loading state
   loadQuery(`/triangulation-${lang}.bin`, `triangulation-v2-${lang}`)
-    .then((q) => { query = q; console.log(`Loaded ${q.size} articles (${lang})`); })
-    .catch((err) => { console.error(`Failed to load triangulation data (${lang}):`, err); })
-    .finally(() => { dataReady = true; if (started) render(); });
+    .then((q) => {
+      if (gen !== loadGeneration) return; // stale load, discard
+      query = q;
+      console.log(`Loaded ${q.size} articles (${lang})`);
+    })
+    .catch((err) => {
+      if (gen !== loadGeneration) return;
+      console.error(`Failed to load triangulation data (${lang}):`, err);
+    })
+    .finally(() => {
+      if (gen !== loadGeneration) return;
+      dataReady = true;
+      if (started) render();
+    });
 }
 
 function handleLangChange(lang: Lang): void {
