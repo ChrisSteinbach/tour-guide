@@ -108,7 +108,7 @@ function loadLanguageData(lang: Lang): void {
   query = null;
   const gen = ++loadGeneration;
   if (started) render(); // show loading state
-  loadQuery(`/triangulation-${lang}.bin`, `triangulation-v2-${lang}`)
+  loadQuery(`${import.meta.env.BASE_URL}triangulation-${lang}.bin`, `triangulation-v2-${lang}`)
     .then((q) => {
       if (gen !== loadGeneration) return; // stale load, discard
       query = q;

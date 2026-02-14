@@ -55,6 +55,7 @@ function serveData(): Plugin {
 
 export default defineConfig({
   root: "src/app",
+  base: "/tour-guide/",
   server: {
     host: "0.0.0.0",
   },
