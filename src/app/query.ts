@@ -223,6 +223,7 @@ export async function loadQuery(
   onProgress?: (fraction: number) => void,
 ): Promise<NearestQuery> {
   // Try IDB for cached typed arrays (no parse, no deserialize)
+  const t0 = performance.now();
   const db = typeof indexedDB !== "undefined" ? await idbOpen() : null;
   if (db) {
     const cached = await idbGet(db, cacheKey);
@@ -234,6 +235,7 @@ export async function loadQuery(
         triangleNeighbors: cached.triangleNeighbors,
       };
       const articles = cached.articles.map(([title, desc]) => ({ title, desc }));
+      console.log(`[perf] IDB cache hit — loaded in ${(performance.now() - t0).toFixed(0)}ms`);
       return new NearestQuery(fd, articles);
     }
   }
@@ -270,7 +272,12 @@ export async function loadQuery(
       buf = await response.arrayBuffer();
     }
 
+    const tFetch = performance.now();
+    const sizeMB = (buf.byteLength / (1024 * 1024)).toFixed(1);
+    console.log(`[perf] Fetched ${sizeMB} MB in ${(tFetch - t0).toFixed(0)}ms`);
+
     const { fd, articles } = deserializeBinary(buf);
+    console.log(`[perf] Deserialized in ${(performance.now() - tFetch).toFixed(0)}ms`);
 
     if (db) {
       idbPut(db, cacheKey, {

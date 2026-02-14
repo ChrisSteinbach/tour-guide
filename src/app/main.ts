@@ -49,7 +49,10 @@ function storeLang(lang: Lang): void {
 /** Compute nearby articles using query module or brute-force fallback. */
 function getNearby(pos: UserPosition): NearbyArticle[] {
   if (query) {
-    return query.findNearest(pos.lat, pos.lon, NEARBY_COUNT);
+    const t0 = performance.now();
+    const results = query.findNearest(pos.lat, pos.lon, NEARBY_COUNT);
+    console.log(`[perf] findNearest(k=${NEARBY_COUNT}) in ${(performance.now() - t0).toFixed(2)}ms`);
+    return results;
   }
   return mockArticles
     .map((a) => ({ ...a, distanceM: distanceMeters(pos, a) }))
