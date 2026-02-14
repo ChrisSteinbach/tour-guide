@@ -38,6 +38,27 @@ body {
   margin-top: 2px;
 }
 
+.app-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.header-lang-select {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  color: #fff;
+  cursor: pointer;
+}
+
+.header-lang-select option {
+  color: #1a1a1a;
+  background: #fff;
+}
+
 .nearby-list {
   list-style: none;
   padding: 8px;

@@ -1,21 +1,47 @@
 import type { NearbyArticle } from "./types";
 import { formatDistance } from "./format";
+import { SUPPORTED_LANGS, LANG_NAMES } from "../lang";
+import type { Lang } from "../lang";
 
 /** Build and replace the contents of `container` with a nearby-articles list. */
 export function renderNearbyList(
   container: HTMLElement,
   articles: NearbyArticle[],
   onSelectArticle: (article: NearbyArticle) => void,
+  currentLang: Lang,
+  onLangChange: (lang: Lang) => void,
 ): void {
   container.innerHTML = "";
 
   const header = document.createElement("header");
   header.className = "app-header";
+
+  const row = document.createElement("div");
+  row.className = "app-header-row";
+
+  const titleGroup = document.createElement("div");
   const h1 = document.createElement("h1");
   h1.textContent = "Tour Guide";
   const subtitle = document.createElement("p");
   subtitle.textContent = `${articles.length} nearby attraction${articles.length !== 1 ? "s" : ""}`;
-  header.append(h1, subtitle);
+  titleGroup.append(h1, subtitle);
+
+  const langSelect = document.createElement("select");
+  langSelect.className = "header-lang-select";
+  langSelect.setAttribute("aria-label", "Wikipedia language");
+  for (const code of SUPPORTED_LANGS) {
+    const opt = document.createElement("option");
+    opt.value = code;
+    opt.textContent = LANG_NAMES[code];
+    if (code === currentLang) opt.selected = true;
+    langSelect.appendChild(opt);
+  }
+  langSelect.addEventListener("change", () => {
+    onLangChange(langSelect.value as Lang);
+  });
+
+  row.append(titleGroup, langSelect);
+  header.appendChild(row);
 
   const list = document.createElement("ul");
   list.className = "nearby-list";

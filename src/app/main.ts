@@ -61,7 +61,7 @@ function getNearby(pos: UserPosition): NearbyArticle[] {
 
 function showList(): void {
   selectedArticle = null;
-  renderNearbyList(app, currentArticles, showDetail);
+  renderNearbyList(app, currentArticles, showDetail, currentLang, handleLangChange);
 }
 
 async function showDetail(article: NearbyArticle): Promise<void> {
@@ -97,7 +97,7 @@ function render(): void {
   }
   currentArticles = getNearby(position);
   if (selectedArticle) return;
-  renderNearbyList(app, currentArticles, showDetail);
+  renderNearbyList(app, currentArticles, showDetail, currentLang, handleLangChange);
 }
 
 function useMockData(): void {
