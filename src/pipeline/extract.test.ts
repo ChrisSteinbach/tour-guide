@@ -29,20 +29,26 @@ describe("parseBinding", () => {
     });
   });
 
-  it("falls back to article URL when itemLabel is missing", () => {
+  it("prefers article URL title over Wikidata label", () => {
     const result = parseBinding(
       makeBinding({
-        itemLabel: { type: "literal", value: "" },
-        article: { type: "uri", value: "https://en.wikipedia.org/wiki/Statue_of_Liberty" },
+        itemLabel: { type: "literal", value: "Östuna church" },
+        article: { type: "uri", value: "https://en.wikipedia.org/wiki/%C3%96stuna_Church" },
       }),
     );
-    expect(result?.title).toBe("Statue of Liberty");
+    expect(result?.title).toBe("Östuna Church");
+  });
+
+  it("falls back to Wikidata label when article URL is missing", () => {
+    const binding = makeBinding();
+    delete (binding as unknown as Record<string, unknown>).article;
+    const result = parseBinding(binding);
+    expect(result?.title).toBe("Eiffel Tower");
   });
 
   it("decodes percent-encoded article URLs", () => {
     const result = parseBinding(
       makeBinding({
-        itemLabel: { type: "literal", value: "" },
         article: { type: "uri", value: "https://en.wikipedia.org/wiki/S%C3%A3o_Paulo" },
       }),
     );
@@ -214,7 +220,10 @@ describe("extractArticles", () => {
   }
 
   it("fetches batches until empty result", async () => {
-    const batch1 = [makeBinding(), makeBinding({ itemLabel: { type: "literal", value: "Louvre" } })];
+    const batch1 = [makeBinding(), makeBinding({
+      itemLabel: { type: "literal", value: "Louvre" },
+      article: { type: "uri", value: "https://en.wikipedia.org/wiki/Louvre" },
+    })];
     const batch2: SparqlBinding[] = [];
 
     const mockFetch = vi.fn()

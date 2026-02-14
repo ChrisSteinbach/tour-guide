@@ -41,12 +41,14 @@ export function parseBinding(binding: SparqlBinding): Article | null {
 
   if (!isValidCoordinate(lat, lon)) return null;
 
-  let title = binding.itemLabel?.value;
-  if (!title && binding.article?.value) {
-    // Fall back to extracting title from article URL
+  // Prefer the Wikipedia article URL (canonical title with correct capitalisation)
+  // over the Wikidata label, which may differ (e.g. "Östuna church" vs "Östuna Church").
+  let title: string | undefined;
+  if (binding.article?.value) {
     const urlPath = new URL(binding.article.value).pathname;
     title = decodeURIComponent(urlPath.split("/").pop() ?? "").replace(/_/g, " ");
   }
+  if (!title) title = binding.itemLabel?.value;
   if (!title) return null;
 
   const desc = binding.itemDescription?.value ?? "";
