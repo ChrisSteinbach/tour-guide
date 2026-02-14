@@ -2,8 +2,6 @@ import { defineConfig, type Plugin } from "vite";
 import basicSsl from "@vitejs/plugin-basic-ssl";
 import { VitePWA } from "vite-plugin-pwa";
 import { createReadStream, statSync } from "node:fs";
-import { createGzip } from "node:zlib";
-import { pipeline } from "node:stream";
 import { resolve } from "node:path";
 
 /**
@@ -15,21 +13,14 @@ function serveData(): Plugin {
     name: "serve-data",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        const match = req.url?.match(/^\/(triangulation-\w+\.bin)$/);
+        const match = req.url?.match(/(triangulation-\w+\.bin)$/);
         if (match) {
           try {
             const filePath = resolve(`data/${match[1]}`);
-            statSync(filePath); // ensure file exists
-            const acceptGzip = (req.headers["accept-encoding"] ?? "").includes("gzip");
+            const stat = statSync(filePath);
             res.setHeader("Content-Type", "application/octet-stream");
-            if (acceptGzip) {
-              res.setHeader("Content-Encoding", "gzip");
-              pipeline(createReadStream(filePath), createGzip(), res, () => {});
-            } else {
-              const stat = statSync(filePath);
-              res.setHeader("Content-Length", stat.size);
-              createReadStream(filePath).pipe(res);
-            }
+            res.setHeader("Content-Length", stat.size);
+            createReadStream(filePath).pipe(res);
           } catch {
             next();
           }

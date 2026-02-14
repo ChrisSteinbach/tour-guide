@@ -105,6 +105,8 @@ describe("loadQuery", () => {
 
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () => ({
+      headers: new Headers(),
+      body: null,
       arrayBuffer: async () => binData,
     })) as unknown as typeof fetch;
 

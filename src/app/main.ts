@@ -4,7 +4,7 @@ import type { LocationError } from "./location";
 import { mockPosition, mockArticles } from "./mock-data";
 import { distanceMeters } from "./format";
 import { renderNearbyList } from "./render";
-import { renderLoading, renderError, renderWelcome } from "./status";
+import { renderLoading, renderLoadingProgress, renderError, renderWelcome } from "./status";
 import { watchLocation, type StopFn } from "./location";
 import { fetchArticleSummary } from "./wiki-api";
 import {
@@ -32,6 +32,7 @@ let started = false; // true once user opts in to location
 let position: UserPosition | null = null;
 let locError: LocationError | null = null;
 let currentLang: Lang = getStoredLang();
+let downloadProgress = -1; // 0–1 or -1 for indeterminate
 
 function getStoredLang(): Lang {
   const stored = localStorage.getItem(LANG_STORAGE_KEY);
@@ -76,8 +77,11 @@ async function showDetail(article: NearbyArticle): Promise<void> {
 
 /** Re-render based on current data + location state. */
 function render(): void {
+  if (!dataReady && started) {
+    renderLoadingProgress(app, downloadProgress);
+    return;
+  }
   if (!dataReady) {
-    renderLoading(app, "Loading article data\u2026");
     return;
   }
   if (locError && !position) {
@@ -106,9 +110,26 @@ function useMockData(): void {
 function loadLanguageData(lang: Lang): void {
   dataReady = false;
   query = null;
+  downloadProgress = -1;
   const gen = ++loadGeneration;
   if (started) render(); // show loading state
-  loadQuery(`${import.meta.env.BASE_URL}triangulation-${lang}.bin`, `triangulation-v2-${lang}`)
+
+  let lastRenderTime = 0;
+  let lastRenderedPct = -2; // -2 so initial indeterminate (-1) triggers a render
+  const onProgress = (fraction: number) => {
+    if (gen !== loadGeneration) return;
+    downloadProgress = fraction;
+    if (!started) return;
+    const pct = fraction < 0 ? -1 : Math.round(fraction * 100);
+    const now = performance.now();
+    if (pct !== lastRenderedPct && now - lastRenderTime >= 100) {
+      lastRenderedPct = pct;
+      lastRenderTime = now;
+      render();
+    }
+  };
+
+  loadQuery(`${import.meta.env.BASE_URL}triangulation-${lang}.bin`, `triangulation-v2-${lang}`, onProgress)
     .then((q) => {
       if (gen !== loadGeneration) return; // stale load, discard
       query = q;

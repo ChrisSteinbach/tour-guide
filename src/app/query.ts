@@ -217,7 +217,11 @@ function idbPut(db: IDBDatabase, key: string, value: CachedData): void {
 
 // ---------- Loader ----------
 
-export async function loadQuery(url: string, cacheKey = "triangulation-v2"): Promise<NearestQuery> {
+export async function loadQuery(
+  url: string,
+  cacheKey = "triangulation-v2",
+  onProgress?: (fraction: number) => void,
+): Promise<NearestQuery> {
   // Try IDB for cached typed arrays (no parse, no deserialize)
   const db = typeof indexedDB !== "undefined" ? await idbOpen() : null;
   if (db) {
@@ -239,7 +243,33 @@ export async function loadQuery(url: string, cacheKey = "triangulation-v2"): Pro
   const timeoutId = setTimeout(() => controller.abort(), 120_000);
   try {
     const response = await fetch(url, { signal: controller.signal });
-    const buf = await response.arrayBuffer();
+
+    let buf: ArrayBuffer;
+    const total = Number(response.headers.get("Content-Length") || 0);
+    if (onProgress && response.body && total > 0) {
+      const reader = response.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let received = 0;
+      onProgress(0);
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        received += value.byteLength;
+        onProgress(received / total);
+      }
+      const result = new Uint8Array(received);
+      let offset = 0;
+      for (const chunk of chunks) {
+        result.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      buf = result.buffer;
+    } else {
+      if (onProgress) onProgress(-1); // indeterminate
+      buf = await response.arrayBuffer();
+    }
+
     const { fd, articles } = deserializeBinary(buf);
 
     if (db) {

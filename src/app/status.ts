@@ -40,6 +40,29 @@ export function renderLoading(container: HTMLElement, message = "Finding your lo
   renderStatusScreen(container, [dot, msg]);
 }
 
+/** Render the loading state with a progress bar for data download. */
+export function renderLoadingProgress(container: HTMLElement, fraction: number): void {
+  if (fraction < 0) {
+    renderLoading(container, "Loading article data\u2026");
+    return;
+  }
+
+  const pct = Math.round(fraction * 100);
+
+  const track = document.createElement("div");
+  track.className = "progress-track";
+  const fill = document.createElement("div");
+  fill.className = "progress-fill";
+  fill.style.width = `${pct}%`;
+  track.appendChild(fill);
+
+  const label = document.createElement("p");
+  label.className = "status-message";
+  label.textContent = `${pct}%`;
+
+  renderStatusScreen(container, [track, label]);
+}
+
 /** Render the welcome/landing screen before requesting location. */
 export function renderWelcome(
   container: HTMLElement,
