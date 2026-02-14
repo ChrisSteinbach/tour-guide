@@ -46,6 +46,53 @@ Output format (one JSON object per line):
 {"title":"Eiffel Tower","lat":48.8584,"lon":2.2945,"desc":"iron lattice tower in Paris, France"}
 ```
 
+### Pipeline
+
+`npm run pipeline` reads extracted NDJSON articles, builds a spherical Delaunay triangulation, and writes a compact binary file used by the app at runtime.
+
+```bash
+# Build triangulation for a language (default: en)
+npm run pipeline -- --lang=en
+
+# Output JSON instead of binary (for debugging)
+npm run pipeline -- --lang=en --json
+
+# Convert existing JSON to binary
+npm run pipeline -- --lang=en --convert
+
+# Limit articles or restrict to a bounding box (for quick local testing)
+npm run pipeline -- --lang=en --limit=10000
+npm run pipeline -- --lang=en --bounds=49.44,50.19,5.73,6.53
+```
+
+Input: `data/articles-{lang}.json` (NDJSON from extraction step)
+Output: `data/triangulation-{lang}.bin` (or `.json` with `--json`)
+
+### Data Refresh & Deployment
+
+Data is refreshed automatically via GitHub Actions (`pipeline.yml`) on a monthly schedule or manual trigger. The workflow:
+
+1. **Extract** — Queries Wikidata SPARQL for each language (en, sv, ja)
+2. **Build** — Runs the pipeline to produce `triangulation-{lang}.bin`
+3. **Publish** — Uploads compressed `.bin.gz` files to a `data-latest` GitHub Release
+
+Deployment (`deploy.yml`) runs on every push to main:
+
+1. Downloads `triangulation-*.bin.gz` from the `data-latest` release
+2. Decompresses and copies `.bin` files into `dist/app/`
+3. Deploys to GitHub Pages
+
+To refresh data manually:
+
+```bash
+# Run locally for one language
+npm run extract -- --lang=en
+npm run pipeline -- --lang=en
+
+# Or trigger the GitHub Actions workflow
+gh workflow run pipeline.yml
+```
+
 ## Architecture
 
 Three modules under `src/`, sharing a common geometry library:
