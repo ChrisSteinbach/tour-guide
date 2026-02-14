@@ -3,6 +3,17 @@ import { formatDistance } from "./format";
 import { SUPPORTED_LANGS, LANG_NAMES } from "../lang";
 import type { Lang } from "../lang";
 
+/** Update only the distance badges in an already-rendered list. */
+export function updateNearbyDistances(
+  container: HTMLElement,
+  articles: NearbyArticle[],
+): void {
+  const badges = container.querySelectorAll(".nearby-distance");
+  for (let i = 0; i < articles.length && i < badges.length; i++) {
+    badges[i].textContent = formatDistance(articles[i].distanceM);
+  }
+}
+
 /** Build and replace the contents of `container` with a nearby-articles list. */
 export function renderNearbyList(
   container: HTMLElement,

@@ -3,7 +3,7 @@ import type { NearbyArticle, UserPosition } from "./types";
 import type { LocationError } from "./location";
 import { mockPosition, mockArticles } from "./mock-data";
 import { distanceMeters } from "./format";
-import { renderNearbyList } from "./render";
+import { renderNearbyList, updateNearbyDistances } from "./render";
 import { renderLoading, renderLoadingProgress, renderError, renderWelcome } from "./status";
 import { watchLocation, type StopFn } from "./location";
 import { fetchArticleSummary } from "./wiki-api";
@@ -95,8 +95,20 @@ function render(): void {
     renderLoading(app);
     return;
   }
-  currentArticles = getNearby(position);
+  const newArticles = getNearby(position);
   if (selectedArticle) return;
+
+  // If showing the same articles, just update distances in-place
+  // to avoid nuking the DOM (which closes open dropdowns like the lang select)
+  const same =
+    newArticles.length === currentArticles.length &&
+    newArticles.every((a, i) => a.title === currentArticles[i].title);
+  currentArticles = newArticles;
+
+  if (same && app.querySelector(".nearby-list")) {
+    updateNearbyDistances(app, currentArticles);
+    return;
+  }
   renderNearbyList(app, currentArticles, showDetail, currentLang, handleLangChange);
 }
 
