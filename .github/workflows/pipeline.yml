@@ -33,8 +33,8 @@ jobs:
       - name: Restore tile cache
         uses: actions/cache@v4
         with:
-          path: data/tile-cache-${{ matrix.lang }}.json
-          key: tile-cache-v1-${{ matrix.lang }}
+          path: data/tile-cache.json
+          key: tile-cache-v2
 
       - name: Extract articles from Wikidata
         run: npm run extract -- --lang=${{ matrix.lang }}
@@ -52,7 +52,7 @@ jobs:
           path: |
             data/articles-${{ matrix.lang }}.json.gz
             data/triangulation-${{ matrix.lang }}.bin.gz
-            data/tile-cache-${{ matrix.lang }}.json
+            data/tile-cache.json
           retention-days: 90
 
   publish-release:

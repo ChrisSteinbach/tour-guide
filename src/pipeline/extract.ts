@@ -276,7 +276,10 @@ async function main() {
     return val as Lang;
   })();
 
-  const cachePath = path.join(outDir, `tile-cache-${lang}.json`);
+  // Shared tile cache — tiling is driven by geographic density, not language.
+  // English (the densest Wikipedia) produces the finest-grained tiling,
+  // which works safely for all languages. Only English writes the cache.
+  const cachePath = path.join(outDir, "tile-cache.json");
 
   let bounds: ExtractOptions["bounds"];
   let regions: Bounds[] | undefined;
@@ -324,8 +327,8 @@ async function main() {
 
   console.log(`Extraction complete: ${result.articles.length} unique articles`);
 
-  // Write tile cache for full-globe extraction
-  if (!bounds) {
+  // Write tile cache for full-globe extraction (English only — densest tiling)
+  if (!bounds && lang === DEFAULT_LANG) {
     fs.mkdirSync(outDir, { recursive: true });
     fs.writeFileSync(cachePath, JSON.stringify({
       version: 1,
