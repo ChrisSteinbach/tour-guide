@@ -6,26 +6,50 @@ set -euo pipefail
 # downloads these files instead of running extraction itself.
 #
 # Usage:
-#   ./scripts/extract-and-upload.sh          # all languages
-#   ./scripts/extract-and-upload.sh sv       # just Swedish
-#   ./scripts/extract-and-upload.sh sv ja    # Swedish and Japanese
+#   ./scripts/extract-and-upload.sh              # all languages
+#   ./scripts/extract-and-upload.sh sv           # just Swedish
+#   ./scripts/extract-and-upload.sh sv ja        # Swedish and Japanese
+#   ./scripts/extract-and-upload.sh --upload-only # skip extraction, upload existing files
 
 cd "$(git rev-parse --show-toplevel)"
 
 ALL_LANGS=(en sv ja)
-LANGS=("${@:-${ALL_LANGS[@]}}")
+UPLOAD_ONLY=false
+LANGS=()
+
+for arg in "$@"; do
+  if [[ "$arg" == "--upload-only" ]]; then
+    UPLOAD_ONLY=true
+  else
+    LANGS+=("$arg")
+  fi
+done
+
+if [[ ${#LANGS[@]} -eq 0 ]]; then
+  LANGS=("${ALL_LANGS[@]}")
+fi
+
 RELEASE_TAG="extraction-latest"
 
-echo "=== Extracting: ${LANGS[*]} ==="
+if [[ "$UPLOAD_ONLY" == false ]]; then
+  echo "=== Extracting: ${LANGS[*]} ==="
 
-for lang in "${LANGS[@]}"; do
-  echo ""
-  echo "--- Extracting: $lang ---"
-  npm run extract -- --lang="$lang"
+  for lang in "${LANGS[@]}"; do
+    echo ""
+    echo "--- Extracting: $lang ---"
+    npm run extract -- --lang="$lang"
 
-  echo "--- Compressing: articles-$lang.json ---"
-  gzip --keep --force "data/articles-$lang.json"
-done
+    echo "--- Compressing: articles-$lang.json ---"
+    gzip --keep --force "data/articles-$lang.json"
+  done
+else
+  echo "=== Skipping extraction (--upload-only) ==="
+
+  for lang in "${LANGS[@]}"; do
+    echo "--- Compressing: articles-$lang.json ---"
+    gzip --keep --force "data/articles-$lang.json"
+  done
+fi
 
 echo ""
 echo "=== Uploading to $RELEASE_TAG release ==="
