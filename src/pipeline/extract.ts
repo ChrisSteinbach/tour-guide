@@ -5,6 +5,15 @@ import { buildQuery, executeSparql, SparqlError } from "./sparql.js";
 import type { SparqlBinding, SparqlResponse } from "./sparql.js";
 import { SUPPORTED_LANGS, DEFAULT_LANG } from "../lang.js";
 import type { Lang } from "../lang.js";
+import {
+  boundsKey,
+  regionsFingerprint,
+  filterResumedRegions,
+  readCheckpoint,
+  writeCheckpoint,
+  deduplicateNdjsonFile,
+} from "./checkpoint.js";
+import type { CheckpointFile } from "./checkpoint.js";
 
 // ---------- Types ----------
 
@@ -15,6 +24,13 @@ export interface Article {
   desc: string;
 }
 
+export interface RegionCompleteInfo {
+  region: { south: number; north: number; west: number; east: number };
+  articles: Article[];
+  leafTiles: { south: number; north: number; west: number; east: number }[];
+  failedTiles: { south: number; north: number; west: number; east: number }[];
+}
+
 export interface ExtractOptions {
   endpoint?: string;
   batchSize?: number;
@@ -22,6 +38,7 @@ export interface ExtractOptions {
   regions?: { south: number; north: number; west: number; east: number }[];
   fetchFn?: typeof fetch;
   onBatch?: (info: { batch: number; articlesInBatch: number; totalSoFar: number }) => void;
+  onRegionComplete?: (info: RegionCompleteInfo) => void | Promise<void>;
   maxRetries?: number;
   tileDelayMs?: number;
   lang?: Lang;
@@ -214,6 +231,7 @@ export async function extractArticles(options: ExtractOptions = {}): Promise<Ext
     regions: explicitRegions,
     fetchFn = fetch,
     onBatch,
+    onRegionComplete,
     maxRetries = DEFAULT_MAX_RETRIES,
     tileDelayMs = TILE_DELAY_MS,
     lang = DEFAULT_LANG,
@@ -236,7 +254,21 @@ export async function extractArticles(options: ExtractOptions = {}): Promise<Ext
   };
 
   for (const region of regions) {
+    const articlesBefore = ctx.allArticles.length;
+    const leafBefore = ctx.leafTiles.length;
+    const failedBefore = ctx.failedTiles.length;
+
     await extractRegion(region, ctx);
+
+    if (onRegionComplete) {
+      await onRegionComplete({
+        region,
+        articles: ctx.allArticles.slice(articlesBefore),
+        leafTiles: ctx.leafTiles.slice(leafBefore),
+        failedTiles: ctx.failedTiles.slice(failedBefore),
+      });
+    }
+
     if (regions.length > 1 && tileDelayMs > 0) {
       await sleep(tileDelayMs);
     }
@@ -284,12 +316,13 @@ async function main() {
   let bounds: ExtractOptions["bounds"];
   let regions: Bounds[] | undefined;
   const noCache = args.includes("--no-cache");
+  const noResume = args.includes("--no-resume");
 
   const boundsArg = args.find((a) => a.startsWith("--bounds="));
   if (boundsArg) {
     const parts = boundsArg.slice("--bounds=".length).split(",").map((s: string) => Number(s));
     if (parts.length !== 4 || parts.some(Number.isNaN)) {
-      console.error("Usage: --bounds=south,north,west,east [--no-cache] [--lang=xx]");
+      console.error("Usage: --bounds=south,north,west,east [--no-cache] [--no-resume] [--lang=xx]");
       process.exit(1);
     }
     bounds = { south: parts[0], north: parts[1], west: parts[2], east: parts[3] };
@@ -308,12 +341,70 @@ async function main() {
     }
   }
 
+  // --- Checkpoint / resume logic ---
+  const useCheckpoint = !bounds && !noResume;
+  const outPath = path.join(outDir, `articles-${lang}.json`);
+  const checkpointPath = path.join(outDir, `checkpoint-${lang}.json`);
+
+  // Determine the full set of regions for fingerprinting
+  const allRegions = regions ?? generateTiles();
+
+  let checkpoint: CheckpointFile | null = null;
+  let resuming = false;
+  // Accumulated tiles from completed regions (including resumed ones)
+  let accLeafTiles: Bounds[] = [];
+  let accFailedTiles: Bounds[] = [];
+
+  if (useCheckpoint) {
+    checkpoint = await readCheckpoint(checkpointPath);
+    if (checkpoint && checkpoint.completedRegions.length > 0) {
+      // Validate fingerprint matches — if tile cache changed, start fresh
+      const currentFingerprint = regionsFingerprint(allRegions);
+      const savedFingerprint = regionsFingerprint(
+        [...checkpoint.leafTiles, ...checkpoint.failedTiles,
+         ...allRegions.filter((r) => checkpoint!.completedRegions.includes(boundsKey(r)))],
+      );
+      // Simpler check: does totalRegions match?
+      if (checkpoint.totalRegions !== allRegions.length) {
+        console.log(`Checkpoint region count mismatch (${checkpoint.totalRegions} vs ${allRegions.length}), starting fresh`);
+        checkpoint = null;
+      } else {
+        resuming = true;
+        accLeafTiles = [...checkpoint.leafTiles];
+        accFailedTiles = [...checkpoint.failedTiles];
+        const completedSet = new Set(checkpoint.completedRegions);
+        const remaining = filterResumedRegions(allRegions, completedSet);
+        console.log(`Resuming: ${checkpoint.completedRegions.length}/${allRegions.length} regions complete, ${remaining.length} remaining`);
+        regions = remaining;
+      }
+    }
+  }
+
+  // Initialize checkpoint for fresh runs
+  if (useCheckpoint && !checkpoint) {
+    checkpoint = {
+      version: 1,
+      lang,
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      totalRegions: allRegions.length,
+      completedRegions: [],
+      leafTiles: [],
+      failedTiles: [],
+    };
+  }
+
   console.log(`Language: ${lang}`);
   if (bounds) {
     console.log(`Extracting articles within bounds: ${JSON.stringify(bounds)}`);
   } else if (!regions) {
-    const tiles = generateTiles();
-    console.log(`Extracting all geotagged articles (${tiles.length} initial tiles, adaptive subdivision)...`);
+    console.log(`Extracting all geotagged articles (${allRegions.length} initial tiles, adaptive subdivision)...`);
+  }
+
+  // Open output file: append if resuming, write if fresh
+  fs.mkdirSync(outDir, { recursive: true });
+  if (!resuming && fs.existsSync(outPath)) {
+    fs.unlinkSync(outPath);
   }
 
   const result = await extractArticles({
@@ -323,39 +414,93 @@ async function main() {
     onBatch({ batch, articlesInBatch, totalSoFar }) {
       console.log(`  Batch ${batch}: ${articlesInBatch} articles (${totalSoFar} total)`);
     },
+    onRegionComplete: useCheckpoint
+      ? async ({ region, articles, leafTiles, failedTiles }) => {
+          // Append articles to NDJSON incrementally
+          if (articles.length > 0) {
+            const lines = articles.map((a) => JSON.stringify(a)).join("\n") + "\n";
+            fs.appendFileSync(outPath, lines);
+          }
+
+          // Update accumulated tiles
+          accLeafTiles.push(...leafTiles);
+          accFailedTiles.push(...failedTiles);
+
+          // Update checkpoint
+          checkpoint!.completedRegions.push(boundsKey(region));
+          checkpoint!.leafTiles = accLeafTiles;
+          checkpoint!.failedTiles = accFailedTiles;
+          checkpoint!.updatedAt = new Date().toISOString();
+          await writeCheckpoint(checkpointPath, checkpoint!);
+        }
+      : undefined,
   });
 
-  console.log(`Extraction complete: ${result.articles.length} unique articles`);
+  if (useCheckpoint) {
+    // Deduplicate the incrementally-written NDJSON (cross-region duplicates)
+    const { total, unique } = await deduplicateNdjsonFile(outPath);
+    if (total !== unique) {
+      console.log(`Deduplicated: ${total} → ${unique} articles`);
+    }
 
-  // Write tile cache for full-globe extraction (English only — densest tiling)
-  if (!bounds && lang === DEFAULT_LANG) {
-    fs.mkdirSync(outDir, { recursive: true });
-    fs.writeFileSync(cachePath, JSON.stringify({
-      version: 1,
-      createdAt: new Date().toISOString(),
-      articleCount: result.articles.length,
-      tiles: result.leafTiles,
-      failedTiles: result.failedTiles,
-    }));
-    console.log(`Saved tile cache: ${result.leafTiles.length} tiles + ${result.failedTiles.length} failed → ${cachePath}`);
+    // Clean up checkpoint — extraction is complete
+    try {
+      fs.unlinkSync(checkpointPath);
+    } catch {
+      // Already removed or never created
+    }
+
+    // Merge tile results: accumulated from checkpoint + new from this run
+    const finalLeafTiles = [...accLeafTiles, ...result.leafTiles.filter(
+      (t) => !accLeafTiles.some((a) => boundsKey(a) === boundsKey(t)),
+    )];
+    const finalFailedTiles = [...accFailedTiles, ...result.failedTiles.filter(
+      (t) => !accFailedTiles.some((a) => boundsKey(a) === boundsKey(t)),
+    )];
+
+    // Write tile cache for full-globe extraction (English only — densest tiling)
+    if (lang === DEFAULT_LANG) {
+      fs.writeFileSync(cachePath, JSON.stringify({
+        version: 1,
+        createdAt: new Date().toISOString(),
+        articleCount: unique,
+        tiles: finalLeafTiles,
+        failedTiles: finalFailedTiles,
+      }));
+      console.log(`Saved tile cache: ${finalLeafTiles.length} tiles + ${finalFailedTiles.length} failed → ${cachePath}`);
+    }
+
+    console.log(`Wrote ${unique} unique articles to ${outPath}`);
+  } else {
+    console.log(`Extraction complete: ${result.articles.length} unique articles`);
+
+    // Write tile cache for full-globe extraction (English only — densest tiling)
+    if (!bounds && lang === DEFAULT_LANG) {
+      fs.mkdirSync(outDir, { recursive: true });
+      fs.writeFileSync(cachePath, JSON.stringify({
+        version: 1,
+        createdAt: new Date().toISOString(),
+        articleCount: result.articles.length,
+        tiles: result.leafTiles,
+        failedTiles: result.failedTiles,
+      }));
+      console.log(`Saved tile cache: ${result.leafTiles.length} tiles + ${result.failedTiles.length} failed → ${cachePath}`);
+    }
+
+    // Write NDJSON output (non-checkpoint path: --bounds runs)
+    const stream = fs.createWriteStream(outPath);
+    for (const article of result.articles) {
+      stream.write(JSON.stringify(article) + "\n");
+    }
+    stream.end();
+
+    await new Promise<void>((resolve, reject) => {
+      stream.on("finish", resolve);
+      stream.on("error", reject);
+    });
+
+    console.log(`Wrote ${result.articles.length} articles to ${outPath}`);
   }
-
-  // Write NDJSON output
-  fs.mkdirSync(outDir, { recursive: true });
-
-  const outPath = path.join(outDir, `articles-${lang}.json`);
-  const stream = fs.createWriteStream(outPath);
-  for (const article of result.articles) {
-    stream.write(JSON.stringify(article) + "\n");
-  }
-  stream.end();
-
-  await new Promise<void>((resolve, reject) => {
-    stream.on("finish", resolve);
-    stream.on("error", reject);
-  });
-
-  console.log(`Wrote ${result.articles.length} articles to ${outPath}`);
 }
 
 // Run when executed directly

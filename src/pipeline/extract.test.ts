@@ -455,4 +455,76 @@ describe("extractArticles", () => {
     // 18 lat bands × 36 lon bands = 648 tiles, each gets one query returning empty
     expect(mockFetch).toHaveBeenCalledTimes(648);
   });
+
+  it("calls onRegionComplete after each top-level region", async () => {
+    const region1 = { south: 48, north: 49, west: 2, east: 3 };
+    const region2 = { south: 40, north: 41, west: -74, east: -73 };
+    const binding1 = makeBinding();
+    const binding2 = makeBinding({
+      itemLabel: { type: "literal", value: "Statue of Liberty" },
+      article: { type: "uri", value: "https://en.wikipedia.org/wiki/Statue_of_Liberty" },
+      lat: { type: "literal", value: "40.6892" },
+      lon: { type: "literal", value: "-74.0445" },
+    });
+
+    const mockFetch = vi.fn()
+      .mockResolvedValueOnce(mockOk(makeSparqlResponse([binding1])))
+      .mockResolvedValueOnce(mockOk(makeSparqlResponse([binding2])));
+
+    const calls: { region: typeof region1; articles: Article[]; leafTiles: typeof region1[]; failedTiles: typeof region1[] }[] = [];
+
+    await extractArticles({
+      endpoint: "https://example.org/sparql",
+      batchSize: 100,
+      regions: [region1, region2],
+      fetchFn: mockFetch,
+      tileDelayMs: 0,
+      onRegionComplete: (info) => { calls.push(info); },
+    });
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0].region).toEqual(region1);
+    expect(calls[0].articles).toHaveLength(1);
+    expect(calls[0].articles[0].title).toBe("Eiffel Tower");
+    expect(calls[0].leafTiles).toHaveLength(1);
+    expect(calls[1].region).toEqual(region2);
+    expect(calls[1].articles).toHaveLength(1);
+    expect(calls[1].articles[0].title).toBe("Statue of Liberty");
+  });
+
+  it("does not break existing behavior when onRegionComplete is not provided", async () => {
+    const mockFetch = vi.fn()
+      .mockResolvedValueOnce(mockOk(makeSparqlResponse([makeBinding()])));
+
+    const result = await extractArticles({
+      endpoint: "https://example.org/sparql",
+      batchSize: 100,
+      bounds: testBounds,
+      fetchFn: mockFetch,
+    });
+
+    expect(result.articles).toHaveLength(1);
+    expect(result.leafTiles).toHaveLength(1);
+  });
+
+  it("includes failed tiles in onRegionComplete callback", async () => {
+    const tinyBounds = { south: 48, north: 48.5, west: 2, east: 2.5 };
+
+    const mockFetch = vi.fn().mockResolvedValue(mock500());
+
+    const calls: { failedTiles: typeof tinyBounds[] }[] = [];
+
+    await extractArticles({
+      endpoint: "https://example.org/sparql",
+      batchSize: 100,
+      regions: [tinyBounds],
+      fetchFn: mockFetch,
+      maxRetries: 1,
+      tileDelayMs: 0,
+      onRegionComplete: (info) => { calls.push({ failedTiles: info.failedTiles }); },
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].failedTiles).toHaveLength(4);
+  });
 });

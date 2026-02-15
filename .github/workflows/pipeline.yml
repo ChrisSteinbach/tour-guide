@@ -35,6 +35,15 @@ jobs:
 
       - run: npm ci
 
+      - name: Restore extraction checkpoint
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/checkpoint-${{ matrix.lang }}.json
+            data/articles-${{ matrix.lang }}.json
+          key: extract-${{ matrix.lang }}-${{ github.run_id }}
+          restore-keys: extract-${{ matrix.lang }}-
+
       - name: Extract articles from Wikidata
         run: npm run extract -- --lang=${{ matrix.lang }}
 
