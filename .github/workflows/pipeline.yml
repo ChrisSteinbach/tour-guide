@@ -2,6 +2,11 @@ name: Build Data Pipeline
 
 on:
   workflow_dispatch:
+    inputs:
+      langs:
+        description: 'Languages to process (JSON array, e.g. ["sv"])'
+        default: '["en", "sv", "ja"]'
+        type: string
   schedule:
     # Monthly on the 1st at 03:00 UTC
     - cron: "0 3 1 * *"
@@ -17,7 +22,7 @@ jobs:
 
     strategy:
       matrix:
-        lang: [en, sv, ja]
+        lang: ${{ fromJSON(inputs.langs || '["en", "sv", "ja"]') }}
       max-parallel: 1
 
     steps:
@@ -68,9 +73,16 @@ jobs:
           path: artifacts
           pattern: pipeline-data-*
 
-      - name: Collect triangulation files
+      - name: Download existing release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p data
+          gh release download data-latest --dir data --pattern 'triangulation-*.bin.gz' || true
+
+      - name: Merge with newly built files
+        run: |
+          # Overwrite only the languages that were rebuilt
           cp artifacts/*/data/triangulation-*.bin.gz data/
 
       - name: Publish data release
