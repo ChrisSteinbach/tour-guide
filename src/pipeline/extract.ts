@@ -308,10 +308,7 @@ async function main() {
     return val as Lang;
   })();
 
-  // Shared tile cache — tiling is driven by geographic density, not language.
-  // English (the densest Wikipedia) produces the finest-grained tiling,
-  // which works safely for all languages. Only English writes the cache.
-  const cachePath = path.join(outDir, "tile-cache.json");
+  const cachePath = path.join(outDir, `tile-cache-${lang}.json`);
 
   let bounds: ExtractOptions["bounds"];
   let regions: Bounds[] | undefined;
@@ -458,24 +455,22 @@ async function main() {
       (t) => !accFailedTiles.some((a) => boundsKey(a) === boundsKey(t)),
     )];
 
-    // Write tile cache for full-globe extraction (English only — densest tiling)
-    if (lang === DEFAULT_LANG) {
-      fs.writeFileSync(cachePath, JSON.stringify({
-        version: 1,
-        createdAt: new Date().toISOString(),
-        articleCount: unique,
-        tiles: finalLeafTiles,
-        failedTiles: finalFailedTiles,
-      }));
-      console.log(`Saved tile cache: ${finalLeafTiles.length} tiles + ${finalFailedTiles.length} failed → ${cachePath}`);
-    }
+    // Write tile cache for full-globe extraction
+    fs.writeFileSync(cachePath, JSON.stringify({
+      version: 1,
+      createdAt: new Date().toISOString(),
+      articleCount: unique,
+      tiles: finalLeafTiles,
+      failedTiles: finalFailedTiles,
+    }));
+    console.log(`Saved tile cache: ${finalLeafTiles.length} tiles + ${finalFailedTiles.length} failed → ${cachePath}`);
 
     console.log(`Wrote ${unique} unique articles to ${outPath}`);
   } else {
     console.log(`Extraction complete: ${result.articles.length} unique articles`);
 
-    // Write tile cache for full-globe extraction (English only — densest tiling)
-    if (!bounds && lang === DEFAULT_LANG) {
+    // Write tile cache for full-globe extraction
+    if (!bounds) {
       fs.mkdirSync(outDir, { recursive: true });
       fs.writeFileSync(cachePath, JSON.stringify({
         version: 1,
