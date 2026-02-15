@@ -78,7 +78,7 @@ jobs:
       - name: Merge with newly built files
         run: |
           # Overwrite only the languages that were rebuilt
-          cp artifacts/*/data/triangulation-*.bin.gz data/
+          find artifacts -name 'triangulation-*.bin.gz' -exec cp {} data/ \;
 
       - name: Publish data release
         env:
