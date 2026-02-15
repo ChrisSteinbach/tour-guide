@@ -17,13 +17,11 @@ permissions:
 jobs:
   build-data:
     runs-on: ubuntu-latest
-    # First uncached extraction can take hours; cached runs are much faster
-    timeout-minutes: 480
+    timeout-minutes: 30
 
     strategy:
       matrix:
         lang: ${{ fromJSON(inputs.langs || '["en", "sv", "ja"]') }}
-      max-parallel: 1
 
     steps:
       - uses: actions/checkout@v4
@@ -35,21 +33,25 @@ jobs:
 
       - run: npm ci
 
-      - name: Extract articles from Wikidata
-        run: npm run extract -- --lang=${{ matrix.lang }}
+      - name: Download pre-extracted articles
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data
+          gh release download extraction-latest --dir data --pattern "articles-${{ matrix.lang }}.json.gz"
+          gunzip data/articles-${{ matrix.lang }}.json.gz
 
       - name: Build triangulation data
         run: npm run pipeline -- --lang=${{ matrix.lang }}
 
       - name: Compress data files
-        run: gzip --keep data/articles-${{ matrix.lang }}.json data/triangulation-${{ matrix.lang }}.bin
+        run: gzip --keep data/triangulation-${{ matrix.lang }}.bin
 
       - name: Upload data artifacts
         uses: actions/upload-artifact@v4
         with:
           name: pipeline-data-${{ matrix.lang }}-${{ github.run_id }}
           path: |
-            data/articles-${{ matrix.lang }}.json.gz
             data/triangulation-${{ matrix.lang }}.bin.gz
           retention-days: 90
 

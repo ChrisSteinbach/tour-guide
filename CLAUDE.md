@@ -70,28 +70,42 @@ Output: `data/triangulation-{lang}.bin` (or `.json` with `--json`)
 
 ### Data Refresh & Deployment
 
-Data is refreshed automatically via GitHub Actions (`pipeline.yml`) on a monthly schedule or manual trigger. The workflow:
+Extraction runs locally (no timeout constraints), and GitHub Actions handles triangulation + publishing.
 
-1. **Extract** — Queries Wikidata SPARQL for each language (en, sv, ja)
-2. **Build** — Runs the pipeline to produce `triangulation-{lang}.bin`
-3. **Publish** — Uploads compressed `.bin.gz` files to a `data-latest` GitHub Release
+**Local extraction** (run on your server):
 
-Deployment (`deploy.yml`) runs on every push to main:
+```bash
+# Extract and upload all languages
+./scripts/extract-and-upload.sh
+
+# Just one language
+./scripts/extract-and-upload.sh sv
+
+# Multiple languages
+./scripts/extract-and-upload.sh sv ja
+```
+
+This extracts articles via Wikidata SPARQL, compresses the output, and uploads to the `extraction-latest` GitHub release.
+
+**Build pipeline** (GitHub Actions `pipeline.yml`):
+
+1. Downloads pre-extracted `articles-{lang}.json.gz` from `extraction-latest` release
+2. Builds `triangulation-{lang}.bin` (runs in parallel across languages)
+3. Publishes compressed `.bin.gz` files to `data-latest` GitHub release
+
+```bash
+# Trigger pipeline for all languages
+gh workflow run pipeline.yml
+
+# Just one language
+gh workflow run pipeline.yml -f langs='["sv"]'
+```
+
+**Deployment** (`deploy.yml`) runs on every push to main:
 
 1. Downloads `triangulation-*.bin.gz` from the `data-latest` release
 2. Decompresses and copies `.bin` files into `dist/app/`
 3. Deploys to GitHub Pages
-
-To refresh data manually:
-
-```bash
-# Run locally for one language
-npm run extract -- --lang=en
-npm run pipeline -- --lang=en
-
-# Or trigger the GitHub Actions workflow
-gh workflow run pipeline.yml
-```
 
 ## Architecture
 
