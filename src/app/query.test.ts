@@ -4,6 +4,7 @@ import {
   serialize,
   serializeBinary,
   deserializeBinary,
+  toCartesian,
 } from "../geometry";
 import type { Point3D } from "../geometry";
 import { NearestQuery, loadQuery, toFlatDelaunay } from "./query";
@@ -91,6 +92,47 @@ describe("NearestQuery", () => {
     const results = nq.findNearest(0, 0, 10);
     expect(results.length).toBeLessThanOrEqual(6);
     expect(results.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("NearestQuery (Float32 round-trip)", () => {
+  /**
+   * Regression test: the binary format stores vertex coordinates as Float32.
+   * With dot-product distance (acos(dot)), nearby points (<~4 km) in the
+   * same region would all collapse to 0 m because Float32 rounding error
+   * exceeds (1 − dot).  The chord-length formula avoids this.
+   */
+  it("distinguishes nearby points after Float32 quantisation", () => {
+    // Three articles within ~1 km of each other in Stockholm
+    const nearby = [
+      { lat: 59.308, lon: 18.028, title: "A", desc: "" },
+      { lat: 59.315, lon: 18.039, title: "B", desc: "" },
+      { lat: 59.315, lon: 18.019, title: "C", desc: "" },
+      // Need ≥4 points for convex hull — add antipodal point
+      { lat: -59.31, lon: -161.97, title: "Far", desc: "" },
+    ];
+
+    const points = nearby.map((a) => toCartesian({ lat: a.lat, lon: a.lon }));
+    const hull = convexHull(points);
+    const tri = buildTriangulation(hull);
+    const articles = tri.originalIndices.map((i) => ({
+      title: nearby[i].title,
+      desc: nearby[i].desc,
+    }));
+    const data = serialize(tri, articles);
+
+    // Round-trip through binary (Float32) format
+    const bin = serializeBinary(data);
+    const { fd, articles: metas } = deserializeBinary(bin);
+    const query = new NearestQuery(fd, metas);
+
+    // Query from point A's location — should find A as nearest, not B or C
+    const results = query.findNearest(59.308, 18.028, 3);
+    expect(results[0].title).toBe("A");
+    expect(results[0].distanceM).toBeLessThan(10); // essentially 0 after quantisation
+    // B and C should be ~900–1000 m away, definitely not 0
+    expect(results[1].distanceM).toBeGreaterThan(500);
+    expect(results[2].distanceM).toBeGreaterThan(500);
   });
 });
 

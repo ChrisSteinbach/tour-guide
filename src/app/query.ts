@@ -31,13 +31,25 @@ function side(
   return (a1 * b2 - a2 * b1) * qx + (a2 * b0 - a0 * b2) * qy + (a0 * b1 - a1 * b0) * qz;
 }
 
-/** Spherical distance (radians) from vertex at offset vi to query point. */
+/**
+ * Spherical distance (radians) from vertex at offset vi to query point.
+ *
+ * Uses chord length rather than dot-product + acos to avoid catastrophic
+ * cancellation when vertex coordinates are stored as Float32 (the binary
+ * format).  For nearby points the dot product is ≈1 and (1 − dot) is
+ * smaller than the Float32 rounding error, so acos(clamp(dot)) collapses
+ * to 0.  Chord length computes differences instead, which stay well above
+ * the noise floor.
+ */
 function dist(
   vp: Float64Array, vi: number,
   qx: number, qy: number, qz: number,
 ): number {
-  const d = vp[vi] * qx + vp[vi + 1] * qy + vp[vi + 2] * qz;
-  return Math.acos(d < -1 ? -1 : d > 1 ? 1 : d);
+  const dx = vp[vi] - qx;
+  const dy = vp[vi + 1] - qy;
+  const dz = vp[vi + 2] - qz;
+  const chord = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  return 2 * Math.asin(chord < 2 ? chord / 2 : 1);
 }
 
 function flatLocate(
