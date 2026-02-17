@@ -14,7 +14,7 @@ npm run test:watch    # Run tests in watch mode
 npm run dev           # Start Vite dev server (binds 0.0.0.0 for phone testing)
 npm run build         # Production build → dist/app/
 npm run pipeline      # Run offline build pipeline (tsx src/pipeline/build.ts)
-npm run extract       # Extract geotagged articles from Wikidata → data/articles.json
+npm run extract       # Extract geotagged articles from Wikipedia dumps → data/articles-{lang}.json
 npx tsc               # Type-check without emitting
 ```
 
@@ -22,24 +22,29 @@ Run a single test file: `npx vitest run src/geometry/index.test.ts`
 
 ### Extraction
 
-`npm run extract` queries the Wikidata SPARQL endpoint for all English Wikipedia articles with geographic coordinates and writes NDJSON to `data/articles.json`. A full global run fetches ~1.2M articles using adaptive tile subdivision.
+`npm run extract` downloads Wikipedia SQL dumps (`geo_tags`, `page`, `page_props`) and joins them to produce the full set of geotagged articles. This captures articles with coordinates via `{{coord}}` templates that may not be mirrored to Wikidata. Descriptions are batch-fetched from the Wikidata API using Q-IDs from page_props.
 
-The extractor tiles the globe into 10° cells, then recursively subdivides failed tiles into quadrants (down to 0.3° minimum) to handle dense regions like Western Europe. A tile cache (`data/tile-cache.json`) saves the learned tile sizes so subsequent runs skip the retry/subdivision overhead.
+Dump files are downloaded to `data/dumps/` and cached across runs. A full English extraction fetches ~1.2M articles.
 
 ```bash
-# Full extraction (first run: ~7h with retries; cached: much faster)
-npm run extract
+# Full extraction
+npm run extract -- --lang=en
 
-# Skip cache and force fresh tiling
-npm run extract -- --no-cache
+# Skip download (reuse existing dumps)
+npm run extract -- --lang=sv --skip-download
 
-# Geographic subset (cache not used)
-npm run extract -- --bounds=49.44,50.19,5.73,6.53
+# Skip descriptions (faster, for testing)
+npm run extract -- --lang=sv --no-desc
+
+# Geographic subset
+npm run extract -- --lang=en --bounds=49.44,50.19,5.73,6.53
 
 # Inspect output
-head -3 data/articles.json
-wc -l data/articles.json
+head -3 data/articles-en.json
+wc -l data/articles-en.json
 ```
+
+The old SPARQL-based extractor is available as `npm run extract:sparql`.
 
 Output format (one JSON object per line):
 ```
@@ -72,7 +77,7 @@ Output: `data/triangulation-{lang}.bin` (or `.json` with `--json`)
 
 Data is refreshed automatically via GitHub Actions (`pipeline.yml`) on a monthly schedule or manual trigger. The workflow:
 
-1. **Extract** — Queries Wikidata SPARQL for each language (en, sv, ja)
+1. **Extract** — Downloads Wikipedia SQL dumps and joins geo_tags/page/page_props for each language (en, sv, ja)
 2. **Build** — Runs the pipeline to produce `triangulation-{lang}.bin`
 3. **Publish** — Uploads compressed `.bin.gz` files to a `data-latest` GitHub Release
 
