@@ -110,11 +110,14 @@ function perturbPoints(points: Point3D[]): Point3D[] {
     return ((state >>> 0) / 0x100000000 - 0.5) * SCALE;
   }
 
-  return points.map((p) => [
-    p[0] + nextRand(),
-    p[1] + nextRand(),
-    p[2] + nextRand(),
-  ] as Point3D);
+  return points.map((p) => {
+    const px = p[0] + nextRand();
+    const py = p[1] + nextRand();
+    const pz = p[2] + nextRand();
+    // Project back onto unit sphere so no point can be interior to the hull
+    const len = Math.sqrt(px * px + py * py + pz * pz);
+    return [px / len, py / len, pz / len] as Point3D;
+  });
 }
 
 // ---------- Spatial face index ----------
