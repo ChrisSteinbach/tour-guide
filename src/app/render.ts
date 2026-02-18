@@ -21,6 +21,8 @@ export function renderNearbyList(
   onSelectArticle: (article: NearbyArticle) => void,
   currentLang: Lang,
   onLangChange: (lang: Lang) => void,
+  onShowMore?: () => void,
+  nextCount?: number,
 ): void {
   container.innerHTML = "";
 
@@ -88,4 +90,12 @@ export function renderNearbyList(
   }
 
   container.append(header, list);
+
+  if (onShowMore && nextCount != null) {
+    const btn = document.createElement("button");
+    btn.className = "show-more";
+    btn.textContent = `Show ${nextCount}`;
+    btn.addEventListener("click", onShowMore);
+    container.appendChild(btn);
+  }
 }

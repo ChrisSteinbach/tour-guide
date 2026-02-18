@@ -16,7 +16,7 @@ import { loadQuery, type NearestQuery } from "./query";
 import { DEFAULT_LANG, SUPPORTED_LANGS } from "../lang";
 import type { Lang } from "../lang";
 
-const NEARBY_COUNT = 10;
+const NEARBY_TIERS = [10, 20, 50, 100];
 const LANG_STORAGE_KEY = "tour-guide-lang";
 
 const app = document.getElementById("app")!;
@@ -26,6 +26,7 @@ let selectedArticle: NearbyArticle | null = null;
 
 // State
 let query: NearestQuery | null = null;
+let nearbyCount: number = NEARBY_TIERS[0];
 let dataReady = false;
 let loadGeneration = 0;
 let started = false; // true once user opts in to location
@@ -50,8 +51,8 @@ function storeLang(lang: Lang): void {
 function getNearby(pos: UserPosition): NearbyArticle[] {
   if (query) {
     const t0 = performance.now();
-    const results = query.findNearest(pos.lat, pos.lon, NEARBY_COUNT);
-    console.log(`[perf] findNearest(k=${NEARBY_COUNT}) in ${(performance.now() - t0).toFixed(2)}ms`);
+    const results = query.findNearest(pos.lat, pos.lon, nearbyCount);
+    console.log(`[perf] findNearest(k=${nearbyCount}) in ${(performance.now() - t0).toFixed(2)}ms`);
     return results;
   }
   return mockArticles
@@ -59,9 +60,22 @@ function getNearby(pos: UserPosition): NearbyArticle[] {
     .sort((a, b) => a.distanceM - b.distanceM);
 }
 
+function getNextTier(): number | undefined {
+  const idx = NEARBY_TIERS.indexOf(nearbyCount);
+  return idx >= 0 && idx < NEARBY_TIERS.length - 1 ? NEARBY_TIERS[idx + 1] : undefined;
+}
+
+function showMore(): void {
+  const next = getNextTier();
+  if (next == null || !position) return;
+  nearbyCount = next;
+  currentArticles = getNearby(position);
+  renderNearbyList(app, currentArticles, showDetail, currentLang, handleLangChange, showMore, getNextTier());
+}
+
 function showList(): void {
   selectedArticle = null;
-  renderNearbyList(app, currentArticles, showDetail, currentLang, handleLangChange);
+  renderNearbyList(app, currentArticles, showDetail, currentLang, handleLangChange, showMore, getNextTier());
 }
 
 const goBack = () => history.back();
@@ -112,7 +126,7 @@ function render(): void {
     updateNearbyDistances(app, currentArticles);
     return;
   }
-  renderNearbyList(app, currentArticles, showDetail, currentLang, handleLangChange);
+  renderNearbyList(app, currentArticles, showDetail, currentLang, handleLangChange, showMore, getNextTier());
 }
 
 function useMockData(): void {
@@ -166,6 +180,7 @@ function loadLanguageData(lang: Lang): void {
 
 function handleLangChange(lang: Lang): void {
   currentLang = lang;
+  nearbyCount = NEARBY_TIERS[0];
   storeLang(lang);
   loadLanguageData(lang);
 }
