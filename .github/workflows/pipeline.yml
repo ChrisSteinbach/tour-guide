@@ -22,7 +22,7 @@ jobs:
     strategy:
       matrix:
         lang: ${{ fromJSON(inputs.langs || '["en", "sv", "ja"]') }}
-      max-parallel: 1
+      max-parallel: 3
 
     steps:
       - uses: actions/checkout@v4
