@@ -303,3 +303,33 @@ body {
 .detail-wiki-link:active {
   background: #1557b0;
 }
+
+.detail-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.detail-actions .detail-wiki-link,
+.detail-actions .detail-directions-link {
+  flex: 1;
+  margin-top: 0;
+}
+
+.detail-directions-link {
+  display: inline-block;
+  background: #fff;
+  color: #1a73e8;
+  text-decoration: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-align: center;
+  margin-top: 4px;
+  border: 1.5px solid #1a73e8;
+}
+
+.detail-directions-link:active {
+  background: #e8f0fe;
+}

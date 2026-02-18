@@ -23,6 +23,18 @@ export function distanceBetweenPositions(a: UserPosition, b: UserPosition): numb
   return haversineDistance(a, b) * EARTH_RADIUS_M;
 }
 
+/** Build a directions URL appropriate for the current platform. */
+export function directionsUrl(lat: number, lon: number): string {
+  const ua = navigator.userAgent;
+  if (/iPad|iPhone|iPod/.test(ua)) {
+    return `https://maps.apple.com/?daddr=${lat},${lon}`;
+  }
+  if (/Android/.test(ua)) {
+    return `geo:${lat},${lon}?q=${lat},${lon}`;
+  }
+  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`;
+}
+
 /** Full Wikipedia article URL from a title. */
 export function wikipediaUrl(title: string, lang: Lang = "en"): string {
   return `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`;

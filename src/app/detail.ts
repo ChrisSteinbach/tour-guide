@@ -1,6 +1,6 @@
 import type { NearbyArticle } from "./types";
 import type { ArticleSummary } from "./wiki-api";
-import { formatDistance, wikipediaUrl } from "./format";
+import { formatDistance, wikipediaUrl, directionsUrl } from "./format";
 import type { Lang } from "../lang";
 
 /** Render a detail header with back button, title, and distance. */
@@ -84,13 +84,25 @@ export function renderDetailReady(
     content.appendChild(extract);
   }
 
+  const actions = document.createElement("div");
+  actions.className = "detail-actions";
+
   const link = document.createElement("a");
   link.className = "detail-wiki-link";
   link.href = summary.pageUrl;
   link.target = "_blank";
   link.rel = "noopener";
   link.textContent = "Read on Wikipedia";
-  content.appendChild(link);
+
+  const directions = document.createElement("a");
+  directions.className = "detail-directions-link";
+  directions.href = directionsUrl(article.lat, article.lon);
+  directions.target = "_blank";
+  directions.rel = "noopener";
+  directions.textContent = "Directions";
+
+  actions.append(link, directions);
+  content.appendChild(actions);
 
   container.append(header, content);
 }
@@ -126,6 +138,13 @@ export function renderDetailError(
   fallback.rel = "noopener";
   fallback.textContent = "Open on Wikipedia";
 
-  body.append(msg, retry, fallback);
+  const directions = document.createElement("a");
+  directions.className = "detail-directions-link";
+  directions.href = directionsUrl(article.lat, article.lon);
+  directions.target = "_blank";
+  directions.rel = "noopener";
+  directions.textContent = "Directions";
+
+  body.append(msg, retry, fallback, directions);
   container.append(header, body);
 }
