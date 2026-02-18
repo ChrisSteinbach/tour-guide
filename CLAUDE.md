@@ -121,7 +121,7 @@ Strict mode, ES2022 target, ESNext modules with bundler resolution. No runtime d
 After any UI change, verify visually in the browser before committing:
 
 1. Start the dev server: `npm run dev`
-2. Navigate to `https://localhost:5173/tour-guide/` using Playwright MCP
+2. Navigate to `https://localhost:5173/` using Playwright MCP
 3. Walk through the affected flows (use "Or try with demo data" for quick testing)
 4. Take screenshots at both desktop and mobile (375×667) widths
 5. Check for interaction issues — dropdowns, focus states, transitions

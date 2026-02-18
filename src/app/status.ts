@@ -18,7 +18,7 @@ function renderStatusScreen(
   const header = document.createElement("header");
   header.className = "app-header";
   const h1 = document.createElement("h1");
-  h1.textContent = "Tour Guide";
+  h1.textContent = "WikiRadar";
   header.appendChild(h1);
 
   const screen = document.createElement("div");

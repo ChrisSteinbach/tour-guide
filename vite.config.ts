@@ -46,7 +46,7 @@ function serveData(): Plugin {
 
 export default defineConfig({
   root: "src/app",
-  base: "/tour-guide/",
+  base: "/",
   server: {
     host: "0.0.0.0",
   },
@@ -60,9 +60,9 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       manifest: {
-        name: "Tour Guide",
-        short_name: "Tour Guide",
-        description: "Wikipedia-powered tour guide for nearby attractions",
+        name: "WikiRadar",
+        short_name: "WikiRadar",
+        description: "Discover Wikipedia articles about places near you",
         theme_color: "#1a73e8",
         background_color: "#f5f5f5",
         display: "standalone",

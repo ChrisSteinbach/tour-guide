@@ -36,7 +36,7 @@ export function renderNearbyList(
 
   const titleGroup = document.createElement("div");
   const h1 = document.createElement("h1");
-  h1.textContent = "Tour Guide";
+  h1.textContent = "WikiRadar";
   const subtitle = document.createElement("p");
   const subtitleText = `${articles.length} nearby attraction${articles.length !== 1 ? "s" : ""}`;
   subtitle.textContent = paused ? `${subtitleText} · paused` : subtitleText;
