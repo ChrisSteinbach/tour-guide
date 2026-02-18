@@ -17,7 +17,7 @@ const WIKI_PREFIX: Record<Lang, string> = {
 };
 
 /** Dump tables we need. */
-export const DUMP_TABLES = ["geo_tags", "page", "page_props"] as const;
+export const DUMP_TABLES = ["geo_tags", "page"] as const;
 export type DumpTable = (typeof DUMP_TABLES)[number];
 
 /** Build the URL for a dump file. */

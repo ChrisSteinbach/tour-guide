@@ -1,22 +1,19 @@
 /**
  * Wikipedia dump-based article extraction.
  *
- * Replaces SPARQL extraction with a three-phase dump-based pipeline:
+ * Replaces SPARQL extraction with a two-phase dump-based pipeline:
  * 1. Download SQL dump files from dumps.wikimedia.org
  * 2. Stream-parse and join tables by page_id
- * 3. Batch-fetch descriptions from Wikidata API
  *
- * Output: NDJSON with {title, lat, lon, desc} — same format as SPARQL extractor.
+ * Output: NDJSON with {title, lat, lon}.
  */
 
-import { createWriteStream, existsSync, readFileSync } from "node:fs";
+import { createWriteStream } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { SUPPORTED_LANGS, DEFAULT_LANG } from "../lang.js";
 import type { Lang } from "../lang.js";
 import { downloadAllDumps, dumpPath, formatBytes } from "./dump-download.js";
-import type { DownloadResult } from "./dump-download.js";
 import { streamDump } from "./dump-parser.js";
-import type { SqlRow } from "./dump-parser.js";
 
 // ---------- Types ----------
 
@@ -24,7 +21,6 @@ export interface Article {
   title: string;
   lat: number;
   lon: number;
-  desc: string;
 }
 
 export interface Bounds {
@@ -38,14 +34,11 @@ export interface ExtractDumpOptions {
   lang: Lang;
   bounds?: Bounds;
   skipDownload?: boolean;
-  skipDescriptions?: boolean;
   dumpsDir?: string;
   outputPath?: string;
   fetchFn?: typeof fetch;
   onPhase?: (phase: string) => void;
   onProgress?: (phase: string, count: number) => void;
-  batchSize?: number;
-  batchDelayMs?: number;
 }
 
 // ---------- Column indices ----------
@@ -62,11 +55,6 @@ const PAGE_ID = "page_id";
 const PAGE_NAMESPACE = "page_namespace";
 const PAGE_TITLE = "page_title";
 const PAGE_IS_REDIRECT = "page_is_redirect";
-
-// page_props columns
-const PP_PAGE = "pp_page";
-const PP_PROPNAME = "pp_propname";
-const PP_VALUE = "pp_value";
 
 // ---------- Phase 1: Build page map ----------
 
@@ -101,38 +89,7 @@ export async function buildPageMap(
   return pages;
 }
 
-// ---------- Phase 2: Build Q-ID map ----------
-
-/**
- * Build a map of page_id → Wikidata Q-ID from page_props dump.
- * Filters for propname='wikibase_item'.
- */
-export async function buildQidMap(
-  filePath: string,
-  onProgress?: (count: number) => void,
-): Promise<Map<number, string>> {
-  const qids = new Map<number, string>();
-
-  for await (const row of streamDump({
-    filePath,
-    tableName: "page_props",
-    requiredColumns: [PP_PAGE, PP_PROPNAME, PP_VALUE],
-    onProgress,
-    progressInterval: 500_000,
-  })) {
-    // row indices: pp_page(0), pp_propname(1), pp_value(2), pp_sortkey(3)
-    const propname = row[1] as string;
-    if (propname === "wikibase_item") {
-      const pageId = row[0] as number;
-      const qid = row[2] as string;
-      qids.set(pageId, qid);
-    }
-  }
-
-  return qids;
-}
-
-// ---------- Phase 3: Stream geo_tags and join ----------
+// ---------- Phase 2: Stream geo_tags and join ----------
 
 /**
  * Check if coordinates are valid.
@@ -159,30 +116,23 @@ function isInBounds(lat: number, lon: number, bounds: Bounds): boolean {
 }
 
 /**
- * Stream geo_tags dump, join with page and Q-ID maps, yield articles.
+ * Stream geo_tags dump, join with page map, yield articles.
  */
 export async function* streamGeoArticles(
   filePath: string,
   pages: Map<number, string>,
-  qids: Map<number, string>,
   opts: {
     bounds?: Bounds;
     onProgress?: (count: number) => void;
   } = {},
-): AsyncGenerator<Article & { qid?: string }> {
+): AsyncGenerator<Article> {
   const { bounds, onProgress } = opts;
-  let count = 0;
 
   for await (const row of streamDump({
     filePath,
     tableName: "geo_tags",
     requiredColumns: [GT_PAGE_ID, GT_GLOBE, GT_PRIMARY, GT_LAT, GT_LON],
-    onProgress: onProgress
-      ? (n) => {
-          count = n;
-          onProgress(n);
-        }
-      : undefined,
+    onProgress,
     progressInterval: 100_000,
   })) {
     // row indices: gt_id(0), gt_page_id(1), gt_globe(2), gt_primary(3), gt_lat(4), gt_lon(5), ...
@@ -203,83 +153,7 @@ export async function* streamGeoArticles(
     const title = pages.get(pageId);
     if (!title) continue; // Not an article or is a redirect
 
-    const qid = qids.get(pageId);
-    yield { title, lat, lon, desc: "", qid };
-  }
-}
-
-// ---------- Phase 4: Batch-fetch descriptions ----------
-
-/**
- * Fetch descriptions from Wikidata API for a batch of Q-IDs.
- */
-export async function fetchDescriptions(
-  qidToArticles: Map<string, Article[]>,
-  lang: Lang,
-  opts: {
-    fetchFn?: typeof fetch;
-    batchSize?: number;
-    batchDelayMs?: number;
-    onProgress?: (fetched: number, total: number) => void;
-  } = {},
-): Promise<void> {
-  const {
-    fetchFn = fetch,
-    batchSize = 50,
-    batchDelayMs = 100,
-    onProgress,
-  } = opts;
-
-  const allQids = [...qidToArticles.keys()];
-  const total = allQids.length;
-  let fetched = 0;
-
-  for (let i = 0; i < total; i += batchSize) {
-    const batch = allQids.slice(i, i + batchSize);
-    const ids = batch.join("|");
-
-    const url = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${ids}&props=descriptions&languages=${lang}&format=json`;
-
-    try {
-      const response = await fetchFn(url);
-      if (!response.ok) {
-        console.error(`Wikidata API error: ${response.status} — skipping batch`);
-        fetched += batch.length;
-        if (onProgress) onProgress(fetched, total);
-        continue;
-      }
-
-      const data = (await response.json()) as {
-        entities?: Record<string, {
-          descriptions?: Record<string, { value: string }>;
-        }>;
-      };
-
-      if (data.entities) {
-        for (const qid of batch) {
-          const entity = data.entities[qid];
-          if (entity?.descriptions?.[lang]) {
-            const desc = entity.descriptions[lang].value;
-            const articles = qidToArticles.get(qid);
-            if (articles) {
-              for (const article of articles) {
-                article.desc = desc;
-              }
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.error(`Wikidata API request failed: ${err} — skipping batch`);
-    }
-
-    fetched += batch.length;
-    if (onProgress) onProgress(fetched, total);
-
-    // Rate limit
-    if (i + batchSize < total) {
-      await new Promise((r) => setTimeout(r, batchDelayMs));
-    }
+    yield { title, lat, lon };
   }
 }
 
@@ -293,14 +167,11 @@ export async function extractDump(opts: ExtractDumpOptions): Promise<{
     lang,
     bounds,
     skipDownload = false,
-    skipDescriptions = false,
     dumpsDir = "data/dumps",
     outputPath = `data/articles-${lang}.json`,
     fetchFn = fetch,
     onPhase,
     onProgress,
-    batchSize = 50,
-    batchDelayMs = 100,
   } = opts;
 
   // Phase 0: Download dumps
@@ -329,25 +200,15 @@ export async function extractDump(opts: ExtractDumpOptions): Promise<{
   );
   console.error(`  Page map: ${pageMap.size.toLocaleString()} articles`);
 
-  // Phase 2: Build Q-ID map
-  onPhase?.("Building Q-ID map");
-  const qidMap = await buildQidMap(
-    dumpPath(lang, "page_props", dumpsDir),
-    (n) => onProgress?.("page_props", n),
-  );
-  console.error(`  Q-ID map: ${qidMap.size.toLocaleString()} entries`);
-
-  // Phase 3: Stream geo_tags and join
+  // Phase 2: Stream geo_tags and join
   onPhase?.("Streaming geo_tags and joining");
 
   const articles: Article[] = [];
   const seen = new Set<string>();
-  const qidToArticles = new Map<string, Article[]>();
 
   for await (const entry of streamGeoArticles(
     dumpPath(lang, "geo_tags", dumpsDir),
     pageMap,
-    qidMap,
     {
       bounds,
       onProgress: (n) => onProgress?.("geo_tags", n),
@@ -357,47 +218,15 @@ export async function extractDump(opts: ExtractDumpOptions): Promise<{
     if (seen.has(entry.title)) continue;
     seen.add(entry.title);
 
-    const article: Article = {
-      title: entry.title,
-      lat: entry.lat,
-      lon: entry.lon,
-      desc: "",
-    };
-    articles.push(article);
-
-    // Track Q-ID → articles for description fetching
-    if (entry.qid) {
-      const existing = qidToArticles.get(entry.qid);
-      if (existing) existing.push(article);
-      else qidToArticles.set(entry.qid, [article]);
-    }
+    articles.push(entry);
   }
 
   console.error(`  Geo articles: ${articles.length.toLocaleString()} (deduplicated)`);
 
-  // Free maps — no longer needed
+  // Free map — no longer needed
   pageMap.clear();
-  qidMap.clear();
 
-  // Phase 4: Fetch descriptions
-  if (!skipDescriptions && qidToArticles.size > 0) {
-    onPhase?.("Fetching descriptions from Wikidata");
-    console.error(`  Fetching descriptions for ${qidToArticles.size.toLocaleString()} Q-IDs...`);
-
-    await fetchDescriptions(qidToArticles, lang, {
-      fetchFn,
-      batchSize,
-      batchDelayMs,
-      onProgress: (fetched, total) => {
-        process.stderr.write(
-          `\r  Descriptions: ${fetched.toLocaleString()}/${total.toLocaleString()}    `,
-        );
-      },
-    });
-    process.stderr.write("\n");
-  }
-
-  // Phase 5: Write NDJSON
+  // Phase 3: Write NDJSON
   onPhase?.("Writing output");
   const outputDir = outputPath.substring(0, outputPath.lastIndexOf("/"));
   if (outputDir) await mkdir(outputDir, { recursive: true });
@@ -445,7 +274,6 @@ async function main() {
 
   const bounds = flags.bounds ? parseBounds(flags.bounds) : undefined;
   const skipDownload = flags["skip-download"] === "true";
-  const skipDescriptions = flags["no-desc"] === "true";
 
   console.error(`\nExtracting ${lang} articles from Wikipedia dumps\n`);
 
@@ -455,7 +283,6 @@ async function main() {
     lang,
     bounds,
     skipDownload,
-    skipDescriptions,
     onPhase: (phase) => console.error(`\n→ ${phase}`),
   });
 

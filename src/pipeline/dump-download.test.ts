@@ -23,9 +23,9 @@ describe("dumpUrl", () => {
     );
   });
 
-  it("builds correct URL for Japanese page_props", () => {
-    expect(dumpUrl("ja", "page_props")).toBe(
-      "https://dumps.wikimedia.org/jawiki/latest/jawiki-latest-page_props.sql.gz",
+  it("builds correct URL for Japanese page", () => {
+    expect(dumpUrl("ja", "page")).toBe(
+      "https://dumps.wikimedia.org/jawiki/latest/jawiki-latest-page.sql.gz",
     );
   });
 });
@@ -131,7 +131,7 @@ describe("downloadAllDumps", () => {
     rmSync(testDir, { recursive: true, force: true });
   });
 
-  it("downloads all three tables", async () => {
+  it("downloads all tables", async () => {
     let callCount = 0;
     const mockFetch = (async () => {
       callCount++;
@@ -155,7 +155,7 @@ describe("downloadAllDumps", () => {
       fetchFn: mockFetch,
     });
 
-    expect(results).toHaveLength(3);
+    expect(results).toHaveLength(DUMP_TABLES.length);
     expect(results.map((r) => r.table)).toEqual([...DUMP_TABLES]);
     for (const r of results) {
       expect(existsSync(r.path)).toBe(true);

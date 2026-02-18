@@ -3,7 +3,6 @@ export interface Article {
   title: string;
   lat: number;
   lon: number;
-  desc?: string;
 }
 
 /** An article with a computed distance from the user. */

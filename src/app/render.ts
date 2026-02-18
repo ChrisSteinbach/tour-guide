@@ -76,10 +76,7 @@ export function renderNearbyList(
     const name = document.createElement("span");
     name.className = "nearby-name";
     name.textContent = article.title;
-    const desc = document.createElement("span");
-    desc.className = "nearby-desc";
-    desc.textContent = article.desc ?? "";
-    info.append(name, desc);
+    info.appendChild(name);
 
     const badge = document.createElement("span");
     badge.className = "nearby-distance";

@@ -9,7 +9,6 @@ import type { Point3D } from "./index";
 
 export interface ArticleMeta {
   title: string;
-  desc: string;
 }
 
 export interface TriangulationFile {
@@ -19,7 +18,7 @@ export interface TriangulationFile {
   vertexTriangles: number[]; // 1 per vertex (incident triangle index)
   triangleVertices: number[]; // flat [v0,v1,v2, ...] — 3 per triangle
   triangleNeighbors: number[]; // flat [n0,n1,n2, ...] — 3 per triangle
-  articles: [string, string][]; // [title, desc] per vertex
+  articles: string[]; // title per vertex
 }
 
 /** Flat typed-array representation of a spherical Delaunay triangulation. */
@@ -80,11 +79,6 @@ export function serialize(
     triangleNeighbors[i * 3 + 2] = t.neighbor[2];
   }
 
-  const articleTuples: [string, string][] = articles.map((a) => [
-    a.title,
-    a.desc,
-  ]);
-
   return {
     vertexCount,
     triangleCount,
@@ -92,7 +86,7 @@ export function serialize(
     vertexTriangles,
     triangleVertices,
     triangleNeighbors,
-    articles: articleTuples,
+    articles: articles.map((a) => a.title),
   };
 }
 
@@ -144,10 +138,7 @@ export function deserialize(data: TriangulationFile): {
     };
   }
 
-  const articles: ArticleMeta[] = data.articles.map(([title, desc]) => ({
-    title,
-    desc,
-  }));
+  const articles: ArticleMeta[] = data.articles.map((title) => ({ title }));
 
   // After deserialization, originalIndices is identity (already compacted)
   const originalIndices = Array.from({ length: vertexCount }, (_, i) => i);
@@ -170,7 +161,7 @@ export function deserialize(data: TriangulationFile): {
 //   triangleNeighbors Uint32[T * 3]
 //
 // Articles section (at articlesOffset):
-//   UTF-8 JSON of [string, string][]
+//   UTF-8 JSON of string[] (titles)
 
 const HEADER_SIZE = 24;
 
@@ -286,8 +277,8 @@ export function deserializeBinary(buf: ArrayBuffer): { fd: FlatDelaunay; article
   // Parse articles JSON
   const decoder = new TextDecoder();
   const articlesJson = decoder.decode(new Uint8Array(buf, articlesOffset, articlesLength));
-  const articleTuples: [string, string][] = JSON.parse(articlesJson);
-  const articles = articleTuples.map(([title, desc]) => ({ title, desc }));
+  const titles: string[] = JSON.parse(articlesJson);
+  const articles = titles.map((title) => ({ title }));
 
   return {
     fd: { vertexPoints, vertexTriangles, triangleVertices, triangleNeighbors },

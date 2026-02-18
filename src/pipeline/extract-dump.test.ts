@@ -4,9 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   buildPageMap,
-  buildQidMap,
   streamGeoArticles,
-  fetchDescriptions,
   extractDump,
 } from "./extract-dump.js";
 import type { Article } from "./extract-dump.js";
@@ -56,16 +54,6 @@ const GEO_SCHEMA = [
   ") ENGINE=InnoDB;",
 ].join("\n");
 
-const PROPS_SCHEMA = [
-  "CREATE TABLE `page_props` (",
-  "  `pp_page` int(8) unsigned NOT NULL,",
-  "  `pp_propname` varbinary(60) NOT NULL,",
-  "  `pp_value` blob NOT NULL,",
-  "  `pp_sortkey` float DEFAULT NULL,",
-  "  PRIMARY KEY (`pp_page`,`pp_propname`)",
-  ") ENGINE=InnoDB;",
-].join("\n");
-
 function makePageDump(
   rows: Array<{ id: number; ns: number; title: string; redirect: number }>,
 ): string {
@@ -97,15 +85,6 @@ function makeGeoDump(
   return `${GEO_SCHEMA}\n\nINSERT INTO \`geo_tags\` VALUES ${values};`;
 }
 
-function makePropsDump(
-  rows: Array<{ page: number; prop: string; value: string }>,
-): string {
-  const values = rows
-    .map((r) => `(${r.page},'${r.prop}','${r.value}',NULL)`)
-    .join(",");
-  return `${PROPS_SCHEMA}\n\nINSERT INTO \`page_props\` VALUES ${values};`;
-}
-
 // ---------- Tests ----------
 
 describe("buildPageMap", () => {
@@ -133,37 +112,13 @@ describe("buildPageMap", () => {
   });
 });
 
-describe("buildQidMap", () => {
-  const testDir = join(tmpdir(), "extract-dump-qid-" + Date.now());
-
-  beforeAll(() => mkdirSync(testDir, { recursive: true }));
-  afterAll(() => rmSync(testDir, { recursive: true, force: true }));
-
-  it("builds map of wikibase_item entries only", async () => {
-    const sql = makePropsDump([
-      { page: 1, prop: "wikibase_item", value: "Q243" },
-      { page: 2, prop: "wikibase_item", value: "Q9188" },
-      { page: 1, prop: "page_image_free", value: "Tour_Eiffel.jpg" },
-      { page: 3, prop: "defaultsort", value: "Liberty" },
-    ]);
-
-    const path = gzFile(testDir, "page_props.sql.gz", sql);
-    const map = await buildQidMap(path);
-
-    expect(map.size).toBe(2);
-    expect(map.get(1)).toBe("Q243");
-    expect(map.get(2)).toBe("Q9188");
-    expect(map.has(3)).toBe(false); // no wikibase_item
-  });
-});
-
 describe("streamGeoArticles", () => {
   const testDir = join(tmpdir(), "extract-dump-geo-" + Date.now());
 
   beforeAll(() => mkdirSync(testDir, { recursive: true }));
   afterAll(() => rmSync(testDir, { recursive: true, force: true }));
 
-  it("joins geo_tags with page and props maps", async () => {
+  it("joins geo_tags with page map", async () => {
     const geoSql = makeGeoDump([
       { id: 1, pageId: 100, globe: "earth", primary: 1, lat: 48.8584, lon: 2.2945 },
       { id: 2, pageId: 200, globe: "earth", primary: 1, lat: 40.7128, lon: -74.006 },
@@ -177,19 +132,13 @@ describe("streamGeoArticles", () => {
       [200, "Statue of Liberty"],
     ]);
 
-    const qids = new Map<number, string>([
-      [100, "Q243"],
-      [200, "Q9202"],
-    ]);
-
-    const articles: Array<{ title: string; lat: number; lon: number; qid?: string }> = [];
-    for await (const article of streamGeoArticles(geoPath, pages, qids)) {
+    const articles: Article[] = [];
+    for await (const article of streamGeoArticles(geoPath, pages)) {
       articles.push(article);
     }
 
     expect(articles).toHaveLength(2);
     expect(articles[0].title).toBe("Eiffel Tower");
-    expect(articles[0].qid).toBe("Q243");
     expect(articles[1].title).toBe("Statue of Liberty");
   });
 
@@ -208,8 +157,8 @@ describe("streamGeoArticles", () => {
       [300, "London"],
     ]);
 
-    const articles: Array<{ title: string }> = [];
-    for await (const article of streamGeoArticles(geoPath, pages, new Map())) {
+    const articles: Article[] = [];
+    for await (const article of streamGeoArticles(geoPath, pages)) {
       articles.push(article);
     }
 
@@ -230,8 +179,8 @@ describe("streamGeoArticles", () => {
       [200, "NYC"],
     ]);
 
-    const articles: Array<{ title: string }> = [];
-    for await (const article of streamGeoArticles(geoPath, pages, new Map(), {
+    const articles: Article[] = [];
+    for await (const article of streamGeoArticles(geoPath, pages, {
       bounds: { south: 45, north: 55, west: -5, east: 10 },
     })) {
       articles.push(article);
@@ -250,99 +199,12 @@ describe("streamGeoArticles", () => {
 
     const pages = new Map<number, string>([[100, "Null Island"]]);
 
-    const articles: Array<{ title: string }> = [];
-    for await (const article of streamGeoArticles(geoPath, pages, new Map())) {
+    const articles: Article[] = [];
+    for await (const article of streamGeoArticles(geoPath, pages)) {
       articles.push(article);
     }
 
     expect(articles).toHaveLength(0);
-  });
-});
-
-describe("fetchDescriptions", () => {
-  it("fetches and assigns descriptions from Wikidata API", async () => {
-    const articles: Article[] = [
-      { title: "Eiffel Tower", lat: 48.8584, lon: 2.2945, desc: "" },
-      { title: "Statue of Liberty", lat: 40.7128, lon: -74.006, desc: "" },
-    ];
-
-    const qidToArticles = new Map<string, Article[]>([
-      ["Q243", [articles[0]]],
-      ["Q9202", [articles[1]]],
-    ]);
-
-    const mockFetch = (async (url: string) => ({
-      ok: true,
-      json: async () => ({
-        entities: {
-          Q243: {
-            descriptions: { en: { value: "iron lattice tower in Paris, France" } },
-          },
-          Q9202: {
-            descriptions: { en: { value: "colossal neoclassical sculpture in New York" } },
-          },
-        },
-      }),
-    })) as unknown as typeof fetch;
-
-    await fetchDescriptions(qidToArticles, "en", {
-      fetchFn: mockFetch,
-      batchSize: 50,
-    });
-
-    expect(articles[0].desc).toBe("iron lattice tower in Paris, France");
-    expect(articles[1].desc).toBe("colossal neoclassical sculpture in New York");
-  });
-
-  it("handles API errors gracefully", async () => {
-    const articles: Article[] = [
-      { title: "Test", lat: 0.1, lon: 0.1, desc: "" },
-    ];
-
-    const qidToArticles = new Map<string, Article[]>([
-      ["Q1", [articles[0]]],
-    ]);
-
-    const mockFetch = (async () => ({
-      ok: false,
-      status: 500,
-    })) as unknown as typeof fetch;
-
-    // Should not throw
-    await fetchDescriptions(qidToArticles, "en", { fetchFn: mockFetch });
-    expect(articles[0].desc).toBe(""); // unchanged
-  });
-
-  it("calls progress callback", async () => {
-    const articles: Article[] = [
-      { title: "A", lat: 1, lon: 1, desc: "" },
-      { title: "B", lat: 2, lon: 2, desc: "" },
-      { title: "C", lat: 3, lon: 3, desc: "" },
-    ];
-
-    const qidToArticles = new Map<string, Article[]>([
-      ["Q1", [articles[0]]],
-      ["Q2", [articles[1]]],
-      ["Q3", [articles[2]]],
-    ]);
-
-    const mockFetch = (async () => ({
-      ok: true,
-      json: async () => ({ entities: {} }),
-    })) as unknown as typeof fetch;
-
-    const progress: Array<{ fetched: number; total: number }> = [];
-
-    await fetchDescriptions(qidToArticles, "en", {
-      fetchFn: mockFetch,
-      batchSize: 2,
-      batchDelayMs: 0,
-      onProgress: (fetched, total) => progress.push({ fetched, total }),
-    });
-
-    expect(progress).toHaveLength(2); // 2 batches (2+1)
-    expect(progress[0].total).toBe(3);
-    expect(progress[1].fetched).toBe(3);
   });
 });
 
@@ -380,41 +242,13 @@ describe("extractDump (integration)", () => {
       ]),
     );
 
-    gzFile(
-      dumpsDir,
-      "svwiki-latest-page_props.sql.gz",
-      makePropsDump([
-        { page: 100, prop: "wikibase_item", value: "Q243" },
-        { page: 200, prop: "wikibase_item", value: "Q9202" },
-        { page: 400, prop: "wikibase_item", value: "Q12345" },
-      ]),
-    );
-
     const outputPath = join(testDir, "articles-sv.json");
-
-    const mockFetch = (async (url: string) => {
-      if (typeof url === "string" && url.includes("wbgetentities")) {
-        return {
-          ok: true,
-          json: async () => ({
-            entities: {
-              Q243: { descriptions: { sv: { value: "torn i Paris" } } },
-              Q9202: { descriptions: { sv: { value: "staty i New York" } } },
-              Q12345: { descriptions: { sv: { value: "brandstation i Stockholm" } } },
-            },
-          }),
-        };
-      }
-      return { ok: false, status: 404 };
-    }) as unknown as typeof fetch;
 
     const result = await extractDump({
       lang: "sv",
       skipDownload: true,
       dumpsDir,
       outputPath,
-      fetchFn: mockFetch,
-      batchDelayMs: 0,
     });
 
     expect(result.articleCount).toBe(3); // Eiffeltornet, Frihetsgudinnan, Liljeholmens
@@ -428,12 +262,10 @@ describe("extractDump (integration)", () => {
 
     const eiffel = articles.find((a) => a.title === "Eiffeltornet");
     expect(eiffel).toBeDefined();
-    expect(eiffel!.desc).toBe("torn i Paris");
     expect(eiffel!.lat).toBeCloseTo(48.8584, 3);
 
     const liljeholmen = articles.find((a) => a.title === "Liljeholmens brandstation");
     expect(liljeholmen).toBeDefined();
-    expect(liljeholmen!.desc).toBe("brandstation i Stockholm");
     expect(liljeholmen!.lat).toBeCloseTo(59.308, 2);
   });
 
@@ -459,19 +291,12 @@ describe("extractDump (integration)", () => {
       ]),
     );
 
-    gzFile(
-      dumpsDir,
-      "svwiki-latest-page_props.sql.gz",
-      makePropsDump([]),
-    );
-
     const outputPath = join(testDir, "articles-bounds.json");
 
     const result = await extractDump({
       lang: "sv",
       bounds: { south: 55, north: 65, west: 10, east: 25 },
       skipDownload: true,
-      skipDescriptions: true,
       dumpsDir,
       outputPath,
     });
@@ -504,18 +329,11 @@ describe("extractDump (integration)", () => {
       ]),
     );
 
-    gzFile(
-      dumpsDir,
-      "svwiki-latest-page_props.sql.gz",
-      makePropsDump([]),
-    );
-
     const outputPath = join(testDir, "articles-dedup.json");
 
     const result = await extractDump({
       lang: "sv",
       skipDownload: true,
-      skipDescriptions: true,
       dumpsDir,
       outputPath,
     });

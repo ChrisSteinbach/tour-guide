@@ -100,13 +100,6 @@ body {
   white-space: nowrap;
 }
 
-.nearby-desc {
-  font-size: 0.8rem;
-  color: #666;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .nearby-distance {
   font-size: 0.85rem;

@@ -41,7 +41,7 @@ jobs:
           key: dumps-v1-${{ matrix.lang }}
 
       - name: Extract articles from Wikipedia dumps
-        run: npm run extract -- --lang=${{ matrix.lang }} --no-desc
+        run: npm run extract -- --lang=${{ matrix.lang }}
 
       - name: Build triangulation data
         run: npm run pipeline -- --lang=${{ matrix.lang }}

@@ -22,7 +22,6 @@ interface Article {
   title: string;
   lat: number;
   lon: number;
-  desc: string;
 }
 
 interface Bounds {
@@ -195,7 +194,6 @@ async function main() {
   }
   const meta: ArticleMeta[] = tri.originalIndices.map((i) => ({
     title: articles[i].title,
-    desc: articles[i].desc,
   }));
   const data = serialize(tri, meta);
   const t8 = performance.now();

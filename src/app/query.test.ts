@@ -12,23 +12,23 @@ import { NearestQuery, loadQuery, toFlatDelaunay } from "./query";
 // ---------- Fixtures ----------
 
 /** 6 axis-aligned points forming an octahedron */
-const OCTAHEDRON: { point: Point3D; title: string; desc: string }[] = [
-  { point: [1, 0, 0], title: "Point +X", desc: "equator prime meridian" },
-  { point: [-1, 0, 0], title: "Point -X", desc: "equator antimeridian" },
-  { point: [0, 1, 0], title: "Point +Y", desc: "equator 90E" },
-  { point: [0, -1, 0], title: "Point -Y", desc: "equator 90W" },
-  { point: [0, 0, 1], title: "Point +Z", desc: "north pole" },
-  { point: [0, 0, -1], title: "Point -Z", desc: "south pole" },
+const OCTAHEDRON: { point: Point3D; title: string }[] = [
+  { point: [1, 0, 0], title: "Point +X" },
+  { point: [-1, 0, 0], title: "Point -X" },
+  { point: [0, 1, 0], title: "Point +Y" },
+  { point: [0, -1, 0], title: "Point -Y" },
+  { point: [0, 0, 1], title: "Point +Z" },
+  { point: [0, 0, -1], title: "Point -Z" },
 ];
 
 function buildNearestQuery(): NearestQuery {
   const points = OCTAHEDRON.map((o) => o.point);
   const hull = convexHull(points);
   const tri = buildTriangulation(hull);
-  const articles = OCTAHEDRON.map((o) => ({ title: o.title, desc: o.desc }));
+  const articles = OCTAHEDRON.map((o) => ({ title: o.title }));
   const data = serialize(tri, articles);
   const fd = toFlatDelaunay(data);
-  const metas = data.articles.map(([title, desc]) => ({ title, desc }));
+  const metas = data.articles.map((title) => ({ title }));
   return new NearestQuery(fd, metas);
 }
 
@@ -105,11 +105,11 @@ describe("NearestQuery (Float32 round-trip)", () => {
   it("distinguishes nearby points after Float32 quantisation", () => {
     // Three articles within ~1 km of each other in Stockholm
     const nearby = [
-      { lat: 59.308, lon: 18.028, title: "A", desc: "" },
-      { lat: 59.315, lon: 18.039, title: "B", desc: "" },
-      { lat: 59.315, lon: 18.019, title: "C", desc: "" },
+      { lat: 59.308, lon: 18.028, title: "A" },
+      { lat: 59.315, lon: 18.039, title: "B" },
+      { lat: 59.315, lon: 18.019, title: "C" },
       // Need ≥4 points for convex hull — add antipodal point
-      { lat: -59.31, lon: -161.97, title: "Far", desc: "" },
+      { lat: -59.31, lon: -161.97, title: "Far" },
     ];
 
     const points = nearby.map((a) => toCartesian({ lat: a.lat, lon: a.lon }));
@@ -117,7 +117,6 @@ describe("NearestQuery (Float32 round-trip)", () => {
     const tri = buildTriangulation(hull);
     const articles = tri.originalIndices.map((i) => ({
       title: nearby[i].title,
-      desc: nearby[i].desc,
     }));
     const data = serialize(tri, articles);
 
@@ -141,7 +140,7 @@ describe("loadQuery", () => {
     const points = OCTAHEDRON.map((o) => o.point);
     const hull = convexHull(points);
     const tri = buildTriangulation(hull);
-    const articles = OCTAHEDRON.map((o) => ({ title: o.title, desc: o.desc }));
+    const articles = OCTAHEDRON.map((o) => ({ title: o.title }));
     const data = serialize(tri, articles);
     const binData = serializeBinary(data);
 

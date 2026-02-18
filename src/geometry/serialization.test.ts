@@ -14,16 +14,16 @@ import type { Point3D, SphericalDelaunay, ArticleMeta } from "./index";
 // ---------- Fixtures ----------
 
 const WORLD_CITIES = [
-  { lat: 48.8566, lon: 2.3522, title: "Eiffel Tower", desc: "Paris, France" },
-  { lat: 40.7128, lon: -74.006, title: "Statue of Liberty", desc: "New York, USA" },
-  { lat: 35.6762, lon: 139.6503, title: "Tokyo Tower", desc: "Tokyo, Japan" },
-  { lat: -33.8688, lon: 151.2093, title: "Sydney Opera House", desc: "Sydney, Australia" },
-  { lat: 51.5074, lon: -0.1278, title: "Big Ben", desc: "London, UK" },
-  { lat: -22.9068, lon: -43.1729, title: "Christ the Redeemer", desc: "Rio de Janeiro, Brazil" },
-  { lat: 55.7558, lon: 37.6173, title: "Kremlin", desc: "Moscow, Russia" },
-  { lat: 1.3521, lon: 103.8198, title: "Merlion", desc: "Singapore" },
-  { lat: -1.2921, lon: 36.8219, title: "Nairobi National Park", desc: "Nairobi, Kenya" },
-  { lat: 64.1466, lon: -21.9426, title: "Hallgrímskirkja", desc: "Reykjavik, Iceland" },
+  { lat: 48.8566, lon: 2.3522, title: "Eiffel Tower" },
+  { lat: 40.7128, lon: -74.006, title: "Statue of Liberty" },
+  { lat: 35.6762, lon: 139.6503, title: "Tokyo Tower" },
+  { lat: -33.8688, lon: 151.2093, title: "Sydney Opera House" },
+  { lat: 51.5074, lon: -0.1278, title: "Big Ben" },
+  { lat: -22.9068, lon: -43.1729, title: "Christ the Redeemer" },
+  { lat: 55.7558, lon: 37.6173, title: "Kremlin" },
+  { lat: 1.3521, lon: 103.8198, title: "Merlion" },
+  { lat: -1.2921, lon: 36.8219, title: "Nairobi National Park" },
+  { lat: 64.1466, lon: -21.9426, title: "Hallgrímskirkja" },
 ];
 
 function buildFixture(): {
@@ -34,7 +34,7 @@ function buildFixture(): {
   const points = WORLD_CITIES.map((c) => toCartesian({ lat: c.lat, lon: c.lon }));
   const hull = convexHull(points);
   const tri = buildTriangulation(hull);
-  const articles = WORLD_CITIES.map((c) => ({ title: c.title, desc: c.desc }));
+  const articles = WORLD_CITIES.map((c) => ({ title: c.title }));
   return { tri, articles, points };
 }
 
@@ -86,8 +86,7 @@ describe("serialize", () => {
     const data = serialize(tri, articles);
 
     for (let i = 0; i < articles.length; i++) {
-      expect(data.articles[i][0]).toBe(articles[i].title);
-      expect(data.articles[i][1]).toBe(articles[i].desc);
+      expect(data.articles[i]).toBe(articles[i].title);
     }
   });
 
@@ -247,7 +246,7 @@ describe("binary serialization", () => {
 
   it("round-trips article metadata exactly", () => {
     const { articles } = deserializeBinary(buf);
-    const expected = WORLD_CITIES.map((c) => ({ title: c.title, desc: c.desc }));
+    const expected = WORLD_CITIES.map((c) => ({ title: c.title }));
     expect(articles).toEqual(expected);
   });
 

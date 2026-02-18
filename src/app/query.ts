@@ -13,7 +13,6 @@ const RAD_TO_DEG = 180 / Math.PI;
 
 export interface QueryResult {
   title: string;
-  desc: string;
   lat: number;
   lon: number;
   distanceM: number;
@@ -183,7 +182,6 @@ export class NearestQuery {
     const vp = this.fd.vertexPoints;
     return {
       title: this.articles[vIdx].title,
-      desc: this.articles[vIdx].desc,
       lat: Math.asin(Math.max(-1, Math.min(1, vp[vi + 2]))) * RAD_TO_DEG,
       lon: Math.atan2(vp[vi + 1], vp[vi]) * RAD_TO_DEG,
       distanceM: dist(vp, vi, qx, qy, qz) * EARTH_RADIUS_M,
@@ -201,7 +199,7 @@ interface CachedData {
   vertexTriangles: Uint32Array;
   triangleVertices: Uint32Array;
   triangleNeighbors: Uint32Array;
-  articles: [string, string][]; // [title, desc] tuples — lighter for structured clone than objects
+  articles: string[]; // titles — lighter for structured clone than objects
 }
 
 function idbOpen(): Promise<IDBDatabase | null> {
@@ -246,7 +244,7 @@ export async function loadQuery(
         triangleVertices: cached.triangleVertices,
         triangleNeighbors: cached.triangleNeighbors,
       };
-      const articles = cached.articles.map(([title, desc]) => ({ title, desc }));
+      const articles = cached.articles.map((title) => ({ title }));
       console.log(`[perf] IDB cache hit — loaded in ${(performance.now() - t0).toFixed(0)}ms`);
       return new NearestQuery(fd, articles);
     }
@@ -297,7 +295,7 @@ export async function loadQuery(
         vertexTriangles: fd.vertexTriangles,
         triangleVertices: fd.triangleVertices,
         triangleNeighbors: fd.triangleNeighbors,
-        articles: articles.map((a) => [a.title, a.desc] as [string, string]),
+        articles: articles.map((a) => a.title),
       });
     }
 
