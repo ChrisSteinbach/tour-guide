@@ -95,7 +95,7 @@ function removeFaceEdges(
  * degenerate configurations (coplanar/cospherical points) that cause
  * orient3D to return ambiguous near-zero results.
  *
- * The perturbation is ~1e-8 per coordinate (≈0.07m on Earth's surface),
+ * The perturbation is ~1e-6 per coordinate (≈0.1m on Earth's surface),
  * which is negligible for navigation but ensures orient3D values are
  * well above the ~1e-15 floating-point error bound.
  *
@@ -103,18 +103,21 @@ function removeFaceEdges(
  * unperturbed points are stored in the output hull.
  */
 function perturbPoints(points: Point3D[]): Point3D[] {
-  const SCALE = 2e-8;
+  const SCALE = 1e-6;
   let state = 0x9e3779b9 | 0;
   function nextRand(): number {
     state = (Math.imul(state, 1664525) + 1013904223) | 0;
     return ((state >>> 0) / 0x100000000 - 0.5) * SCALE;
   }
 
-  return points.map((p) => [
-    p[0] + nextRand(),
-    p[1] + nextRand(),
-    p[2] + nextRand(),
-  ] as Point3D);
+  return points.map((p) => {
+    const px = p[0] + nextRand();
+    const py = p[1] + nextRand();
+    const pz = p[2] + nextRand();
+    // Project back onto unit sphere so no point can be interior to the hull
+    const len = Math.sqrt(px * px + py * py + pz * pz);
+    return [px / len, py / len, pz / len] as Point3D;
+  });
 }
 
 // ---------- Spatial face index ----------
@@ -479,10 +482,10 @@ function addPoint(
   }
 
   if (seed < 0) {
-    // Strided scan: check every √n-th face slot. O(√n) per call.
-    // Catches the rare case where visible faces are far from the walk endpoint.
-    const stride = Math.max(1, Math.ceil(Math.sqrt(faces.length)));
-    for (let fi = 0; fi < faces.length; fi += stride) {
+    // Full linear scan: check every face. O(n) but only triggers for the
+    // rare points (~0.06%) where walk, grid, and BFS all fail to find the
+    // visible face — typically tiny triangles between very close points.
+    for (let fi = 0; fi < faces.length; fi++) {
       const f = faces[fi];
       if (!f) continue;
       const [va, vb, vc] = f.vertices;
@@ -490,10 +493,6 @@ function addPoint(
         seed = fi;
         break;
       }
-    }
-    if (seed >= 0) {
-      const walkResult2 = findSeedFace(points, faces, p, seed, liveFaces);
-      if (walkResult2[0] >= 0) seed = walkResult2[0];
     }
   }
 

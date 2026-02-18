@@ -298,8 +298,14 @@ describe("convexHull", () => {
       ).toThrow("coplanar");
     });
 
-    it("handles points already inside the hull (duplicates near center)", () => {
-      // Octahedron vertices plus some interior points
+    it("includes all unit-sphere points (none dropped as interior)", () => {
+      // Octahedron vertices plus a nearby sphere point that would previously
+      // be dropped as "interior" due to perturbation pushing it inward
+      const extra: Point3D = [
+        Math.sqrt(1 / 3),
+        Math.sqrt(1 / 3),
+        Math.sqrt(1 / 3),
+      ];
       const points: Point3D[] = [
         [1, 0, 0],
         [-1, 0, 0],
@@ -307,15 +313,13 @@ describe("convexHull", () => {
         [0, -1, 0],
         [0, 0, 1],
         [0, 0, -1],
-        // Interior point (not on unit sphere, but inside the hull)
-        [0.1, 0.1, 0.1],
+        extra,
       ];
 
       const hull = convexHull(points);
-      // Should still produce 8 faces (interior point is skipped)
-      expect(hull.faces.length).toBe(8);
-      // Not all points on hull, so skip Euler check
-      validateHull(hull, false);
+      // All 7 sphere points are hull vertices: F = 2V - 4 = 10
+      expect(hull.faces.length).toBe(10);
+      validateHull(hull);
     });
   });
 });

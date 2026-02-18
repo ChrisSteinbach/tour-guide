@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "pipeline": "tsx src/pipeline/build.ts",
-    "extract": "tsx src/pipeline/extract.ts"
+    "extract": "tsx --max-old-space-size=6144 src/pipeline/extract-dump.ts",
+    "extract:sparql": "tsx src/pipeline/extract.ts"
   },
   "repository": {
     "type": "git",

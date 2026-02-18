@@ -17,8 +17,7 @@ permissions:
 jobs:
   build-data:
     runs-on: ubuntu-latest
-    # First uncached extraction can take hours; cached runs are much faster
-    timeout-minutes: 480
+    timeout-minutes: 120
 
     strategy:
       matrix:
@@ -35,23 +34,14 @@ jobs:
 
       - run: npm ci
 
-      - name: Restore extraction checkpoint
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            data/checkpoint-${{ matrix.lang }}.json
-            data/articles-${{ matrix.lang }}.json
-          key: extract-${{ matrix.lang }}-${{ github.run_id }}
-          restore-keys: extract-${{ matrix.lang }}-
-
-      - name: Restore tile cache
+      - name: Restore dump cache
         uses: actions/cache@v4
         with:
-          path: data/tile-cache-${{ matrix.lang }}.json
-          key: tile-cache-v1-${{ matrix.lang }}
+          path: data/dumps
+          key: dumps-v1-${{ matrix.lang }}
 
-      - name: Extract articles from Wikidata
-        run: npm run extract -- --lang=${{ matrix.lang }}
+      - name: Extract articles from Wikipedia dumps
+        run: npm run extract -- --lang=${{ matrix.lang }} --no-desc
 
       - name: Build triangulation data
         run: npm run pipeline -- --lang=${{ matrix.lang }}
@@ -66,17 +56,7 @@ jobs:
           path: |
             data/articles-${{ matrix.lang }}.json.gz
             data/triangulation-${{ matrix.lang }}.bin.gz
-            data/tile-cache-${{ matrix.lang }}.json
           retention-days: 90
-
-      - name: Save extraction checkpoint
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            data/checkpoint-${{ matrix.lang }}.json
-            data/articles-${{ matrix.lang }}.json
-          key: extract-${{ matrix.lang }}-${{ github.run_id }}
 
   publish-release:
     needs: build-data
