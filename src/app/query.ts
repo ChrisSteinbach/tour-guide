@@ -268,7 +268,7 @@ export async function loadQuery(
         if (done) break;
         chunks.push(value);
         received += value.byteLength;
-        onProgress(received / total);
+        onProgress(Math.min(received / total, 1));
       }
       const result = new Uint8Array(received);
       let offset = 0;
