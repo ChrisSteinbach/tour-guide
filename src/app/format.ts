@@ -18,6 +18,11 @@ export function formatDistance(meters: number): string {
   return km >= 10 ? `${Math.round(km)} km` : `${km.toFixed(1)} km`;
 }
 
+/** Compute distance in meters between two user positions. */
+export function distanceBetweenPositions(a: UserPosition, b: UserPosition): number {
+  return haversineDistance(a, b) * EARTH_RADIUS_M;
+}
+
 /** Full Wikipedia article URL from a title. */
 export function wikipediaUrl(title: string, lang: Lang = "en"): string {
   return `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`;

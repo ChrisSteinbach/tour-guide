@@ -2,7 +2,7 @@ import "./style.css";
 import type { NearbyArticle, UserPosition } from "./types";
 import type { LocationError } from "./location";
 import { mockPosition, mockArticles } from "./mock-data";
-import { distanceMeters } from "./format";
+import { distanceMeters, distanceBetweenPositions } from "./format";
 import { renderNearbyList, updateNearbyDistances } from "./render";
 import { renderLoading, renderLoadingProgress, renderError, renderWelcome } from "./status";
 import { watchLocation, type StopFn } from "./location";
@@ -34,6 +34,9 @@ let position: UserPosition | null = null;
 let locError: LocationError | null = null;
 let currentLang: Lang = getStoredLang();
 let downloadProgress = -1; // 0–1 or -1 for indeterminate
+let lastQueryPos: UserPosition | null = null;
+const REQUERY_DISTANCE_M = 15;
+let paused = false;
 
 function getStoredLang(): Lang {
   const stored = localStorage.getItem(LANG_STORAGE_KEY);
@@ -70,12 +73,21 @@ function showMore(): void {
   if (next == null || !position) return;
   nearbyCount = next;
   currentArticles = getNearby(position);
-  renderNearbyList(app, currentArticles, showDetail, currentLang, handleLangChange, showMore, getNextTier());
+  renderNearbyList(app, currentArticles, showDetail, currentLang, handleLangChange, showMore, getNextTier(), paused, togglePause);
 }
 
 function showList(): void {
   selectedArticle = null;
-  renderNearbyList(app, currentArticles, showDetail, currentLang, handleLangChange, showMore, getNextTier());
+  renderNearbyList(app, currentArticles, showDetail, currentLang, handleLangChange, showMore, getNextTier(), paused, togglePause);
+}
+
+function togglePause(): void {
+  paused = !paused;
+  if (!paused && position) {
+    lastQueryPos = position;
+    currentArticles = getNearby(position);
+  }
+  renderNearbyList(app, currentArticles, showDetail, currentLang, handleLangChange, showMore, getNextTier(), paused, togglePause);
 }
 
 const goBack = () => history.back();
@@ -112,8 +124,16 @@ function render(): void {
     renderLoading(app);
     return;
   }
-  const newArticles = getNearby(position);
   if (selectedArticle) return;
+
+  // Skip re-query when paused or position hasn't moved enough
+  if (paused) return;
+  if (lastQueryPos && distanceBetweenPositions(position, lastQueryPos) < REQUERY_DISTANCE_M) {
+    return;
+  }
+
+  lastQueryPos = position;
+  const newArticles = getNearby(position);
 
   // If showing the same articles, just update distances in-place
   // to avoid nuking the DOM (which closes open dropdowns like the lang select)
@@ -126,7 +146,7 @@ function render(): void {
     updateNearbyDistances(app, currentArticles);
     return;
   }
-  renderNearbyList(app, currentArticles, showDetail, currentLang, handleLangChange, showMore, getNextTier());
+  renderNearbyList(app, currentArticles, showDetail, currentLang, handleLangChange, showMore, getNextTier(), paused, togglePause);
 }
 
 function useMockData(): void {
@@ -143,6 +163,7 @@ function loadLanguageData(lang: Lang): void {
   dataReady = false;
   query = null;
   downloadProgress = -1;
+  lastQueryPos = null;
   const gen = ++loadGeneration;
   if (started) render(); // show loading state
 

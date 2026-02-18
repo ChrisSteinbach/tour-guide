@@ -23,6 +23,8 @@ export function renderNearbyList(
   onLangChange: (lang: Lang) => void,
   onShowMore?: () => void,
   nextCount?: number,
+  paused?: boolean,
+  onTogglePause?: () => void,
 ): void {
   container.innerHTML = "";
 
@@ -36,8 +38,23 @@ export function renderNearbyList(
   const h1 = document.createElement("h1");
   h1.textContent = "Tour Guide";
   const subtitle = document.createElement("p");
-  subtitle.textContent = `${articles.length} nearby attraction${articles.length !== 1 ? "s" : ""}`;
+  const subtitleText = `${articles.length} nearby attraction${articles.length !== 1 ? "s" : ""}`;
+  subtitle.textContent = paused ? `${subtitleText} · paused` : subtitleText;
   titleGroup.append(h1, subtitle);
+
+  const headerControls = document.createElement("div");
+  headerControls.style.display = "flex";
+  headerControls.style.alignItems = "center";
+  headerControls.style.gap = "8px";
+
+  if (onTogglePause) {
+    const pauseBtn = document.createElement("button");
+    pauseBtn.className = "pause-toggle";
+    pauseBtn.setAttribute("aria-label", paused ? "Resume updates" : "Pause updates");
+    pauseBtn.textContent = paused ? "\u25B6" : "\u23F8";
+    pauseBtn.addEventListener("click", onTogglePause);
+    headerControls.appendChild(pauseBtn);
+  }
 
   const langSelect = document.createElement("select");
   langSelect.className = "header-lang-select";
@@ -53,7 +70,8 @@ export function renderNearbyList(
     onLangChange(langSelect.value as Lang);
   });
 
-  row.append(titleGroup, langSelect);
+  headerControls.appendChild(langSelect);
+  row.append(titleGroup, headerControls);
   header.appendChild(row);
 
   const list = document.createElement("ul");
