@@ -64,17 +64,20 @@ function showList(): void {
   renderNearbyList(app, currentArticles, showDetail, currentLang, handleLangChange);
 }
 
+const goBack = () => history.back();
+
 async function showDetail(article: NearbyArticle): Promise<void> {
   selectedArticle = article;
-  renderDetailLoading(app, article, showList);
+  history.pushState({ view: "detail" }, "");
+  renderDetailLoading(app, article, goBack);
   try {
     const summary = await fetchArticleSummary(article.title, currentLang);
     if (selectedArticle !== article) return;
-    renderDetailReady(app, article, summary, showList);
+    renderDetailReady(app, article, summary, goBack);
   } catch (err) {
     if (selectedArticle !== article) return;
     const message = err instanceof Error ? err.message : "Unknown error";
-    renderDetailError(app, article, message, showList, () => showDetail(article), currentLang);
+    renderDetailError(app, article, message, goBack, () => showDetail(article), currentLang);
   }
 }
 
@@ -144,7 +147,7 @@ function loadLanguageData(lang: Lang): void {
     }
   };
 
-  loadQuery(`${import.meta.env.BASE_URL}triangulation-${lang}.bin`, `triangulation-v2-${lang}`, onProgress)
+  loadQuery(`${import.meta.env.BASE_URL}triangulation-${lang}.bin`, `triangulation-v3-${lang}`, onProgress)
     .then((q) => {
       if (gen !== loadGeneration) return; // stale load, discard
       query = q;
@@ -188,6 +191,13 @@ function startLocating(): void {
     },
   });
 }
+
+// Handle browser back button / swipe-back from detail view
+window.addEventListener("popstate", () => {
+  if (selectedArticle) {
+    showList();
+  }
+});
 
 // Bootstrap: load data in the background
 loadLanguageData(currentLang);

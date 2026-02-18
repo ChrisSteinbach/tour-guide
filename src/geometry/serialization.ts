@@ -277,8 +277,10 @@ export function deserializeBinary(buf: ArrayBuffer): { fd: FlatDelaunay; article
   // Parse articles JSON
   const decoder = new TextDecoder();
   const articlesJson = decoder.decode(new Uint8Array(buf, articlesOffset, articlesLength));
-  const titles: string[] = JSON.parse(articlesJson);
-  const articles = titles.map((title) => ({ title }));
+  const parsed: (string | [string, string])[] = JSON.parse(articlesJson);
+  const articles = parsed.map((entry) => ({
+    title: Array.isArray(entry) ? entry[0] : entry,
+  }));
 
   return {
     fd: { vertexPoints, vertexTriangles, triangleVertices, triangleNeighbors },
