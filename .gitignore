@@ -3,3 +3,5 @@ dist/
 data/
 dev-dist/
 firefox_profile.json
+.playwright-mcp/
+*.png
