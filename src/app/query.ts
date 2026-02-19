@@ -200,6 +200,7 @@ interface CachedData {
   triangleVertices: Uint32Array;
   triangleNeighbors: Uint32Array;
   articles: string[]; // titles — lighter for structured clone than objects
+  lastModified?: string;
 }
 
 function idbOpen(): Promise<IDBDatabase | null> {
@@ -223,6 +224,124 @@ function idbGet(db: IDBDatabase, key: string): Promise<CachedData | undefined> {
 function idbPut(db: IDBDatabase, key: string, value: CachedData): void {
   const tx = db.transaction(IDB_STORE, "readwrite");
   tx.objectStore(IDB_STORE).put(value, key);
+}
+
+function idbGetString(db: IDBDatabase, key: string): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    const tx = db.transaction(IDB_STORE, "readonly");
+    const req = tx.objectStore(IDB_STORE).get(key);
+    req.onsuccess = () => resolve(typeof req.result === "string" ? req.result : undefined);
+    req.onerror = () => resolve(undefined);
+  });
+}
+
+function idbPutString(db: IDBDatabase, key: string, value: string): void {
+  const tx = db.transaction(IDB_STORE, "readwrite");
+  tx.objectStore(IDB_STORE).put(value, key);
+}
+
+function idbDelete(db: IDBDatabase, key: string): void {
+  const tx = db.transaction(IDB_STORE, "readwrite");
+  tx.objectStore(IDB_STORE).delete(key);
+}
+
+// ---------- Update check ----------
+
+export interface UpdateInfo {
+  serverLastModified: string;
+}
+
+export async function checkForUpdate(
+  url: string,
+  cacheKey: string,
+): Promise<UpdateInfo | null> {
+  try {
+    const db = typeof indexedDB !== "undefined" ? await idbOpen() : null;
+    if (!db) return null;
+
+    const cached = await idbGet(db, cacheKey);
+    if (!cached?.lastModified) return null;
+
+    const response = await fetch(url, { method: "HEAD", cache: "no-store" });
+    const serverLM = response.headers.get("Last-Modified");
+    if (!serverLM) return null;
+
+    if (serverLM === cached.lastModified) return null;
+
+    const dismissedKey = `update-dismissed-${cacheKey}`;
+    const dismissed = await idbGetString(db, dismissedKey);
+    if (dismissed === serverLM) return null;
+
+    return { serverLastModified: serverLM };
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchUpdate(
+  url: string,
+  cacheKey: string,
+  serverLastModified: string,
+  onProgress?: (fraction: number) => void,
+): Promise<NearestQuery> {
+  const response = await fetch(url, { cache: "no-store" });
+
+  let buf: ArrayBuffer;
+  const total = Number(response.headers.get("Content-Length") || 0);
+  if (onProgress && response.body && total > 0) {
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+    onProgress(0);
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.byteLength;
+      onProgress(Math.min(received / total, 1));
+    }
+    const result = new Uint8Array(received);
+    let offset = 0;
+    for (const chunk of chunks) {
+      result.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    buf = result.buffer;
+  } else {
+    if (onProgress) onProgress(-1);
+    buf = await response.arrayBuffer();
+  }
+
+  const { fd, articles } = deserializeBinary(buf);
+
+  const db = typeof indexedDB !== "undefined" ? await idbOpen() : null;
+  if (db) {
+    idbPut(db, cacheKey, {
+      vertexPoints: fd.vertexPoints,
+      vertexTriangles: fd.vertexTriangles,
+      triangleVertices: fd.triangleVertices,
+      triangleNeighbors: fd.triangleNeighbors,
+      articles: articles.map((a) => a.title),
+      lastModified: serverLastModified,
+    });
+    idbDelete(db, `update-dismissed-${cacheKey}`);
+  }
+
+  return new NearestQuery(fd, articles);
+}
+
+export async function dismissUpdate(
+  cacheKey: string,
+  serverLastModified: string,
+): Promise<void> {
+  try {
+    const db = typeof indexedDB !== "undefined" ? await idbOpen() : null;
+    if (db) {
+      idbPutString(db, `update-dismissed-${cacheKey}`, serverLastModified);
+    }
+  } catch {
+    // ignore
+  }
 }
 
 // ---------- Loader ----------
@@ -255,6 +374,7 @@ export async function loadQuery(
   const timeoutId = setTimeout(() => controller.abort(), 120_000);
   try {
     const response = await fetch(url, { signal: controller.signal });
+    const lastModified = response.headers.get("Last-Modified") ?? undefined;
 
     let buf: ArrayBuffer;
     const total = Number(response.headers.get("Content-Length") || 0);
@@ -296,6 +416,7 @@ export async function loadQuery(
         triangleVertices: fd.triangleVertices,
         triangleNeighbors: fd.triangleNeighbors,
         articles: articles.map((a) => a.title),
+        lastModified,
       });
     }
 

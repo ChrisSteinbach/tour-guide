@@ -12,7 +12,7 @@ import {
   renderDetailReady,
   renderDetailError,
 } from "./detail";
-import { loadQuery, type NearestQuery } from "./query";
+import { loadQuery, checkForUpdate, fetchUpdate, dismissUpdate, type NearestQuery } from "./query";
 import { DEFAULT_LANG, SUPPORTED_LANGS } from "../lang";
 import type { Lang } from "../lang";
 
@@ -37,6 +37,9 @@ let downloadProgress = -1; // 0–1 or -1 for indeterminate
 let lastQueryPos: UserPosition | null = null;
 const REQUERY_DISTANCE_M = 15;
 let paused = false;
+let pendingUpdate: { serverLastModified: string; lang: Lang } | null = null;
+let updateDownloading = false;
+let updateProgress = 0;
 
 function getStoredLang(): Lang {
   const stored = localStorage.getItem(LANG_STORAGE_KEY);
@@ -159,11 +162,85 @@ function useMockData(): void {
   render();
 }
 
+function renderUpdateBanner(): void {
+  let banner = document.getElementById("update-banner");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "update-banner";
+    banner.className = "update-banner";
+    document.body.appendChild(banner);
+  }
+
+  if (updateDownloading) {
+    const pct = Math.round(updateProgress * 100);
+    banner.innerHTML = `
+      <span class="update-banner-text">Downloading update\u2026 ${pct}%</span>
+      <div class="update-banner-progress">
+        <div class="update-banner-progress-fill" style="width:${pct}%"></div>
+      </div>`;
+  } else {
+    banner.innerHTML = `
+      <span class="update-banner-text">New article data available</span>
+      <div class="update-banner-actions">
+        <button class="update-banner-btn update-banner-accept">Update</button>
+        <button class="update-banner-btn update-banner-dismiss">Not now</button>
+      </div>`;
+    banner.querySelector(".update-banner-accept")!.addEventListener("click", acceptUpdate);
+    banner.querySelector(".update-banner-dismiss")!.addEventListener("click", declineUpdate);
+  }
+}
+
+function removeUpdateBanner(): void {
+  document.getElementById("update-banner")?.remove();
+}
+
+function acceptUpdate(): void {
+  if (!pendingUpdate) return;
+  const { serverLastModified, lang } = pendingUpdate;
+  updateDownloading = true;
+  updateProgress = 0;
+  renderUpdateBanner();
+
+  const cacheKey = `triangulation-v3-${lang}`;
+  const url = `${import.meta.env.BASE_URL}triangulation-${lang}.bin`;
+
+  fetchUpdate(url, cacheKey, serverLastModified, (fraction) => {
+    updateProgress = fraction < 0 ? 0 : fraction;
+    renderUpdateBanner();
+  })
+    .then((q) => {
+      if (currentLang !== lang) return; // language changed while downloading
+      query = q;
+      console.log(`Updated to new data: ${q.size} articles (${lang})`);
+      lastQueryPos = null; // force re-query
+      if (started && position) render();
+    })
+    .catch((err) => {
+      console.error("Update download failed:", err);
+    })
+    .finally(() => {
+      pendingUpdate = null;
+      updateDownloading = false;
+      removeUpdateBanner();
+    });
+}
+
+function declineUpdate(): void {
+  if (!pendingUpdate) return;
+  const { serverLastModified, lang } = pendingUpdate;
+  dismissUpdate(`triangulation-v3-${lang}`, serverLastModified);
+  pendingUpdate = null;
+  removeUpdateBanner();
+}
+
 function loadLanguageData(lang: Lang): void {
   dataReady = false;
   query = null;
   downloadProgress = -1;
   lastQueryPos = null;
+  pendingUpdate = null;
+  updateDownloading = false;
+  removeUpdateBanner();
   const gen = ++loadGeneration;
   if (started) render(); // show loading state
 
@@ -187,6 +264,15 @@ function loadLanguageData(lang: Lang): void {
       if (gen !== loadGeneration) return; // stale load, discard
       query = q;
       console.log(`Loaded ${q.size} articles (${lang})`);
+
+      // Background check for newer data on server
+      const cacheKey = `triangulation-v3-${lang}`;
+      const url = `${import.meta.env.BASE_URL}triangulation-${lang}.bin`;
+      checkForUpdate(url, cacheKey).then((info) => {
+        if (!info || gen !== loadGeneration) return;
+        pendingUpdate = { serverLastModified: info.serverLastModified, lang };
+        renderUpdateBanner();
+      });
     })
     .catch((err) => {
       if (gen !== loadGeneration) return;

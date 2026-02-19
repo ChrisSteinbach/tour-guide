@@ -20,6 +20,7 @@ function serveData(): Plugin {
             const stat = statSync(filePath);
             res.setHeader("Content-Type", "application/octet-stream");
             res.setHeader("Content-Length", stat.size);
+            res.setHeader("Last-Modified", stat.mtime.toUTCString());
             createReadStream(filePath).pipe(res);
           } catch {
             next();
@@ -78,17 +79,6 @@ export default defineConfig({
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg}"],
         runtimeCaching: [
-          {
-            urlPattern: /\/triangulation-\w+\.bin$/,
-            handler: "CacheFirst",
-            options: {
-              cacheName: "triangulation-data",
-              expiration: {
-                maxEntries: 3,
-                maxAgeSeconds: 30 * 24 * 60 * 60, // 30 days
-              },
-            },
-          },
           {
             urlPattern: /^https:\/\/\w+\.wikipedia\.org\/api\/rest_v1\//,
             handler: "StaleWhileRevalidate",

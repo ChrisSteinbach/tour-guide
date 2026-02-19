@@ -333,3 +333,75 @@ body {
 .detail-directions-link:active {
   background: #e8f0fe;
 }
+
+/* Update banner */
+
+.update-banner {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: #323232;
+  color: #fff;
+  padding: 12px 16px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  animation: update-banner-slide-up 0.25s ease-out;
+}
+
+@keyframes update-banner-slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.update-banner-text {
+  font-size: 0.9rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.update-banner-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.update-banner-btn {
+  background: none;
+  border: none;
+  color: #8ab4f8;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.update-banner-btn:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.update-banner-dismiss {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.update-banner-progress {
+  width: 100%;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.update-banner-progress-fill {
+  height: 100%;
+  background: #8ab4f8;
+  border-radius: 2px;
+  transition: width 0.15s ease-out;
+}
