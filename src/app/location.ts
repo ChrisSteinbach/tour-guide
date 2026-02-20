@@ -23,8 +23,14 @@ const ERROR_CODES: Record<number, LocationError["code"]> = {
  * Watch the user's GPS position via the Geolocation API.
  * Returns a function that stops watching when called.
  */
-export function watchLocation(callbacks: LocationCallbacks): StopFn {
-  const watchId = navigator.geolocation.watchPosition(
+export function watchLocation(
+  callbacks: LocationCallbacks,
+  geo: Pick<
+    Geolocation,
+    "watchPosition" | "clearWatch"
+  > = navigator.geolocation,
+): StopFn {
+  const watchId = geo.watchPosition(
     (pos) => {
       callbacks.onPosition({
         lat: pos.coords.latitude,
@@ -44,5 +50,5 @@ export function watchLocation(callbacks: LocationCallbacks): StopFn {
     },
   );
 
-  return () => navigator.geolocation.clearWatch(watchId);
+  return () => geo.clearWatch(watchId);
 }

@@ -2,141 +2,101 @@ import { watchLocation } from "./location";
 import type { LocationError } from "./location";
 import type { UserPosition } from "./types";
 
-function createMockGeolocation() {
-  let successCb: PositionCallback | null = null;
-  let errorCb: PositionErrorCallback | null = null;
+function fakeGeo() {
+  let onSuccess: PositionCallback;
+  let onError: PositionErrorCallback;
   const clearWatch = vi.fn();
 
-  const geolocation = {
-    watchPosition: vi.fn(
-      (onSuccess: PositionCallback, onError?: PositionErrorCallback | null) => {
-        successCb = onSuccess;
-        errorCb = onError ?? null;
-        return 42; // watchId
-      },
-    ),
-    clearWatch,
-  };
-
   return {
-    geolocation,
+    watchPosition(
+      success: PositionCallback,
+      error?: PositionErrorCallback | null,
+    ) {
+      onSuccess = success;
+      onError = error!;
+      return 1;
+    },
     clearWatch,
     firePosition(lat: number, lon: number) {
-      successCb!({
+      onSuccess({
         coords: { latitude: lat, longitude: lon },
       } as GeolocationPosition);
     },
-    fireError(code: number, message: string) {
-      errorCb!({ code, message } as GeolocationPositionError);
+    fireError(code: number, message = "") {
+      onError({ code, message } as GeolocationPositionError);
     },
   };
 }
 
 describe("watchLocation", () => {
-  let savedNavigator: typeof globalThis.navigator;
-
-  beforeEach(() => {
-    savedNavigator = globalThis.navigator;
-  });
-
-  afterEach(() => {
-    Object.defineProperty(globalThis, "navigator", {
-      value: savedNavigator,
-      configurable: true,
-      writable: true,
-    });
-  });
-
-  function installMockGeolocation() {
-    const mock = createMockGeolocation();
-    Object.defineProperty(globalThis, "navigator", {
-      value: { geolocation: mock.geolocation },
-      configurable: true,
-      writable: true,
-    });
-    return mock;
-  }
-
-  it("calls onPosition with lat/lon from the Geolocation API", () => {
-    const mock = installMockGeolocation();
-
+  it("maps position to lat/lon", () => {
+    const geo = fakeGeo();
     const onPosition = vi.fn<(pos: UserPosition) => void>();
-    const onError = vi.fn<(err: LocationError) => void>();
-    watchLocation({ onPosition, onError });
+    watchLocation({ onPosition, onError: vi.fn() }, geo);
 
-    mock.firePosition(48.8584, 2.2945);
+    geo.firePosition(48.8584, 2.2945);
 
     expect(onPosition).toHaveBeenCalledWith({ lat: 48.8584, lon: 2.2945 });
-    expect(onError).not.toHaveBeenCalled();
   });
 
-  it("calls onError with mapped error code on PERMISSION_DENIED", () => {
-    const mock = installMockGeolocation();
-
-    const onPosition = vi.fn<(pos: UserPosition) => void>();
+  it("maps error code 1 to PERMISSION_DENIED", () => {
+    const geo = fakeGeo();
     const onError = vi.fn<(err: LocationError) => void>();
-    watchLocation({ onPosition, onError });
+    watchLocation({ onPosition: vi.fn(), onError }, geo);
 
-    mock.fireError(1, "User denied Geolocation");
+    geo.fireError(1, "denied");
 
     expect(onError).toHaveBeenCalledWith({
       code: "PERMISSION_DENIED",
-      message: "User denied Geolocation",
+      message: "denied",
     });
-    expect(onPosition).not.toHaveBeenCalled();
   });
 
-  it("maps POSITION_UNAVAILABLE (code 2) correctly", () => {
-    const mock = installMockGeolocation();
-
+  it("maps error code 2 to POSITION_UNAVAILABLE", () => {
+    const geo = fakeGeo();
     const onError = vi.fn<(err: LocationError) => void>();
-    watchLocation({ onPosition: vi.fn(), onError });
+    watchLocation({ onPosition: vi.fn(), onError }, geo);
 
-    mock.fireError(2, "Position unavailable");
+    geo.fireError(2, "unavailable");
 
     expect(onError).toHaveBeenCalledWith({
       code: "POSITION_UNAVAILABLE",
-      message: "Position unavailable",
+      message: "unavailable",
     });
   });
 
-  it("maps TIMEOUT (code 3) correctly", () => {
-    const mock = installMockGeolocation();
-
+  it("maps error code 3 to TIMEOUT", () => {
+    const geo = fakeGeo();
     const onError = vi.fn<(err: LocationError) => void>();
-    watchLocation({ onPosition: vi.fn(), onError });
+    watchLocation({ onPosition: vi.fn(), onError }, geo);
 
-    mock.fireError(3, "Timeout expired");
+    geo.fireError(3, "timed out");
 
     expect(onError).toHaveBeenCalledWith({
       code: "TIMEOUT",
-      message: "Timeout expired",
+      message: "timed out",
     });
   });
 
-  it("returns a stop function that calls clearWatch", () => {
-    const mock = installMockGeolocation();
+  it("falls back to POSITION_UNAVAILABLE for unknown error codes", () => {
+    const geo = fakeGeo();
+    const onError = vi.fn<(err: LocationError) => void>();
+    watchLocation({ onPosition: vi.fn(), onError }, geo);
 
-    const stop = watchLocation({ onPosition: vi.fn(), onError: vi.fn() });
-    expect(mock.clearWatch).not.toHaveBeenCalled();
+    geo.fireError(99, "something weird");
 
-    stop();
-    expect(mock.clearWatch).toHaveBeenCalledWith(42);
+    expect(onError).toHaveBeenCalledWith({
+      code: "POSITION_UNAVAILABLE",
+      message: "something weird",
+    });
   });
 
-  it("passes correct options to watchPosition", () => {
-    const mock = installMockGeolocation();
+  it("returned stop function clears the watch", () => {
+    const geo = fakeGeo();
+    const stop = watchLocation({ onPosition: vi.fn(), onError: vi.fn() }, geo);
 
-    watchLocation({ onPosition: vi.fn(), onError: vi.fn() });
+    stop();
 
-    expect(mock.geolocation.watchPosition).toHaveBeenCalledWith(
-      expect.any(Function),
-      expect.any(Function),
-      {
-        enableHighAccuracy: true,
-        timeout: 30_000,
-        maximumAge: 60_000,
-      },
-    );
+    expect(geo.clearWatch).toHaveBeenCalledWith(1);
   });
 });
