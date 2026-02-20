@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Wikipedia-powered tour guide that uses spherical nearest-neighbor search to find nearby Wikipedia articles based on geographic coordinates. Early-stage: geometry library and pipeline are stubs, planning docs are in `docs/`.
+**WikiRadar** — a Wikipedia-powered tour guide PWA that uses spherical nearest-neighbor search to find nearby Wikipedia articles based on geographic coordinates. Fully implemented and deployed to GitHub Pages. Reference docs are in `docs/`.
 
 ## Commands
 
@@ -22,7 +22,7 @@ Run a single test file: `npx vitest run src/geometry/index.test.ts`
 
 ### Extraction
 
-`npm run extract` downloads Wikipedia SQL dumps (`geo_tags`, `page`, `page_props`) and joins them to produce the full set of geotagged articles. This captures articles with coordinates via `{{coord}}` templates that may not be mirrored to Wikidata. Descriptions are batch-fetched from the Wikidata API using Q-IDs from page_props.
+`npm run extract` downloads Wikipedia SQL dumps (`geo_tags`, `page`) and joins them to produce the full set of geotagged articles. This captures articles with coordinates via `{{coord}}` templates that may not be mirrored to Wikidata. Descriptions are fetched on demand by the app at runtime via the Wikipedia REST API.
 
 Dump files are downloaded to `data/dumps/` and cached across runs. A full English extraction fetches ~1.2M articles.
 
@@ -32,9 +32,6 @@ npm run extract -- --lang=en
 
 # Skip download (reuse existing dumps)
 npm run extract -- --lang=sv --skip-download
-
-# Skip descriptions (faster, for testing)
-npm run extract -- --lang=sv --no-desc
 
 # Geographic subset
 npm run extract -- --lang=en --bounds=49.44,50.19,5.73,6.53
@@ -48,7 +45,7 @@ The old SPARQL-based extractor is available as `npm run extract:sparql`.
 
 Output format (one JSON object per line):
 ```
-{"title":"Eiffel Tower","lat":48.8584,"lon":2.2945,"desc":"iron lattice tower in Paris, France"}
+{"title":"Eiffel Tower","lat":48.8584,"lon":2.2945}
 ```
 
 ### Pipeline
@@ -77,7 +74,7 @@ Output: `data/triangulation-{lang}.bin` (or `.json` with `--json`)
 
 Data is refreshed automatically via GitHub Actions (`pipeline.yml`) on a monthly schedule or manual trigger. The workflow:
 
-1. **Extract** — Downloads Wikipedia SQL dumps and joins geo_tags/page/page_props for each language (en, sv, ja)
+1. **Extract** — Downloads Wikipedia SQL dumps and joins geo_tags/page for each language (en, sv, ja)
 2. **Build** — Runs the pipeline to produce `triangulation-{lang}.bin`
 3. **Publish** — Uploads compressed `.bin.gz` files to a `data-latest` GitHub Release
 
@@ -106,7 +103,7 @@ Three modules under `src/`, sharing a common geometry library:
 - **`src/pipeline/`** — Offline build step that extracts Wikipedia coordinates, computes spherical Delaunay triangulation, and outputs static data files. Run via `tsx`, not Vite.
 - **`src/app/`** — PWA frontend that loads pre-computed data and performs nearest-neighbor queries at runtime. This is the Vite root (`vite.config.ts` sets `root: "src/app"`).
 
-The core algorithm: spherical Delaunay triangulation (via 3D convex hull) enables O(√N) nearest-neighbor queries using triangle walks. Points are represented as 3D Cartesian coordinates on a unit sphere. See `docs/nearest-neighbor.md` for theory.
+The core algorithm: spherical Delaunay triangulation (via 3D convex hull) enables O(√N) nearest-neighbor queries using triangle walks. Points are represented as 3D Cartesian coordinates on a unit sphere. See `docs/nearest-neighbor.md` for theory, `docs/architecture.md` for the end-to-end data flow, `docs/binary-format.md` for the serialization format, and `docs/data-extraction.md` for the extraction pipeline.
 
 ## Testing
 
