@@ -2,6 +2,5 @@ node_modules/
 dist/
 data/
 dev-dist/
-firefox_profile.json
 .playwright-mcp/
 *.png
