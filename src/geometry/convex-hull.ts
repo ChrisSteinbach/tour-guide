@@ -201,8 +201,11 @@ function findSeedFace(
   if (current === -1) return [-1, -1];
 
   const maxSteps = 6 * Math.ceil(Math.sqrt(liveFaceCount));
-  const px = p[0], py = p[1], pz = p[2];
-  let prev = -1, prevPrev = -1;
+  const px = p[0],
+    py = p[1],
+    pz = p[2];
+  let prev = -1,
+    prevPrev = -1;
 
   for (let step = 0; step < maxSteps; step++) {
     const f = faces[current]!;
@@ -221,9 +224,10 @@ function findSeedFace(
       if (orient3D(points[na], points[nb], points[nc], p) > 0) {
         return [ni, ni];
       }
-      const d = (points[na][0] + points[nb][0] + points[nc][0]) * px +
-                (points[na][1] + points[nb][1] + points[nc][1]) * py +
-                (points[na][2] + points[nb][2] + points[nc][2]) * pz;
+      const d =
+        (points[na][0] + points[nb][0] + points[nc][0]) * px +
+        (points[na][1] + points[nb][1] + points[nc][1]) * py +
+        (points[na][2] + points[nb][2] + points[nc][2]) * pz;
       if (d > bestDot) {
         bestDot = d;
         bestNeighbor = ni;
@@ -381,7 +385,10 @@ export function convexHull(points: Point3D[]): ConvexHull {
   linkAllAdjacency(faces, halfEdges);
 
   // Spatial grid index for fast face lookup (resolution scales with √n)
-  const gridRes = Math.max(8, Math.min(128, Math.ceil(Math.pow(points.length, 1 / 3))));
+  const gridRes = Math.max(
+    8,
+    Math.min(128, Math.ceil(Math.pow(points.length, 1 / 3))),
+  );
   const faceGrid = new FaceGrid(gridRes);
   for (let fi = 0; fi < 4; fi++) faceGrid.update(pp, faces, fi);
 
@@ -390,7 +397,15 @@ export function convexHull(points: Point3D[]): ConvexHull {
   let liveFaces = 4;
   for (let pi = 0; pi < points.length; pi++) {
     if (seedSet.has(pi)) continue;
-    const result = addPoint(pp, faces, halfEdges, pi, hintFace, liveFaces, faceGrid);
+    const result = addPoint(
+      pp,
+      faces,
+      halfEdges,
+      pi,
+      hintFace,
+      liveFaces,
+      faceGrid,
+    );
     hintFace = result[0];
     liveFaces += result[1];
   }
@@ -461,7 +476,10 @@ function addPoint(
     // The walk endpoint is the face closest to p by dot product. If p is on
     // the hull, visible faces are within a few hops. If p is interior, no
     // nearby faces are visible.
-    const bfsLimit = Math.min(liveFaces, Math.max(500, Math.ceil(4 * Math.sqrt(liveFaces))));
+    const bfsLimit = Math.min(
+      liveFaces,
+      Math.max(500, Math.ceil(4 * Math.sqrt(liveFaces))),
+    );
     const visited = new Set([walkEnd]);
     const queue = [walkEnd];
     for (let head = 0; head < queue.length && visited.size < bfsLimit; head++) {
@@ -580,10 +598,7 @@ function addPoint(
 /**
  * Remove deleted (null) face slots and remap neighbor indices.
  */
-function compact(
-  points: Point3D[],
-  faces: (HullFace | null)[],
-): ConvexHull {
+function compact(points: Point3D[], faces: (HullFace | null)[]): ConvexHull {
   const liveFaces: HullFace[] = [];
   const remap = new Map<number, number>();
 

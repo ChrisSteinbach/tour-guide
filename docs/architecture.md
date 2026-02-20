@@ -26,6 +26,7 @@ User-facing PWA
 **Entry point:** `src/pipeline/extract-dump.ts` — `npm run extract -- --lang=en`
 
 Downloads two SQL dump files from `dumps.wikimedia.org` per language:
+
 - `page.sql.gz` — article titles and IDs (~2 GB for English)
 - `geo_tags.sql.gz` — geographic coordinates linked to page IDs (~600 MB)
 
@@ -112,6 +113,7 @@ Distance uses chord length (`2 * asin(||v - q|| / 2)`) rather than `acos(dot(v, 
 ### Rendering (`render.ts`, `detail.ts`)
 
 **List view:**
+
 - Article cards with distance badges
 - Language selector dropdown and pause/resume button in header
 - "Show more" button loads next tier (10 → 20 → 50 → 100)
@@ -119,6 +121,7 @@ Distance uses chord length (`2 * asin(||v - q|| / 2)`) rather than `acos(dot(v, 
 - Re-query threshold: 15m minimum movement before recalculating
 
 **Detail view:**
+
 - Fetches article summary from Wikipedia REST API (`wiki-api.ts`)
 - Displays thumbnail, description, extract, and links to Wikipedia and Google Maps directions
 - In-memory cache for API responses
@@ -178,6 +181,7 @@ Incremental 3D convex hull algorithm. For unit-sphere points, hull faces are exa
 **Degeneracy handling:** Points receive ~1e-6 random perturbation (reprojected onto the sphere) to prevent numerical ambiguity from coplanar/cospherical configurations.
 
 **Per-insertion steps:**
+
 1. Find a visible face via greedy walk from previous insertion point
 2. BFS to discover all connected visible faces
 3. Collect horizon edges (boundary between visible and non-visible)
@@ -189,6 +193,7 @@ Incremental 3D convex hull algorithm. For unit-sphere points, hull faces are exa
 ### Delaunay Triangulation (`delaunay.ts`)
 
 `buildTriangulation(hull)` enriches hull output:
+
 - Computes circumcenter and circumradius for each triangle
 - Builds vertex-to-triangle mapping (entry point for walks)
 - Drops interior points (those not on the hull), remaps indices
@@ -204,12 +209,12 @@ Incremental 3D convex hull algorithm. For unit-sphere points, hull faces are exa
 
 Two formats sharing the same logical structure:
 
-| | JSON (`TriangulationFile`) | Binary |
-|---|---|---|
+|          | JSON (`TriangulationFile`)    | Binary         |
+| -------- | ----------------------------- | -------------- |
 | Vertices | `number[]` (8 decimal places) | `Float32Array` |
-| Indices | `number[]` | `Uint32Array` |
-| Articles | `string[]` | UTF-8 JSON |
-| Use case | Debugging (`--json` flag) | Production |
+| Indices  | `number[]`                    | `Uint32Array`  |
+| Articles | `string[]`                    | UTF-8 JSON     |
+| Use case | Debugging (`--json` flag)     | Production     |
 
 `deserializeBinary()` upcasts Float32 vertices to Float64 for math operations. Uint32 sections use zero-copy typed array views directly into the ArrayBuffer.
 

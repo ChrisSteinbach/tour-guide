@@ -29,7 +29,10 @@ function renderStatusScreen(
 }
 
 /** Render the loading state with a pulsing dot. */
-export function renderLoading(container: HTMLElement, message = "Finding your location\u2026"): void {
+export function renderLoading(
+  container: HTMLElement,
+  message = "Finding your location\u2026",
+): void {
   const dot = document.createElement("div");
   dot.className = "loading-dot";
 
@@ -41,7 +44,10 @@ export function renderLoading(container: HTMLElement, message = "Finding your lo
 }
 
 /** Render the loading state with a progress bar for data download. */
-export function renderLoadingProgress(container: HTMLElement, fraction: number): void {
+export function renderLoadingProgress(
+  container: HTMLElement,
+  fraction: number,
+): void {
   if (fraction < 0) {
     renderLoading(container, "Loading article data\u2026");
     return;
@@ -112,8 +118,10 @@ export function renderError(
   msg.className = "status-message";
 
   const messages: Record<LocationError["code"], string> = {
-    PERMISSION_DENIED: "Location access was denied. Please enable location permissions or use demo data.",
-    POSITION_UNAVAILABLE: "Your location could not be determined. Please try again or use demo data.",
+    PERMISSION_DENIED:
+      "Location access was denied. Please enable location permissions or use demo data.",
+    POSITION_UNAVAILABLE:
+      "Your location could not be determined. Please try again or use demo data.",
     TIMEOUT: "Location request timed out. Please try again or use demo data.",
   };
   msg.textContent = messages[error.code];

@@ -33,7 +33,13 @@ interface Bounds {
 
 // ---------- CLI arg parsing ----------
 
-function parseArgs(): { limit: number; bounds: Bounds | null; json: boolean; convert: boolean; lang: Lang } {
+function parseArgs(): {
+  limit: number;
+  bounds: Bounds | null;
+  json: boolean;
+  convert: boolean;
+  lang: Lang;
+} {
   let limit = Infinity;
   let bounds: Bounds | null = null;
   let json = false;
@@ -49,9 +55,16 @@ function parseArgs(): { limit: number; bounds: Bounds | null; json: boolean; con
     } else if (arg.startsWith("--bounds=")) {
       const parts = arg.slice("--bounds=".length).split(",").map(Number);
       if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) {
-        throw new Error(`Invalid --bounds (expected south,north,west,east): ${arg}`);
+        throw new Error(
+          `Invalid --bounds (expected south,north,west,east): ${arg}`,
+        );
       }
-      bounds = { south: parts[0], north: parts[1], west: parts[2], east: parts[3] };
+      bounds = {
+        south: parts[0],
+        north: parts[1],
+        west: parts[2],
+        east: parts[3],
+      };
     } else if (arg === "--json") {
       json = true;
     } else if (arg === "--convert") {
@@ -59,7 +72,9 @@ function parseArgs(): { limit: number; bounds: Bounds | null; json: boolean; con
     } else if (arg.startsWith("--lang=")) {
       const val = arg.slice("--lang=".length);
       if (!(SUPPORTED_LANGS as readonly string[]).includes(val)) {
-        throw new Error(`Unsupported language "${val}". Supported: ${SUPPORTED_LANGS.join(", ")}`);
+        throw new Error(
+          `Unsupported language "${val}". Supported: ${SUPPORTED_LANGS.join(", ")}`,
+        );
       }
       lang = val as Lang;
     }
@@ -129,7 +144,10 @@ async function main() {
   console.log("tour-guide build pipeline\n");
   console.log(`  --lang=${lang}`);
   if (Number.isFinite(limit)) console.log(`  --limit=${limit}`);
-  if (bounds) console.log(`  --bounds=${bounds.south},${bounds.north},${bounds.west},${bounds.east}`);
+  if (bounds)
+    console.log(
+      `  --bounds=${bounds.south},${bounds.north},${bounds.west},${bounds.east}`,
+    );
   if (json) console.log(`  --json (JSON output)`);
   if (convert) console.log(`  --convert (converting existing JSON to binary)`);
 
@@ -139,9 +157,13 @@ async function main() {
     const binPath = resolve(`data/triangulation-${lang}.bin`);
     console.log(`\nReading ${jsonPath}...`);
     const t0 = performance.now();
-    const data = JSON.parse(readFileSync(jsonPath, "utf-8")) as TriangulationFile;
+    const data = JSON.parse(
+      readFileSync(jsonPath, "utf-8"),
+    ) as TriangulationFile;
     const t1 = performance.now();
-    console.log(`  → Parsed in ${((t1 - t0) / 1000).toFixed(1)}s (${data.vertexCount} vertices, ${data.triangleCount} triangles)`);
+    console.log(
+      `  → Parsed in ${((t1 - t0) / 1000).toFixed(1)}s (${data.vertexCount} vertices, ${data.triangleCount} triangles)`,
+    );
     console.log("\nWriting binary...");
     writeBinary(data, binPath);
     const t2 = performance.now();
@@ -156,7 +178,9 @@ async function main() {
   const t0 = performance.now();
   const articles = await readArticles(inputPath, limit, bounds);
   const t1 = performance.now();
-  console.log(`  → ${articles.length} articles read in ${((t1 - t0) / 1000).toFixed(1)}s`);
+  console.log(
+    `  → ${articles.length} articles read in ${((t1 - t0) / 1000).toFixed(1)}s`,
+  );
 
   if (articles.length < 4) {
     throw new Error(
@@ -170,14 +194,18 @@ async function main() {
   const t2 = performance.now();
   const points = articles.map((a) => toCartesian({ lat: a.lat, lon: a.lon }));
   const t3 = performance.now();
-  console.log(`  → ${points.length} points in ${((t3 - t2) / 1000).toFixed(1)}s`);
+  console.log(
+    `  → ${points.length} points in ${((t3 - t2) / 1000).toFixed(1)}s`,
+  );
 
   // Step 3: Build convex hull
   console.log("\nStep 3: Building convex hull...");
   const t4 = performance.now();
   const hull = convexHull(points);
   const t5 = performance.now();
-  console.log(`  → ${hull.faces.length} faces in ${((t5 - t4) / 1000).toFixed(1)}s`);
+  console.log(
+    `  → ${hull.faces.length} faces in ${((t5 - t4) / 1000).toFixed(1)}s`,
+  );
 
   // Step 4: Extract Delaunay triangulation
   console.log("\nStep 4: Building Delaunay triangulation...");
@@ -190,7 +218,9 @@ async function main() {
 
   // Step 5: Serialize and write output
   if (tri.originalIndices.length < articles.length) {
-    console.log(`  → ${tri.originalIndices.length} of ${articles.length} vertices on hull (interior points filtered)`);
+    console.log(
+      `  → ${tri.originalIndices.length} of ${articles.length} vertices on hull (interior points filtered)`,
+    );
   }
   const meta: ArticleMeta[] = tri.originalIndices.map((i) => ({
     title: articles[i].title,

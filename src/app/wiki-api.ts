@@ -31,7 +31,7 @@ export async function fetchArticleSummary(
   if (res.status === 404) throw new Error("Article not found");
   if (!res.ok) throw new Error(`Wikipedia API error: ${res.status}`);
 
-  const data = await res.json() as {
+  const data = (await res.json()) as {
     title?: string;
     extract?: string;
     description?: string;
@@ -45,7 +45,9 @@ export async function fetchArticleSummary(
     thumbnailUrl: data.thumbnail?.source ?? null,
     thumbnailWidth: data.thumbnail?.width ?? null,
     thumbnailHeight: data.thumbnail?.height ?? null,
-    pageUrl: data.content_urls?.desktop?.page ?? `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`,
+    pageUrl:
+      data.content_urls?.desktop?.page ??
+      `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`,
   };
 
   cache.set(cacheKey, summary);

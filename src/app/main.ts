@@ -4,7 +4,12 @@ import type { LocationError } from "./location";
 import { mockPosition, mockArticles } from "./mock-data";
 import { distanceMeters, distanceBetweenPositions } from "./format";
 import { renderNearbyList, updateNearbyDistances } from "./render";
-import { renderLoading, renderLoadingProgress, renderError, renderWelcome } from "./status";
+import {
+  renderLoading,
+  renderLoadingProgress,
+  renderError,
+  renderWelcome,
+} from "./status";
 import { watchLocation, type StopFn } from "./location";
 import { fetchArticleSummary } from "./wiki-api";
 import {
@@ -12,7 +17,13 @@ import {
   renderDetailReady,
   renderDetailError,
 } from "./detail";
-import { loadQuery, checkForUpdate, fetchUpdate, dismissUpdate, type NearestQuery } from "./query";
+import {
+  loadQuery,
+  checkForUpdate,
+  fetchUpdate,
+  dismissUpdate,
+  type NearestQuery,
+} from "./query";
 import { DEFAULT_LANG, SUPPORTED_LANGS } from "../lang";
 import type { Lang } from "../lang";
 
@@ -41,7 +52,6 @@ let pendingUpdate: { serverLastModified: string; lang: Lang } | null = null;
 let updateDownloading = false;
 let updateProgress = 0;
 
-
 function getStoredLang(): Lang {
   const stored = localStorage.getItem(LANG_STORAGE_KEY);
   if (stored && (SUPPORTED_LANGS as readonly string[]).includes(stored)) {
@@ -59,7 +69,9 @@ function getNearby(pos: UserPosition): NearbyArticle[] {
   if (query) {
     const t0 = performance.now();
     const results = query.findNearest(pos.lat, pos.lon, nearbyCount);
-    console.log(`[perf] findNearest(k=${nearbyCount}) in ${(performance.now() - t0).toFixed(2)}ms`);
+    console.log(
+      `[perf] findNearest(k=${nearbyCount}) in ${(performance.now() - t0).toFixed(2)}ms`,
+    );
     return results;
   }
   return mockArticles
@@ -69,7 +81,9 @@ function getNearby(pos: UserPosition): NearbyArticle[] {
 
 function getNextTier(): number | undefined {
   const idx = NEARBY_TIERS.indexOf(nearbyCount);
-  return idx >= 0 && idx < NEARBY_TIERS.length - 1 ? NEARBY_TIERS[idx + 1] : undefined;
+  return idx >= 0 && idx < NEARBY_TIERS.length - 1
+    ? NEARBY_TIERS[idx + 1]
+    : undefined;
 }
 
 function showMore(): void {
@@ -77,12 +91,32 @@ function showMore(): void {
   if (next === undefined || !position) return;
   nearbyCount = next;
   currentArticles = getNearby(position);
-  renderNearbyList(app, currentArticles, selectArticle, currentLang, handleLangChange, showMore, getNextTier(), paused, togglePause);
+  renderNearbyList(
+    app,
+    currentArticles,
+    selectArticle,
+    currentLang,
+    handleLangChange,
+    showMore,
+    getNextTier(),
+    paused,
+    togglePause,
+  );
 }
 
 function showList(): void {
   selectedArticle = null;
-  renderNearbyList(app, currentArticles, selectArticle, currentLang, handleLangChange, showMore, getNextTier(), paused, togglePause);
+  renderNearbyList(
+    app,
+    currentArticles,
+    selectArticle,
+    currentLang,
+    handleLangChange,
+    showMore,
+    getNextTier(),
+    paused,
+    togglePause,
+  );
 }
 
 function togglePause(): void {
@@ -91,7 +125,17 @@ function togglePause(): void {
     lastQueryPos = position;
     currentArticles = getNearby(position);
   }
-  renderNearbyList(app, currentArticles, selectArticle, currentLang, handleLangChange, showMore, getNextTier(), paused, togglePause);
+  renderNearbyList(
+    app,
+    currentArticles,
+    selectArticle,
+    currentLang,
+    handleLangChange,
+    showMore,
+    getNextTier(),
+    paused,
+    togglePause,
+  );
 }
 
 const goBack = () => history.back();
@@ -112,7 +156,16 @@ async function showDetail(article: NearbyArticle): Promise<void> {
   } catch (err) {
     if (selectedArticle !== article) return;
     const message = err instanceof Error ? err.message : "Unknown error";
-    renderDetailError(app, article, message, goBack, () => { void showDetail(article); }, currentLang);
+    renderDetailError(
+      app,
+      article,
+      message,
+      goBack,
+      () => {
+        void showDetail(article);
+      },
+      currentLang,
+    );
   }
 }
 
@@ -137,7 +190,10 @@ function render(): void {
 
   // Skip re-query when paused or position hasn't moved enough
   if (paused) return;
-  if (lastQueryPos && distanceBetweenPositions(position, lastQueryPos) < REQUERY_DISTANCE_M) {
+  if (
+    lastQueryPos &&
+    distanceBetweenPositions(position, lastQueryPos) < REQUERY_DISTANCE_M
+  ) {
     return;
   }
 
@@ -155,7 +211,17 @@ function render(): void {
     updateNearbyDistances(app, currentArticles);
     return;
   }
-  renderNearbyList(app, currentArticles, selectArticle, currentLang, handleLangChange, showMore, getNextTier(), paused, togglePause);
+  renderNearbyList(
+    app,
+    currentArticles,
+    selectArticle,
+    currentLang,
+    handleLangChange,
+    showMore,
+    getNextTier(),
+    paused,
+    togglePause,
+  );
 }
 
 function useMockData(): void {
@@ -191,8 +257,12 @@ function renderUpdateBanner(): void {
         <button class="update-banner-btn update-banner-accept">Update</button>
         <button class="update-banner-btn update-banner-dismiss">Not now</button>
       </div>`;
-    banner.querySelector(".update-banner-accept")!.addEventListener("click", acceptUpdate);
-    banner.querySelector(".update-banner-dismiss")!.addEventListener("click", declineUpdate);
+    banner
+      .querySelector(".update-banner-accept")!
+      .addEventListener("click", acceptUpdate);
+    banner
+      .querySelector(".update-banner-dismiss")!
+      .addEventListener("click", declineUpdate);
   }
 }
 
@@ -250,9 +320,11 @@ function renderAppUpdateBanner(): void {
     <div class="update-banner-actions">
       <button class="update-banner-btn update-banner-accept">Reload</button>
     </div>`;
-  banner.querySelector(".update-banner-accept")!.addEventListener("click", () => {
-    window.location.reload();
-  });
+  banner
+    .querySelector(".update-banner-accept")!
+    .addEventListener("click", () => {
+      window.location.reload();
+    });
   document.body.appendChild(banner);
 }
 
@@ -291,7 +363,11 @@ function loadLanguageData(lang: Lang): void {
     }
   };
 
-  loadQuery(`${import.meta.env.BASE_URL}triangulation-${lang}.bin`, `triangulation-v3-${lang}`, onProgress)
+  loadQuery(
+    `${import.meta.env.BASE_URL}triangulation-${lang}.bin`,
+    `triangulation-v3-${lang}`,
+    onProgress,
+  )
     .then((q) => {
       if (gen !== loadGeneration) return; // stale load, discard
       query = q;

@@ -2,7 +2,11 @@
 // Converts the object graph to flat arrays for compact JSON storage
 // Also supports compact binary format for efficient network transfer
 
-import type { SphericalDelaunay, DelaunayVertex, DelaunayTriangle } from "./delaunay";
+import type {
+  SphericalDelaunay,
+  DelaunayVertex,
+  DelaunayTriangle,
+} from "./delaunay";
 import type { Point3D } from "./index";
 
 // ---------- Types ----------
@@ -23,8 +27,8 @@ export interface TriangulationFile {
 
 /** Flat typed-array representation of a spherical Delaunay triangulation. */
 export interface FlatDelaunay {
-  vertexPoints: Float64Array;    // [x0,y0,z0, x1,y1,z1, ...] — 3 per vertex
-  vertexTriangles: Uint32Array;  // incident triangle index per vertex
+  vertexPoints: Float64Array; // [x0,y0,z0, x1,y1,z1, ...] — 3 per vertex
+  vertexTriangles: Uint32Array; // incident triangle index per vertex
   triangleVertices: Uint32Array; // [v0,v1,v2, ...] — 3 per triangle
   triangleNeighbors: Uint32Array; // [n0,n1,n2, ...] — 3 per triangle
 }
@@ -178,11 +182,15 @@ export function serializeBinary(data: TriangulationFile): ArrayBuffer {
   const articlesBytes = encoder.encode(JSON.stringify(data.articles));
 
   // Compute section sizes (all 4-byte aligned)
-  const vertexPointsSize = V * 3 * 4;  // Float32
-  const vertexTrianglesSize = V * 4;     // Uint32
+  const vertexPointsSize = V * 3 * 4; // Float32
+  const vertexTrianglesSize = V * 4; // Uint32
   const triangleVerticesSize = T * 3 * 4; // Uint32
   const triangleNeighborsSize = T * 3 * 4; // Uint32
-  const numericSize = vertexPointsSize + vertexTrianglesSize + triangleVerticesSize + triangleNeighborsSize;
+  const numericSize =
+    vertexPointsSize +
+    vertexTrianglesSize +
+    triangleVerticesSize +
+    triangleNeighborsSize;
 
   const articlesOffset = HEADER_SIZE + numericSize;
   // Pad articles to 4-byte alignment
@@ -206,25 +214,39 @@ export function serializeBinary(data: TriangulationFile): ArrayBuffer {
   }
 
   // Write vertex triangles
-  const vertexTrianglesArr = new Uint32Array(buf, HEADER_SIZE + vertexPointsSize, V);
+  const vertexTrianglesArr = new Uint32Array(
+    buf,
+    HEADER_SIZE + vertexPointsSize,
+    V,
+  );
   for (let i = 0; i < V; i++) {
     vertexTrianglesArr[i] = data.vertexTriangles[i];
   }
 
   // Write triangle vertices
-  const triangleVerticesArr = new Uint32Array(buf, HEADER_SIZE + vertexPointsSize + vertexTrianglesSize, T * 3);
+  const triangleVerticesArr = new Uint32Array(
+    buf,
+    HEADER_SIZE + vertexPointsSize + vertexTrianglesSize,
+    T * 3,
+  );
   for (let i = 0; i < T * 3; i++) {
     triangleVerticesArr[i] = data.triangleVertices[i];
   }
 
   // Write triangle neighbors
-  const triangleNeighborsArr = new Uint32Array(buf, HEADER_SIZE + vertexPointsSize + vertexTrianglesSize + triangleVerticesSize, T * 3);
+  const triangleNeighborsArr = new Uint32Array(
+    buf,
+    HEADER_SIZE + vertexPointsSize + vertexTrianglesSize + triangleVerticesSize,
+    T * 3,
+  );
   for (let i = 0; i < T * 3; i++) {
     triangleNeighborsArr[i] = data.triangleNeighbors[i];
   }
 
   // Write articles JSON bytes
-  new Uint8Array(buf, articlesOffset, articlesBytes.byteLength).set(articlesBytes);
+  new Uint8Array(buf, articlesOffset, articlesBytes.byteLength).set(
+    articlesBytes,
+  );
 
   return buf;
 }
@@ -234,9 +256,14 @@ export function serializeBinary(data: TriangulationFile): ArrayBuffer {
  * Creates zero-copy typed array views for Uint32 data.
  * Upcasts Float32 vertex data to Float64Array for the app's math.
  */
-export function deserializeBinary(buf: ArrayBuffer): { fd: FlatDelaunay; articles: ArticleMeta[] } {
+export function deserializeBinary(buf: ArrayBuffer): {
+  fd: FlatDelaunay;
+  articles: ArticleMeta[];
+} {
   if (buf.byteLength < HEADER_SIZE) {
-    throw new Error(`Binary triangulation too small: ${buf.byteLength} bytes (need at least ${HEADER_SIZE})`);
+    throw new Error(
+      `Binary triangulation too small: ${buf.byteLength} bytes (need at least ${HEADER_SIZE})`,
+    );
   }
 
   const view = new DataView(buf);
@@ -250,10 +277,17 @@ export function deserializeBinary(buf: ArrayBuffer): { fd: FlatDelaunay; article
   const vertexTrianglesSize = V * 4;
   const triangleVerticesSize = T * 3 * 4;
   const triangleNeighborsSize = T * 3 * 4;
-  const expectedNumericEnd = HEADER_SIZE + vertexPointsSize + vertexTrianglesSize + triangleVerticesSize + triangleNeighborsSize;
+  const expectedNumericEnd =
+    HEADER_SIZE +
+    vertexPointsSize +
+    vertexTrianglesSize +
+    triangleVerticesSize +
+    triangleNeighborsSize;
 
   if (articlesOffset < expectedNumericEnd) {
-    throw new Error(`Invalid binary: articles offset ${articlesOffset} overlaps numeric data ending at ${expectedNumericEnd}`);
+    throw new Error(
+      `Invalid binary: articles offset ${articlesOffset} overlaps numeric data ending at ${expectedNumericEnd}`,
+    );
   }
   if (articlesOffset + articlesLength > buf.byteLength) {
     throw new Error(`Invalid binary: articles section extends beyond buffer`);
@@ -276,7 +310,9 @@ export function deserializeBinary(buf: ArrayBuffer): { fd: FlatDelaunay; article
 
   // Parse articles JSON
   const decoder = new TextDecoder();
-  const articlesJson = decoder.decode(new Uint8Array(buf, articlesOffset, articlesLength));
+  const articlesJson = decoder.decode(
+    new Uint8Array(buf, articlesOffset, articlesLength),
+  );
   const parsed = JSON.parse(articlesJson) as (string | [string, string])[];
   const articles = parsed.map((entry) => ({
     title: Array.isArray(entry) ? entry[0] : entry,

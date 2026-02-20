@@ -19,10 +19,10 @@ Article descriptions are not extracted — the app fetches them on demand from t
 
 Two SQL dump files are downloaded per language from `dumps.wikimedia.org`:
 
-| Table | File | Contents | Size (English) |
-|-------|------|----------|----------------|
-| `page` | `{wiki}-latest-page.sql.gz` | Article IDs, titles, namespaces, redirect flags | ~2 GB |
-| `geo_tags` | `{wiki}-latest-geo_tags.sql.gz` | Geographic coordinates linked to page IDs | ~600 MB |
+| Table      | File                            | Contents                                        | Size (English) |
+| ---------- | ------------------------------- | ----------------------------------------------- | -------------- |
+| `page`     | `{wiki}-latest-page.sql.gz`     | Article IDs, titles, namespaces, redirect flags | ~2 GB          |
+| `geo_tags` | `{wiki}-latest-geo_tags.sql.gz` | Geographic coordinates linked to page IDs       | ~600 MB        |
 
 Files are downloaded to `data/dumps/` and cached across runs.
 
@@ -98,18 +98,23 @@ npm run extract:sparql -- --lang=en  # auto-detects checkpoint
 Same NDJSON format but includes a `desc` field from Wikidata:
 
 ```json
-{"title":"Eiffel Tower","lat":48.8584,"lon":2.2945,"desc":"iron lattice tower in Paris, France"}
+{
+  "title": "Eiffel Tower",
+  "lat": 48.8584,
+  "lon": 2.2945,
+  "desc": "iron lattice tower in Paris, France"
+}
 ```
 
 ### Why SQL Dumps Are Preferred
 
-| | SQL Dumps | SPARQL |
-|---|---|---|
-| Speed | ~10 minutes (English) | Hours |
-| Rate limits | None | Wikidata throttling |
-| Coverage | All `{{coord}}` templates | Only Wikidata-linked items |
-| Descriptions | Not included | Included from Wikidata |
-| Offline | After initial download | Requires network |
+|              | SQL Dumps                 | SPARQL                     |
+| ------------ | ------------------------- | -------------------------- |
+| Speed        | ~10 minutes (English)     | Hours                      |
+| Rate limits  | None                      | Wikidata throttling        |
+| Coverage     | All `{{coord}}` templates | Only Wikidata-linked items |
+| Descriptions | Not included              | Included from Wikidata     |
+| Offline      | After initial download    | Requires network           |
 
 The SQL dump approach captures articles with `{{coord}}` templates that may not have corresponding Wikidata items, giving better geographic coverage.
 

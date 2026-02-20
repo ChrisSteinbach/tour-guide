@@ -192,7 +192,10 @@ describe("buildTriangulation", () => {
 
       for (const t of tri.triangles) {
         for (const vi of t.vertices) {
-          const dist = sphericalDistance(t.circumcenter, tri.vertices[vi].point);
+          const dist = sphericalDistance(
+            t.circumcenter,
+            tri.vertices[vi].point,
+          );
           expect(dist).toBeCloseTo(t.circumradius, 10);
         }
       }
@@ -215,7 +218,10 @@ describe("buildTriangulation", () => {
 
       for (const t of tri.triangles) {
         for (const vi of t.vertices) {
-          const dist = sphericalDistance(t.circumcenter, tri.vertices[vi].point);
+          const dist = sphericalDistance(
+            t.circumcenter,
+            tri.vertices[vi].point,
+          );
           expect(dist).toBeCloseTo(t.circumradius, 10);
         }
       }
@@ -240,7 +246,10 @@ describe("buildTriangulation", () => {
 
       for (const t of tri.triangles) {
         for (const vi of t.vertices) {
-          const dist = sphericalDistance(t.circumcenter, tri.vertices[vi].point);
+          const dist = sphericalDistance(
+            t.circumcenter,
+            tri.vertices[vi].point,
+          );
           expect(dist).toBeCloseTo(t.circumradius, 10);
         }
       }

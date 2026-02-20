@@ -73,11 +73,7 @@ export function greatCircleNormal(a: Point3D, b: Point3D): Point3D {
  * Positive → p is to the left of the great circle from a to b.
  * Negative → right side. Zero → on the great circle.
  */
-export function sideOfGreatCircle(
-  a: Point3D,
-  b: Point3D,
-  p: Point3D,
-): number {
+export function sideOfGreatCircle(a: Point3D, b: Point3D, p: Point3D): number {
   return dot(cross(a, b), p);
 }
 
@@ -153,5 +149,14 @@ export { locateTriangle, findNearest, vertexNeighbors } from "./point-location";
 
 // ---------- Serialization (re-exports) ----------
 
-export { serialize, deserialize, serializeBinary, deserializeBinary } from "./serialization";
-export type { TriangulationFile, ArticleMeta, FlatDelaunay } from "./serialization";
+export {
+  serialize,
+  deserialize,
+  serializeBinary,
+  deserializeBinary,
+} from "./serialization";
+export type {
+  TriangulationFile,
+  ArticleMeta,
+  FlatDelaunay,
+} from "./serialization";

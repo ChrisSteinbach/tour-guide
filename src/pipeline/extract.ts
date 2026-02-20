@@ -36,7 +36,11 @@ export interface ExtractOptions {
   bounds?: { south: number; north: number; west: number; east: number };
   regions?: { south: number; north: number; west: number; east: number }[];
   fetchFn?: typeof fetch;
-  onBatch?: (info: { batch: number; articlesInBatch: number; totalSoFar: number }) => void;
+  onBatch?: (info: {
+    batch: number;
+    articlesInBatch: number;
+    totalSoFar: number;
+  }) => void;
   onRegionComplete?: (info: RegionCompleteInfo) => void | Promise<void>;
   maxRetries?: number;
   tileDelayMs?: number;
@@ -62,7 +66,10 @@ export function parseBinding(binding: SparqlBinding): Article | null {
   let title: string | undefined;
   if (binding.article?.value) {
     const urlPath = new URL(binding.article.value).pathname;
-    title = decodeURIComponent(urlPath.split("/").pop() ?? "").replace(/_/g, " ");
+    title = decodeURIComponent(urlPath.split("/").pop() ?? "").replace(
+      /_/g,
+      " ",
+    );
   }
   if (!title) title = binding.itemLabel?.value;
   if (!title) return null;
@@ -99,7 +106,10 @@ const TILE_LAT_SIZE = 10;
 const TILE_LON_SIZE = 10;
 const MIN_TILE_DEG = 0.3;
 
-export function generateTiles(latSize: number = TILE_LAT_SIZE, lonSize: number = TILE_LON_SIZE): Bounds[] {
+export function generateTiles(
+  latSize: number = TILE_LAT_SIZE,
+  lonSize: number = TILE_LON_SIZE,
+): Bounds[] {
   const tiles: Bounds[] = [];
   for (let south = -90; south < 90; south += latSize) {
     for (let west = -180; west < 180; west += lonSize) {
@@ -126,7 +136,10 @@ export function subdivideTile(tile: Bounds): Bounds[] {
 }
 
 function canSubdivide(tile: Bounds): boolean {
-  return (tile.north - tile.south) > MIN_TILE_DEG && (tile.east - tile.west) > MIN_TILE_DEG;
+  return (
+    tile.north - tile.south > MIN_TILE_DEG &&
+    tile.east - tile.west > MIN_TILE_DEG
+  );
 }
 
 // ---------- Orchestrator ----------
@@ -163,13 +176,21 @@ interface ExtractContext {
   batchNum: number;
 }
 
-async function extractRegion(region: Bounds, ctx: ExtractContext): Promise<void> {
+async function extractRegion(
+  region: Bounds,
+  ctx: ExtractContext,
+): Promise<void> {
   try {
     let offset = 0;
 
     while (true) {
       ctx.batchNum++;
-      const query = buildQuery({ limit: ctx.batchSize, offset, bounds: region, lang: ctx.lang });
+      const query = buildQuery({
+        limit: ctx.batchSize,
+        offset,
+        bounds: region,
+        lang: ctx.lang,
+      });
 
       let response: SparqlResponse;
       let attempt = 0;
@@ -198,7 +219,11 @@ async function extractRegion(region: Bounds, ctx: ExtractContext): Promise<void>
       }
 
       ctx.allArticles.push(...parsed);
-      ctx.onBatch?.({ batch: ctx.batchNum, articlesInBatch: parsed.length, totalSoFar: ctx.allArticles.length });
+      ctx.onBatch?.({
+        batch: ctx.batchNum,
+        articlesInBatch: parsed.length,
+        totalSoFar: ctx.allArticles.length,
+      });
 
       offset += ctx.batchSize;
 
@@ -222,7 +247,9 @@ async function extractRegion(region: Bounds, ctx: ExtractContext): Promise<void>
   }
 }
 
-export async function extractArticles(options: ExtractOptions = {}): Promise<ExtractResult> {
+export async function extractArticles(
+  options: ExtractOptions = {},
+): Promise<ExtractResult> {
   const {
     endpoint = DEFAULT_ENDPOINT,
     batchSize = DEFAULT_BATCH_SIZE,
@@ -276,7 +303,9 @@ export async function extractArticles(options: ExtractOptions = {}): Promise<Ext
   if (ctx.failedTiles.length > 0) {
     console.error(
       `Warning: ${ctx.failedTiles.length} tile(s) failed at minimum size and were skipped:`,
-      ctx.failedTiles.map((t) => `[${t.south},${t.north}]×[${t.west},${t.east}]`).join(", "),
+      ctx.failedTiles
+        .map((t) => `[${t.south},${t.north}]×[${t.west},${t.east}]`)
+        .join(", "),
     );
   }
 
@@ -301,7 +330,9 @@ async function main() {
     if (!langArg) return DEFAULT_LANG;
     const val = langArg.slice("--lang=".length);
     if (!(SUPPORTED_LANGS as readonly string[]).includes(val)) {
-      console.error(`Unsupported language "${val}". Supported: ${SUPPORTED_LANGS.join(", ")}`);
+      console.error(
+        `Unsupported language "${val}". Supported: ${SUPPORTED_LANGS.join(", ")}`,
+      );
       process.exit(1);
     }
     return val as Lang;
@@ -316,12 +347,22 @@ async function main() {
 
   const boundsArg = args.find((a) => a.startsWith("--bounds="));
   if (boundsArg) {
-    const parts = boundsArg.slice("--bounds=".length).split(",").map((s: string) => Number(s));
+    const parts = boundsArg
+      .slice("--bounds=".length)
+      .split(",")
+      .map((s: string) => Number(s));
     if (parts.length !== 4 || parts.some(Number.isNaN)) {
-      console.error("Usage: --bounds=south,north,west,east [--no-cache] [--no-resume] [--lang=xx]");
+      console.error(
+        "Usage: --bounds=south,north,west,east [--no-cache] [--no-resume] [--lang=xx]",
+      );
       process.exit(1);
     }
-    bounds = { south: parts[0], north: parts[1], west: parts[2], east: parts[3] };
+    bounds = {
+      south: parts[0],
+      north: parts[1],
+      west: parts[2],
+      east: parts[3],
+    };
   }
 
   // Load tile cache for full-globe extraction
@@ -334,7 +375,9 @@ async function main() {
       const cached = cache.tiles?.length ?? 0;
       const failed = cache.failedTiles?.length ?? 0;
       regions = [...(cache.tiles ?? []), ...(cache.failedTiles ?? [])];
-      console.log(`Loaded tile cache: ${regions.length} regions (${cached} cached + ${failed} previously failed)`);
+      console.log(
+        `Loaded tile cache: ${regions.length} regions (${cached} cached + ${failed} previously failed)`,
+      );
     } catch {
       // No cache file — will use default tiling
     }
@@ -359,7 +402,9 @@ async function main() {
     if (checkpoint && checkpoint.completedRegions.length > 0) {
       // Validate tile cache hasn't changed — if region count differs, start fresh
       if (checkpoint.totalRegions !== allRegions.length) {
-        console.log(`Checkpoint region count mismatch (${checkpoint.totalRegions} vs ${allRegions.length}), starting fresh`);
+        console.log(
+          `Checkpoint region count mismatch (${checkpoint.totalRegions} vs ${allRegions.length}), starting fresh`,
+        );
         checkpoint = null;
       } else {
         resuming = true;
@@ -367,7 +412,9 @@ async function main() {
         accFailedTiles = [...checkpoint.failedTiles];
         const completedSet = new Set(checkpoint.completedRegions);
         const remaining = filterResumedRegions(allRegions, completedSet);
-        console.log(`Resuming: ${checkpoint.completedRegions.length}/${allRegions.length} regions complete, ${remaining.length} remaining`);
+        console.log(
+          `Resuming: ${checkpoint.completedRegions.length}/${allRegions.length} regions complete, ${remaining.length} remaining`,
+        );
         regions = remaining;
       }
     }
@@ -391,7 +438,9 @@ async function main() {
   if (bounds) {
     console.log(`Extracting articles within bounds: ${JSON.stringify(bounds)}`);
   } else if (!regions) {
-    console.log(`Extracting all geotagged articles (${allRegions.length} initial tiles, adaptive subdivision)...`);
+    console.log(
+      `Extracting all geotagged articles (${allRegions.length} initial tiles, adaptive subdivision)...`,
+    );
   }
 
   // Open output file: append if resuming, write if fresh
@@ -405,13 +454,16 @@ async function main() {
     regions,
     lang,
     onBatch({ batch, articlesInBatch, totalSoFar }) {
-      console.log(`  Batch ${batch}: ${articlesInBatch} articles (${totalSoFar} total)`);
+      console.log(
+        `  Batch ${batch}: ${articlesInBatch} articles (${totalSoFar} total)`,
+      );
     },
     onRegionComplete: useCheckpoint
       ? async ({ region, articles, leafTiles, failedTiles }) => {
           // Append articles to NDJSON incrementally
           if (articles.length > 0) {
-            const lines = articles.map((a) => JSON.stringify(a)).join("\n") + "\n";
+            const lines =
+              articles.map((a) => JSON.stringify(a)).join("\n") + "\n";
             fs.appendFileSync(outPath, lines);
           }
 
@@ -444,38 +496,56 @@ async function main() {
     }
 
     // Merge tile results: accumulated from checkpoint + new from this run
-    const finalLeafTiles = [...accLeafTiles, ...result.leafTiles.filter(
-      (t) => !accLeafTiles.some((a) => boundsKey(a) === boundsKey(t)),
-    )];
-    const finalFailedTiles = [...accFailedTiles, ...result.failedTiles.filter(
-      (t) => !accFailedTiles.some((a) => boundsKey(a) === boundsKey(t)),
-    )];
+    const finalLeafTiles = [
+      ...accLeafTiles,
+      ...result.leafTiles.filter(
+        (t) => !accLeafTiles.some((a) => boundsKey(a) === boundsKey(t)),
+      ),
+    ];
+    const finalFailedTiles = [
+      ...accFailedTiles,
+      ...result.failedTiles.filter(
+        (t) => !accFailedTiles.some((a) => boundsKey(a) === boundsKey(t)),
+      ),
+    ];
 
     // Write tile cache for full-globe extraction
-    fs.writeFileSync(cachePath, JSON.stringify({
-      version: 1,
-      createdAt: new Date().toISOString(),
-      articleCount: unique,
-      tiles: finalLeafTiles,
-      failedTiles: finalFailedTiles,
-    }));
-    console.log(`Saved tile cache: ${finalLeafTiles.length} tiles + ${finalFailedTiles.length} failed → ${cachePath}`);
+    fs.writeFileSync(
+      cachePath,
+      JSON.stringify({
+        version: 1,
+        createdAt: new Date().toISOString(),
+        articleCount: unique,
+        tiles: finalLeafTiles,
+        failedTiles: finalFailedTiles,
+      }),
+    );
+    console.log(
+      `Saved tile cache: ${finalLeafTiles.length} tiles + ${finalFailedTiles.length} failed → ${cachePath}`,
+    );
 
     console.log(`Wrote ${unique} unique articles to ${outPath}`);
   } else {
-    console.log(`Extraction complete: ${result.articles.length} unique articles`);
+    console.log(
+      `Extraction complete: ${result.articles.length} unique articles`,
+    );
 
     // Write tile cache for full-globe extraction
     if (!bounds) {
       fs.mkdirSync(outDir, { recursive: true });
-      fs.writeFileSync(cachePath, JSON.stringify({
-        version: 1,
-        createdAt: new Date().toISOString(),
-        articleCount: result.articles.length,
-        tiles: result.leafTiles,
-        failedTiles: result.failedTiles,
-      }));
-      console.log(`Saved tile cache: ${result.leafTiles.length} tiles + ${result.failedTiles.length} failed → ${cachePath}`);
+      fs.writeFileSync(
+        cachePath,
+        JSON.stringify({
+          version: 1,
+          createdAt: new Date().toISOString(),
+          articleCount: result.articles.length,
+          tiles: result.leafTiles,
+          failedTiles: result.failedTiles,
+        }),
+      );
+      console.log(
+        `Saved tile cache: ${result.leafTiles.length} tiles + ${result.failedTiles.length} failed → ${cachePath}`,
+      );
     }
 
     // Write NDJSON output (non-checkpoint path: --bounds runs)
@@ -498,7 +568,8 @@ async function main() {
 const isDirectExecution =
   typeof process !== "undefined" &&
   process.argv[1] &&
-  (process.argv[1].endsWith("/extract.ts") || process.argv[1].endsWith("/extract.js"));
+  (process.argv[1].endsWith("/extract.ts") ||
+    process.argv[1].endsWith("/extract.js"));
 
 if (isDirectExecution) {
   main().catch((err) => {

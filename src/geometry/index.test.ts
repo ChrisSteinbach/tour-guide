@@ -134,14 +134,8 @@ describe("greatCircleNormal", () => {
     const a = toCartesian({ lat: 30, lon: 10 });
     const b = toCartesian({ lat: -20, lon: 60 });
     const n = greatCircleNormal(a, b);
-    expectClose(
-      n[0] * a[0] + n[1] * a[1] + n[2] * a[2],
-      0,
-    );
-    expectClose(
-      n[0] * b[0] + n[1] * b[1] + n[2] * b[2],
-      0,
-    );
+    expectClose(n[0] * a[0] + n[1] * a[1] + n[2] * a[2], 0);
+    expectClose(n[0] * b[0] + n[1] * b[1] + n[2] * b[2], 0);
   });
 
   it("equator great circle has normal along z-axis", () => {
@@ -216,10 +210,7 @@ describe("sphericalDistance", () => {
   it("is symmetric", () => {
     const a = toCartesian({ lat: 30, lon: 40 });
     const b = toCartesian({ lat: -20, lon: 100 });
-    expectClose(
-      sphericalDistance(a, b),
-      sphericalDistance(b, a),
-    );
+    expectClose(sphericalDistance(a, b), sphericalDistance(b, a));
   });
 
   it("satisfies triangle inequality", () => {
@@ -265,10 +256,22 @@ describe("haversineDistance", () => {
 
   it("agrees with sphericalDistance", () => {
     const cases: [LatLon, LatLon][] = [
-      [{ lat: 0, lon: 0 }, { lat: 0, lon: 90 }],
-      [{ lat: 48.8566, lon: 2.3522 }, { lat: 40.7128, lon: -74.006 }],
-      [{ lat: 90, lon: 0 }, { lat: -90, lon: 0 }],
-      [{ lat: 1, lon: 1 }, { lat: 1.001, lon: 1.001 }], // very close points
+      [
+        { lat: 0, lon: 0 },
+        { lat: 0, lon: 90 },
+      ],
+      [
+        { lat: 48.8566, lon: 2.3522 },
+        { lat: 40.7128, lon: -74.006 },
+      ],
+      [
+        { lat: 90, lon: 0 },
+        { lat: -90, lon: 0 },
+      ],
+      [
+        { lat: 1, lon: 1 },
+        { lat: 1.001, lon: 1.001 },
+      ], // very close points
     ];
     for (const [a, b] of cases) {
       const d1 = sphericalDistance(toCartesian(a), toCartesian(b));

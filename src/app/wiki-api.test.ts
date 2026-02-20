@@ -54,8 +54,14 @@ describe("fetchArticleSummary", () => {
     title: "Eiffel Tower",
     extract: "The Eiffel Tower is a wrought-iron lattice tower.",
     description: "Iron lattice tower in Paris",
-    thumbnail: { source: "https://upload.wikimedia.org/thumb.jpg", width: 320, height: 240 },
-    content_urls: { desktop: { page: "https://en.wikipedia.org/wiki/Eiffel_Tower" } },
+    thumbnail: {
+      source: "https://upload.wikimedia.org/thumb.jpg",
+      width: 320,
+      height: 240,
+    },
+    content_urls: {
+      desktop: { page: "https://en.wikipedia.org/wiki/Eiffel_Tower" },
+    },
   };
 
   it("parses a successful response", async () => {
@@ -110,7 +116,9 @@ describe("fetchArticleSummary", () => {
   });
 
   it("throws on network failure", async () => {
-    globalThis.fetch = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+    globalThis.fetch = vi
+      .fn()
+      .mockRejectedValue(new TypeError("Failed to fetch"));
 
     await expect(fetchArticleSummary("Anything")).rejects.toThrow(
       "Failed to fetch",

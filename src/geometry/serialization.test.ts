@@ -31,7 +31,9 @@ function buildFixture(): {
   articles: ArticleMeta[];
   points: Point3D[];
 } {
-  const points = WORLD_CITIES.map((c) => toCartesian({ lat: c.lat, lon: c.lon }));
+  const points = WORLD_CITIES.map((c) =>
+    toCartesian({ lat: c.lat, lon: c.lon }),
+  );
   const hull = convexHull(points);
   const tri = buildTriangulation(hull);
   const articles = WORLD_CITIES.map((c) => ({ title: c.title }));
@@ -262,9 +264,9 @@ describe("binary serialization", () => {
   it("rejects articles section extending beyond buffer", () => {
     const badBuf = new ArrayBuffer(24);
     const view = new DataView(badBuf);
-    view.setUint32(0, 0, true);    // V=0
-    view.setUint32(4, 0, true);    // T=0
-    view.setUint32(8, 24, true);   // articlesOffset=24
+    view.setUint32(0, 0, true); // V=0
+    view.setUint32(4, 0, true); // T=0
+    view.setUint32(8, 24, true); // articlesOffset=24
     view.setUint32(12, 100, true); // articlesLength=100 — extends beyond
     expect(() => deserializeBinary(badBuf)).toThrow(/extends beyond/);
   });

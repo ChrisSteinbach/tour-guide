@@ -183,8 +183,12 @@ export async function extractDump(opts: ExtractDumpOptions): Promise<{
       fetchFn,
       skipExisting: false,
       onProgress: (table, downloaded, total) => {
-        const pct = total ? ` (${((downloaded / total) * 100).toFixed(0)}%)` : "";
-        process.stderr.write(`\r  ${table}: ${formatBytes(downloaded)}${pct}    `);
+        const pct = total
+          ? ` (${((downloaded / total) * 100).toFixed(0)}%)`
+          : "";
+        process.stderr.write(
+          `\r  ${table}: ${formatBytes(downloaded)}${pct}    `,
+        );
       },
       onComplete: (table, bytes) => {
         process.stderr.write(`\r  ${table}: ${formatBytes(bytes)} ✓\n`);
@@ -194,9 +198,8 @@ export async function extractDump(opts: ExtractDumpOptions): Promise<{
 
   // Phase 1: Build page map
   onPhase?.("Building page map");
-  const pageMap = await buildPageMap(
-    dumpPath(lang, "page", dumpsDir),
-    (n) => onProgress?.("page", n),
+  const pageMap = await buildPageMap(dumpPath(lang, "page", dumpsDir), (n) =>
+    onProgress?.("page", n),
   );
   console.error(`  Page map: ${pageMap.size.toLocaleString()} articles`);
 
@@ -221,7 +224,9 @@ export async function extractDump(opts: ExtractDumpOptions): Promise<{
     articles.push(entry);
   }
 
-  console.error(`  Geo articles: ${articles.length.toLocaleString()} (deduplicated)`);
+  console.error(
+    `  Geo articles: ${articles.length.toLocaleString()} (deduplicated)`,
+  );
 
   // Free map — no longer needed
   pageMap.clear();
@@ -240,7 +245,9 @@ export async function extractDump(opts: ExtractDumpOptions): Promise<{
     ws.on("error", reject);
   });
 
-  console.error(`  Output: ${outputPath} (${articles.length.toLocaleString()} articles)`);
+  console.error(
+    `  Output: ${outputPath} (${articles.length.toLocaleString()} articles)`,
+  );
 
   return { articleCount: articles.length, outputPath };
 }
@@ -268,7 +275,9 @@ async function main() {
 
   const lang = (flags.lang ?? DEFAULT_LANG) as Lang;
   if (!SUPPORTED_LANGS.includes(lang)) {
-    console.error(`Unsupported language: ${lang}. Supported: ${SUPPORTED_LANGS.join(", ")}`);
+    console.error(
+      `Unsupported language: ${lang}. Supported: ${SUPPORTED_LANGS.join(", ")}`,
+    );
     process.exit(1);
   }
 
@@ -287,7 +296,9 @@ async function main() {
   });
 
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-  console.error(`\nDone in ${elapsed}s — ${result.articleCount.toLocaleString()} articles written to ${result.outputPath}`);
+  console.error(
+    `\nDone in ${elapsed}s — ${result.articleCount.toLocaleString()} articles written to ${result.outputPath}`,
+  );
 }
 
 main().catch((err) => {

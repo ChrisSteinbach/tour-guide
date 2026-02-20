@@ -22,12 +22,24 @@ export interface QueryResult {
 
 /** dot(cross(a, b), q) — sign test without allocating Point3D arrays. */
 function side(
-  vp: Float64Array, ai: number, bi: number,
-  qx: number, qy: number, qz: number,
+  vp: Float64Array,
+  ai: number,
+  bi: number,
+  qx: number,
+  qy: number,
+  qz: number,
 ): number {
-  const a0 = vp[ai], a1 = vp[ai + 1], a2 = vp[ai + 2];
-  const b0 = vp[bi], b1 = vp[bi + 1], b2 = vp[bi + 2];
-  return (a1 * b2 - a2 * b1) * qx + (a2 * b0 - a0 * b2) * qy + (a0 * b1 - a1 * b0) * qz;
+  const a0 = vp[ai],
+    a1 = vp[ai + 1],
+    a2 = vp[ai + 2];
+  const b0 = vp[bi],
+    b1 = vp[bi + 1],
+    b2 = vp[bi + 2];
+  return (
+    (a1 * b2 - a2 * b1) * qx +
+    (a2 * b0 - a0 * b2) * qy +
+    (a0 * b1 - a1 * b0) * qz
+  );
 }
 
 /**
@@ -41,8 +53,11 @@ function side(
  * the noise floor.
  */
 function dist(
-  vp: Float64Array, vi: number,
-  qx: number, qy: number, qz: number,
+  vp: Float64Array,
+  vi: number,
+  qx: number,
+  qy: number,
+  qz: number,
 ): number {
   const dx = vp[vi] - qx;
   const dy = vp[vi + 1] - qy;
@@ -52,7 +67,11 @@ function dist(
 }
 
 function flatLocate(
-  fd: FlatDelaunay, qx: number, qy: number, qz: number, start?: number,
+  fd: FlatDelaunay,
+  qx: number,
+  qy: number,
+  qz: number,
+  start?: number,
 ): number {
   let cur = start ?? fd.vertexTriangles[0];
   const maxSteps = Math.max(fd.triangleVertices.length / 3, 100);
@@ -61,7 +80,7 @@ function flatLocate(
     let crossed = false;
     for (let e = 0; e < 3; e++) {
       const ai = fd.triangleVertices[ti + e] * 3;
-      const bi = fd.triangleVertices[ti + (e + 1) % 3] * 3;
+      const bi = fd.triangleVertices[ti + ((e + 1) % 3)] * 3;
       if (side(fd.vertexPoints, ai, bi, qx, qy, qz) < 0) {
         cur = fd.triangleNeighbors[ti + e];
         crossed = true;
@@ -81,16 +100,23 @@ function flatNeighbors(fd: FlatDelaunay, vIdx: number): number[] {
     const ti = cur * 3;
     let k = 0;
     for (let i = 0; i < 3; i++) {
-      if (fd.triangleVertices[ti + i] === vIdx) { k = i; break; }
+      if (fd.triangleVertices[ti + i] === vIdx) {
+        k = i;
+        break;
+      }
     }
-    neighbors.push(fd.triangleVertices[ti + (k + 1) % 3]);
+    neighbors.push(fd.triangleVertices[ti + ((k + 1) % 3)]);
     cur = fd.triangleNeighbors[ti + k];
   } while (cur !== startTri);
   return neighbors;
 }
 
 function flatFindNearest(
-  fd: FlatDelaunay, qx: number, qy: number, qz: number, startTri?: number,
+  fd: FlatDelaunay,
+  qx: number,
+  qy: number,
+  qz: number,
+  startTri?: number,
 ): number {
   const tIdx = flatLocate(fd, qx, qy, qz, startTri);
   const ti = tIdx * 3;
@@ -100,7 +126,10 @@ function flatFindNearest(
   for (let i = 1; i < 3; i++) {
     const v = fd.triangleVertices[ti + i];
     const d = dist(fd.vertexPoints, v * 3, qx, qy, qz);
-    if (d < bestD) { bestD = d; bestV = v; }
+    if (d < bestD) {
+      bestD = d;
+      bestV = v;
+    }
   }
 
   let improved = true;
@@ -108,7 +137,12 @@ function flatFindNearest(
     improved = false;
     for (const nIdx of flatNeighbors(fd, bestV)) {
       const d = dist(fd.vertexPoints, nIdx * 3, qx, qy, qz);
-      if (d < bestD) { bestD = d; bestV = nIdx; improved = true; break; }
+      if (d < bestD) {
+        bestD = d;
+        bestV = nIdx;
+        improved = true;
+        break;
+      }
     }
   }
 
@@ -156,7 +190,10 @@ export class NearestQuery {
     const visited = new Set<number>([nearestIdx]);
     const frontier = [nearestIdx];
     const candidates: { idx: number; d: number }[] = [
-      { idx: nearestIdx, d: dist(this.fd.vertexPoints, nearestIdx * 3, qx, qy, qz) },
+      {
+        idx: nearestIdx,
+        d: dist(this.fd.vertexPoints, nearestIdx * 3, qx, qy, qz),
+      },
     ];
 
     const target = Math.max(k * 2, k + 6);
@@ -174,10 +211,17 @@ export class NearestQuery {
     }
 
     candidates.sort((a, b) => a.d - b.d);
-    return candidates.slice(0, k).map((c) => this.buildResult(c.idx, qx, qy, qz));
+    return candidates
+      .slice(0, k)
+      .map((c) => this.buildResult(c.idx, qx, qy, qz));
   }
 
-  private buildResult(vIdx: number, qx: number, qy: number, qz: number): QueryResult {
+  private buildResult(
+    vIdx: number,
+    qx: number,
+    qy: number,
+    qz: number,
+  ): QueryResult {
     const vi = vIdx * 3;
     const vp = this.fd.vertexPoints;
     return {
@@ -226,11 +270,15 @@ function idbPut(db: IDBDatabase, key: string, value: CachedData): void {
   tx.objectStore(IDB_STORE).put(value, key);
 }
 
-function idbGetString(db: IDBDatabase, key: string): Promise<string | undefined> {
+function idbGetString(
+  db: IDBDatabase,
+  key: string,
+): Promise<string | undefined> {
   return new Promise((resolve) => {
     const tx = db.transaction(IDB_STORE, "readonly");
     const req = tx.objectStore(IDB_STORE).get(key);
-    req.onsuccess = () => resolve(typeof req.result === "string" ? req.result : undefined);
+    req.onsuccess = () =>
+      resolve(typeof req.result === "string" ? req.result : undefined);
     req.onerror = () => resolve(undefined);
   });
 }
@@ -380,7 +428,9 @@ export async function loadQuery(
         triangleNeighbors: cached.triangleNeighbors,
       };
       const articles = cached.articles.map((title) => ({ title }));
-      console.log(`[perf] IDB cache hit — loaded in ${(performance.now() - t0).toFixed(0)}ms`);
+      console.log(
+        `[perf] IDB cache hit — loaded in ${(performance.now() - t0).toFixed(0)}ms`,
+      );
       return new NearestQuery(fd, articles);
     }
   }
@@ -423,7 +473,9 @@ export async function loadQuery(
     console.log(`[perf] Fetched ${sizeMB} MB in ${(tFetch - t0).toFixed(0)}ms`);
 
     const { fd, articles } = deserializeBinary(buf);
-    console.log(`[perf] Deserialized in ${(performance.now() - tFetch).toFixed(0)}ms`);
+    console.log(
+      `[perf] Deserialized in ${(performance.now() - tFetch).toFixed(0)}ms`,
+    );
 
     if (db) {
       idbPut(db, cacheKey, {

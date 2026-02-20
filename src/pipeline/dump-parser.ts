@@ -159,7 +159,13 @@ export interface ParsedDumpResult {
 export async function* streamDump(
   opts: DumpStreamOptions,
 ): AsyncGenerator<SqlRow> {
-  const { filePath, tableName, requiredColumns, onProgress, progressInterval = 100_000 } = opts;
+  const {
+    filePath,
+    tableName,
+    requiredColumns,
+    onProgress,
+    progressInterval = 100_000,
+  } = opts;
 
   const gunzip = createGunzip();
   const fileStream = createReadStream(filePath);
@@ -218,9 +224,7 @@ export async function* streamDump(
   }
 
   if (!columnIndex) {
-    throw new Error(
-      `Schema for table '${tableName}' not found in ${filePath}`,
-    );
+    throw new Error(`Schema for table '${tableName}' not found in ${filePath}`);
   }
 
   if (onProgress) onProgress(rowCount);
@@ -270,8 +274,6 @@ export async function discoverSchema(
 /**
  * Build a column index map from a schema.
  */
-export function buildColumnIndex(
-  schema: TableSchema,
-): Map<string, number> {
+export function buildColumnIndex(schema: TableSchema): Map<string, number> {
   return new Map(schema.columns.map((c, i) => [c, i]));
 }

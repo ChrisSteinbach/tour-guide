@@ -26,7 +26,10 @@ export function boundsKey(b: Bounds): string {
 
 export function regionsFingerprint(regions: Bounds[]): string {
   const keys = regions.map(boundsKey).sort();
-  return createHash("sha256").update(keys.join("\n")).digest("hex").slice(0, 16);
+  return createHash("sha256")
+    .update(keys.join("\n"))
+    .digest("hex")
+    .slice(0, 16);
 }
 
 export function filterResumedRegions(

@@ -1,16 +1,30 @@
-import { parseBinding, isValidCoordinate, deduplicateArticles, extractArticles, subdivideTile, generateTiles } from "./extract.js";
+import {
+  parseBinding,
+  isValidCoordinate,
+  deduplicateArticles,
+  extractArticles,
+  subdivideTile,
+  generateTiles,
+} from "./extract.js";
 import type { Article } from "./extract.js";
 import type { SparqlBinding, SparqlResponse } from "./sparql.js";
 
 // ---------- Helpers ----------
 
-function makeBinding(overrides: Partial<Record<keyof SparqlBinding, { type: string; value: string }>> = {}): SparqlBinding {
+function makeBinding(
+  overrides: Partial<
+    Record<keyof SparqlBinding, { type: string; value: string }>
+  > = {},
+): SparqlBinding {
   return {
     item: { type: "uri", value: "http://www.wikidata.org/entity/Q243" },
     itemLabel: { type: "literal", value: "Eiffel Tower" },
     lat: { type: "literal", value: "48.8584" },
     lon: { type: "literal", value: "2.2945" },
-    article: { type: "uri", value: "https://en.wikipedia.org/wiki/Eiffel_Tower" },
+    article: {
+      type: "uri",
+      value: "https://en.wikipedia.org/wiki/Eiffel_Tower",
+    },
     itemDescription: { type: "literal", value: "iron lattice tower in Paris" },
     ...overrides,
   };
@@ -33,7 +47,10 @@ describe("parseBinding", () => {
     const result = parseBinding(
       makeBinding({
         itemLabel: { type: "literal", value: "Östuna church" },
-        article: { type: "uri", value: "https://en.wikipedia.org/wiki/%C3%96stuna_Church" },
+        article: {
+          type: "uri",
+          value: "https://en.wikipedia.org/wiki/%C3%96stuna_Church",
+        },
       }),
     );
     expect(result?.title).toBe("Östuna Church");
@@ -49,7 +66,10 @@ describe("parseBinding", () => {
   it("decodes percent-encoded article URLs", () => {
     const result = parseBinding(
       makeBinding({
-        article: { type: "uri", value: "https://en.wikipedia.org/wiki/S%C3%A3o_Paulo" },
+        article: {
+          type: "uri",
+          value: "https://en.wikipedia.org/wiki/S%C3%A3o_Paulo",
+        },
       }),
     );
     expect(result?.title).toBe("São Paulo");
@@ -178,7 +198,10 @@ describe("subdivideTile", () => {
     const tile = { south: -10, north: 10, west: 170, east: 180 };
     const subs = subdivideTile(tile);
     const originalArea = (tile.north - tile.south) * (tile.east - tile.west);
-    const subArea = subs.reduce((sum, s) => sum + (s.north - s.south) * (s.east - s.west), 0);
+    const subArea = subs.reduce(
+      (sum, s) => sum + (s.north - s.south) * (s.east - s.west),
+      0,
+    );
     expect(subArea).toBe(originalArea);
   });
 });
@@ -216,17 +239,26 @@ describe("extractArticles", () => {
   }
 
   function mock500() {
-    return { ok: false, status: 500, statusText: "Internal Server Error", text: () => Promise.resolve("") };
+    return {
+      ok: false,
+      status: 500,
+      statusText: "Internal Server Error",
+      text: () => Promise.resolve(""),
+    };
   }
 
   it("fetches batches until empty result", async () => {
-    const batch1 = [makeBinding(), makeBinding({
-      itemLabel: { type: "literal", value: "Louvre" },
-      article: { type: "uri", value: "https://en.wikipedia.org/wiki/Louvre" },
-    })];
+    const batch1 = [
+      makeBinding(),
+      makeBinding({
+        itemLabel: { type: "literal", value: "Louvre" },
+        article: { type: "uri", value: "https://en.wikipedia.org/wiki/Louvre" },
+      }),
+    ];
     const batch2: SparqlBinding[] = [];
 
-    const mockFetch = vi.fn()
+    const mockFetch = vi
+      .fn()
       .mockResolvedValueOnce(mockOk(makeSparqlResponse(batch1)))
       .mockResolvedValueOnce(mockOk(makeSparqlResponse(batch2)));
 
@@ -244,7 +276,8 @@ describe("extractArticles", () => {
   it("stops early when batch returns fewer results than batchSize", async () => {
     const batch = [makeBinding()];
 
-    const mockFetch = vi.fn()
+    const mockFetch = vi
+      .fn()
       .mockResolvedValueOnce(mockOk(makeSparqlResponse(batch)));
 
     const result = await extractArticles({
@@ -260,10 +293,15 @@ describe("extractArticles", () => {
 
   it("calls onBatch callback with progress info", async () => {
     const batch = [makeBinding()];
-    const mockFetch = vi.fn()
+    const mockFetch = vi
+      .fn()
       .mockResolvedValueOnce(mockOk(makeSparqlResponse(batch)));
 
-    const batches: { batch: number; articlesInBatch: number; totalSoFar: number }[] = [];
+    const batches: {
+      batch: number;
+      articlesInBatch: number;
+      totalSoFar: number;
+    }[] = [];
 
     await extractArticles({
       endpoint: "https://example.org/sparql",
@@ -281,7 +319,8 @@ describe("extractArticles", () => {
     const binding = makeBinding();
     const batchSize = 1;
 
-    const mockFetch = vi.fn()
+    const mockFetch = vi
+      .fn()
       .mockResolvedValueOnce(mockOk(makeSparqlResponse([binding])))
       .mockResolvedValueOnce(mockOk(makeSparqlResponse([binding])))
       .mockResolvedValueOnce(mockOk(makeSparqlResponse([])));
@@ -297,7 +336,8 @@ describe("extractArticles", () => {
   });
 
   it("retries on 500 and succeeds", async () => {
-    const mockFetch = vi.fn()
+    const mockFetch = vi
+      .fn()
       .mockResolvedValueOnce(mock500())
       .mockResolvedValueOnce(mockOk(makeSparqlResponse([makeBinding()])));
 
@@ -314,8 +354,12 @@ describe("extractArticles", () => {
   });
 
   it("fails immediately on 403", async () => {
-    const mockFetch = vi.fn()
-      .mockResolvedValueOnce({ ok: false, status: 403, statusText: "Forbidden", text: () => Promise.resolve("Blocked") });
+    const mockFetch = vi.fn().mockResolvedValueOnce({
+      ok: false,
+      status: 403,
+      statusText: "Forbidden",
+      text: () => Promise.resolve("Blocked"),
+    });
 
     await expect(
       extractArticles({
@@ -402,8 +446,7 @@ describe("extractArticles", () => {
     // Use a 0.5°×0.5° tile — can subdivide once to 0.25° (below MIN_TILE_DEG of 0.3°)
     const tinyBounds = { south: 48, north: 48.5, west: 2, east: 2.5 };
 
-    const mockFetch = vi.fn()
-      .mockResolvedValue(mock500());
+    const mockFetch = vi.fn().mockResolvedValue(mock500());
 
     const result = await extractArticles({
       endpoint: "https://example.org/sparql",
@@ -426,8 +469,7 @@ describe("extractArticles", () => {
       { south: 40, north: 41, west: -74, east: -73 },
     ];
 
-    const mockFetch = vi.fn()
-      .mockResolvedValue(mockOk(makeSparqlResponse([])));
+    const mockFetch = vi.fn().mockResolvedValue(mockOk(makeSparqlResponse([])));
 
     await extractArticles({
       endpoint: "https://example.org/sparql",
@@ -442,8 +484,7 @@ describe("extractArticles", () => {
   });
 
   it("tiles the globe into geographic tiles when no bounds provided", async () => {
-    const mockFetch = vi.fn()
-      .mockResolvedValue(mockOk(makeSparqlResponse([])));
+    const mockFetch = vi.fn().mockResolvedValue(mockOk(makeSparqlResponse([])));
 
     await extractArticles({
       endpoint: "https://example.org/sparql",
@@ -462,16 +503,25 @@ describe("extractArticles", () => {
     const binding1 = makeBinding();
     const binding2 = makeBinding({
       itemLabel: { type: "literal", value: "Statue of Liberty" },
-      article: { type: "uri", value: "https://en.wikipedia.org/wiki/Statue_of_Liberty" },
+      article: {
+        type: "uri",
+        value: "https://en.wikipedia.org/wiki/Statue_of_Liberty",
+      },
       lat: { type: "literal", value: "40.6892" },
       lon: { type: "literal", value: "-74.0445" },
     });
 
-    const mockFetch = vi.fn()
+    const mockFetch = vi
+      .fn()
       .mockResolvedValueOnce(mockOk(makeSparqlResponse([binding1])))
       .mockResolvedValueOnce(mockOk(makeSparqlResponse([binding2])));
 
-    const calls: { region: typeof region1; articles: Article[]; leafTiles: typeof region1[]; failedTiles: typeof region1[] }[] = [];
+    const calls: {
+      region: typeof region1;
+      articles: Article[];
+      leafTiles: (typeof region1)[];
+      failedTiles: (typeof region1)[];
+    }[] = [];
 
     await extractArticles({
       endpoint: "https://example.org/sparql",
@@ -479,7 +529,9 @@ describe("extractArticles", () => {
       regions: [region1, region2],
       fetchFn: mockFetch,
       tileDelayMs: 0,
-      onRegionComplete: (info) => { calls.push(info); },
+      onRegionComplete: (info) => {
+        calls.push(info);
+      },
     });
 
     expect(calls).toHaveLength(2);
@@ -493,7 +545,8 @@ describe("extractArticles", () => {
   });
 
   it("does not break existing behavior when onRegionComplete is not provided", async () => {
-    const mockFetch = vi.fn()
+    const mockFetch = vi
+      .fn()
       .mockResolvedValueOnce(mockOk(makeSparqlResponse([makeBinding()])));
 
     const result = await extractArticles({
@@ -512,7 +565,7 @@ describe("extractArticles", () => {
 
     const mockFetch = vi.fn().mockResolvedValue(mock500());
 
-    const calls: { failedTiles: typeof tinyBounds[] }[] = [];
+    const calls: { failedTiles: (typeof tinyBounds)[] }[] = [];
 
     await extractArticles({
       endpoint: "https://example.org/sparql",
@@ -521,7 +574,9 @@ describe("extractArticles", () => {
       fetchFn: mockFetch,
       maxRetries: 1,
       tileDelayMs: 0,
-      onRegionComplete: (info) => { calls.push({ failedTiles: info.failedTiles }); },
+      onRegionComplete: (info) => {
+        calls.push({ failedTiles: info.failedTiles });
+      },
     });
 
     expect(calls).toHaveLength(1);

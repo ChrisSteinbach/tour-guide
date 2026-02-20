@@ -24,7 +24,12 @@ export interface QueryOptions {
 
 const WIKIDATA_ENDPOINT = "https://query.wikidata.org/sparql";
 
-export function buildQuery({ limit, offset, bounds, lang = "en" }: QueryOptions): string {
+export function buildQuery({
+  limit,
+  offset,
+  bounds,
+  lang = "en",
+}: QueryOptions): string {
   return `SELECT ?item ?itemLabel ?lat ?lon ?itemDescription ?article WHERE {
   SERVICE wikibase:box {
     ?item wdt:P625 ?coord .
@@ -49,7 +54,8 @@ export async function executeSparql(
     method: "GET",
     headers: {
       Accept: "application/sparql-results+json",
-      "User-Agent": "tour-guide/1.0 (https://github.com/ChrisSteinbach/tour-guide)",
+      "User-Agent":
+        "tour-guide/1.0 (https://github.com/ChrisSteinbach/tour-guide)",
     },
     signal: AbortSignal.timeout(90_000),
   });
@@ -67,7 +73,11 @@ export async function executeSparql(
   try {
     return JSON.parse(text) as SparqlResponse;
   } catch {
-    throw new SparqlError("Truncated or malformed JSON response", 0, text.slice(-200));
+    throw new SparqlError(
+      "Truncated or malformed JSON response",
+      0,
+      text.slice(-200),
+    );
   }
 }
 

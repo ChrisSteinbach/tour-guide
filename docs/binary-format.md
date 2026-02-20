@@ -1,10 +1,8 @@
-Binary Serialization Format
-===========================
+# Binary Serialization Format
 
 The `.bin` files produced by the build pipeline (`npm run pipeline`) encode a spherical Delaunay triangulation and its associated article metadata in a single compact binary blob. This document specifies the byte-level layout so that anyone reading or modifying `src/geometry/serialization.ts` or `src/app/query.ts` knows exactly what to expect.
 
 Notation: **V** = vertex count, **T** = triangle count. All multi-byte integers and floats are **little-endian**. All sections are **4-byte aligned**.
-
 
 ## Overview
 
@@ -25,17 +23,15 @@ Notation: **V** = vertex count, **T** = triangle count. All multi-byte integers 
 +------------------+
 ```
 
-
 ## Header (24 bytes)
 
-| Offset | Size | Type   | Field            | Description                              |
-|--------|------|--------|------------------|------------------------------------------|
-| 0      | 4    | Uint32 | vertexCount      | Number of vertices (V)                   |
-| 4      | 4    | Uint32 | triangleCount    | Number of triangles (T)                  |
-| 8      | 4    | Uint32 | articlesOffset   | Byte offset where the articles JSON begins |
-| 12     | 4    | Uint32 | articlesLength   | Byte length of the articles JSON (unpadded) |
-| 16     | 8    | -      | reserved         | Zero-filled, reserved for future use     |
-
+| Offset | Size | Type   | Field          | Description                                 |
+| ------ | ---- | ------ | -------------- | ------------------------------------------- |
+| 0      | 4    | Uint32 | vertexCount    | Number of vertices (V)                      |
+| 4      | 4    | Uint32 | triangleCount  | Number of triangles (T)                     |
+| 8      | 4    | Uint32 | articlesOffset | Byte offset where the articles JSON begins  |
+| 12     | 4    | Uint32 | articlesLength | Byte length of the articles JSON (unpadded) |
+| 16     | 8    | -      | reserved       | Zero-filled, reserved for future use        |
 
 ## Numeric Sections
 
@@ -61,7 +57,6 @@ Flat array of adjacent triangle indices: `[n0, n1, n2, n3, n4, n5, ...]`. For tr
 
 This adjacency structure enables O(sqrt(N)) triangle-walk point location — starting from any triangle, the algorithm walks toward the query point by crossing edges until it reaches the containing triangle.
 
-
 ## Articles Section
 
 Begins at byte `articlesOffset` (which equals `24 + V*3*4 + V*4 + T*3*4 + T*3*4`).
@@ -75,7 +70,6 @@ The array has exactly **V** entries, one per vertex, in the same order as the ve
 
 The JSON byte length is stored in the header's `articlesLength` field. The section is zero-padded to a 4-byte boundary (the padding bytes are not included in `articlesLength`).
 
-
 ## Size Calculation
 
 ```
@@ -88,7 +82,6 @@ totalSize = 24                           // header
 ```
 
 For reference, the English Wikipedia dataset (~1.2M articles) produces a file around 120 MB.
-
 
 ## Producing and Consuming
 

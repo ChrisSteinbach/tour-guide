@@ -55,7 +55,10 @@ describe("downloadDump", () => {
     rmSync(testDir, { recursive: true, force: true });
   });
 
-  function mockFetch(body: string, headers: Record<string, string> = {}): typeof fetch {
+  function mockFetch(
+    body: string,
+    headers: Record<string, string> = {},
+  ): typeof fetch {
     return (async () => ({
       ok: true,
       status: 200,
@@ -72,7 +75,8 @@ describe("downloadDump", () => {
 
   it("downloads a file and reports progress", async () => {
     const content = "test dump content";
-    const progressCalls: Array<{ downloaded: number; total: number | null }> = [];
+    const progressCalls: Array<{ downloaded: number; total: number | null }> =
+      [];
 
     const result = await downloadDump("sv", "geo_tags", {
       dir: testDir,

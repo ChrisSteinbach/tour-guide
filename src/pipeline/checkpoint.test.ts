@@ -1,4 +1,11 @@
-import { boundsKey, regionsFingerprint, filterResumedRegions, deduplicateNdjsonFile, readCheckpoint, writeCheckpoint } from "./checkpoint.js";
+import {
+  boundsKey,
+  regionsFingerprint,
+  filterResumedRegions,
+  deduplicateNdjsonFile,
+  readCheckpoint,
+  writeCheckpoint,
+} from "./checkpoint.js";
 import type { CheckpointFile } from "./checkpoint.js";
 import { tmpdir } from "node:os";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync } from "node:fs";
@@ -8,7 +15,9 @@ import { join } from "node:path";
 
 describe("boundsKey", () => {
   it("serializes bounds to comma-separated string", () => {
-    expect(boundsKey({ south: -10, north: 0, west: 5.5, east: 15 })).toBe("-10,0,5.5,15");
+    expect(boundsKey({ south: -10, north: 0, west: 5.5, east: 15 })).toBe(
+      "-10,0,5.5,15",
+    );
   });
 
   it("is deterministic", () => {
@@ -100,8 +109,14 @@ describe("writeCheckpoint / readCheckpoint", () => {
   it("writes atomically via tmp file", async () => {
     const filePath = join(dir, "cp.json");
     const cp: CheckpointFile = {
-      version: 1, lang: "en", startedAt: "", updatedAt: "",
-      totalRegions: 1, completedRegions: [], leafTiles: [], failedTiles: [],
+      version: 1,
+      lang: "en",
+      startedAt: "",
+      updatedAt: "",
+      totalRegions: 1,
+      completedRegions: [],
+      leafTiles: [],
+      failedTiles: [],
     };
     await writeCheckpoint(filePath, cp);
     // tmp file should not remain
@@ -121,11 +136,14 @@ describe("deduplicateNdjsonFile", () => {
 
   it("removes duplicate titles", async () => {
     const filePath = join(dir, "articles.json");
-    writeFileSync(filePath, [
-      JSON.stringify({ title: "A", lat: 1, lon: 1, desc: "" }),
-      JSON.stringify({ title: "B", lat: 2, lon: 2, desc: "" }),
-      JSON.stringify({ title: "A", lat: 3, lon: 3, desc: "dup" }),
-    ].join("\n") + "\n");
+    writeFileSync(
+      filePath,
+      [
+        JSON.stringify({ title: "A", lat: 1, lon: 1, desc: "" }),
+        JSON.stringify({ title: "B", lat: 2, lon: 2, desc: "" }),
+        JSON.stringify({ title: "A", lat: 3, lon: 3, desc: "dup" }),
+      ].join("\n") + "\n",
+    );
 
     const { total, unique } = await deduplicateNdjsonFile(filePath);
     expect(total).toBe(3);
@@ -140,9 +158,11 @@ describe("deduplicateNdjsonFile", () => {
 
   it("handles truncated last line gracefully", async () => {
     const filePath = join(dir, "articles.json");
-    writeFileSync(filePath,
-      JSON.stringify({ title: "A", lat: 1, lon: 1, desc: "" }) + "\n" +
-      '{"title":"B","lat":2,' // truncated
+    writeFileSync(
+      filePath,
+      JSON.stringify({ title: "A", lat: 1, lon: 1, desc: "" }) +
+        "\n" +
+        '{"title":"B","lat":2,', // truncated
     );
 
     const { total, unique } = await deduplicateNdjsonFile(filePath);
@@ -161,10 +181,13 @@ describe("deduplicateNdjsonFile", () => {
 
   it("preserves first occurrence on duplicate", async () => {
     const filePath = join(dir, "articles.json");
-    writeFileSync(filePath, [
-      JSON.stringify({ title: "X", lat: 1, lon: 1, desc: "first" }),
-      JSON.stringify({ title: "X", lat: 2, lon: 2, desc: "second" }),
-    ].join("\n") + "\n");
+    writeFileSync(
+      filePath,
+      [
+        JSON.stringify({ title: "X", lat: 1, lon: 1, desc: "first" }),
+        JSON.stringify({ title: "X", lat: 2, lon: 2, desc: "second" }),
+      ].join("\n") + "\n",
+    );
 
     await deduplicateNdjsonFile(filePath);
 

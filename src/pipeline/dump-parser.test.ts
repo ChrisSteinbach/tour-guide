@@ -61,7 +61,21 @@ describe("parseValues", () => {
       "(34746103,6213657,'earth',1,-33.04488000,-71.60679000,10000,'landmark','',NULL,NULL,-330,NULL)",
     );
     expect(rows).toEqual([
-      [34746103, 6213657, "earth", 1, -33.04488, -71.60679, 10000, "landmark", "", null, null, -330, null],
+      [
+        34746103,
+        6213657,
+        "earth",
+        1,
+        -33.04488,
+        -71.60679,
+        10000,
+        "landmark",
+        "",
+        null,
+        null,
+        -330,
+        null,
+      ],
     ]);
   });
 
@@ -98,7 +112,14 @@ describe("parseCreateTable", () => {
     const schema = parseCreateTable(lines);
     expect(schema).toEqual({
       tableName: "geo_tags",
-      columns: ["gt_id", "gt_page_id", "gt_globe", "gt_primary", "gt_lat", "gt_lon"],
+      columns: [
+        "gt_id",
+        "gt_page_id",
+        "gt_globe",
+        "gt_primary",
+        "gt_lat",
+        "gt_lon",
+      ],
     });
   });
 
@@ -314,7 +335,12 @@ describe("discoverSchema", () => {
 
     const schema = await discoverSchema(path, "page_props");
     expect(schema.tableName).toBe("page_props");
-    expect(schema.columns).toEqual(["pp_page", "pp_propname", "pp_value", "pp_sortkey"]);
+    expect(schema.columns).toEqual([
+      "pp_page",
+      "pp_propname",
+      "pp_value",
+      "pp_sortkey",
+    ]);
   });
 });
 

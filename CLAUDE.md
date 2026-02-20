@@ -44,6 +44,7 @@ wc -l data/articles-en.json
 The old SPARQL-based extractor is available as `npm run extract:sparql`.
 
 Output format (one JSON object per line):
+
 ```
 {"title":"Eiffel Tower","lat":48.8584,"lon":2.2945}
 ```

@@ -50,7 +50,10 @@ export function renderNearbyList(
   if (onTogglePause) {
     const pauseBtn = document.createElement("button");
     pauseBtn.className = "pause-toggle";
-    pauseBtn.setAttribute("aria-label", paused ? "Resume updates" : "Pause updates");
+    pauseBtn.setAttribute(
+      "aria-label",
+      paused ? "Resume updates" : "Pause updates",
+    );
     pauseBtn.textContent = paused ? "\u25B6" : "\u23F8";
     pauseBtn.addEventListener("click", onTogglePause);
     headerControls.appendChild(pauseBtn);

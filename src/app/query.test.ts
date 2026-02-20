@@ -63,7 +63,9 @@ describe("NearestQuery", () => {
     const results = nq.findNearest(45, 0, 3);
     expect(results).toHaveLength(3);
     for (let i = 1; i < results.length; i++) {
-      expect(results[i].distanceM).toBeGreaterThanOrEqual(results[i - 1].distanceM);
+      expect(results[i].distanceM).toBeGreaterThanOrEqual(
+        results[i - 1].distanceM,
+      );
     }
   });
 

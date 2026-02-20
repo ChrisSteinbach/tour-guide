@@ -19,7 +19,10 @@ export function formatDistance(meters: number): string {
 }
 
 /** Compute distance in meters between two user positions. */
-export function distanceBetweenPositions(a: UserPosition, b: UserPosition): number {
+export function distanceBetweenPositions(
+  a: UserPosition,
+  b: UserPosition,
+): number {
   return haversineDistance(a, b) * EARTH_RADIUS_M;
 }
 

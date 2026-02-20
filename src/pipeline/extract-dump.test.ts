@@ -120,9 +120,30 @@ describe("streamGeoArticles", () => {
 
   it("joins geo_tags with page map", async () => {
     const geoSql = makeGeoDump([
-      { id: 1, pageId: 100, globe: "earth", primary: 1, lat: 48.8584, lon: 2.2945 },
-      { id: 2, pageId: 200, globe: "earth", primary: 1, lat: 40.7128, lon: -74.006 },
-      { id: 3, pageId: 300, globe: "earth", primary: 1, lat: 51.5074, lon: -0.1278 }, // no page entry
+      {
+        id: 1,
+        pageId: 100,
+        globe: "earth",
+        primary: 1,
+        lat: 48.8584,
+        lon: 2.2945,
+      },
+      {
+        id: 2,
+        pageId: 200,
+        globe: "earth",
+        primary: 1,
+        lat: 40.7128,
+        lon: -74.006,
+      },
+      {
+        id: 3,
+        pageId: 300,
+        globe: "earth",
+        primary: 1,
+        lat: 51.5074,
+        lon: -0.1278,
+      }, // no page entry
     ]);
 
     const geoPath = gzFile(testDir, "geo_tags.sql.gz", geoSql);
@@ -144,9 +165,23 @@ describe("streamGeoArticles", () => {
 
   it("filters non-earth globes and non-primary tags", async () => {
     const geoSql = makeGeoDump([
-      { id: 1, pageId: 100, globe: "earth", primary: 1, lat: 48.8584, lon: 2.2945 },
+      {
+        id: 1,
+        pageId: 100,
+        globe: "earth",
+        primary: 1,
+        lat: 48.8584,
+        lon: 2.2945,
+      },
       { id: 2, pageId: 200, globe: "moon", primary: 1, lat: 10.0, lon: 20.0 },
-      { id: 3, pageId: 300, globe: "earth", primary: 0, lat: 51.5074, lon: -0.1278 },
+      {
+        id: 3,
+        pageId: 300,
+        globe: "earth",
+        primary: 0,
+        lat: 51.5074,
+        lon: -0.1278,
+      },
     ]);
 
     const geoPath = gzFile(testDir, "geo_tags_filter.sql.gz", geoSql);
@@ -168,8 +203,22 @@ describe("streamGeoArticles", () => {
 
   it("filters by bounds", async () => {
     const geoSql = makeGeoDump([
-      { id: 1, pageId: 100, globe: "earth", primary: 1, lat: 48.8584, lon: 2.2945 }, // Paris
-      { id: 2, pageId: 200, globe: "earth", primary: 1, lat: 40.7128, lon: -74.006 }, // NYC
+      {
+        id: 1,
+        pageId: 100,
+        globe: "earth",
+        primary: 1,
+        lat: 48.8584,
+        lon: 2.2945,
+      }, // Paris
+      {
+        id: 2,
+        pageId: 200,
+        globe: "earth",
+        primary: 1,
+        lat: 40.7128,
+        lon: -74.006,
+      }, // NYC
     ]);
 
     const geoPath = gzFile(testDir, "geo_tags_bounds.sql.gz", geoSql);
@@ -234,10 +283,38 @@ describe("extractDump (integration)", () => {
       dumpsDir,
       "svwiki-latest-geo_tags.sql.gz",
       makeGeoDump([
-        { id: 1, pageId: 100, globe: "earth", primary: 1, lat: 48.8584, lon: 2.2945 },
-        { id: 2, pageId: 200, globe: "earth", primary: 1, lat: 40.7128, lon: -74.006 },
-        { id: 3, pageId: 300, globe: "earth", primary: 1, lat: 51.5, lon: -0.1 }, // redirect
-        { id: 4, pageId: 400, globe: "earth", primary: 1, lat: 59.308, lon: 18.028 },
+        {
+          id: 1,
+          pageId: 100,
+          globe: "earth",
+          primary: 1,
+          lat: 48.8584,
+          lon: 2.2945,
+        },
+        {
+          id: 2,
+          pageId: 200,
+          globe: "earth",
+          primary: 1,
+          lat: 40.7128,
+          lon: -74.006,
+        },
+        {
+          id: 3,
+          pageId: 300,
+          globe: "earth",
+          primary: 1,
+          lat: 51.5,
+          lon: -0.1,
+        }, // redirect
+        {
+          id: 4,
+          pageId: 400,
+          globe: "earth",
+          primary: 1,
+          lat: 59.308,
+          lon: 18.028,
+        },
         { id: 5, pageId: 999, globe: "earth", primary: 1, lat: 0, lon: 0 }, // no page entry
       ]),
     );
@@ -264,7 +341,9 @@ describe("extractDump (integration)", () => {
     expect(eiffel).toBeDefined();
     expect(eiffel!.lat).toBeCloseTo(48.8584, 3);
 
-    const liljeholmen = articles.find((a) => a.title === "Liljeholmens brandstation");
+    const liljeholmen = articles.find(
+      (a) => a.title === "Liljeholmens brandstation",
+    );
     expect(liljeholmen).toBeDefined();
     expect(liljeholmen!.lat).toBeCloseTo(59.308, 2);
   });
@@ -286,8 +365,22 @@ describe("extractDump (integration)", () => {
       dumpsDir,
       "svwiki-latest-geo_tags.sql.gz",
       makeGeoDump([
-        { id: 1, pageId: 100, globe: "earth", primary: 1, lat: 48.8584, lon: 2.2945 },
-        { id: 2, pageId: 200, globe: "earth", primary: 1, lat: 59.33, lon: 18.07 },
+        {
+          id: 1,
+          pageId: 100,
+          globe: "earth",
+          primary: 1,
+          lat: 48.8584,
+          lon: 2.2945,
+        },
+        {
+          id: 2,
+          pageId: 200,
+          globe: "earth",
+          primary: 1,
+          lat: 59.33,
+          lon: 18.07,
+        },
       ]),
     );
 
@@ -314,9 +407,7 @@ describe("extractDump (integration)", () => {
     gzFile(
       dumpsDir,
       "svwiki-latest-page.sql.gz",
-      makePageDump([
-        { id: 100, ns: 0, title: "Same_Place", redirect: 0 },
-      ]),
+      makePageDump([{ id: 100, ns: 0, title: "Same_Place", redirect: 0 }]),
     );
 
     // Two geo_tags for the same page (different gt_ids, both primary)

@@ -28,7 +28,11 @@ export function dumpUrl(lang: Lang, table: DumpTable): string {
 }
 
 /** Build the local path for a dump file. */
-export function dumpPath(lang: Lang, table: DumpTable, dir = "data/dumps"): string {
+export function dumpPath(
+  lang: Lang,
+  table: DumpTable,
+  dir = "data/dumps",
+): string {
   const wiki = WIKI_PREFIX[lang];
   return `${dir}/${wiki}-latest-${table}.sql.gz`;
 }
@@ -41,7 +45,11 @@ export interface DownloadOptions {
   /** Fetch function (injectable for testing) */
   fetchFn?: typeof fetch;
   /** Progress callback: (table, bytesDownloaded, totalBytes | null) */
-  onProgress?: (table: DumpTable, downloaded: number, total: number | null) => void;
+  onProgress?: (
+    table: DumpTable,
+    downloaded: number,
+    total: number | null,
+  ) => void;
   /** Callback when a table download completes */
   onComplete?: (table: DumpTable, bytes: number) => void;
   /** Skip download if file already exists */
@@ -85,7 +93,9 @@ export async function downloadDump(
 
   const response = await fetchFn(url);
   if (!response.ok) {
-    throw new Error(`Failed to download ${url}: ${response.status} ${response.statusText}`);
+    throw new Error(
+      `Failed to download ${url}: ${response.status} ${response.statusText}`,
+    );
   }
 
   const totalBytes = response.headers.get("content-length");
@@ -130,6 +140,7 @@ export async function downloadAllDumps(
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes < 1024 * 1024 * 1024)
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }

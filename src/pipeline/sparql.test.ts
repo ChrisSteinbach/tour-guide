@@ -4,7 +4,11 @@ describe("buildQuery", () => {
   const defaultBounds = { south: 40, north: 50, west: 0, east: 10 };
 
   it("produces SPARQL with correct LIMIT and OFFSET", () => {
-    const query = buildQuery({ limit: 1000, offset: 5000, bounds: defaultBounds });
+    const query = buildQuery({
+      limit: 1000,
+      offset: 5000,
+      bounds: defaultBounds,
+    });
     expect(query).toContain("LIMIT 1000");
     expect(query).toContain("OFFSET 5000");
   });
@@ -39,14 +43,24 @@ describe("buildQuery", () => {
   });
 
   it("uses specified language for Wikipedia and labels", () => {
-    const query = buildQuery({ limit: 100, offset: 0, bounds: defaultBounds, lang: "sv" });
+    const query = buildQuery({
+      limit: 100,
+      offset: 0,
+      bounds: defaultBounds,
+      lang: "sv",
+    });
     expect(query).toContain("sv.wikipedia.org");
     expect(query).toContain('"sv"');
     expect(query).not.toContain("en.wikipedia.org");
   });
 
   it("supports Japanese", () => {
-    const query = buildQuery({ limit: 100, offset: 0, bounds: defaultBounds, lang: "ja" });
+    const query = buildQuery({
+      limit: 100,
+      offset: 0,
+      bounds: defaultBounds,
+      lang: "ja",
+    });
     expect(query).toContain("ja.wikipedia.org");
     expect(query).toContain('"ja"');
   });
@@ -55,7 +69,9 @@ describe("buildQuery", () => {
 describe("executeSparql", () => {
   it("sends correct URL, headers, and returns parsed JSON", async () => {
     const mockResponse = {
-      results: { bindings: [{ item: { type: "uri", value: "http://example.org/Q123" } }] },
+      results: {
+        bindings: [{ item: { type: "uri", value: "http://example.org/Q123" } }],
+      },
     };
 
     const mockFetch = vi.fn().mockResolvedValue({
@@ -63,7 +79,11 @@ describe("executeSparql", () => {
       text: () => Promise.resolve(JSON.stringify(mockResponse)),
     });
 
-    const result = await executeSparql("SELECT ?x WHERE { }", "https://example.org/sparql", mockFetch);
+    const result = await executeSparql(
+      "SELECT ?x WHERE { }",
+      "https://example.org/sparql",
+      mockFetch,
+    );
 
     expect(mockFetch).toHaveBeenCalledOnce();
     const [url, options] = mockFetch.mock.calls[0];
@@ -83,11 +103,19 @@ describe("executeSparql", () => {
     });
 
     await expect(
-      executeSparql("SELECT ?x WHERE { }", "https://example.org/sparql", mockFetch),
+      executeSparql(
+        "SELECT ?x WHERE { }",
+        "https://example.org/sparql",
+        mockFetch,
+      ),
     ).rejects.toThrow(SparqlError);
 
     try {
-      await executeSparql("SELECT ?x WHERE { }", "https://example.org/sparql", mockFetch);
+      await executeSparql(
+        "SELECT ?x WHERE { }",
+        "https://example.org/sparql",
+        mockFetch,
+      );
     } catch (e) {
       expect(e).toBeInstanceOf(SparqlError);
       expect((e as SparqlError).status).toBe(403);
@@ -98,10 +126,15 @@ describe("executeSparql", () => {
   it("uses GET method", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
-      text: () => Promise.resolve(JSON.stringify({ results: { bindings: [] } })),
+      text: () =>
+        Promise.resolve(JSON.stringify({ results: { bindings: [] } })),
     });
 
-    await executeSparql("SELECT ?x WHERE { }", "https://example.org/sparql", mockFetch);
+    await executeSparql(
+      "SELECT ?x WHERE { }",
+      "https://example.org/sparql",
+      mockFetch,
+    );
     expect(mockFetch.mock.calls[0][1].method).toBe("GET");
   });
 });

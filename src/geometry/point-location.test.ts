@@ -110,11 +110,7 @@ describe("locateTriangle", () => {
           visited.add(key);
           const a = tri.vertices[ia].point;
           const b = tri.vertices[ib].point;
-          const mid = normalize([
-            a[0] + b[0],
-            a[1] + b[1],
-            a[2] + b[2],
-          ]);
+          const mid = normalize([a[0] + b[0], a[1] + b[1], a[2] + b[2]]);
           const found = locateTriangle(tri, mid);
           expect(triangleContains(tri, found, mid)).toBe(true);
         }
