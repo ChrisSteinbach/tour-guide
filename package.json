@@ -16,7 +16,8 @@
     "lint:eslint": "eslint src/",
     "lint:eslint:fix": "eslint src/ --fix",
     "format": "prettier --check .",
-    "format:fix": "prettier --write ."
+    "format:fix": "prettier --write .",
+    "prepare": "husky"
   },
   "repository": {
     "type": "git",
@@ -28,6 +29,8 @@
     "@vitejs/plugin-basic-ssl": "^1.2.0",
     "@vitest/coverage-v8": "^2.1.9",
     "eslint": "^9.39.3",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
     "prettier": "^3.8.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
