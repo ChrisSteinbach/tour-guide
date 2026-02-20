@@ -106,7 +106,7 @@ Three modules under `src/`, sharing a common geometry library:
 - **`src/pipeline/`** — Offline build step that extracts Wikipedia coordinates, computes spherical Delaunay triangulation, and outputs static data files. Run via `tsx`, not Vite.
 - **`src/app/`** — PWA frontend that loads pre-computed data and performs nearest-neighbor queries at runtime. This is the Vite root (`vite.config.ts` sets `root: "src/app"`).
 
-The core algorithm: spherical Delaunay triangulation (via 3D convex hull) enables O(√N) nearest-neighbor queries using triangle walks. Points are represented as 3D Cartesian coordinates on a unit sphere. See `docs/nearest-neighbor.md` for theory and `docs/nearesat-neighbor-plan.md` for the implementation roadmap.
+The core algorithm: spherical Delaunay triangulation (via 3D convex hull) enables O(√N) nearest-neighbor queries using triangle walks. Points are represented as 3D Cartesian coordinates on a unit sphere. See `docs/nearest-neighbor.md` for theory.
 
 ## Testing
 
