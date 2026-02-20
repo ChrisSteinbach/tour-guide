@@ -2,5 +2,6 @@ node_modules/
 dist/
 data/
 dev-dist/
+coverage/
 .playwright-mcp/
 *.png
