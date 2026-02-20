@@ -40,6 +40,7 @@ let paused = false;
 let pendingUpdate: { serverLastModified: string; lang: Lang } | null = null;
 let updateDownloading = false;
 let updateProgress = 0;
+let appUpdateAvailable = false;
 
 function getStoredLang(): Lang {
   const stored = localStorage.getItem(LANG_STORAGE_KEY);
@@ -233,6 +234,33 @@ function declineUpdate(): void {
   removeUpdateBanner();
 }
 
+function renderAppUpdateBanner(): void {
+  if (document.getElementById("app-update-banner")) return;
+  removeUpdateBanner(); // app reload supersedes data update
+  const banner = document.createElement("div");
+  banner.id = "app-update-banner";
+  banner.className = "update-banner";
+  banner.innerHTML = `
+    <span class="update-banner-text">App update available</span>
+    <div class="update-banner-actions">
+      <button class="update-banner-btn update-banner-accept">Reload</button>
+    </div>`;
+  banner.querySelector(".update-banner-accept")!.addEventListener("click", () => {
+    window.location.reload();
+  });
+  document.body.appendChild(banner);
+}
+
+function listenForSwUpdate(): void {
+  if (!("serviceWorker" in navigator)) return;
+  const initialController = navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!initialController) return; // first install, not an update
+    appUpdateAvailable = true;
+    renderAppUpdateBanner();
+  });
+}
+
 function loadLanguageData(lang: Lang): void {
   dataReady = false;
   query = null;
@@ -321,7 +349,8 @@ window.addEventListener("popstate", () => {
   }
 });
 
-// Bootstrap: load data in the background
+// Bootstrap: listen for service worker updates and load data
+listenForSwUpdate();
 loadLanguageData(currentLang);
 
 // Skip welcome screen on reload if user already opted in this session
