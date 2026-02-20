@@ -80,6 +80,13 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,svg}"],
         runtimeCaching: [
           {
+            // .bin data files are managed by the app's own IDB cache.
+            // Exclude from SW caching so checkForUpdate() HEAD requests
+            // always reach the network.
+            urlPattern: /\.bin$/,
+            handler: "NetworkOnly",
+          },
+          {
             urlPattern: /^https:\/\/\w+\.wikipedia\.org\/api\/rest_v1\//,
             handler: "StaleWhileRevalidate",
             options: {
