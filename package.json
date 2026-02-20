@@ -13,7 +13,9 @@
     "extract": "tsx --max-old-space-size=6144 src/pipeline/extract-dump.ts",
     "extract:sparql": "tsx src/pipeline/extract.ts",
     "lint:eslint": "eslint src/",
-    "lint:eslint:fix": "eslint src/ --fix"
+    "lint:eslint:fix": "eslint src/ --fix",
+    "format": "prettier --check .",
+    "format:fix": "prettier --write ."
   },
   "repository": {
     "type": "git",
@@ -24,6 +26,7 @@
     "@types/node": "^25.2.2",
     "@vitejs/plugin-basic-ssl": "^1.2.0",
     "eslint": "^9.39.3",
+    "prettier": "^3.8.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.0",
