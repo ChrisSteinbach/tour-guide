@@ -260,18 +260,34 @@ export async function checkForUpdate(
     if (!db) return null;
 
     const cached = await idbGet(db, cacheKey);
-    if (!cached?.lastModified) return null;
+    if (!cached?.lastModified) {
+      console.log("[update] No cached lastModified — skipping freshness check");
+      return null;
+    }
 
     const response = await fetch(url, { method: "HEAD", cache: "no-store" });
     const serverLM = response.headers.get("Last-Modified");
-    if (!serverLM) return null;
+    if (!serverLM) {
+      console.log("[update] Server returned no Last-Modified header");
+      return null;
+    }
 
-    if (serverLM === cached.lastModified) return null;
+    console.log(`[update] Cached: ${cached.lastModified}`);
+    console.log(`[update] Server: ${serverLM}`);
+
+    if (serverLM === cached.lastModified) {
+      console.log("[update] Data is up to date");
+      return null;
+    }
 
     const dismissedKey = `update-dismissed-${cacheKey}`;
     const dismissed = await idbGetString(db, dismissedKey);
-    if (dismissed === serverLM) return null;
+    if (dismissed === serverLM) {
+      console.log("[update] Update was previously dismissed");
+      return null;
+    }
 
+    console.log("[update] New data available — showing banner");
     return { serverLastModified: serverLM };
   } catch {
     return null;
