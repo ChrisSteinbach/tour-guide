@@ -1,14 +1,3 @@
-What follows is a discussion of implementing nearest neighbour on the sphere using a Voronoi a graph approach to partitioning.
-
-I want you to read through and suggest a plan for taking a stab at this. 
-
-The eventual use case is a tour guide that takes current coordinates and then looks up a Wikipedia article (via the prevalent geographic coordinates in Wikipedia articles) based on nearest neighbour.
-
-Naturally there are some different options presented, and I will leave to you to choose between them.
-
-What follows is input to this, and an idea of where I want you to take it.
-
------
 Nearest Neighbor Search on the Sphere: Adapting Planar Algorithms to Geodesic Space
 
 Introduction: Nearest-neighbor algorithms in computational geometry are well-studied for planar point sets. For example, the classic “post office problem” asks: given $n$ known points (e.g. post offices) on a plane, how can we preprocess them so that for any query location we can quickly find the nearest point? Solutions often involve constructing a Voronoi diagram – a partition of the plane into regions where each region consists of all locations closest to one particular site. The query then reduces to determining which Voronoi region the point lies in, which directly gives the nearest neighbor. Our goal is to move this math and algorithmic approach to a sphere, so that we can perform nearest-neighbor queries on Earth’s surface (using great-circle distances). This is highly relevant for a “closest attraction” tour-guide use case, where we might have many points of interest (attractions) given by latitude/longitude and need to efficiently find which one is closest to a user’s current location on the globe. In the discussion below, we outline the theoretical foundations of planar Voronoi-based nearest neighbor methods and then describe how to extend these concepts to spherical geometry, highlighting efficiency and implementation considerations (without relying on existing geospatial libraries).
