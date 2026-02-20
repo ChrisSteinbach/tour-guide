@@ -9,13 +9,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm test              # Run tests once (vitest run)
+npm test              # Lint + tests (runs npm run lint, then vitest run)
 npm run test:watch    # Run tests in watch mode
+npm run test:coverage # Run tests with code coverage reporting
+npm run lint          # Type-check + ESLint + Prettier check (tsc && eslint && prettier)
 npm run dev           # Start Vite dev server (binds 0.0.0.0 for phone testing)
 npm run build         # Production build → dist/app/
 npm run pipeline      # Run offline build pipeline (tsx src/pipeline/build.ts)
 npm run extract       # Extract geotagged articles from Wikipedia dumps → data/articles-{lang}.json
-npx tsc               # Type-check without emitting
 ```
 
 Run a single test file: `npx vitest run src/geometry/index.test.ts`
