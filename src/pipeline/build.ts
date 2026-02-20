@@ -88,7 +88,7 @@ async function readArticles(
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    const article: Article = JSON.parse(trimmed);
+    const article = JSON.parse(trimmed) as Article;
 
     if (bounds) {
       if (
@@ -139,7 +139,7 @@ async function main() {
     const binPath = resolve(`data/triangulation-${lang}.bin`);
     console.log(`\nReading ${jsonPath}...`);
     const t0 = performance.now();
-    const data: TriangulationFile = JSON.parse(readFileSync(jsonPath, "utf-8"));
+    const data = JSON.parse(readFileSync(jsonPath, "utf-8")) as TriangulationFile;
     const t1 = performance.now();
     console.log(`  → Parsed in ${((t1 - t0) / 1000).toFixed(1)}s (${data.vertexCount} vertices, ${data.triangleCount} triangles)`);
     console.log("\nWriting binary...");

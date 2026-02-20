@@ -9,6 +9,7 @@ import {
   discoverSchema,
   buildColumnIndex,
 } from "./dump-parser.js";
+import type { SqlRow } from "./dump-parser.js";
 
 describe("parseValues", () => {
   it("parses a single row with mixed types", () => {
@@ -163,7 +164,7 @@ describe("streamDump", () => {
     ].join("\n");
 
     const path = writeGzFixture("geo_tags.sql.gz", sql);
-    const rows: import("./dump-parser.js").SqlRow[] = [];
+    const rows: SqlRow[] = [];
 
     for await (const row of streamDump({
       filePath: path,
@@ -192,7 +193,7 @@ describe("streamDump", () => {
     ].join("\n");
 
     const path = writeGzFixture("page.sql.gz", sql);
-    const rows: import("./dump-parser.js").SqlRow[] = [];
+    const rows: SqlRow[] = [];
 
     for await (const row of streamDump({
       filePath: path,

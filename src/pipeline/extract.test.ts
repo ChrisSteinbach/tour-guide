@@ -1,5 +1,5 @@
 import { parseBinding, isValidCoordinate, deduplicateArticles, extractArticles, subdivideTile, generateTiles } from "./extract.js";
-import type { Article, ExtractResult } from "./extract.js";
+import type { Article } from "./extract.js";
 import type { SparqlBinding, SparqlResponse } from "./sparql.js";
 
 // ---------- Helpers ----------

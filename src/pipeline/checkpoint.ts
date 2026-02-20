@@ -81,7 +81,7 @@ export async function deduplicateNdjsonFile(
     if (!line.trim()) continue;
     total++;
     try {
-      const obj = JSON.parse(line);
+      const obj = JSON.parse(line) as { title?: string };
       const title = obj.title;
       if (title && !seen.has(title)) {
         seen.add(title);

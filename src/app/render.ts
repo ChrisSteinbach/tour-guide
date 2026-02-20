@@ -109,7 +109,7 @@ export function renderNearbyList(
 
   container.append(header, list);
 
-  if (onShowMore && nextCount != null) {
+  if (onShowMore && nextCount !== undefined) {
     const btn = document.createElement("button");
     btn.className = "show-more";
     btn.textContent = `Show ${nextCount}`;

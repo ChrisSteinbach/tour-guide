@@ -216,7 +216,7 @@ function findSeedFace(
     for (let e = 0; e < 3; e++) {
       const ni = f.neighbor[e];
       if (ni < 0 || ni === prev || ni === prevPrev || !faces[ni]) continue;
-      const nf = faces[ni]!;
+      const nf = faces[ni];
       const [na, nb, nc] = nf.vertices;
       if (orient3D(points[na], points[nb], points[nc], p) > 0) {
         return [ni, ni];
@@ -355,10 +355,10 @@ export function convexHull(points: Point3D[]): ConvexHull {
 
   // Orient so that orient3D(v0,v1,v2,v3) < 0, meaning v3 is below face (v0,v1,v2).
   // This makes (v0,v1,v2) face outward (normal points away from v3).
-  let v0 = i0,
-    v1 = i1,
-    v2 = i2,
-    v3 = i3;
+  const v0 = i0;
+  let v1 = i1,
+    v2 = i2;
+  const v3 = i3;
   if (orient3D(pp[v0], pp[v1], pp[v2], pp[v3]) > 0) {
     const tmp = v1;
     v1 = v2;

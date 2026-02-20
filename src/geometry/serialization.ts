@@ -55,8 +55,8 @@ export function serialize(
   const vertexCount = tri.vertices.length;
   const triangleCount = tri.triangles.length;
 
-  const vertices: number[] = new Array(vertexCount * 3);
-  const vertexTriangles: number[] = new Array(vertexCount);
+  const vertices = new Array<number>(vertexCount * 3);
+  const vertexTriangles = new Array<number>(vertexCount);
 
   for (let i = 0; i < vertexCount; i++) {
     const v = tri.vertices[i];
@@ -66,8 +66,8 @@ export function serialize(
     vertexTriangles[i] = v.triangle;
   }
 
-  const triangleVertices: number[] = new Array(triangleCount * 3);
-  const triangleNeighbors: number[] = new Array(triangleCount * 3);
+  const triangleVertices = new Array<number>(triangleCount * 3);
+  const triangleNeighbors = new Array<number>(triangleCount * 3);
 
   for (let i = 0; i < triangleCount; i++) {
     const t = tri.triangles[i];
@@ -107,7 +107,7 @@ export function deserialize(data: TriangulationFile): {
   const { vertexCount, triangleCount } = data;
 
   // Reconstruct vertices
-  const vertices: DelaunayVertex[] = new Array(vertexCount);
+  const vertices = new Array<DelaunayVertex>(vertexCount);
   for (let i = 0; i < vertexCount; i++) {
     const point: Point3D = [
       data.vertices[i * 3],
@@ -119,7 +119,7 @@ export function deserialize(data: TriangulationFile): {
 
   // Reconstruct triangles
   const dummyCenter: Point3D = [0, 0, 0];
-  const triangles: DelaunayTriangle[] = new Array(triangleCount);
+  const triangles = new Array<DelaunayTriangle>(triangleCount);
   for (let i = 0; i < triangleCount; i++) {
     triangles[i] = {
       vertices: [
@@ -277,7 +277,7 @@ export function deserializeBinary(buf: ArrayBuffer): { fd: FlatDelaunay; article
   // Parse articles JSON
   const decoder = new TextDecoder();
   const articlesJson = decoder.decode(new Uint8Array(buf, articlesOffset, articlesLength));
-  const parsed: (string | [string, string])[] = JSON.parse(articlesJson);
+  const parsed = JSON.parse(articlesJson) as (string | [string, string])[];
   const articles = parsed.map((entry) => ({
     title: Array.isArray(entry) ? entry[0] : entry,
   }));

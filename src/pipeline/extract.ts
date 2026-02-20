@@ -7,7 +7,6 @@ import { SUPPORTED_LANGS, DEFAULT_LANG } from "../lang.js";
 import type { Lang } from "../lang.js";
 import {
   boundsKey,
-  regionsFingerprint,
   filterResumedRegions,
   readCheckpoint,
   writeCheckpoint,
@@ -328,7 +327,10 @@ async function main() {
   // Load tile cache for full-globe extraction
   if (!bounds && !noCache) {
     try {
-      const cache = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
+      const cache = JSON.parse(fs.readFileSync(cachePath, "utf-8")) as {
+        tiles?: Bounds[];
+        failedTiles?: Bounds[];
+      };
       const cached = cache.tiles?.length ?? 0;
       const failed = cache.failedTiles?.length ?? 0;
       regions = [...(cache.tiles ?? []), ...(cache.failedTiles ?? [])];
@@ -355,13 +357,7 @@ async function main() {
   if (useCheckpoint) {
     checkpoint = await readCheckpoint(checkpointPath);
     if (checkpoint && checkpoint.completedRegions.length > 0) {
-      // Validate fingerprint matches — if tile cache changed, start fresh
-      const currentFingerprint = regionsFingerprint(allRegions);
-      const savedFingerprint = regionsFingerprint(
-        [...checkpoint.leafTiles, ...checkpoint.failedTiles,
-         ...allRegions.filter((r) => checkpoint!.completedRegions.includes(boundsKey(r)))],
-      );
-      // Simpler check: does totalRegions match?
+      // Validate tile cache hasn't changed — if region count differs, start fresh
       if (checkpoint.totalRegions !== allRegions.length) {
         console.log(`Checkpoint region count mismatch (${checkpoint.totalRegions} vs ${allRegions.length}), starting fresh`);
         checkpoint = null;

@@ -216,7 +216,7 @@ function idbGet(db: IDBDatabase, key: string): Promise<CachedData | undefined> {
   return new Promise((resolve) => {
     const tx = db.transaction(IDB_STORE, "readonly");
     const req = tx.objectStore(IDB_STORE).get(key);
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => resolve(req.result as CachedData | undefined);
     req.onerror = () => resolve(undefined);
   });
 }

@@ -7,6 +7,7 @@
 import { createWriteStream, existsSync, mkdirSync, statSync } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
+import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import type { Lang } from "../lang.js";
 
 /** Map language codes to wiki prefixes. */
@@ -98,7 +99,7 @@ export async function downloadDump(
   let downloaded = 0;
 
   // Convert web ReadableStream to Node.js Readable
-  const nodeStream = Readable.fromWeb(response.body as import("stream/web").ReadableStream);
+  const nodeStream = Readable.fromWeb(response.body as WebReadableStream);
 
   nodeStream.on("data", (chunk: Buffer) => {
     downloaded += chunk.length;

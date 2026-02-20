@@ -31,7 +31,13 @@ export async function fetchArticleSummary(
   if (res.status === 404) throw new Error("Article not found");
   if (!res.ok) throw new Error(`Wikipedia API error: ${res.status}`);
 
-  const data = await res.json();
+  const data = await res.json() as {
+    title?: string;
+    extract?: string;
+    description?: string;
+    thumbnail?: { source?: string; width?: number; height?: number };
+    content_urls?: { desktop?: { page?: string } };
+  };
   const summary: ArticleSummary = {
     title: data.title ?? title,
     extract: data.extract ?? "",

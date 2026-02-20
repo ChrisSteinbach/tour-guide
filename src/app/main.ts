@@ -40,7 +40,7 @@ let paused = false;
 let pendingUpdate: { serverLastModified: string; lang: Lang } | null = null;
 let updateDownloading = false;
 let updateProgress = 0;
-let appUpdateAvailable = false;
+
 
 function getStoredLang(): Lang {
   const stored = localStorage.getItem(LANG_STORAGE_KEY);
@@ -74,15 +74,15 @@ function getNextTier(): number | undefined {
 
 function showMore(): void {
   const next = getNextTier();
-  if (next == null || !position) return;
+  if (next === undefined || !position) return;
   nearbyCount = next;
   currentArticles = getNearby(position);
-  renderNearbyList(app, currentArticles, showDetail, currentLang, handleLangChange, showMore, getNextTier(), paused, togglePause);
+  renderNearbyList(app, currentArticles, selectArticle, currentLang, handleLangChange, showMore, getNextTier(), paused, togglePause);
 }
 
 function showList(): void {
   selectedArticle = null;
-  renderNearbyList(app, currentArticles, showDetail, currentLang, handleLangChange, showMore, getNextTier(), paused, togglePause);
+  renderNearbyList(app, currentArticles, selectArticle, currentLang, handleLangChange, showMore, getNextTier(), paused, togglePause);
 }
 
 function togglePause(): void {
@@ -91,10 +91,15 @@ function togglePause(): void {
     lastQueryPos = position;
     currentArticles = getNearby(position);
   }
-  renderNearbyList(app, currentArticles, showDetail, currentLang, handleLangChange, showMore, getNextTier(), paused, togglePause);
+  renderNearbyList(app, currentArticles, selectArticle, currentLang, handleLangChange, showMore, getNextTier(), paused, togglePause);
 }
 
 const goBack = () => history.back();
+
+/** Void wrapper for showDetail — safe to pass as event callback. */
+function selectArticle(article: NearbyArticle): void {
+  void showDetail(article);
+}
 
 async function showDetail(article: NearbyArticle): Promise<void> {
   selectedArticle = article;
@@ -107,7 +112,7 @@ async function showDetail(article: NearbyArticle): Promise<void> {
   } catch (err) {
     if (selectedArticle !== article) return;
     const message = err instanceof Error ? err.message : "Unknown error";
-    renderDetailError(app, article, message, goBack, () => showDetail(article), currentLang);
+    renderDetailError(app, article, message, goBack, () => { void showDetail(article); }, currentLang);
   }
 }
 
@@ -150,7 +155,7 @@ function render(): void {
     updateNearbyDistances(app, currentArticles);
     return;
   }
-  renderNearbyList(app, currentArticles, showDetail, currentLang, handleLangChange, showMore, getNextTier(), paused, togglePause);
+  renderNearbyList(app, currentArticles, selectArticle, currentLang, handleLangChange, showMore, getNextTier(), paused, togglePause);
 }
 
 function useMockData(): void {
@@ -229,7 +234,7 @@ function acceptUpdate(): void {
 function declineUpdate(): void {
   if (!pendingUpdate) return;
   const { serverLastModified, lang } = pendingUpdate;
-  dismissUpdate(`triangulation-v3-${lang}`, serverLastModified);
+  void dismissUpdate(`triangulation-v3-${lang}`, serverLastModified);
   pendingUpdate = null;
   removeUpdateBanner();
 }
@@ -256,7 +261,6 @@ function listenForSwUpdate(): void {
   const initialController = navigator.serviceWorker.controller;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
     if (!initialController) return; // first install, not an update
-    appUpdateAvailable = true;
     renderAppUpdateBanner();
   });
 }
@@ -296,7 +300,7 @@ function loadLanguageData(lang: Lang): void {
       // Background check for newer data on server
       const cacheKey = `triangulation-v3-${lang}`;
       const url = `${import.meta.env.BASE_URL}triangulation-${lang}.bin`;
-      checkForUpdate(url, cacheKey).then((info) => {
+      void checkForUpdate(url, cacheKey).then((info) => {
         if (!info || gen !== loadGeneration) return;
         pendingUpdate = { serverLastModified: info.serverLastModified, lang };
         renderUpdateBanner();
