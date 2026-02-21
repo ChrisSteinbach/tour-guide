@@ -144,17 +144,12 @@ export interface DumpStreamOptions {
   progressInterval?: number;
 }
 
-/** A row with named columns resolved to indices. */
-export interface ParsedDumpResult {
-  schema: TableSchema;
-  columnIndex: Map<string, number>;
-}
-
 /**
- * Stream-parse a gzipped MySQL dump file, yielding rows as arrays.
+ * Stream-parse a gzipped MySQL dump file, yielding projected rows.
  *
  * First discovers the schema from CREATE TABLE, then streams INSERT lines
- * and yields individual row tuples. Validates that required columns exist.
+ * and yields row tuples containing only the requiredColumns, in the order
+ * they were specified.
  */
 export async function* streamDump(
   opts: DumpStreamOptions,
@@ -176,7 +171,7 @@ export async function* streamDump(
 
   let schema: TableSchema | null = null;
   let createTableLines: string[] | null = null;
-  let columnIndex: Map<string, number> | null = null;
+  let projectionIndices: number[] | null = null;
   let rowCount = 0;
 
   const insertPrefix = `INSERT INTO \`${tableName}\` VALUES `;
@@ -195,26 +190,27 @@ export async function* streamDump(
         createTableLines = null;
 
         if (schema && schema.tableName === tableName) {
-          columnIndex = new Map(schema.columns.map((c, i) => [c, i]));
-          // Validate required columns
-          for (const col of requiredColumns) {
-            if (!columnIndex.has(col)) {
+          const columnIndex = new Map(schema.columns.map((c, i) => [c, i]));
+          projectionIndices = requiredColumns.map((col) => {
+            const idx = columnIndex.get(col);
+            if (idx === undefined) {
               throw new Error(
-                `Required column '${col}' not found in ${tableName}. Available: ${schema.columns.join(", ")}`,
+                `Required column '${col}' not found in ${tableName}. Available: ${schema!.columns.join(", ")}`,
               );
             }
-          }
+            return idx;
+          });
         }
       }
       continue;
     }
 
-    // Parse INSERT lines
-    if (line.startsWith(insertPrefix)) {
+    // Parse INSERT lines and project to required columns
+    if (line.startsWith(insertPrefix) && projectionIndices) {
       const valuesStr = line.substring(insertPrefix.length);
       const rows = parseValues(valuesStr);
       for (const row of rows) {
-        yield row;
+        yield projectionIndices.map((i) => row[i]);
         rowCount++;
         if (onProgress && rowCount % progressInterval === 0) {
           onProgress(rowCount);
@@ -223,57 +219,9 @@ export async function* streamDump(
     }
   }
 
-  if (!columnIndex) {
+  if (!projectionIndices) {
     throw new Error(`Schema for table '${tableName}' not found in ${filePath}`);
   }
 
   if (onProgress) onProgress(rowCount);
-}
-
-/**
- * Discover the schema for a table in a dump file.
- *
- * Reads only until CREATE TABLE is found, then stops.
- */
-export async function discoverSchema(
-  filePath: string,
-  tableName: string,
-): Promise<TableSchema> {
-  const gunzip = createGunzip();
-  const fileStream = createReadStream(filePath);
-  const rl = createInterface({
-    input: fileStream.pipe(gunzip),
-    crlfDelay: Infinity,
-  });
-
-  let createTableLines: string[] | null = null;
-
-  for await (const line of rl) {
-    if (line.includes("CREATE TABLE")) {
-      createTableLines = [line];
-      continue;
-    }
-
-    if (createTableLines !== null) {
-      createTableLines.push(line);
-      if (line.includes(";")) {
-        const schema = parseCreateTable(createTableLines);
-        if (schema && schema.tableName === tableName) {
-          rl.close();
-          fileStream.destroy();
-          return schema;
-        }
-        createTableLines = null;
-      }
-    }
-  }
-
-  throw new Error(`Table '${tableName}' not found in ${filePath}`);
-}
-
-/**
- * Build a column index map from a schema.
- */
-export function buildColumnIndex(schema: TableSchema): Map<string, number> {
-  return new Map(schema.columns.map((c, i) => [c, i]));
 }

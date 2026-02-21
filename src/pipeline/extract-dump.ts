@@ -67,21 +67,15 @@ export async function buildPageMap(
 ): Promise<Map<number, string>> {
   const pages = new Map<number, string>();
 
-  for await (const row of streamDump({
+  for await (const [pageId, namespace, title, isRedirect] of streamDump({
     filePath,
     tableName: "page",
     requiredColumns: [PAGE_ID, PAGE_NAMESPACE, PAGE_TITLE, PAGE_IS_REDIRECT],
     onProgress,
     progressInterval: 500_000,
   })) {
-    // row indices: page_id(0), page_namespace(1), page_title(2), page_is_redirect(3), ...
-    const namespace = row[1] as number;
-    const isRedirect = row[3] as number;
-
     if (namespace === 0 && isRedirect === 0) {
-      const pageId = row[0] as number;
-      const title = (row[2] as string).replace(/_/g, " ");
-      pages.set(pageId, title);
+      pages.set(pageId as number, (title as string).replace(/_/g, " "));
     }
   }
 
@@ -127,32 +121,24 @@ export async function* streamGeoArticles(
 ): AsyncGenerator<Article> {
   const { bounds, onProgress } = opts;
 
-  for await (const row of streamDump({
+  for await (const [pageId, globe, primary, lat, lon] of streamDump({
     filePath,
     tableName: "geo_tags",
     requiredColumns: [GT_PAGE_ID, GT_GLOBE, GT_PRIMARY, GT_LAT, GT_LON],
     onProgress,
     progressInterval: 100_000,
   })) {
-    // row indices: gt_id(0), gt_page_id(1), gt_globe(2), gt_primary(3), gt_lat(4), gt_lon(5), ...
-    const globe = row[2] as string;
-    const primary = row[3] as number;
-
     if (globe !== "earth" || primary !== 1) continue;
 
-    const pageId = row[1] as number;
-    const lat = row[4] as number;
-    const lon = row[5] as number;
-
     if (lat === null || lon === null) continue;
-    if (!isValidCoord(lat, lon)) continue;
+    if (!isValidCoord(lat as number, lon as number)) continue;
 
-    if (bounds && !isInBounds(lat, lon, bounds)) continue;
+    if (bounds && !isInBounds(lat as number, lon as number, bounds)) continue;
 
-    const title = pages.get(pageId);
+    const title = pages.get(pageId as number);
     if (!title) continue; // Not an article or is a redirect
 
-    yield { title, lat, lon };
+    yield { title, lat: lat as number, lon: lon as number };
   }
 }
 

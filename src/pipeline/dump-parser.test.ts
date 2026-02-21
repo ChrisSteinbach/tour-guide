@@ -2,13 +2,7 @@ import { writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import {
-  parseValues,
-  parseCreateTable,
-  streamDump,
-  discoverSchema,
-  buildColumnIndex,
-} from "./dump-parser.js";
+import { parseValues, parseCreateTable, streamDump } from "./dump-parser.js";
 import type { SqlRow, DumpStreamOptions } from "./dump-parser.js";
 
 // --- Shared test infrastructure ---
@@ -223,8 +217,8 @@ describe("streamDump", () => {
     });
 
     expect(rows).toHaveLength(2);
-    expect(rows[0]).toEqual([1, 100, "earth", 1, 48.8584, 2.2945]);
-    expect(rows[1]).toEqual([2, 200, "earth", 0, 40.7128, -74.006]);
+    expect(rows[0]).toEqual([100, 48.8584, 2.2945]);
+    expect(rows[1]).toEqual([200, 40.7128, -74.006]);
   });
 
   it("handles multiple INSERT lines", async () => {
@@ -243,8 +237,8 @@ describe("streamDump", () => {
     });
 
     expect(rows).toHaveLength(2);
-    expect(rows[0]).toEqual([1, 0, "Eiffel_Tower"]);
-    expect(rows[1]).toEqual([2, 0, "Statue_of_Liberty"]);
+    expect(rows[0]).toEqual([1, "Eiffel_Tower"]);
+    expect(rows[1]).toEqual([2, "Statue_of_Liberty"]);
   });
 
   it("throws when required column is missing", async () => {
@@ -289,39 +283,5 @@ describe("streamDump", () => {
         requiredColumns: ["gt_id"],
       }),
     ).rejects.toThrow("Schema for table 'geo_tags' not found");
-  });
-});
-
-describe("discoverSchema", () => {
-  it("discovers schema without reading full file", async () => {
-    const sql =
-      "-- MySQL dump\n" +
-      dumpSql(
-        "page_props",
-        ["pp_page", "pp_propname", "pp_value", "pp_sortkey"],
-        [[1, "wikibase_item", "Q1", null]],
-      );
-    const path = writeGzFixture("page_props.sql.gz", sql);
-
-    const schema = await discoverSchema(path, "page_props");
-    expect(schema.tableName).toBe("page_props");
-    expect(schema.columns).toEqual([
-      "pp_page",
-      "pp_propname",
-      "pp_value",
-      "pp_sortkey",
-    ]);
-  });
-});
-
-describe("buildColumnIndex", () => {
-  it("builds a map from column name to index", () => {
-    const idx = buildColumnIndex({
-      tableName: "test",
-      columns: ["id", "name", "value"],
-    });
-    expect(idx.get("id")).toBe(0);
-    expect(idx.get("name")).toBe(1);
-    expect(idx.get("value")).toBe(2);
   });
 });
