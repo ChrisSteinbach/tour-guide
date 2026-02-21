@@ -16,21 +16,8 @@ import {
 import type { ArticleMeta, TriangulationFile } from "../geometry/index.js";
 import { SUPPORTED_LANGS, DEFAULT_LANG } from "../lang.js";
 import type { Lang } from "../lang.js";
-
-// ---------- Types ----------
-
-interface Article {
-  title: string;
-  lat: number;
-  lon: number;
-}
-
-interface Bounds {
-  south: number;
-  north: number;
-  west: number;
-  east: number;
-}
+import { isInBounds, parseBounds } from "./extract-dump.js";
+import type { Article, Bounds } from "./extract-dump.js";
 
 // ---------- CLI arg parsing ----------
 
@@ -54,18 +41,7 @@ function parseArgs(): {
         throw new Error(`Invalid --limit value: ${arg}`);
       }
     } else if (arg.startsWith("--bounds=")) {
-      const parts = arg.slice("--bounds=".length).split(",").map(Number);
-      if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) {
-        throw new Error(
-          `Invalid --bounds (expected south,north,west,east): ${arg}`,
-        );
-      }
-      bounds = {
-        south: parts[0],
-        north: parts[1],
-        west: parts[2],
-        east: parts[3],
-      };
+      bounds = parseBounds(arg.slice("--bounds=".length));
     } else if (arg === "--json") {
       json = true;
     } else if (arg === "--convert") {
@@ -106,15 +82,8 @@ async function readArticles(
 
     const article = JSON.parse(trimmed) as Article;
 
-    if (bounds) {
-      if (
-        article.lat < bounds.south ||
-        article.lat > bounds.north ||
-        article.lon < bounds.west ||
-        article.lon > bounds.east
-      ) {
-        continue;
-      }
+    if (bounds && !isInBounds(article.lat, article.lon, bounds)) {
+      continue;
     }
 
     articles.push(article);

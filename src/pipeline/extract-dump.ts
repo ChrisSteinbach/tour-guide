@@ -240,11 +240,12 @@ export async function extractDump(opts: ExtractDumpOptions): Promise<{
 
 // ---------- CLI ----------
 
-function parseBounds(str: string): Bounds {
-  const [south, north, west, east] = str.split(",").map(Number);
-  if ([south, north, west, east].some(Number.isNaN)) {
+export function parseBounds(str: string): Bounds {
+  const parts = str.split(",").map(Number);
+  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) {
     throw new Error(`Invalid bounds: ${str} (expected: south,north,west,east)`);
   }
+  const [south, north, west, east] = parts;
   return { south, north, west, east };
 }
 

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import {
   isValidCoord,
   isInBounds,
+  parseBounds,
   buildPageMap,
   streamGeoArticles,
   extractDump,
@@ -73,6 +74,33 @@ describe("isInBounds", () => {
   it("includes coordinates on the boundary", () => {
     expect(isInBounds(35, -25, europe)).toBe(true);
     expect(isInBounds(72, 45, europe)).toBe(true);
+  });
+});
+
+// ---------- Unit: parseBounds ----------
+
+describe("parseBounds", () => {
+  it("parses valid south,north,west,east string", () => {
+    expect(parseBounds("49.44,50.19,5.73,6.53")).toEqual({
+      south: 49.44,
+      north: 50.19,
+      west: 5.73,
+      east: 6.53,
+    });
+  });
+
+  it("rejects non-numeric values", () => {
+    expect(() => parseBounds("a,b,c,d")).toThrow("Invalid bounds");
+  });
+
+  it("rejects wrong number of parts", () => {
+    expect(() => parseBounds("1,2,3")).toThrow("Invalid bounds");
+    expect(() => parseBounds("1,2,3,4,5")).toThrow("Invalid bounds");
+  });
+
+  it("rejects NaN and Infinity", () => {
+    expect(() => parseBounds("NaN,1,2,3")).toThrow("Invalid bounds");
+    expect(() => parseBounds("1,Infinity,2,3")).toThrow("Invalid bounds");
   });
 });
 
