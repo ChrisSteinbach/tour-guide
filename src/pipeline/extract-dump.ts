@@ -93,7 +93,7 @@ export async function buildPageMap(
 /**
  * Check if coordinates are valid.
  */
-function isValidCoord(lat: number, lon: number): boolean {
+export function isValidCoord(lat: number, lon: number): boolean {
   if (Number.isNaN(lat) || Number.isNaN(lon)) return false;
   if (lat < -90 || lat > 90) return false;
   if (lon < -180 || lon > 180) return false;
@@ -105,7 +105,7 @@ function isValidCoord(lat: number, lon: number): boolean {
 /**
  * Check if coordinates are within bounds.
  */
-function isInBounds(lat: number, lon: number, bounds: Bounds): boolean {
+export function isInBounds(lat: number, lon: number, bounds: Bounds): boolean {
   return (
     lat >= bounds.south &&
     lat <= bounds.north &&

@@ -2,6 +2,8 @@ import { mkdirSync, rmSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
+  isValidCoord,
+  isInBounds,
   buildPageMap,
   streamGeoArticles,
   extractDump,
@@ -9,7 +11,12 @@ import {
 import type { Article } from "./extract-dump.js";
 import { makePageDump, makeGeoDump, gzFile } from "./dump-test-fixtures.js";
 
-// ---------- Helpers ----------
+// --- Shared test infrastructure ---
+
+const testDir = join(tmpdir(), "extract-dump-test-" + Date.now());
+
+beforeAll(() => mkdirSync(testDir, { recursive: true }));
+afterAll(() => rmSync(testDir, { recursive: true, force: true }));
 
 async function collectArticles(
   stream: AsyncGenerator<Article>,
@@ -19,14 +26,59 @@ async function collectArticles(
   return articles;
 }
 
-// ---------- buildPageMap ----------
+// ---------- Unit: coordinate validation ----------
+
+describe("isValidCoord", () => {
+  it("accepts valid coordinates", () => {
+    expect(isValidCoord(48.8584, 2.2945)).toBe(true);
+    expect(isValidCoord(-33.8688, 151.2093)).toBe(true);
+  });
+
+  it("rejects Null Island (0,0)", () => {
+    expect(isValidCoord(0, 0)).toBe(false);
+  });
+
+  it("rejects NaN", () => {
+    expect(isValidCoord(NaN, 2.0)).toBe(false);
+    expect(isValidCoord(48.0, NaN)).toBe(false);
+  });
+
+  it("rejects out-of-range latitude", () => {
+    expect(isValidCoord(91, 0)).toBe(false);
+    expect(isValidCoord(-91, 0)).toBe(false);
+  });
+
+  it("rejects out-of-range longitude", () => {
+    expect(isValidCoord(0.1, 181)).toBe(false);
+    expect(isValidCoord(0.1, -181)).toBe(false);
+  });
+
+  it("accepts boundary values", () => {
+    expect(isValidCoord(90, 180)).toBe(true);
+    expect(isValidCoord(-90, -180)).toBe(true);
+  });
+});
+
+describe("isInBounds", () => {
+  const europe = { south: 35, north: 72, west: -25, east: 45 };
+
+  it("returns true for coordinates inside bounds", () => {
+    expect(isInBounds(48.8584, 2.2945, europe)).toBe(true);
+  });
+
+  it("returns false for coordinates outside bounds", () => {
+    expect(isInBounds(40.7128, -74.006, europe)).toBe(false);
+  });
+
+  it("includes coordinates on the boundary", () => {
+    expect(isInBounds(35, -25, europe)).toBe(true);
+    expect(isInBounds(72, 45, europe)).toBe(true);
+  });
+});
+
+// ---------- Unit: buildPageMap ----------
 
 describe("buildPageMap", () => {
-  const testDir = join(tmpdir(), "extract-dump-page-" + Date.now());
-
-  beforeAll(() => mkdirSync(testDir, { recursive: true }));
-  afterAll(() => rmSync(testDir, { recursive: true, force: true }));
-
   it("keeps articles, filters redirects and non-article namespaces", async () => {
     const path = gzFile(
       testDir,
@@ -49,14 +101,9 @@ describe("buildPageMap", () => {
   });
 });
 
-// ---------- streamGeoArticles ----------
+// ---------- Unit: streamGeoArticles ----------
 
 describe("streamGeoArticles", () => {
-  const testDir = join(tmpdir(), "extract-dump-geo-" + Date.now());
-
-  beforeAll(() => mkdirSync(testDir, { recursive: true }));
-  afterAll(() => rmSync(testDir, { recursive: true, force: true }));
-
   it("joins geo_tags with page map", async () => {
     const geoPath = gzFile(
       testDir,
@@ -144,14 +191,9 @@ describe("streamGeoArticles", () => {
   });
 });
 
-// ---------- extractDump (integration) ----------
+// ---------- Integration: extractDump ----------
 
-describe("extractDump (integration)", () => {
-  const testDir = join(tmpdir(), "extract-dump-integration-" + Date.now());
-
-  beforeAll(() => mkdirSync(testDir, { recursive: true }));
-  afterAll(() => rmSync(testDir, { recursive: true, force: true }));
-
+describe("extractDump", () => {
   function writeDumps(
     subdir: string,
     pages: Parameters<typeof makePageDump>[0],
