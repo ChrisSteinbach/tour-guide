@@ -111,6 +111,17 @@ The core algorithm: spherical Delaunay triangulation (via 3D convex hull) enable
 
 Vitest with globals enabled — use `describe`, `it`, `expect` without imports. Tests live alongside source as `*.test.ts` files.
 
+### Test philosophy
+
+Optimize for **future comprehension and low maintenance cost**. A failing test should answer in under a minute: what is being verified, what data matters, and what broke.
+
+- **Test behavior, not implementation.** Assert on outcomes and observable state, not internal call sequences. A refactor that preserves behavior should not break tests.
+- **Testability is design feedback.** If a test needs elaborate setup or many mocks, that signals the production code should be improved — extract a pure function, split a class, introduce a seam. Fix the code, then the test becomes simple.
+- **DAMP over DRY.** Inline setup in each test so it reads in isolation. Avoid shared fixtures that hide what matters. Local repetition is fine if it aids comprehension.
+- **One behavior per test.** Prefer separate focused tests over loops or multi-scenario tests. Each failure should name the exact scenario.
+- **Mock to remove slowness and side-effects**, not to encode internal wiring. Use relaxed matching; don't over-specify expectations.
+- **Pragmatic coverage.** Don't chase 100%. Delete or rewrite tests that break on harmless refactors. Every test should pay rent.
+
 ## TypeScript
 
 Strict mode, ES2022 target, ESNext modules with bundler resolution. No runtime dependencies — dev-only tooling (vite, vitest, tsx, typescript).
