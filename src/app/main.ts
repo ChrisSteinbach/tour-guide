@@ -24,6 +24,12 @@ import {
   dismissUpdate,
   type NearestQuery,
 } from "./query";
+import {
+  TiledQuery,
+  loadTileIndex,
+  loadTile,
+  cleanMonolithicCache,
+} from "./tile-loader";
 import { DEFAULT_LANG, SUPPORTED_LANGS } from "../lang";
 import type { Lang } from "../lang";
 
@@ -36,7 +42,7 @@ let currentArticles: NearbyArticle[] = [];
 let selectedArticle: NearbyArticle | null = null;
 
 // State
-let query: NearestQuery | null = null;
+let query: NearestQuery | TiledQuery | null = null;
 let nearbyCount: number = NEARBY_TIERS[0];
 let dataReady = false;
 let loadGeneration = 0;
@@ -51,6 +57,7 @@ let paused = false;
 let pendingUpdate: { serverLastModified: string; lang: Lang } | null = null;
 let updateDownloading = false;
 let updateProgress = 0;
+const loadingTiles = new Set<string>(); // in-flight tile fetches
 
 function getStoredLang(): Lang {
   const stored = localStorage.getItem(LANG_STORAGE_KEY);
@@ -186,6 +193,11 @@ function render(): void {
     renderLoading(app);
     return;
   }
+  // Tiled query with no tiles loaded yet — waiting for first tile
+  if (query instanceof TiledQuery && query.loadedTileCount === 0) {
+    renderLoading(app, "Loading nearby articles\u2026");
+    return;
+  }
   if (selectedArticle) return;
 
   // Skip re-query when paused or position hasn't moved enough
@@ -231,6 +243,9 @@ function useMockData(): void {
   }
   started = true;
   position = mockPosition;
+  if (query instanceof TiledQuery) {
+    void loadTilesForPosition(currentLang, loadGeneration);
+  }
   render();
 }
 
@@ -337,17 +352,7 @@ function listenForSwUpdate(): void {
   });
 }
 
-function loadLanguageData(lang: Lang): void {
-  dataReady = false;
-  query = null;
-  downloadProgress = -1;
-  lastQueryPos = null;
-  pendingUpdate = null;
-  updateDownloading = false;
-  removeUpdateBanner();
-  const gen = ++loadGeneration;
-  if (started) render(); // show loading state
-
+function loadMonolithic(lang: Lang, gen: number): void {
   let lastRenderTime = 0;
   let lastRenderedPct = -2; // -2 so initial indeterminate (-1) triggers a render
   const onProgress = (fraction: number) => {
@@ -369,7 +374,7 @@ function loadLanguageData(lang: Lang): void {
     onProgress,
   )
     .then((q) => {
-      if (gen !== loadGeneration) return; // stale load, discard
+      if (gen !== loadGeneration) return;
       query = q;
       console.log(`Loaded ${q.size} articles (${lang})`);
 
@@ -393,6 +398,95 @@ function loadLanguageData(lang: Lang): void {
     });
 }
 
+async function loadTilesForPosition(lang: Lang, gen: number): Promise<void> {
+  if (gen !== loadGeneration) return;
+  if (!(query instanceof TiledQuery) || !position) return;
+
+  const tq = query;
+  const { primary, adjacent } = tq.tilesForPosition(position.lat, position.lon);
+
+  // Load primary tile first (await), then render immediately
+  const allTiles = [primary, ...adjacent];
+  for (const id of allTiles) {
+    if (tq.hasTile(id) || loadingTiles.has(id)) continue;
+    const entry = tq.getTileEntry(id);
+    if (!entry) continue;
+
+    const isPrimary = id === primary;
+    loadingTiles.add(id);
+
+    const loadOne = loadTile(import.meta.env.BASE_URL, lang, entry)
+      .then((tileQuery) => {
+        if (gen !== loadGeneration) return;
+        tq.addTile(id, tileQuery);
+        lastQueryPos = null; // force re-query with new tile data
+        if (started && position) render();
+      })
+      .catch((err) => {
+        console.error(`Failed to load tile ${id}:`, err);
+      })
+      .finally(() => {
+        loadingTiles.delete(id);
+      });
+
+    if (isPrimary) {
+      await loadOne; // wait for primary before continuing
+    }
+    // adjacent tiles load in background (fire-and-forget)
+  }
+}
+
+function loadLanguageData(lang: Lang): void {
+  dataReady = false;
+  query = null;
+  downloadProgress = -1;
+  lastQueryPos = null;
+  pendingUpdate = null;
+  updateDownloading = false;
+  loadingTiles.clear();
+  removeUpdateBanner();
+  const gen = ++loadGeneration;
+  if (started) render(); // show loading state
+
+  const baseUrl = import.meta.env.BASE_URL;
+
+  // Try tiled loading first, fall back to monolithic on 404
+  loadTileIndex(baseUrl, lang)
+    .then((index) => {
+      if (gen !== loadGeneration) return;
+
+      if (index) {
+        // Tiled path
+        query = new TiledQuery(index);
+        dataReady = true;
+        console.log(
+          `[tiles] Tiled mode: ${index.tiles.length} tiles (${lang})`,
+        );
+
+        // Clean up old monolithic cache
+        void cleanMonolithicCache(lang);
+
+        if (started) render();
+
+        // If position already known, start loading tiles
+        if (position) {
+          void loadTilesForPosition(lang, gen);
+        }
+      } else {
+        // Monolithic fallback
+        loadMonolithic(lang, gen);
+      }
+    })
+    .catch((err) => {
+      if (gen !== loadGeneration) return;
+      console.warn(
+        "[tiles] Tile index failed, falling back to monolithic:",
+        err,
+      );
+      loadMonolithic(lang, gen);
+    });
+}
+
 function handleLangChange(lang: Lang): void {
   currentLang = lang;
   nearbyCount = NEARBY_TIERS[0];
@@ -413,6 +507,9 @@ function startLocating(): void {
     onPosition: (pos) => {
       position = pos;
       locError = null;
+      if (query instanceof TiledQuery) {
+        void loadTilesForPosition(currentLang, loadGeneration);
+      }
       render();
     },
     onError: (error) => {

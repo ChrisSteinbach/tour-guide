@@ -20,6 +20,8 @@ import { SUPPORTED_LANGS, DEFAULT_LANG } from "../lang.js";
 import type { Lang } from "../lang.js";
 import { isInBounds, parseBounds } from "./extract-dump.js";
 import type { Article, Bounds } from "./extract-dump.js";
+import { GRID_DEG, BUFFER_DEG, tileFor, tileId } from "../tiles.js";
+import type { TileEntry, TileIndex } from "../tiles.js";
 
 // ---------- CLI arg parsing ----------
 
@@ -116,45 +118,11 @@ function writeJson(data: TriangulationFile, outputPath: string): void {
 
 // ---------- Tiling ----------
 
-const GRID_DEG = 5;
-const BUFFER_DEG = 0.5;
 const MIN_ARTICLES = 4;
 
-export interface TileEntry {
-  id: string;
-  row: number;
-  col: number;
-  south: number;
-  north: number;
-  west: number;
-  east: number;
-  articles: number;
-  bytes: number;
-  hash: string;
-}
-
-export interface TileIndex {
-  version: number;
-  gridDeg: number;
-  bufferDeg: number;
-  generated: string;
-  tiles: TileEntry[];
-}
-
-/** Compute tile row and column for a lat/lon position. */
-export function tileFor(
-  lat: number,
-  lon: number,
-): { row: number; col: number } {
-  const row = Math.floor((lat + 90) / GRID_DEG);
-  const col = Math.floor((lon + 180) / GRID_DEG);
-  return { row, col };
-}
-
-/** Format row-col as zero-padded tile ID. */
-function tileId(row: number, col: number): string {
-  return `${String(row).padStart(2, "0")}-${String(col).padStart(2, "0")}`;
-}
+// Re-export for build.test.ts
+export { tileFor } from "../tiles.js";
+export type { TileEntry, TileIndex } from "../tiles.js";
 
 /** Collect articles for a tile: native articles + buffer zone from adjacent tiles. */
 export function collectTileArticles(

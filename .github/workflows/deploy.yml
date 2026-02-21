@@ -37,15 +37,27 @@ jobs:
         run: |
           mkdir -p data
           gh release download data-latest --pattern "triangulation-*.bin.gz" --dir data
+          gh release download data-latest --pattern "tiles-*.tar.gz" --dir data || true
 
       - name: Decompress data
         run: gzip --decompress --keep data/triangulation-*.bin.gz
+
+      - name: Extract tiles
+        run: |
+          mkdir -p data/tiles
+          for archive in data/tiles-*.tar.gz; do
+            [ -f "$archive" ] && tar xzf "$archive" -C data/tiles || true
+          done
 
       - name: Build app
         run: npm run build
 
       - name: Copy data into build output
-        run: cp data/triangulation-*.bin dist/app/
+        run: |
+          cp data/triangulation-*.bin dist/app/
+          if [ -d data/tiles ]; then
+            cp -r data/tiles dist/app/tiles
+          fi
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

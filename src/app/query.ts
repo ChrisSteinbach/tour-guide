@@ -5,6 +5,14 @@
 
 import type { ArticleMeta, FlatDelaunay, TriangulationFile } from "../geometry";
 import { deserializeBinary, toCartesian } from "../geometry";
+import {
+  idbOpen,
+  idbGet,
+  idbPut,
+  idbDelete,
+  idbGetString,
+  idbPutString,
+} from "./idb";
 
 const EARTH_RADIUS_M = 6_371_000;
 const RAD_TO_DEG = 180 / Math.PI;
@@ -231,66 +239,6 @@ export class NearestQuery {
       distanceM: dist(vp, vi, qx, qy, qz) * EARTH_RADIUS_M,
     };
   }
-}
-
-// ---------- IndexedDB cache ----------
-
-const IDB_NAME = "tour-guide";
-const IDB_STORE = "cache";
-
-interface CachedData {
-  vertexPoints: Float64Array;
-  vertexTriangles: Uint32Array;
-  triangleVertices: Uint32Array;
-  triangleNeighbors: Uint32Array;
-  articles: string[]; // titles — lighter for structured clone than objects
-  lastModified?: string;
-}
-
-function idbOpen(): Promise<IDBDatabase | null> {
-  return new Promise((resolve) => {
-    const req = indexedDB.open(IDB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => resolve(null);
-  });
-}
-
-function idbGet(db: IDBDatabase, key: string): Promise<CachedData | undefined> {
-  return new Promise((resolve) => {
-    const tx = db.transaction(IDB_STORE, "readonly");
-    const req = tx.objectStore(IDB_STORE).get(key);
-    req.onsuccess = () => resolve(req.result as CachedData | undefined);
-    req.onerror = () => resolve(undefined);
-  });
-}
-
-function idbPut(db: IDBDatabase, key: string, value: CachedData): void {
-  const tx = db.transaction(IDB_STORE, "readwrite");
-  tx.objectStore(IDB_STORE).put(value, key);
-}
-
-function idbGetString(
-  db: IDBDatabase,
-  key: string,
-): Promise<string | undefined> {
-  return new Promise((resolve) => {
-    const tx = db.transaction(IDB_STORE, "readonly");
-    const req = tx.objectStore(IDB_STORE).get(key);
-    req.onsuccess = () =>
-      resolve(typeof req.result === "string" ? req.result : undefined);
-    req.onerror = () => resolve(undefined);
-  });
-}
-
-function idbPutString(db: IDBDatabase, key: string, value: string): void {
-  const tx = db.transaction(IDB_STORE, "readwrite");
-  tx.objectStore(IDB_STORE).put(value, key);
-}
-
-function idbDelete(db: IDBDatabase, key: string): void {
-  const tx = db.transaction(IDB_STORE, "readwrite");
-  tx.objectStore(IDB_STORE).delete(key);
 }
 
 // ---------- Update check ----------

@@ -1,7 +1,7 @@
 import { defineConfig, type Plugin } from "vite";
 import basicSsl from "@vitejs/plugin-basic-ssl";
 import { VitePWA } from "vite-plugin-pwa";
-import { createReadStream, statSync } from "node:fs";
+import { createReadStream, existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
 /**
@@ -21,6 +21,37 @@ function serveData(): Plugin {
             res.setHeader("Content-Type", "application/octet-stream");
             res.setHeader("Content-Length", stat.size);
             res.setHeader("Last-Modified", stat.mtime.toUTCString());
+            createReadStream(filePath).pipe(res);
+          } catch {
+            next();
+          }
+          return;
+        }
+        // Serve tile index: /tiles/{lang}/index.json
+        const indexMatch = req.url?.match(/\/tiles\/(\w+)\/index\.json$/);
+        if (indexMatch) {
+          const filePath = resolve(`data/tiles/${indexMatch[1]}/index.json`);
+          if (existsSync(filePath)) {
+            const stat = statSync(filePath);
+            res.setHeader("Content-Type", "application/json");
+            res.setHeader("Content-Length", stat.size);
+            createReadStream(filePath).pipe(res);
+          } else {
+            res.writeHead(404);
+            res.end();
+          }
+          return;
+        }
+        // Serve individual tile: /tiles/{lang}/{id}.bin
+        const tileMatch = req.url?.match(/\/tiles\/(\w+)\/(\d{2}-\d{2})\.bin$/);
+        if (tileMatch) {
+          try {
+            const filePath = resolve(
+              `data/tiles/${tileMatch[1]}/${tileMatch[2]}.bin`,
+            );
+            const stat = statSync(filePath);
+            res.setHeader("Content-Type", "application/octet-stream");
+            res.setHeader("Content-Length", stat.size);
             createReadStream(filePath).pipe(res);
           } catch {
             next();
@@ -80,10 +111,10 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,svg}"],
         runtimeCaching: [
           {
-            // .bin data files are managed by the app's own IDB cache.
-            // Exclude from SW caching so checkForUpdate() HEAD requests
-            // always reach the network.
-            urlPattern: /\.bin$/,
+            // Data files (.bin tiles, index.json) are managed by the app's
+            // own IDB cache. Exclude from SW caching so fetches always
+            // reach the network.
+            urlPattern: /\.(bin|json)$/,
             handler: "NetworkOnly",
           },
           {
