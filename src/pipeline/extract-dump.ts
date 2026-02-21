@@ -9,6 +9,7 @@
 
 import { createWriteStream } from "node:fs";
 import { mkdir } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { SUPPORTED_LANGS, DEFAULT_LANG } from "../lang.js";
 import type { Lang } from "../lang.js";
 import { downloadAllDumps, dumpPath, formatBytes } from "./dump-download.js";
@@ -286,7 +287,9 @@ async function main() {
   );
 }
 
-main().catch((err) => {
-  console.error("Fatal error:", err);
-  process.exit(1);
-});
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error("Fatal error:", err);
+    process.exit(1);
+  });
+}

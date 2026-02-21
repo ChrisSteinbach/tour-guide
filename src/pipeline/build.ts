@@ -5,6 +5,7 @@
 import { createReadStream, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   toCartesian,
   convexHull,
@@ -243,7 +244,9 @@ async function main() {
   console.log(`\nDone in ${totalTime}s`);
 }
 
-main().catch((err) => {
-  console.error("Pipeline failed:", err);
-  process.exit(1);
-});
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error("Pipeline failed:", err);
+    process.exit(1);
+  });
+}
