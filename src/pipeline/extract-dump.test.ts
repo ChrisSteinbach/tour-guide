@@ -1,5 +1,4 @@
-import { writeFileSync, mkdirSync, rmSync, readFileSync } from "node:fs";
-import { gzipSync } from "node:zlib";
+import { mkdirSync, rmSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -8,84 +7,19 @@ import {
   extractDump,
 } from "./extract-dump.js";
 import type { Article } from "./extract-dump.js";
+import { makePageDump, makeGeoDump, gzFile } from "./dump-test-fixtures.js";
 
-// ---------- Fixture helpers ----------
+// ---------- Helpers ----------
 
-function gzFile(dir: string, name: string, sql: string): string {
-  const path = join(dir, name);
-  writeFileSync(path, gzipSync(Buffer.from(sql, "utf8")));
-  return path;
+async function collectArticles(
+  stream: AsyncGenerator<Article>,
+): Promise<Article[]> {
+  const articles: Article[] = [];
+  for await (const article of stream) articles.push(article);
+  return articles;
 }
 
-const PAGE_SCHEMA = [
-  "CREATE TABLE `page` (",
-  "  `page_id` int(8) unsigned NOT NULL AUTO_INCREMENT,",
-  "  `page_namespace` int(11) NOT NULL DEFAULT '0',",
-  "  `page_title` varbinary(255) NOT NULL DEFAULT '',",
-  "  `page_is_redirect` tinyint(1) unsigned NOT NULL DEFAULT '0',",
-  "  `page_is_new` tinyint(1) unsigned NOT NULL DEFAULT '0',",
-  "  `page_random` double unsigned NOT NULL DEFAULT '0',",
-  "  `page_touched` varbinary(14) NOT NULL DEFAULT '',",
-  "  `page_links_updated` varbinary(14) DEFAULT NULL,",
-  "  `page_latest` int(8) unsigned NOT NULL DEFAULT '0',",
-  "  `page_len` int(8) unsigned NOT NULL DEFAULT '0',",
-  "  `page_content_model` varbinary(32) DEFAULT NULL,",
-  "  `page_lang` varbinary(35) DEFAULT NULL,",
-  "  PRIMARY KEY (`page_id`)",
-  ") ENGINE=InnoDB;",
-].join("\n");
-
-const GEO_SCHEMA = [
-  "CREATE TABLE `geo_tags` (",
-  "  `gt_id` int(10) unsigned NOT NULL AUTO_INCREMENT,",
-  "  `gt_page_id` int(10) unsigned NOT NULL DEFAULT '0',",
-  "  `gt_globe` varbinary(32) NOT NULL DEFAULT 'earth',",
-  "  `gt_primary` tinyint(4) NOT NULL DEFAULT '0',",
-  "  `gt_lat` float DEFAULT NULL,",
-  "  `gt_lon` float DEFAULT NULL,",
-  "  `gt_dim` int(11) DEFAULT NULL,",
-  "  `gt_type` varbinary(32) DEFAULT NULL,",
-  "  `gt_name` varbinary(255) DEFAULT NULL,",
-  "  `gt_country` varbinary(2) DEFAULT NULL,",
-  "  `gt_region` varbinary(10) DEFAULT NULL,",
-  "  `gt_lat_int` smallint(6) DEFAULT NULL,",
-  "  `gt_lon_int` smallint(6) DEFAULT NULL,",
-  "  PRIMARY KEY (`gt_id`)",
-  ") ENGINE=InnoDB;",
-].join("\n");
-
-function makePageDump(
-  rows: Array<{ id: number; ns: number; title: string; redirect: number }>,
-): string {
-  const values = rows
-    .map(
-      (r) =>
-        `(${r.id},${r.ns},'${r.title}',${r.redirect},0,0.5,'20260101000000',NULL,1,100,'wikitext',NULL)`,
-    )
-    .join(",");
-  return `${PAGE_SCHEMA}\n\nINSERT INTO \`page\` VALUES ${values};`;
-}
-
-function makeGeoDump(
-  rows: Array<{
-    id: number;
-    pageId: number;
-    globe: string;
-    primary: number;
-    lat: number;
-    lon: number;
-  }>,
-): string {
-  const values = rows
-    .map(
-      (r) =>
-        `(${r.id},${r.pageId},'${r.globe}',${r.primary},${r.lat},${r.lon},10000,'landmark','',NULL,NULL,0,NULL)`,
-    )
-    .join(",");
-  return `${GEO_SCHEMA}\n\nINSERT INTO \`geo_tags\` VALUES ${values};`;
-}
-
-// ---------- Tests ----------
+// ---------- buildPageMap ----------
 
 describe("buildPageMap", () => {
   const testDir = join(tmpdir(), "extract-dump-page-" + Date.now());
@@ -93,24 +27,29 @@ describe("buildPageMap", () => {
   beforeAll(() => mkdirSync(testDir, { recursive: true }));
   afterAll(() => rmSync(testDir, { recursive: true, force: true }));
 
-  it("builds map of article pages, filtering redirects and non-zero namespaces", async () => {
-    const sql = makePageDump([
-      { id: 1, ns: 0, title: "Eiffel_Tower", redirect: 0 },
-      { id: 2, ns: 0, title: "Tour_Eiffel", redirect: 1 }, // redirect
-      { id: 3, ns: 14, title: "Category:Towers", redirect: 0 }, // non-article namespace
-      { id: 4, ns: 0, title: "Statue_of_Liberty", redirect: 0 },
-    ]);
+  it("keeps articles, filters redirects and non-article namespaces", async () => {
+    const path = gzFile(
+      testDir,
+      "page.sql.gz",
+      makePageDump([
+        { id: 1, title: "Eiffel_Tower" },
+        { id: 2, title: "Tour_Eiffel", redirect: 1 },
+        { id: 3, title: "Category:Towers", ns: 14 },
+        { id: 4, title: "Statue_of_Liberty" },
+      ]),
+    );
 
-    const path = gzFile(testDir, "page.sql.gz", sql);
     const map = await buildPageMap(path);
 
     expect(map.size).toBe(2);
-    expect(map.get(1)).toBe("Eiffel Tower"); // underscores converted to spaces
+    expect(map.get(1)).toBe("Eiffel Tower");
     expect(map.get(4)).toBe("Statue of Liberty");
-    expect(map.has(2)).toBe(false); // redirect
-    expect(map.has(3)).toBe(false); // wrong namespace
+    expect(map.has(2)).toBe(false);
+    expect(map.has(3)).toBe(false);
   });
 });
+
+// ---------- streamGeoArticles ----------
 
 describe("streamGeoArticles", () => {
   const testDir = join(tmpdir(), "extract-dump-geo-" + Date.now());
@@ -119,44 +58,23 @@ describe("streamGeoArticles", () => {
   afterAll(() => rmSync(testDir, { recursive: true, force: true }));
 
   it("joins geo_tags with page map", async () => {
-    const geoSql = makeGeoDump([
-      {
-        id: 1,
-        pageId: 100,
-        globe: "earth",
-        primary: 1,
-        lat: 48.8584,
-        lon: 2.2945,
-      },
-      {
-        id: 2,
-        pageId: 200,
-        globe: "earth",
-        primary: 1,
-        lat: 40.7128,
-        lon: -74.006,
-      },
-      {
-        id: 3,
-        pageId: 300,
-        globe: "earth",
-        primary: 1,
-        lat: 51.5074,
-        lon: -0.1278,
-      }, // no page entry
-    ]);
+    const geoPath = gzFile(
+      testDir,
+      "geo_tags.sql.gz",
+      makeGeoDump([
+        { pageId: 100, lat: 48.8584, lon: 2.2945 },
+        { pageId: 200, lat: 40.7128, lon: -74.006 },
+        { pageId: 300, lat: 51.5074, lon: -0.1278 },
+      ]),
+    );
 
-    const geoPath = gzFile(testDir, "geo_tags.sql.gz", geoSql);
-
-    const pages = new Map<number, string>([
+    const pages = new Map([
       [100, "Eiffel Tower"],
       [200, "Statue of Liberty"],
+      // 300 has no page entry — should be skipped
     ]);
 
-    const articles: Article[] = [];
-    for await (const article of streamGeoArticles(geoPath, pages)) {
-      articles.push(article);
-    }
+    const articles = await collectArticles(streamGeoArticles(geoPath, pages));
 
     expect(articles).toHaveLength(2);
     expect(articles[0].title).toBe("Eiffel Tower");
@@ -164,98 +82,69 @@ describe("streamGeoArticles", () => {
   });
 
   it("filters non-earth globes and non-primary tags", async () => {
-    const geoSql = makeGeoDump([
-      {
-        id: 1,
-        pageId: 100,
-        globe: "earth",
-        primary: 1,
-        lat: 48.8584,
-        lon: 2.2945,
-      },
-      { id: 2, pageId: 200, globe: "moon", primary: 1, lat: 10.0, lon: 20.0 },
-      {
-        id: 3,
-        pageId: 300,
-        globe: "earth",
-        primary: 0,
-        lat: 51.5074,
-        lon: -0.1278,
-      },
-    ]);
+    const geoPath = gzFile(
+      testDir,
+      "geo_tags_filter.sql.gz",
+      makeGeoDump([
+        { pageId: 100, lat: 48.8584, lon: 2.2945 },
+        { pageId: 200, lat: 10.0, lon: 20.0, globe: "moon" },
+        { pageId: 300, lat: 51.5074, lon: -0.1278, primary: 0 },
+      ]),
+    );
 
-    const geoPath = gzFile(testDir, "geo_tags_filter.sql.gz", geoSql);
-
-    const pages = new Map<number, string>([
+    const pages = new Map([
       [100, "Paris"],
       [200, "Moon Base"],
       [300, "London"],
     ]);
 
-    const articles: Article[] = [];
-    for await (const article of streamGeoArticles(geoPath, pages)) {
-      articles.push(article);
-    }
+    const articles = await collectArticles(streamGeoArticles(geoPath, pages));
 
     expect(articles).toHaveLength(1);
     expect(articles[0].title).toBe("Paris");
   });
 
   it("filters by bounds", async () => {
-    const geoSql = makeGeoDump([
-      {
-        id: 1,
-        pageId: 100,
-        globe: "earth",
-        primary: 1,
-        lat: 48.8584,
-        lon: 2.2945,
-      }, // Paris
-      {
-        id: 2,
-        pageId: 200,
-        globe: "earth",
-        primary: 1,
-        lat: 40.7128,
-        lon: -74.006,
-      }, // NYC
-    ]);
+    const geoPath = gzFile(
+      testDir,
+      "geo_tags_bounds.sql.gz",
+      makeGeoDump([
+        { pageId: 100, lat: 48.8584, lon: 2.2945 },
+        { pageId: 200, lat: 40.7128, lon: -74.006 },
+      ]),
+    );
 
-    const geoPath = gzFile(testDir, "geo_tags_bounds.sql.gz", geoSql);
-
-    const pages = new Map<number, string>([
+    const pages = new Map([
       [100, "Paris"],
       [200, "NYC"],
     ]);
 
-    const articles: Article[] = [];
-    for await (const article of streamGeoArticles(geoPath, pages, {
-      bounds: { south: 45, north: 55, west: -5, east: 10 },
-    })) {
-      articles.push(article);
-    }
+    const articles = await collectArticles(
+      streamGeoArticles(geoPath, pages, {
+        bounds: { south: 45, north: 55, west: -5, east: 10 },
+      }),
+    );
 
     expect(articles).toHaveLength(1);
     expect(articles[0].title).toBe("Paris");
   });
 
   it("rejects Null Island coordinates", async () => {
-    const geoSql = makeGeoDump([
-      { id: 1, pageId: 100, globe: "earth", primary: 1, lat: 0, lon: 0 },
-    ]);
+    const geoPath = gzFile(
+      testDir,
+      "geo_tags_null_island.sql.gz",
+      makeGeoDump([{ pageId: 100, lat: 0, lon: 0 }]),
+    );
 
-    const geoPath = gzFile(testDir, "geo_tags_null_island.sql.gz", geoSql);
+    const pages = new Map([[100, "Null Island"]]);
 
-    const pages = new Map<number, string>([[100, "Null Island"]]);
-
-    const articles: Article[] = [];
-    for await (const article of streamGeoArticles(geoPath, pages)) {
-      articles.push(article);
-    }
+    const articles = await collectArticles(streamGeoArticles(geoPath, pages));
 
     expect(articles).toHaveLength(0);
   });
 });
+
+// ---------- extractDump (integration) ----------
 
 describe("extractDump (integration)", () => {
   const testDir = join(tmpdir(), "extract-dump-integration-" + Date.now());
@@ -263,60 +152,34 @@ describe("extractDump (integration)", () => {
   beforeAll(() => mkdirSync(testDir, { recursive: true }));
   afterAll(() => rmSync(testDir, { recursive: true, force: true }));
 
-  it("runs full extraction pipeline with fixture dumps", async () => {
-    const dumpsDir = join(testDir, "dumps");
+  function writeDumps(
+    subdir: string,
+    pages: Parameters<typeof makePageDump>[0],
+    geos: Parameters<typeof makeGeoDump>[0],
+  ): string {
+    const dumpsDir = join(testDir, subdir);
     mkdirSync(dumpsDir, { recursive: true });
+    gzFile(dumpsDir, "svwiki-latest-page.sql.gz", makePageDump(pages));
+    gzFile(dumpsDir, "svwiki-latest-geo_tags.sql.gz", makeGeoDump(geos));
+    return dumpsDir;
+  }
 
-    // Create fixture dumps
-    gzFile(
-      dumpsDir,
-      "svwiki-latest-page.sql.gz",
-      makePageDump([
-        { id: 100, ns: 0, title: "Eiffeltornet", redirect: 0 },
-        { id: 200, ns: 0, title: "Frihetsgudinnan", redirect: 0 },
-        { id: 300, ns: 0, title: "Redirect_Page", redirect: 1 },
-        { id: 400, ns: 0, title: "Liljeholmens_brandstation", redirect: 0 },
-      ]),
-    );
-
-    gzFile(
-      dumpsDir,
-      "svwiki-latest-geo_tags.sql.gz",
-      makeGeoDump([
-        {
-          id: 1,
-          pageId: 100,
-          globe: "earth",
-          primary: 1,
-          lat: 48.8584,
-          lon: 2.2945,
-        },
-        {
-          id: 2,
-          pageId: 200,
-          globe: "earth",
-          primary: 1,
-          lat: 40.7128,
-          lon: -74.006,
-        },
-        {
-          id: 3,
-          pageId: 300,
-          globe: "earth",
-          primary: 1,
-          lat: 51.5,
-          lon: -0.1,
-        }, // redirect
-        {
-          id: 4,
-          pageId: 400,
-          globe: "earth",
-          primary: 1,
-          lat: 59.308,
-          lon: 18.028,
-        },
-        { id: 5, pageId: 999, globe: "earth", primary: 1, lat: 0, lon: 0 }, // no page entry
-      ]),
+  it("runs full extraction pipeline with fixture dumps", async () => {
+    const dumpsDir = writeDumps(
+      "dumps",
+      [
+        { id: 100, title: "Eiffeltornet" },
+        { id: 200, title: "Frihetsgudinnan" },
+        { id: 300, title: "Redirect_Page", redirect: 1 },
+        { id: 400, title: "Liljeholmens_brandstation" },
+      ],
+      [
+        { pageId: 100, lat: 48.8584, lon: 2.2945 },
+        { pageId: 200, lat: 40.7128, lon: -74.006 },
+        { pageId: 300, lat: 51.5, lon: -0.1 },
+        { pageId: 400, lat: 59.308, lon: 18.028 },
+        { pageId: 999, lat: 0, lon: 0 },
+      ],
     );
 
     const outputPath = join(testDir, "articles-sv.json");
@@ -328,14 +191,15 @@ describe("extractDump (integration)", () => {
       outputPath,
     });
 
-    expect(result.articleCount).toBe(3); // Eiffeltornet, Frihetsgudinnan, Liljeholmens
+    expect(result.articleCount).toBe(3);
     expect(result.outputPath).toBe(outputPath);
 
-    // Verify NDJSON output
-    const lines = readFileSync(outputPath, "utf8").trim().split("\n");
-    expect(lines).toHaveLength(3);
+    const articles = readFileSync(outputPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as Article);
 
-    const articles = lines.map((l) => JSON.parse(l) as Article);
+    expect(articles).toHaveLength(3);
 
     const eiffel = articles.find((a) => a.title === "Eiffeltornet");
     expect(eiffel).toBeDefined();
@@ -349,39 +213,16 @@ describe("extractDump (integration)", () => {
   });
 
   it("respects bounds filtering", async () => {
-    const dumpsDir = join(testDir, "dumps-bounds");
-    mkdirSync(dumpsDir, { recursive: true });
-
-    gzFile(
-      dumpsDir,
-      "svwiki-latest-page.sql.gz",
-      makePageDump([
-        { id: 100, ns: 0, title: "Paris", redirect: 0 },
-        { id: 200, ns: 0, title: "Stockholm", redirect: 0 },
-      ]),
-    );
-
-    gzFile(
-      dumpsDir,
-      "svwiki-latest-geo_tags.sql.gz",
-      makeGeoDump([
-        {
-          id: 1,
-          pageId: 100,
-          globe: "earth",
-          primary: 1,
-          lat: 48.8584,
-          lon: 2.2945,
-        },
-        {
-          id: 2,
-          pageId: 200,
-          globe: "earth",
-          primary: 1,
-          lat: 59.33,
-          lon: 18.07,
-        },
-      ]),
+    const dumpsDir = writeDumps(
+      "dumps-bounds",
+      [
+        { id: 100, title: "Paris" },
+        { id: 200, title: "Stockholm" },
+      ],
+      [
+        { pageId: 100, lat: 48.8584, lon: 2.2945 },
+        { pageId: 200, lat: 59.33, lon: 18.07 },
+      ],
     );
 
     const outputPath = join(testDir, "articles-bounds.json");
@@ -401,23 +242,13 @@ describe("extractDump (integration)", () => {
   });
 
   it("deduplicates by title", async () => {
-    const dumpsDir = join(testDir, "dumps-dedup");
-    mkdirSync(dumpsDir, { recursive: true });
-
-    gzFile(
-      dumpsDir,
-      "svwiki-latest-page.sql.gz",
-      makePageDump([{ id: 100, ns: 0, title: "Same_Place", redirect: 0 }]),
-    );
-
-    // Two geo_tags for the same page (different gt_ids, both primary)
-    gzFile(
-      dumpsDir,
-      "svwiki-latest-geo_tags.sql.gz",
-      makeGeoDump([
-        { id: 1, pageId: 100, globe: "earth", primary: 1, lat: 48.0, lon: 2.0 },
-        { id: 2, pageId: 100, globe: "earth", primary: 1, lat: 49.0, lon: 3.0 },
-      ]),
+    const dumpsDir = writeDumps(
+      "dumps-dedup",
+      [{ id: 100, title: "Same_Place" }],
+      [
+        { pageId: 100, lat: 48.0, lon: 2.0 },
+        { pageId: 100, lat: 49.0, lon: 3.0 },
+      ],
     );
 
     const outputPath = join(testDir, "articles-dedup.json");
