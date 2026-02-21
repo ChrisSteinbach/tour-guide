@@ -57,20 +57,10 @@ describe("downloadDump", () => {
 
   function mockFetch(
     body: string,
-    headers: Record<string, string> = {},
+    headers?: Record<string, string>,
   ): typeof fetch {
-    return (async () => ({
-      ok: true,
-      status: 200,
-      statusText: "OK",
-      headers: new Headers(headers),
-      body: new ReadableStream({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode(body));
-          controller.close();
-        },
-      }),
-    })) as unknown as typeof fetch;
+    return (async () =>
+      new Response(body, { headers })) as unknown as typeof fetch;
   }
 
   it("downloads a file and reports progress", async () => {
@@ -109,11 +99,11 @@ describe("downloadDump", () => {
   });
 
   it("throws on HTTP error", async () => {
-    const failFetch = (async () => ({
-      ok: false,
-      status: 404,
-      statusText: "Not Found",
-    })) as unknown as typeof fetch;
+    const failFetch = (async () =>
+      new Response(null, {
+        status: 404,
+        statusText: "Not Found",
+      })) as unknown as typeof fetch;
 
     await expect(
       downloadDump("sv", "geo_tags", {
@@ -139,18 +129,7 @@ describe("downloadAllDumps", () => {
     let callCount = 0;
     const mockFetch = (async () => {
       callCount++;
-      return {
-        ok: true,
-        status: 200,
-        statusText: "OK",
-        headers: new Headers(),
-        body: new ReadableStream({
-          start(controller) {
-            controller.enqueue(new TextEncoder().encode(`table-${callCount}`));
-            controller.close();
-          },
-        }),
-      };
+      return new Response(`table-${callCount}`);
     }) as unknown as typeof fetch;
 
     const results = await downloadAllDumps({
