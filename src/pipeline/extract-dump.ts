@@ -189,11 +189,15 @@ export async function extractDump(opts: ExtractDumpOptions): Promise<{
   );
   console.error(`  Page map: ${pageMap.size.toLocaleString()} articles`);
 
-  // Phase 2: Stream geo_tags and join
+  // Phase 2: Stream geo_tags, join, deduplicate, and write NDJSON
   onPhase?.("Streaming geo_tags and joining");
 
-  const articles: Article[] = [];
+  const outputDir = outputPath.substring(0, outputPath.lastIndexOf("/"));
+  if (outputDir) await mkdir(outputDir, { recursive: true });
+
+  const ws = createWriteStream(outputPath);
   const seen = new Set<string>();
+  let articleCount = 0;
 
   for await (const entry of streamGeoArticles(
     dumpPath(lang, "geo_tags", dumpsDir),
@@ -203,39 +207,26 @@ export async function extractDump(opts: ExtractDumpOptions): Promise<{
       onProgress: (n) => onProgress?.("geo_tags", n),
     },
   )) {
-    // Deduplicate by title
     if (seen.has(entry.title)) continue;
     seen.add(entry.title);
 
-    articles.push(entry);
+    ws.write(JSON.stringify(entry) + "\n");
+    articleCount++;
   }
 
-  console.error(
-    `  Geo articles: ${articles.length.toLocaleString()} (deduplicated)`,
-  );
-
-  // Free map — no longer needed
-  pageMap.clear();
-
-  // Phase 3: Write NDJSON
-  onPhase?.("Writing output");
-  const outputDir = outputPath.substring(0, outputPath.lastIndexOf("/"));
-  if (outputDir) await mkdir(outputDir, { recursive: true });
-
-  const ws = createWriteStream(outputPath);
-  for (const article of articles) {
-    ws.write(JSON.stringify(article) + "\n");
-  }
   await new Promise<void>((resolve, reject) => {
     ws.end(() => resolve());
     ws.on("error", reject);
   });
 
   console.error(
-    `  Output: ${outputPath} (${articles.length.toLocaleString()} articles)`,
+    `  Geo articles: ${articleCount.toLocaleString()} (deduplicated)`,
+  );
+  console.error(
+    `  Output: ${outputPath} (${articleCount.toLocaleString()} articles)`,
   );
 
-  return { articleCount: articles.length, outputPath };
+  return { articleCount, outputPath };
 }
 
 // ---------- CLI ----------
