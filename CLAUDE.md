@@ -42,8 +42,6 @@ head -3 data/articles-en.json
 wc -l data/articles-en.json
 ```
 
-The old SPARQL-based extractor is available as `npm run extract:sparql`.
-
 Output format (one JSON object per line):
 
 ```

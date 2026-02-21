@@ -4,14 +4,11 @@ This document describes how tour-guide obtains geotagged Wikipedia articles and 
 
 ## Overview
 
-The extraction pipeline has two methods for obtaining article coordinates:
-
-1. **SQL dumps** (primary) — Downloads and joins `geo_tags` and `page` tables from Wikipedia database dumps. Fast, complete, and offline-capable.
-2. **SPARQL** (fallback) — Queries the Wikidata SPARQL endpoint. Slower and subject to rate limits, but useful for small regions or when dumps are unavailable.
+The extraction pipeline downloads and joins `geo_tags` and `page` tables from Wikipedia SQL dumps. This captures all articles with `{{coord}}` templates, is fast (~10 minutes for English), and works offline after the initial download.
 
 Article descriptions are not extracted — the app fetches them on demand from the Wikipedia REST API when the user opens an article detail view.
 
-## SQL Dump Extraction (Primary)
+## SQL Dump Extraction
 
 **Entry point:** `src/pipeline/extract-dump.ts` — `npm run extract`
 
@@ -66,58 +63,6 @@ npm run extract -- --lang=en --bounds=49.44,50.19,5.73,6.53
 
 A full English extraction produces ~1.2M articles.
 
-## SPARQL Extraction (Fallback)
-
-**Entry point:** `src/pipeline/extract.ts` — `npm run extract:sparql`
-
-Queries the Wikidata SPARQL endpoint (`query.wikidata.org`) for items with coordinates (P625) and a Wikipedia article in the target language.
-
-### How It Works
-
-- Divides the globe into 10°×10° tiles and queries each tile with pagination (50,000 results per batch)
-- On timeout or server error, adaptively subdivides the tile into quadrants (minimum 0.3°)
-- Supports checkpoint/resume for interrupted extractions
-- Includes exponential backoff and configurable retry limits
-- Returns article descriptions from Wikidata labels
-
-### Usage
-
-```bash
-# Full extraction (slow — hours for English)
-npm run extract:sparql -- --lang=en
-
-# Bounded region (much faster)
-npm run extract:sparql -- --lang=sv --bounds=55.0,69.0,10.0,25.0
-
-# Resume interrupted extraction
-npm run extract:sparql -- --lang=en  # auto-detects checkpoint
-```
-
-### Output
-
-Same NDJSON format but includes a `desc` field from Wikidata:
-
-```json
-{
-  "title": "Eiffel Tower",
-  "lat": 48.8584,
-  "lon": 2.2945,
-  "desc": "iron lattice tower in Paris, France"
-}
-```
-
-### Why SQL Dumps Are Preferred
-
-|              | SQL Dumps                 | SPARQL                     |
-| ------------ | ------------------------- | -------------------------- |
-| Speed        | ~10 minutes (English)     | Hours                      |
-| Rate limits  | None                      | Wikidata throttling        |
-| Coverage     | All `{{coord}}` templates | Only Wikidata-linked items |
-| Descriptions | Not included              | Included from Wikidata     |
-| Offline      | After initial download    | Requires network           |
-
-The SQL dump approach captures articles with `{{coord}}` templates that may not have corresponding Wikidata items, giving better geographic coverage.
-
 ## Descriptions
 
 Descriptions are **not** embedded in the extraction output. Instead, the app fetches them on demand via the [Wikipedia REST API](https://en.wikipedia.org/api/rest_v1/):
@@ -140,7 +85,6 @@ The `--lang` flag controls which language to extract:
 
 ```bash
 npm run extract -- --lang=ja
-npm run extract:sparql -- --lang=sv
 ```
 
 ## What Happens Next

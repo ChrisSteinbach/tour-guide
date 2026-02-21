@@ -1,7 +1,6 @@
 /**
  * Wikipedia dump-based article extraction.
  *
- * Replaces SPARQL extraction with a two-phase dump-based pipeline:
  * 1. Download SQL dump files from dumps.wikimedia.org
  * 2. Stream-parse and join tables by page_id
  *
