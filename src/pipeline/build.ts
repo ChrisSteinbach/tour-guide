@@ -3,6 +3,8 @@
 // Run with: npm run pipeline [--limit=N] [--bounds=south,north,west,east]
 
 import { createReadStream, readFileSync, writeFileSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { createInterface } from "node:readline";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,12 +28,14 @@ function parseArgs(): {
   bounds: Bounds | null;
   json: boolean;
   convert: boolean;
+  tiled: boolean;
   lang: Lang;
 } {
   let limit = Infinity;
   let bounds: Bounds | null = null;
   let json = false;
   let convert = false;
+  let tiled = false;
   let lang: Lang = DEFAULT_LANG;
 
   for (const arg of process.argv.slice(2)) {
@@ -46,6 +50,8 @@ function parseArgs(): {
       json = true;
     } else if (arg === "--convert") {
       convert = true;
+    } else if (arg === "--tiled") {
+      tiled = true;
     } else if (arg.startsWith("--lang=")) {
       const val = arg.slice("--lang=".length);
       if (!(SUPPORTED_LANGS as readonly string[]).includes(val)) {
@@ -57,7 +63,7 @@ function parseArgs(): {
     }
   }
 
-  return { limit, bounds, json, convert, lang };
+  return { limit, bounds, json, convert, tiled, lang };
 }
 
 // ---------- NDJSON reader ----------
@@ -108,8 +114,205 @@ function writeJson(data: TriangulationFile, outputPath: string): void {
   console.log(`  → ${sizeMB} MB JSON written to ${outputPath}`);
 }
 
+// ---------- Tiling ----------
+
+const GRID_DEG = 5;
+const BUFFER_DEG = 0.5;
+const MIN_ARTICLES = 4;
+
+export interface TileEntry {
+  id: string;
+  row: number;
+  col: number;
+  south: number;
+  north: number;
+  west: number;
+  east: number;
+  articles: number;
+  bytes: number;
+  hash: string;
+}
+
+export interface TileIndex {
+  version: number;
+  gridDeg: number;
+  bufferDeg: number;
+  generated: string;
+  tiles: TileEntry[];
+}
+
+/** Compute tile row and column for a lat/lon position. */
+export function tileFor(
+  lat: number,
+  lon: number,
+): { row: number; col: number } {
+  const row = Math.floor((lat + 90) / GRID_DEG);
+  const col = Math.floor((lon + 180) / GRID_DEG);
+  return { row, col };
+}
+
+/** Format row-col as zero-padded tile ID. */
+function tileId(row: number, col: number): string {
+  return `${String(row).padStart(2, "0")}-${String(col).padStart(2, "0")}`;
+}
+
+/** Collect articles for a tile: native articles + buffer zone from adjacent tiles. */
+export function collectTileArticles(
+  articles: Article[],
+  row: number,
+  col: number,
+): { native: Article[]; all: Article[] } {
+  const south = row * GRID_DEG - 90;
+  const north = south + GRID_DEG;
+  const west = col * GRID_DEG - 180;
+  const east = west + GRID_DEG;
+
+  const bufferedBounds: Bounds = {
+    south: south - BUFFER_DEG,
+    north: north + BUFFER_DEG,
+    west: west - BUFFER_DEG,
+    east: east + BUFFER_DEG,
+  };
+
+  const native: Article[] = [];
+  const all: Article[] = [];
+
+  for (const a of articles) {
+    if (isInBounds(a.lat, a.lon, bufferedBounds)) {
+      all.push(a);
+      if (a.lat >= south && a.lat < north && a.lon >= west && a.lon < east) {
+        native.push(a);
+      }
+    }
+  }
+
+  return { native, all };
+}
+
+/** Build a single tile's triangulation and return the binary buffer, or null if hull fails. */
+function buildTile(tileArticles: Article[]): ArrayBuffer | null {
+  const points = tileArticles.map((a) =>
+    toCartesian({ lat: a.lat, lon: a.lon }),
+  );
+  let hull;
+  try {
+    hull = convexHull(points);
+  } catch {
+    // Articles are coplanar (e.g., along a line) — skip this tile
+    return null;
+  }
+  const tri = buildTriangulation(hull);
+  const meta: ArticleMeta[] = tri.originalIndices.map((i) => ({
+    title: tileArticles[i].title,
+  }));
+  const data = serialize(tri, meta);
+  return serializeBinary(data);
+}
+
+/** SHA-256 hash of a buffer, truncated to 8 hex characters. */
+function hashBuffer(buf: ArrayBuffer): string {
+  return createHash("sha256")
+    .update(Buffer.from(buf))
+    .digest("hex")
+    .slice(0, 8);
+}
+
+/** Build tiled output: per-tile .bin files + index.json manifest. */
+async function buildTiled(articles: Article[], lang: Lang): Promise<void> {
+  const t0 = performance.now();
+
+  // Step 2: Assign articles to tiles
+  console.log("\nStep 2: Assigning articles to tiles...");
+  const tileMap = new Map<string, { row: number; col: number }>();
+  for (const a of articles) {
+    const { row, col } = tileFor(a.lat, a.lon);
+    const id = tileId(row, col);
+    if (!tileMap.has(id)) {
+      tileMap.set(id, { row, col });
+    }
+  }
+  console.log(`  → ${tileMap.size} populated tiles`);
+
+  // Step 3: Build per-tile triangulations
+  console.log("\nStep 3: Building per-tile triangulations...");
+  const tilesDir = resolve(`data/tiles/${lang}`);
+  await mkdir(tilesDir, { recursive: true });
+
+  const tileEntries: TileEntry[] = [];
+  let built = 0;
+  let skipped = 0;
+
+  for (const [id, { row, col }] of tileMap) {
+    const { native, all } = collectTileArticles(articles, row, col);
+
+    if (all.length < MIN_ARTICLES) {
+      skipped++;
+      continue;
+    }
+
+    const buf = buildTile(all);
+    if (buf === null) {
+      skipped++;
+      continue;
+    }
+
+    const tilePath = resolve(tilesDir, `${id}.bin`);
+    writeFileSync(tilePath, Buffer.from(buf));
+
+    const south = row * GRID_DEG - 90;
+    tileEntries.push({
+      id,
+      row,
+      col,
+      south,
+      north: south + GRID_DEG,
+      west: col * GRID_DEG - 180,
+      east: col * GRID_DEG - 180 + GRID_DEG,
+      articles: native.length,
+      bytes: buf.byteLength,
+      hash: hashBuffer(buf),
+    });
+
+    built++;
+    if (built % 100 === 0) {
+      console.log(`  → ${built} tiles built...`);
+    }
+  }
+
+  const t1 = performance.now();
+  console.log(
+    `  → ${built} tiles built, ${skipped} skipped (<${MIN_ARTICLES} articles) in ${((t1 - t0) / 1000).toFixed(1)}s`,
+  );
+
+  // Step 4: Write tile index
+  console.log("\nStep 4: Writing tile index...");
+  tileEntries.sort((a, b) => a.id.localeCompare(b.id));
+
+  const index: TileIndex = {
+    version: 1,
+    gridDeg: GRID_DEG,
+    bufferDeg: BUFFER_DEG,
+    generated: new Date().toISOString(),
+    tiles: tileEntries,
+  };
+
+  const indexPath = resolve(tilesDir, "index.json");
+  const indexJson = JSON.stringify(index, null, 2);
+  writeFileSync(indexPath, indexJson, "utf-8");
+
+  const totalBytes = tileEntries.reduce((sum, t) => sum + t.bytes, 0);
+  const totalArticles = tileEntries.reduce((sum, t) => sum + t.articles, 0);
+  console.log(`  → ${indexPath}`);
+  console.log(
+    `  → ${tileEntries.length} tiles, ${totalArticles} articles, ${(totalBytes / 1024 / 1024).toFixed(1)} MB total`,
+  );
+
+  const totalTime = ((performance.now() - t0) / 1000).toFixed(1);
+  console.log(`\nDone in ${totalTime}s`);
+}
+
 async function main() {
-  const { limit, bounds, json, convert, lang } = parseArgs();
+  const { limit, bounds, json, convert, tiled, lang } = parseArgs();
 
   console.log("tour-guide build pipeline\n");
   console.log(`  --lang=${lang}`);
@@ -120,6 +323,7 @@ async function main() {
     );
   if (json) console.log(`  --json (JSON output)`);
   if (convert) console.log(`  --convert (converting existing JSON to binary)`);
+  if (tiled) console.log(`  --tiled (tiled output)`);
 
   // --convert mode: read existing JSON → write binary
   if (convert) {
@@ -157,6 +361,12 @@ async function main() {
       `Need at least 4 articles for convex hull (got ${articles.length}). ` +
         "Check data/articles.json or adjust --bounds/--limit.",
     );
+  }
+
+  // --tiled mode: build per-tile triangulations
+  if (tiled) {
+    await buildTiled(articles, lang);
+    return;
   }
 
   // Step 2: Convert to Cartesian
