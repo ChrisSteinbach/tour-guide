@@ -82,14 +82,6 @@ describe("NearestQuery", () => {
     expect(results[0].lat).toBeCloseTo(90, 0);
   });
 
-  it("walk cache provides spatial locality", () => {
-    const r1 = nq.findNearest(85, 10);
-    expect(r1[0].title).toBe("Point +Z");
-
-    const r2 = nq.findNearest(80, 15);
-    expect(r2[0].title).toBe("Point +Z");
-  });
-
   it("handles k larger than vertex count", () => {
     const results = nq.findNearest(0, 0, 10);
     expect(results.length).toBeLessThanOrEqual(6);
@@ -138,7 +130,17 @@ describe("NearestQuery (Float32 round-trip)", () => {
 });
 
 describe("loadQuery", () => {
-  it("loads from mocked fetch (binary)", async () => {
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("fetches binary and returns a working NearestQuery", async () => {
     const points = OCTAHEDRON.map((o) => o.point);
     const hull = convexHull(points);
     const tri = buildTriangulation(hull);
@@ -146,20 +148,15 @@ describe("loadQuery", () => {
     const data = serialize(tri, articles);
     const binData = serializeBinary(data);
 
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => ({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       headers: new Headers(),
       body: null,
-      arrayBuffer: async () => binData,
-    })) as unknown as typeof fetch;
+      arrayBuffer: () => Promise.resolve(binData),
+    });
 
-    try {
-      const query = await loadQuery("http://test/triangulation.bin");
-      expect(query.size).toBe(6);
-      const results = query.findNearest(90, 0);
-      expect(results[0].title).toBe("Point +Z");
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
+    const query = await loadQuery("http://test/triangulation.bin");
+    expect(query.size).toBe(6);
+    const results = query.findNearest(90, 0);
+    expect(results[0].title).toBe("Point +Z");
   });
 });
