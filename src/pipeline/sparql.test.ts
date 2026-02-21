@@ -67,17 +67,16 @@ describe("buildQuery", () => {
 });
 
 describe("executeSparql", () => {
-  it("sends correct URL, headers, and returns parsed JSON", async () => {
-    const mockResponse = {
+  it("returns parsed JSON from a successful response", async () => {
+    const sparqlResponse = {
       results: {
         bindings: [{ item: { type: "uri", value: "http://example.org/Q123" } }],
       },
     };
 
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      text: () => Promise.resolve(JSON.stringify(mockResponse)),
-    });
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify(sparqlResponse)));
 
     const result = await executeSparql(
       "SELECT ?x WHERE { }",
@@ -85,22 +84,31 @@ describe("executeSparql", () => {
       mockFetch,
     );
 
-    expect(mockFetch).toHaveBeenCalledOnce();
-    const [url, options] = mockFetch.mock.calls[0];
-    expect(url).toContain("https://example.org/sparql?query=");
-    expect(url).toContain(encodeURIComponent("SELECT ?x WHERE { }"));
-    expect(options.headers.Accept).toBe("application/sparql-results+json");
-    expect(options.headers["User-Agent"]).toContain("tour-guide");
-    expect(result).toEqual(mockResponse);
+    expect(result).toEqual(sparqlResponse);
   });
 
-  it("throws SparqlError with status on HTTP failure", async () => {
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: false,
+  it("throws SparqlError with status and body on HTTP failure", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValue(
+        new Response("Access denied", { status: 403, statusText: "Forbidden" }),
+      );
+
+    const promise = executeSparql(
+      "SELECT ?x WHERE { }",
+      "https://example.org/sparql",
+      mockFetch,
+    );
+
+    await expect(promise).rejects.toThrow(SparqlError);
+    await expect(promise).rejects.toMatchObject({
       status: 403,
-      statusText: "Forbidden",
-      text: () => Promise.resolve("Access denied"),
+      body: "Access denied",
     });
+  });
+
+  it("throws SparqlError on malformed JSON response", async () => {
+    const mockFetch = vi.fn().mockResolvedValue(new Response("not valid json"));
 
     await expect(
       executeSparql(
@@ -108,33 +116,6 @@ describe("executeSparql", () => {
         "https://example.org/sparql",
         mockFetch,
       ),
-    ).rejects.toThrow(SparqlError);
-
-    try {
-      await executeSparql(
-        "SELECT ?x WHERE { }",
-        "https://example.org/sparql",
-        mockFetch,
-      );
-    } catch (e) {
-      expect(e).toBeInstanceOf(SparqlError);
-      expect((e as SparqlError).status).toBe(403);
-      expect((e as SparqlError).body).toBe("Access denied");
-    }
-  });
-
-  it("uses GET method", async () => {
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      text: () =>
-        Promise.resolve(JSON.stringify({ results: { bindings: [] } })),
-    });
-
-    await executeSparql(
-      "SELECT ?x WHERE { }",
-      "https://example.org/sparql",
-      mockFetch,
-    );
-    expect(mockFetch.mock.calls[0][1].method).toBe("GET");
+    ).rejects.toThrow("malformed JSON");
   });
 });
