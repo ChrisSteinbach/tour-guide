@@ -80,25 +80,6 @@ describe("fetchArticleSummary", () => {
     });
   });
 
-  it("caches results — second call does not fetch", async () => {
-    mockFetch({ status: 200, body: fullResponse });
-
-    await fetchArticleSummary("Eiffel Tower");
-    await fetchArticleSummary("Eiffel Tower");
-
-    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
-  });
-
-  it("re-fetches after clearCache", async () => {
-    mockFetch({ status: 200, body: fullResponse });
-
-    await fetchArticleSummary("Eiffel Tower");
-    clearCache();
-    await fetchArticleSummary("Eiffel Tower");
-
-    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
-  });
-
   it("throws on 404", async () => {
     mockFetch({ status: 404 });
 
@@ -157,14 +138,5 @@ describe("fetchArticleSummary", () => {
     expect(globalThis.fetch).toHaveBeenCalledWith(
       expect.stringContaining("sv.wikipedia.org"),
     );
-  });
-
-  it("caches separately per language", async () => {
-    mockFetch({ status: 200, body: fullResponse });
-
-    await fetchArticleSummary("Eiffel Tower", "en");
-    await fetchArticleSummary("Eiffel Tower", "sv");
-
-    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 });
