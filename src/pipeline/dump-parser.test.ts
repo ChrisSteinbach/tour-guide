@@ -9,7 +9,59 @@ import {
   discoverSchema,
   buildColumnIndex,
 } from "./dump-parser.js";
-import type { SqlRow } from "./dump-parser.js";
+import type { SqlRow, DumpStreamOptions } from "./dump-parser.js";
+
+// --- Shared test infrastructure ---
+
+const testDir = join(tmpdir(), "dump-parser-test-" + Date.now());
+
+beforeAll(() => mkdirSync(testDir, { recursive: true }));
+afterAll(() => rmSync(testDir, { recursive: true, force: true }));
+
+/** Write SQL as a gzipped file and return its path. */
+function writeGzFixture(filename: string, sql: string): string {
+  const path = join(testDir, filename);
+  writeFileSync(path, gzipSync(Buffer.from(sql, "utf8")));
+  return path;
+}
+
+/** Build a minimal CREATE TABLE + INSERT dump. Each insertGroup becomes one INSERT line. */
+function dumpSql(
+  tableName: string,
+  columns: string[],
+  ...insertGroups: SqlRow[][]
+): string {
+  const colDefs = columns.map((c) => `  \`${c}\` int NOT NULL,`);
+  const create = [
+    `CREATE TABLE \`${tableName}\` (`,
+    ...colDefs,
+    `  PRIMARY KEY (\`${columns[0]}\`)`,
+    `) ENGINE=InnoDB;`,
+  ].join("\n");
+
+  const inserts = insertGroups.map((rows) => {
+    const tuples = rows.map((row) => {
+      const vals = row.map((v) => {
+        if (v === null) return "NULL";
+        if (typeof v === "string") return `'${v}'`;
+        return String(v);
+      });
+      return `(${vals.join(",")})`;
+    });
+    return `INSERT INTO \`${tableName}\` VALUES ${tuples.join(",")};`;
+  });
+
+  return [create, "", ...inserts].join("\n");
+}
+
+/** Collect all rows from streamDump into an array. */
+async function collectRows(opts: DumpStreamOptions): Promise<SqlRow[]> {
+  const rows: SqlRow[] = [];
+  for await (const row of streamDump(opts)) {
+    rows.push(row);
+  }
+  return rows;
+}
 
 describe("parseValues", () => {
   it("parses a single row with mixed types", () => {
@@ -153,47 +205,22 @@ describe("parseCreateTable", () => {
 });
 
 describe("streamDump", () => {
-  const testDir = join(tmpdir(), "dump-parser-test-" + Date.now());
-
-  beforeAll(() => {
-    mkdirSync(testDir, { recursive: true });
-  });
-
-  afterAll(() => {
-    rmSync(testDir, { recursive: true, force: true });
-  });
-
-  function writeGzFixture(filename: string, sql: string): string {
-    const path = join(testDir, filename);
-    writeFileSync(path, gzipSync(Buffer.from(sql, "utf8")));
-    return path;
-  }
-
   it("streams rows from a gzipped dump file", async () => {
-    const sql = [
-      "CREATE TABLE `geo_tags` (",
-      "  `gt_id` int(10) unsigned NOT NULL AUTO_INCREMENT,",
-      "  `gt_page_id` int(10) unsigned NOT NULL,",
-      "  `gt_globe` varbinary(32) NOT NULL,",
-      "  `gt_primary` tinyint(4) NOT NULL,",
-      "  `gt_lat` float DEFAULT NULL,",
-      "  `gt_lon` float DEFAULT NULL,",
-      "  PRIMARY KEY (`gt_id`)",
-      ") ENGINE=InnoDB;",
-      "",
-      "INSERT INTO `geo_tags` VALUES (1,100,'earth',1,48.8584,2.2945),(2,200,'earth',0,40.7128,-74.0060);",
-    ].join("\n");
-
+    const sql = dumpSql(
+      "geo_tags",
+      ["gt_id", "gt_page_id", "gt_globe", "gt_primary", "gt_lat", "gt_lon"],
+      [
+        [1, 100, "earth", 1, 48.8584, 2.2945],
+        [2, 200, "earth", 0, 40.7128, -74.006],
+      ],
+    );
     const path = writeGzFixture("geo_tags.sql.gz", sql);
-    const rows: SqlRow[] = [];
 
-    for await (const row of streamDump({
+    const rows = await collectRows({
       filePath: path,
       tableName: "geo_tags",
       requiredColumns: ["gt_page_id", "gt_lat", "gt_lon"],
-    })) {
-      rows.push(row);
-    }
+    });
 
     expect(rows).toHaveLength(2);
     expect(rows[0]).toEqual([1, 100, "earth", 1, 48.8584, 2.2945]);
@@ -201,28 +228,19 @@ describe("streamDump", () => {
   });
 
   it("handles multiple INSERT lines", async () => {
-    const sql = [
-      "CREATE TABLE `page` (",
-      "  `page_id` int(8) unsigned NOT NULL,",
-      "  `page_namespace` int(11) NOT NULL,",
-      "  `page_title` varbinary(255) NOT NULL,",
-      "  PRIMARY KEY (`page_id`)",
-      ") ENGINE=InnoDB;",
-      "",
-      "INSERT INTO `page` VALUES (1,0,'Eiffel_Tower');",
-      "INSERT INTO `page` VALUES (2,0,'Statue_of_Liberty');",
-    ].join("\n");
-
+    const sql = dumpSql(
+      "page",
+      ["page_id", "page_namespace", "page_title"],
+      [[1, 0, "Eiffel_Tower"]],
+      [[2, 0, "Statue_of_Liberty"]],
+    );
     const path = writeGzFixture("page.sql.gz", sql);
-    const rows: SqlRow[] = [];
 
-    for await (const row of streamDump({
+    const rows = await collectRows({
       filePath: path,
       tableName: "page",
       requiredColumns: ["page_id", "page_title"],
-    })) {
-      rows.push(row);
-    }
+    });
 
     expect(rows).toHaveLength(2);
     expect(rows[0]).toEqual([1, 0, "Eiffel_Tower"]);
@@ -230,108 +248,60 @@ describe("streamDump", () => {
   });
 
   it("throws when required column is missing", async () => {
-    const sql = [
-      "CREATE TABLE `geo_tags` (",
-      "  `gt_id` int(10) unsigned NOT NULL,",
-      "  PRIMARY KEY (`gt_id`)",
-      ") ENGINE=InnoDB;",
-      "",
-      "INSERT INTO `geo_tags` VALUES (1);",
-    ].join("\n");
-
+    const sql = dumpSql("geo_tags", ["gt_id"], [[1]]);
     const path = writeGzFixture("missing_col.sql.gz", sql);
 
-    await expect(async () => {
-      for await (const _row of streamDump({
+    await expect(
+      collectRows({
         filePath: path,
         tableName: "geo_tags",
         requiredColumns: ["gt_page_id"],
-      })) {
-        // consume
-      }
-    }).rejects.toThrow("Required column 'gt_page_id' not found");
+      }),
+    ).rejects.toThrow("Required column 'gt_page_id' not found");
   });
 
   it("calls progress callback", async () => {
-    const sql = [
-      "CREATE TABLE `test` (",
-      "  `id` int NOT NULL,",
-      "  PRIMARY KEY (`id`)",
-      ") ENGINE=InnoDB;",
-      "",
-      "INSERT INTO `test` VALUES (1),(2),(3),(4),(5);",
-    ].join("\n");
-
+    const sql = dumpSql("test", ["id"], [[1], [2], [3], [4], [5]]);
     const path = writeGzFixture("progress.sql.gz", sql);
     const progressCalls: number[] = [];
 
-    for await (const _row of streamDump({
+    await collectRows({
       filePath: path,
       tableName: "test",
       requiredColumns: ["id"],
       onProgress: (count) => progressCalls.push(count),
       progressInterval: 2,
-    })) {
-      // consume
-    }
+    });
 
-    // Should be called at 2, 4, and final (5)
     expect(progressCalls).toContain(2);
     expect(progressCalls).toContain(4);
     expect(progressCalls).toContain(5);
   });
 
   it("throws when table not found in dump", async () => {
-    const sql = [
-      "CREATE TABLE `other_table` (",
-      "  `id` int NOT NULL,",
-      "  PRIMARY KEY (`id`)",
-      ") ENGINE=InnoDB;",
-      "",
-      "INSERT INTO `other_table` VALUES (1);",
-    ].join("\n");
-
+    const sql = dumpSql("other_table", ["id"], [[1]]);
     const path = writeGzFixture("wrong_table.sql.gz", sql);
 
-    await expect(async () => {
-      for await (const _row of streamDump({
+    await expect(
+      collectRows({
         filePath: path,
         tableName: "geo_tags",
         requiredColumns: ["gt_id"],
-      })) {
-        // consume
-      }
-    }).rejects.toThrow("Schema for table 'geo_tags' not found");
+      }),
+    ).rejects.toThrow("Schema for table 'geo_tags' not found");
   });
 });
 
 describe("discoverSchema", () => {
-  const testDir = join(tmpdir(), "discover-schema-test-" + Date.now());
-
-  beforeAll(() => {
-    mkdirSync(testDir, { recursive: true });
-  });
-
-  afterAll(() => {
-    rmSync(testDir, { recursive: true, force: true });
-  });
-
   it("discovers schema without reading full file", async () => {
-    const sql = [
-      "-- MySQL dump",
-      "CREATE TABLE `page_props` (",
-      "  `pp_page` int(8) unsigned NOT NULL,",
-      "  `pp_propname` varbinary(60) NOT NULL,",
-      "  `pp_value` blob NOT NULL,",
-      "  `pp_sortkey` float DEFAULT NULL,",
-      "  PRIMARY KEY (`pp_page`,`pp_propname`)",
-      ") ENGINE=InnoDB;",
-      "",
-      "INSERT INTO `page_props` VALUES (1,'wikibase_item','Q1',NULL);",
-    ].join("\n");
-
-    const path = join(testDir, "page_props.sql.gz");
-    writeFileSync(path, gzipSync(Buffer.from(sql, "utf8")));
+    const sql =
+      "-- MySQL dump\n" +
+      dumpSql(
+        "page_props",
+        ["pp_page", "pp_propname", "pp_value", "pp_sortkey"],
+        [[1, "wikibase_item", "Q1", null]],
+      );
+    const path = writeGzFixture("page_props.sql.gz", sql);
 
     const schema = await discoverSchema(path, "page_props");
     expect(schema.tableName).toBe("page_props");
