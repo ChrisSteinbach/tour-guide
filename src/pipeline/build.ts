@@ -107,6 +107,11 @@ function writeBinary(data: TriangulationFile, outputPath: string): void {
   writeFileSync(outputPath, Buffer.from(buf));
   const sizeMB = (buf.byteLength / 1024 / 1024).toFixed(1);
   console.log(`  → ${sizeMB} MB binary written to ${outputPath}`);
+
+  const hash = hashBuffer(buf);
+  const shaPath = outputPath.replace(/\.bin$/, ".sha");
+  writeFileSync(shaPath, hash, "utf-8");
+  console.log(`  → Hash ${hash} written to ${shaPath}`);
 }
 
 function writeJson(data: TriangulationFile, outputPath: string): void {
@@ -256,11 +261,18 @@ async function buildTiled(articles: Article[], lang: Lang): Promise<void> {
   console.log("\nStep 4: Writing tile index...");
   tileEntries.sort((a, b) => a.id.localeCompare(b.id));
 
+  const combinedHashes = tileEntries.map((t) => t.hash).join("");
+  const indexHash = createHash("sha256")
+    .update(combinedHashes)
+    .digest("hex")
+    .slice(0, 8);
+
   const index: TileIndex = {
     version: 1,
     gridDeg: GRID_DEG,
     bufferDeg: BUFFER_DEG,
     generated: new Date().toISOString(),
+    hash: indexHash,
     tiles: tileEntries,
   };
 

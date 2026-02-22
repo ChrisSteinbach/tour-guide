@@ -37,6 +37,7 @@ jobs:
         run: |
           mkdir -p data
           gh release download data-latest --pattern "triangulation-*.bin.gz" --dir data
+          gh release download data-latest --pattern "triangulation-*.sha" --dir data || true
           gh release download data-latest --pattern "tiles-*.tar.gz" --dir data || true
 
       - name: Decompress data
@@ -55,6 +56,7 @@ jobs:
       - name: Copy data into build output
         run: |
           cp data/triangulation-*.bin dist/app/
+          cp data/triangulation-*.sha dist/app/ 2>/dev/null || true
           if [ -d data/tiles ]; then
             cp -r data/tiles dist/app/tiles
           fi

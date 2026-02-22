@@ -138,6 +138,7 @@ describe("tiled pipeline (e2e)", () => {
     expect(index.gridDeg).toBe(5);
     expect(index.bufferDeg).toBe(0.5);
     expect(index.generated).toBeTruthy();
+    expect(index.hash).toMatch(/^[0-9a-f]{8}$/);
     expect(index.tiles.length).toBe(3);
 
     // Verify each tile entry has required fields

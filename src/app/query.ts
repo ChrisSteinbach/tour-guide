@@ -241,14 +241,24 @@ export class NearestQuery {
   }
 }
 
+// ---------- Content hashing ----------
+
+async function hashBuffer(buf: ArrayBuffer): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", buf);
+  const bytes = new Uint8Array(digest);
+  let hex = "";
+  for (const b of bytes) hex += b.toString(16).padStart(2, "0");
+  return hex.slice(0, 8);
+}
+
 // ---------- Update check ----------
 
 export interface UpdateInfo {
-  serverLastModified: string;
+  serverHash: string;
 }
 
 export async function checkForUpdate(
-  url: string,
+  shaUrl: string,
   cacheKey: string,
 ): Promise<UpdateInfo | null> {
   try {
@@ -256,35 +266,35 @@ export async function checkForUpdate(
     if (!db) return null;
 
     const cached = await idbGet(db, cacheKey);
-    if (!cached?.lastModified) {
-      console.log("[update] No cached lastModified — skipping freshness check");
+    if (!cached?.contentHash) {
+      console.log("[update] No cached contentHash — skipping freshness check");
       return null;
     }
 
-    const response = await fetch(url, { method: "HEAD", cache: "no-store" });
-    const serverLM = response.headers.get("Last-Modified");
-    if (!serverLM) {
-      console.log("[update] Server returned no Last-Modified header");
+    const response = await fetch(shaUrl, { cache: "no-store" });
+    const serverHash = (await response.text()).trim();
+    if (!serverHash) {
+      console.log("[update] Server returned empty hash");
       return null;
     }
 
-    console.log(`[update] Cached: ${cached.lastModified}`);
-    console.log(`[update] Server: ${serverLM}`);
+    console.log(`[update] Cached: ${cached.contentHash}`);
+    console.log(`[update] Server: ${serverHash}`);
 
-    if (serverLM === cached.lastModified) {
+    if (serverHash === cached.contentHash) {
       console.log("[update] Data is up to date");
       return null;
     }
 
     const dismissedKey = `update-dismissed-${cacheKey}`;
     const dismissed = await idbGetString(db, dismissedKey);
-    if (dismissed === serverLM) {
+    if (dismissed === serverHash) {
       console.log("[update] Update was previously dismissed");
       return null;
     }
 
     console.log("[update] New data available — showing banner");
-    return { serverLastModified: serverLM };
+    return { serverHash };
   } catch {
     return null;
   }
@@ -293,7 +303,7 @@ export async function checkForUpdate(
 export async function fetchUpdate(
   url: string,
   cacheKey: string,
-  serverLastModified: string,
+  serverHash: string,
   onProgress?: (fraction: number) => void,
 ): Promise<NearestQuery> {
   const response = await fetch(url, { cache: "no-store" });
@@ -325,6 +335,7 @@ export async function fetchUpdate(
   }
 
   const { fd, articles } = deserializeBinary(buf);
+  const contentHash = await hashBuffer(buf);
 
   const db = typeof indexedDB !== "undefined" ? await idbOpen() : null;
   if (db) {
@@ -334,7 +345,7 @@ export async function fetchUpdate(
       triangleVertices: fd.triangleVertices,
       triangleNeighbors: fd.triangleNeighbors,
       articles: articles.map((a) => a.title),
-      lastModified: serverLastModified,
+      contentHash,
     });
     idbDelete(db, `update-dismissed-${cacheKey}`);
   }
@@ -344,12 +355,12 @@ export async function fetchUpdate(
 
 export async function dismissUpdate(
   cacheKey: string,
-  serverLastModified: string,
+  serverHash: string,
 ): Promise<void> {
   try {
     const db = typeof indexedDB !== "undefined" ? await idbOpen() : null;
     if (db) {
-      idbPutString(db, `update-dismissed-${cacheKey}`, serverLastModified);
+      idbPutString(db, `update-dismissed-${cacheKey}`, serverHash);
     }
   } catch {
     // ignore
@@ -388,7 +399,6 @@ export async function loadQuery(
   const timeoutId = setTimeout(() => controller.abort(), 120_000);
   try {
     const response = await fetch(url, { signal: controller.signal });
-    const lastModified = response.headers.get("Last-Modified") ?? undefined;
 
     let buf: ArrayBuffer;
     const total = Number(response.headers.get("Content-Length") || 0);
@@ -426,13 +436,14 @@ export async function loadQuery(
     );
 
     if (db) {
+      const contentHash = await hashBuffer(buf);
       idbPut(db, cacheKey, {
         vertexPoints: fd.vertexPoints,
         vertexTriangles: fd.vertexTriangles,
         triangleVertices: fd.triangleVertices,
         triangleNeighbors: fd.triangleNeighbors,
         articles: articles.map((a) => a.title),
-        lastModified,
+        contentHash,
       });
     }
 

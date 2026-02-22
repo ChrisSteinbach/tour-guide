@@ -22,6 +22,7 @@ export interface TileIndex {
   gridDeg: number;
   bufferDeg: number;
   generated: string;
+  hash?: string;
   tiles: TileEntry[];
 }
 

@@ -79,7 +79,7 @@ const loadingTiles = new Set<string>();
 let downloadProgress = -1; // tracks background preload progress
 
 // Update banner (orthogonal UI overlay)
-let pendingUpdate: { serverLastModified: string; lang: Lang } | null = null;
+let pendingUpdate: { serverHash: string; lang: Lang } | null = null;
 let updateDownloading = false;
 let updateProgress = 0;
 
@@ -377,7 +377,7 @@ function removeUpdateBanner(): void {
 
 function acceptUpdate(): void {
   if (!pendingUpdate) return;
-  const { serverLastModified, lang } = pendingUpdate;
+  const { serverHash, lang } = pendingUpdate;
   updateDownloading = true;
   updateProgress = 0;
   renderUpdateBanner();
@@ -385,7 +385,7 @@ function acceptUpdate(): void {
   const cacheKey = `triangulation-v3-${lang}`;
   const url = `${import.meta.env.BASE_URL}triangulation-${lang}.bin`;
 
-  fetchUpdate(url, cacheKey, serverLastModified, (fraction) => {
+  fetchUpdate(url, cacheKey, serverHash, (fraction) => {
     updateProgress = fraction < 0 ? 0 : fraction;
     renderUpdateBanner();
   })
@@ -407,8 +407,8 @@ function acceptUpdate(): void {
 
 function declineUpdate(): void {
   if (!pendingUpdate) return;
-  const { serverLastModified, lang } = pendingUpdate;
-  void dismissUpdate(`triangulation-v3-${lang}`, serverLastModified);
+  const { serverHash, lang } = pendingUpdate;
+  void dismissUpdate(`triangulation-v3-${lang}`, serverHash);
   pendingUpdate = null;
   removeUpdateBanner();
 }
@@ -472,10 +472,10 @@ function loadMonolithic(lang: Lang, gen: number): void {
 
       // Background check for newer data on server
       const cacheKey = `triangulation-v3-${lang}`;
-      const url = `${import.meta.env.BASE_URL}triangulation-${lang}.bin`;
-      void checkForUpdate(url, cacheKey).then((info) => {
+      const shaUrl = `${import.meta.env.BASE_URL}triangulation-${lang}.sha`;
+      void checkForUpdate(shaUrl, cacheKey).then((info) => {
         if (!info || gen !== loadGeneration) return;
-        pendingUpdate = { serverLastModified: info.serverLastModified, lang };
+        pendingUpdate = { serverHash: info.serverHash, lang };
         renderUpdateBanner();
       });
     })
