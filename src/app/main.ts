@@ -35,29 +35,55 @@ import type { Lang } from "../lang";
 
 const NEARBY_TIERS = [10, 20, 50, 100];
 const LANG_STORAGE_KEY = "tour-guide-lang";
+const REQUERY_DISTANCE_M = 15;
 
 const app = document.getElementById("app")!;
-let stopWatcher: StopFn | null = null;
-let currentArticles: NearbyArticle[] = [];
-let selectedArticle: NearbyArticle | null = null;
 
-// State
-let query: NearestQuery | TiledQuery | null = null;
-let nearbyCount: number = NEARBY_TIERS[0];
-let dataReady = false;
-let loadGeneration = 0;
-let started = false; // true once user opts in to location
+// ── State machine ──────────────────────────────────────────────
+
+type QueryEngine = NearestQuery | TiledQuery;
+
+type Phase =
+  | { phase: "welcome" }
+  | { phase: "downloading"; progress: number }
+  | { phase: "locating" }
+  | { phase: "loadingTiles" }
+  | { phase: "error"; error: LocationError }
+  | {
+      phase: "browsing";
+      articles: NearbyArticle[];
+      nearbyCount: number;
+      paused: boolean;
+      lastQueryPos: UserPosition;
+    }
+  | {
+      phase: "detail";
+      article: NearbyArticle;
+      articles: NearbyArticle[];
+      nearbyCount: number;
+      paused: boolean;
+      lastQueryPos: UserPosition;
+    };
+
+let state: Phase = { phase: "welcome" };
+
+// Shared across phases (set by async operations)
+let query: QueryEngine | null = null;
 let position: UserPosition | null = null;
-let locError: LocationError | null = null;
 let currentLang: Lang = getStoredLang();
-let downloadProgress = -1; // 0–1 or -1 for indeterminate
-let lastQueryPos: UserPosition | null = null;
-const REQUERY_DISTANCE_M = 15;
-let paused = false;
+
+// Operational (async cancellation, GPS cleanup)
+let stopWatcher: StopFn | null = null;
+let loadGeneration = 0;
+const loadingTiles = new Set<string>();
+let downloadProgress = -1; // tracks background preload progress
+
+// Update banner (orthogonal UI overlay)
 let pendingUpdate: { serverLastModified: string; lang: Lang } | null = null;
 let updateDownloading = false;
 let updateProgress = 0;
-const loadingTiles = new Set<string>(); // in-flight tile fetches
+
+// ── Helpers ────────────────────────────────────────────────────
 
 function getStoredLang(): Lang {
   const stored = localStorage.getItem(LANG_STORAGE_KEY);
@@ -71,13 +97,17 @@ function storeLang(lang: Lang): void {
   localStorage.setItem(LANG_STORAGE_KEY, lang);
 }
 
-/** Compute nearby articles using query module or brute-force fallback. */
-function getNearby(pos: UserPosition): NearbyArticle[] {
+function hasStarted(): boolean {
+  return state.phase !== "welcome";
+}
+
+/** Compute nearby articles using the current query engine. */
+function getNearby(pos: UserPosition, count: number): NearbyArticle[] {
   if (query) {
     const t0 = performance.now();
-    const results = query.findNearest(pos.lat, pos.lon, nearbyCount);
+    const results = query.findNearest(pos.lat, pos.lon, count);
     console.log(
-      `[perf] findNearest(k=${nearbyCount}) in ${(performance.now() - t0).toFixed(2)}ms`,
+      `[perf] findNearest(k=${count}) in ${(performance.now() - t0).toFixed(2)}ms`,
     );
     return results;
   }
@@ -86,64 +116,66 @@ function getNearby(pos: UserPosition): NearbyArticle[] {
     .sort((a, b) => a.distanceM - b.distanceM);
 }
 
-function getNextTier(): number | undefined {
+function getNextTier(nearbyCount: number): number | undefined {
   const idx = NEARBY_TIERS.indexOf(nearbyCount);
   return idx >= 0 && idx < NEARBY_TIERS.length - 1
     ? NEARBY_TIERS[idx + 1]
     : undefined;
 }
 
-function showMore(): void {
-  const next = getNextTier();
-  if (next === undefined || !position) return;
-  nearbyCount = next;
-  currentArticles = getNearby(position);
+// ── Browsing actions ───────────────────────────────────────────
+
+function renderBrowsingList(): void {
+  if (state.phase !== "browsing") return;
   renderNearbyList(
     app,
-    currentArticles,
+    state.articles,
     selectArticle,
     currentLang,
     handleLangChange,
     showMore,
-    getNextTier(),
-    paused,
+    getNextTier(state.nearbyCount),
+    state.paused,
     togglePause,
   );
+}
+
+function showMore(): void {
+  if (state.phase !== "browsing" || !position) return;
+  const next = getNextTier(state.nearbyCount);
+  if (next === undefined) return;
+  state = {
+    ...state,
+    nearbyCount: next,
+    articles: getNearby(position, next),
+  };
+  renderBrowsingList();
 }
 
 function showList(): void {
-  selectedArticle = null;
-  renderNearbyList(
-    app,
-    currentArticles,
-    selectArticle,
-    currentLang,
-    handleLangChange,
-    showMore,
-    getNextTier(),
-    paused,
-    togglePause,
-  );
+  if (state.phase !== "detail") return;
+  const { articles, nearbyCount, paused, lastQueryPos } = state;
+  state = { phase: "browsing", articles, nearbyCount, paused, lastQueryPos };
+  renderBrowsingList();
 }
 
 function togglePause(): void {
-  paused = !paused;
-  if (!paused && position) {
-    lastQueryPos = position;
-    currentArticles = getNearby(position);
+  if (state.phase !== "browsing") return;
+  const nowPaused = !state.paused;
+  if (!nowPaused && position) {
+    state = {
+      ...state,
+      paused: false,
+      articles: getNearby(position, state.nearbyCount),
+      lastQueryPos: position,
+    };
+  } else {
+    state = { ...state, paused: nowPaused };
   }
-  renderNearbyList(
-    app,
-    currentArticles,
-    selectArticle,
-    currentLang,
-    handleLangChange,
-    showMore,
-    getNextTier(),
-    paused,
-    togglePause,
-  );
+  renderBrowsingList();
 }
+
+// ── Detail view ────────────────────────────────────────────────
 
 const goBack = () => history.back();
 
@@ -153,15 +185,28 @@ function selectArticle(article: NearbyArticle): void {
 }
 
 async function showDetail(article: NearbyArticle): Promise<void> {
-  selectedArticle = article;
-  history.pushState({ view: "detail" }, "");
+  if (state.phase === "browsing") {
+    const { articles, nearbyCount, paused, lastQueryPos } = state;
+    state = {
+      phase: "detail",
+      article,
+      articles,
+      nearbyCount,
+      paused,
+      lastQueryPos,
+    };
+    history.pushState({ view: "detail" }, "");
+  } else if (state.phase !== "detail") {
+    return;
+  }
+
   renderDetailLoading(app, article, goBack);
   try {
     const summary = await fetchArticleSummary(article.title, currentLang);
-    if (selectedArticle !== article) return;
+    if (state.phase !== "detail" || state.article !== article) return;
     renderDetailReady(app, article, summary, goBack);
   } catch (err) {
-    if (selectedArticle !== article) return;
+    if (state.phase !== "detail" || state.article !== article) return;
     const message = err instanceof Error ? err.message : "Unknown error";
     renderDetailError(
       app,
@@ -176,64 +221,102 @@ async function showDetail(article: NearbyArticle): Promise<void> {
   }
 }
 
-/** Re-render based on current data + location state. */
+// ── Render (switch on phase) ───────────────────────────────────
+
 function render(): void {
-  if (!dataReady && started) {
-    renderLoadingProgress(app, downloadProgress);
-    return;
+  switch (state.phase) {
+    case "welcome":
+      return;
+
+    case "downloading":
+      renderLoadingProgress(app, state.progress);
+      return;
+
+    case "locating":
+      renderLoading(app);
+      return;
+
+    case "loadingTiles":
+      renderLoading(app, "Loading nearby articles\u2026");
+      return;
+
+    case "error":
+      renderError(app, state.error, useMockData);
+      return;
+
+    case "detail":
+      return;
+
+    case "browsing": {
+      if (state.paused) return;
+      if (!position) return;
+      if (
+        distanceBetweenPositions(position, state.lastQueryPos) <
+        REQUERY_DISTANCE_M
+      ) {
+        return;
+      }
+      forceRequery();
+      return;
+    }
   }
-  if (!dataReady) {
-    return;
-  }
-  if (locError && !position) {
-    renderError(app, locError, useMockData);
-    return;
-  }
-  if (!position) {
-    renderLoading(app);
-    return;
-  }
-  // Tiled query with no tiles loaded yet — waiting for first tile
+}
+
+// ── Phase transitions ──────────────────────────────────────────
+
+/** Transition into browsing (or loadingTiles if tiled with no tiles yet). */
+function enterBrowsing(): void {
+  if (!position) return;
   if (query instanceof TiledQuery && query.loadedTileCount === 0) {
-    renderLoading(app, "Loading nearby articles\u2026");
+    state = { phase: "loadingTiles" };
+    render();
     return;
   }
-  if (selectedArticle) return;
+  const count =
+    state.phase === "browsing" ? state.nearbyCount : NEARBY_TIERS[0];
+  state = {
+    phase: "browsing",
+    articles: getNearby(position, count),
+    nearbyCount: count,
+    paused: false,
+    lastQueryPos: position,
+  };
+  renderBrowsingList();
+}
 
-  // Skip re-query when paused or position hasn't moved enough
-  if (paused) return;
-  if (
-    lastQueryPos &&
-    distanceBetweenPositions(position, lastQueryPos) < REQUERY_DISTANCE_M
-  ) {
-    return;
-  }
-
-  lastQueryPos = position;
-  const newArticles = getNearby(position);
-
-  // If showing the same articles, just update distances in-place
-  // to avoid nuking the DOM (which closes open dropdowns like the lang select)
+/** Re-query at current position and re-render the browsing list. */
+function forceRequery(): void {
+  if (state.phase !== "browsing" || !position) return;
+  const s = state;
+  const articles = getNearby(position, s.nearbyCount);
   const same =
-    newArticles.length === currentArticles.length &&
-    newArticles.every((a, i) => a.title === currentArticles[i].title);
-  currentArticles = newArticles;
-
+    articles.length === s.articles.length &&
+    articles.every((a, i) => a.title === s.articles[i].title);
+  state = {
+    phase: "browsing",
+    nearbyCount: s.nearbyCount,
+    paused: s.paused,
+    articles,
+    lastQueryPos: position,
+  };
   if (same && app.querySelector(".nearby-list")) {
-    updateNearbyDistances(app, currentArticles);
+    updateNearbyDistances(app, articles);
     return;
   }
-  renderNearbyList(
-    app,
-    currentArticles,
-    selectArticle,
-    currentLang,
-    handleLangChange,
-    showMore,
-    getNextTier(),
-    paused,
-    togglePause,
-  );
+  renderBrowsingList();
+}
+
+/** Called when data loading completes — transition from downloading if needed. */
+function onDataReady(): void {
+  if (state.phase === "downloading") {
+    if (position) {
+      enterBrowsing();
+    } else {
+      state = { phase: "locating" };
+      render();
+    }
+  }
+  // If still on welcome screen, query is set for when user starts
 }
 
 function useMockData(): void {
@@ -241,13 +324,20 @@ function useMockData(): void {
     stopWatcher();
     stopWatcher = null;
   }
-  started = true;
   position = mockPosition;
+  if (query === null) {
+    // Data not ready — show downloading, will enter browsing when data loads
+    state = { phase: "downloading", progress: downloadProgress };
+    render();
+    return;
+  }
   if (query instanceof TiledQuery) {
     void loadTilesForPosition(currentLang, loadGeneration);
   }
-  render();
+  enterBrowsing();
 }
+
+// ── Update banner ──────────────────────────────────────────────
 
 function renderUpdateBanner(): void {
   let banner = document.getElementById("update-banner");
@@ -303,8 +393,7 @@ function acceptUpdate(): void {
       if (currentLang !== lang) return; // language changed while downloading
       query = q;
       console.log(`Updated to new data: ${q.size} articles (${lang})`);
-      lastQueryPos = null; // force re-query
-      if (started && position) render();
+      forceRequery();
     })
     .catch((err) => {
       console.error("Update download failed:", err);
@@ -352,18 +441,21 @@ function listenForSwUpdate(): void {
   });
 }
 
+// ── Data loading ───────────────────────────────────────────────
+
 function loadMonolithic(lang: Lang, gen: number): void {
   let lastRenderTime = 0;
   let lastRenderedPct = -2; // -2 so initial indeterminate (-1) triggers a render
   const onProgress = (fraction: number) => {
     if (gen !== loadGeneration) return;
     downloadProgress = fraction;
-    if (!started) return;
+    if (state.phase !== "downloading") return;
     const pct = fraction < 0 ? -1 : Math.round(fraction * 100);
     const now = performance.now();
     if (pct !== lastRenderedPct && now - lastRenderTime >= 100) {
       lastRenderedPct = pct;
       lastRenderTime = now;
+      state = { ...state, progress: fraction };
       render();
     }
   };
@@ -393,8 +485,7 @@ function loadMonolithic(lang: Lang, gen: number): void {
     })
     .finally(() => {
       if (gen !== loadGeneration) return;
-      dataReady = true;
-      if (started) render();
+      onDataReady();
     });
 }
 
@@ -419,8 +510,11 @@ async function loadTilesForPosition(lang: Lang, gen: number): Promise<void> {
       .then((tileQuery) => {
         if (gen !== loadGeneration) return;
         tq.addTile(id, tileQuery);
-        lastQueryPos = null; // force re-query with new tile data
-        if (started && position) render();
+        if (state.phase === "loadingTiles" && position) {
+          enterBrowsing();
+        } else {
+          forceRequery();
+        }
       })
       .catch((err) => {
         console.error(`Failed to load tile ${id}:`, err);
@@ -437,16 +531,18 @@ async function loadTilesForPosition(lang: Lang, gen: number): Promise<void> {
 }
 
 function loadLanguageData(lang: Lang): void {
-  dataReady = false;
   query = null;
   downloadProgress = -1;
-  lastQueryPos = null;
   pendingUpdate = null;
   updateDownloading = false;
   loadingTiles.clear();
   removeUpdateBanner();
   const gen = ++loadGeneration;
-  if (started) render(); // show loading state
+
+  if (hasStarted()) {
+    state = { phase: "downloading", progress: -1 };
+    render();
+  }
 
   const baseUrl = import.meta.env.BASE_URL;
 
@@ -458,7 +554,6 @@ function loadLanguageData(lang: Lang): void {
       if (index) {
         // Tiled path
         query = new TiledQuery(index);
-        dataReady = true;
         console.log(
           `[tiles] Tiled mode: ${index.tiles.length} tiles (${lang})`,
         );
@@ -466,7 +561,7 @@ function loadLanguageData(lang: Lang): void {
         // Clean up old monolithic cache
         void cleanMonolithicCache(lang);
 
-        if (started) render();
+        onDataReady();
 
         // If position already known, start loading tiles
         if (position) {
@@ -487,18 +582,32 @@ function loadLanguageData(lang: Lang): void {
     });
 }
 
+// ── User actions ───────────────────────────────────────────────
+
 function handleLangChange(lang: Lang): void {
   currentLang = lang;
-  nearbyCount = NEARBY_TIERS[0];
   storeLang(lang);
   loadLanguageData(lang);
 }
 
 /** User clicked "Find nearby articles" — start GPS and show loading states. */
 function startLocating(): void {
-  started = true;
   sessionStorage.setItem("tour-guide-started", "1");
-  render();
+
+  if (query !== null) {
+    // Data already loaded — skip downloading phase
+    if (position) {
+      enterBrowsing();
+    } else {
+      state = { phase: "locating" };
+      render();
+    }
+  } else {
+    // Data still loading — show download progress
+    state = { phase: "downloading", progress: downloadProgress };
+    render();
+  }
+
   if (!navigator.geolocation) {
     useMockData();
     return;
@@ -506,22 +615,46 @@ function startLocating(): void {
   stopWatcher = watchLocation({
     onPosition: (pos) => {
       position = pos;
-      locError = null;
-      if (query instanceof TiledQuery) {
-        void loadTilesForPosition(currentLang, loadGeneration);
+      switch (state.phase) {
+        case "locating":
+          enterBrowsing();
+          break;
+        case "loadingTiles":
+          if (query instanceof TiledQuery) {
+            void loadTilesForPosition(currentLang, loadGeneration);
+          }
+          break;
+        case "browsing":
+        case "detail":
+          if (query instanceof TiledQuery) {
+            void loadTilesForPosition(currentLang, loadGeneration);
+          }
+          render();
+          break;
+        default:
+          break;
       }
-      render();
     },
     onError: (error) => {
-      locError = error;
-      render();
+      switch (state.phase) {
+        case "locating":
+          state = { phase: "error", error };
+          render();
+          break;
+        case "browsing":
+        case "detail":
+          // Already have position — ignore GPS blip
+          break;
+        default:
+          break;
+      }
     },
   });
 }
 
 // Handle browser back button / swipe-back from detail view
 window.addEventListener("popstate", () => {
-  if (selectedArticle) {
+  if (state.phase === "detail") {
     showList();
   }
 });
