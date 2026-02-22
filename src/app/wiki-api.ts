@@ -10,6 +10,7 @@ export interface ArticleSummary {
   pageUrl: string;
 }
 
+const MAX_CACHE_SIZE = 100;
 const cache = new Map<string, ArticleSummary>();
 
 /** Build the Wikipedia REST API summary URL for a given article title. */
@@ -25,7 +26,11 @@ export async function fetchArticleSummary(
 ): Promise<ArticleSummary> {
   const cacheKey = `${lang}:${title}`;
   const cached = cache.get(cacheKey);
-  if (cached) return cached;
+  if (cached) {
+    cache.delete(cacheKey);
+    cache.set(cacheKey, cached);
+    return cached;
+  }
 
   const res = await fetch(summaryUrl(title, lang));
   if (res.status === 404) throw new Error("Article not found");
@@ -51,6 +56,9 @@ export async function fetchArticleSummary(
   };
 
   cache.set(cacheKey, summary);
+  if (cache.size > MAX_CACHE_SIZE) {
+    cache.delete(cache.keys().next().value!);
+  }
   return summary;
 }
 
