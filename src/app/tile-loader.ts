@@ -8,6 +8,48 @@ import type { QueryResult } from "./query";
 import { idbOpen, idbGetAny, idbPutAny, idbDelete } from "./idb";
 import type { Lang } from "../lang";
 
+// ---------- LRU eviction ----------
+
+export const MAX_CACHED_TILES = 50;
+
+/**
+ * Update an LRU list: move tileId to most-recent position,
+ * return IDs to evict if over the cap.
+ */
+export function updateLru(
+  lru: string[],
+  tileId: string,
+  maxEntries = MAX_CACHED_TILES,
+): { updated: string[]; evict: string[] } {
+  const filtered = lru.filter((id) => id !== tileId);
+  filtered.push(tileId);
+
+  const evict: string[] = [];
+  while (filtered.length > maxEntries) {
+    evict.push(filtered.shift()!);
+  }
+
+  return { updated: filtered, evict };
+}
+
+/** Update LRU tracking in IDB and evict tiles over the cap. */
+async function touchLru(
+  db: IDBDatabase,
+  lang: Lang,
+  tile: string,
+): Promise<void> {
+  const lruKey = `tile-lru-v1-${lang}`;
+  const lru = (await idbGetAny<string[]>(db, lruKey)) ?? [];
+  const { updated, evict } = updateLru(lru, tile);
+
+  for (const id of evict) {
+    idbDelete(db, `tile-v1-${lang}-${id}`);
+    console.log(`[tiles] Evicted tile ${id} from cache`);
+  }
+
+  idbPutAny(db, lruKey, updated);
+}
+
 // ---------- TiledQuery ----------
 
 export class TiledQuery {
@@ -209,6 +251,8 @@ export async function loadTile(
     const cached = await idbGetAny<CachedTileData>(db, cacheKey);
     if (cached && cached.hash === entry.hash) {
       console.log(`[tiles] Cache hit for tile ${entry.id}`);
+      // Touch LRU (no eviction expected on a hit, but keeps order current)
+      await touchLru(db, lang, entry.id);
       return new NearestQuery(
         {
           vertexPoints: cached.vertexPoints,
@@ -248,6 +292,7 @@ export async function loadTile(
       hash: entry.hash,
     };
     idbPutAny(db, cacheKey, cacheData);
+    await touchLru(db, lang, entry.id);
   }
 
   return new NearestQuery(fd, articles);

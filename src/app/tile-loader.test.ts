@@ -1,4 +1,4 @@
-import { TiledQuery } from "./tile-loader";
+import { TiledQuery, updateLru, MAX_CACHED_TILES } from "./tile-loader";
 import { NearestQuery, toFlatDelaunay } from "./query";
 import type { TileIndex, TileEntry } from "../tiles";
 import { GRID_DEG } from "../tiles";
@@ -267,5 +267,63 @@ describe("TiledQuery metadata", () => {
     const tq = new TiledQuery(index);
     expect(tq.getTileEntry("18-36")?.id).toBe("18-36");
     expect(tq.getTileEntry("99-99")).toBeUndefined();
+  });
+});
+
+// ---------- updateLru ----------
+
+describe("updateLru", () => {
+  it("adds a new tile to the end of an empty list", () => {
+    const { updated, evict } = updateLru([], "18-36");
+    expect(updated).toEqual(["18-36"]);
+    expect(evict).toEqual([]);
+  });
+
+  it("moves an existing tile to the end", () => {
+    const { updated, evict } = updateLru(["18-35", "18-36", "18-37"], "18-35");
+    expect(updated).toEqual(["18-36", "18-37", "18-35"]);
+    expect(evict).toEqual([]);
+  });
+
+  it("evicts oldest tiles when over the cap", () => {
+    const ids = Array.from({ length: 5 }, (_, i) => `tile-${i}`);
+    const { updated, evict } = updateLru(ids, "tile-new", 5);
+    expect(updated).toEqual([
+      "tile-1",
+      "tile-2",
+      "tile-3",
+      "tile-4",
+      "tile-new",
+    ]);
+    expect(evict).toEqual(["tile-0"]);
+  });
+
+  it("evicts multiple tiles to get back under the cap", () => {
+    // Simulate a cap reduction scenario: 6 items, cap=3, add new
+    const ids = ["a", "b", "c", "d", "e", "f"];
+    const { updated, evict } = updateLru(ids, "g", 3);
+    expect(updated).toEqual(["e", "f", "g"]);
+    expect(evict).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("does not evict when exactly at the cap", () => {
+    const ids = ["a", "b", "c"];
+    const { updated, evict } = updateLru(ids, "c", 3);
+    expect(updated).toEqual(["a", "b", "c"]);
+    expect(evict).toEqual([]);
+  });
+
+  it("does not mutate the input array", () => {
+    const ids = ["a", "b", "c"];
+    updateLru(ids, "a", 3);
+    expect(ids).toEqual(["a", "b", "c"]);
+  });
+
+  it("defaults to MAX_CACHED_TILES", () => {
+    const ids = Array.from({ length: MAX_CACHED_TILES }, (_, i) => `t-${i}`);
+    const { updated, evict } = updateLru(ids, "new-tile");
+    expect(updated.length).toBe(MAX_CACHED_TILES);
+    expect(evict).toEqual(["t-0"]);
+    expect(updated[updated.length - 1]).toBe("new-tile");
   });
 });
