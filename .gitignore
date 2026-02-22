@@ -5,3 +5,5 @@ dev-dist/
 coverage/
 .playwright-mcp/
 *.png
+!src/app/public/icon-*.png
+!src/app/public/apple-touch-icon.png
