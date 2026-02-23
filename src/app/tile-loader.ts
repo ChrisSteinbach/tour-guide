@@ -43,11 +43,15 @@ async function touchLru(
   const { updated, evict } = updateLru(lru, tile);
 
   for (const id of evict) {
-    idbDelete(db, `tile-v1-${lang}-${id}`);
+    idbDelete(db, `tile-v1-${lang}-${id}`).catch((err) =>
+      console.warn(`[idb] Failed to evict tile ${id}:`, err),
+    );
     console.log(`[tiles] Evicted tile ${id} from cache`);
   }
 
-  idbPutAny(db, lruKey, updated);
+  idbPutAny(db, lruKey, updated).catch((err) =>
+    console.warn("[idb] LRU update failed:", err),
+  );
 }
 
 // ---------- TiledQuery ----------
@@ -215,7 +219,9 @@ export async function loadTileIndex(
 
     // Cache for offline use
     if (db) {
-      idbPutAny(db, cacheKey, JSON.stringify(index));
+      idbPutAny(db, cacheKey, JSON.stringify(index)).catch((err) =>
+        console.warn("[idb] Tile index cache failed:", err),
+      );
     }
 
     return index;
@@ -291,7 +297,9 @@ export async function loadTile(
       articles: articles.map((a) => a.title),
       hash: entry.hash,
     };
-    idbPutAny(db, cacheKey, cacheData);
+    idbPutAny(db, cacheKey, cacheData).catch((err) =>
+      console.warn("[idb] Tile cache write failed:", err),
+    );
     await touchLru(db, lang, entry.id);
   }
 
@@ -303,7 +311,9 @@ export async function cleanMonolithicCache(lang: Lang): Promise<void> {
   try {
     const db = typeof indexedDB !== "undefined" ? await idbOpen() : null;
     if (db) {
-      idbDelete(db, `triangulation-v3-${lang}`);
+      idbDelete(db, `triangulation-v3-${lang}`).catch((err) =>
+        console.warn("[idb] Monolithic cache cleanup failed:", err),
+      );
       console.log(`[tiles] Cleaned up monolithic cache for ${lang}`);
     }
   } catch {

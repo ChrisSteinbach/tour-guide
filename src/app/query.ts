@@ -346,8 +346,10 @@ export async function fetchUpdate(
       triangleNeighbors: fd.triangleNeighbors,
       articles: articles.map((a) => a.title),
       contentHash,
-    });
-    idbDelete(db, `update-dismissed-${cacheKey}`);
+    }).catch((err) => console.warn("[idb] Cache write failed:", err));
+    idbDelete(db, `update-dismissed-${cacheKey}`).catch((err) =>
+      console.warn("[idb] Cache delete failed:", err),
+    );
   }
 
   return new NearestQuery(fd, articles);
@@ -360,7 +362,9 @@ export async function dismissUpdate(
   try {
     const db = typeof indexedDB !== "undefined" ? await idbOpen() : null;
     if (db) {
-      idbPutString(db, `update-dismissed-${cacheKey}`, serverHash);
+      idbPutString(db, `update-dismissed-${cacheKey}`, serverHash).catch(
+        (err) => console.warn("[idb] Cache write failed:", err),
+      );
     }
   } catch {
     // ignore
@@ -444,7 +448,7 @@ export async function loadQuery(
         triangleNeighbors: fd.triangleNeighbors,
         articles: articles.map((a) => a.title),
         contentHash,
-      });
+      }).catch((err) => console.warn("[idb] Cache write failed:", err));
     }
 
     return new NearestQuery(fd, articles);

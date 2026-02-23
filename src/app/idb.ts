@@ -33,9 +33,20 @@ export function idbGet(
   });
 }
 
-export function idbPut(db: IDBDatabase, key: string, value: CachedData): void {
-  const tx = db.transaction(IDB_STORE, "readwrite");
-  tx.objectStore(IDB_STORE).put(value, key);
+export function idbPut(
+  db: IDBDatabase,
+  key: string,
+  value: CachedData,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () =>
+      reject(tx.error ?? new DOMException("Transaction failed"));
+    tx.onabort = () =>
+      reject(tx.error ?? new DOMException("Transaction aborted"));
+  });
 }
 
 export function idbGetString(
@@ -55,14 +66,28 @@ export function idbPutString(
   db: IDBDatabase,
   key: string,
   value: string,
-): void {
-  const tx = db.transaction(IDB_STORE, "readwrite");
-  tx.objectStore(IDB_STORE).put(value, key);
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () =>
+      reject(tx.error ?? new DOMException("Transaction failed"));
+    tx.onabort = () =>
+      reject(tx.error ?? new DOMException("Transaction aborted"));
+  });
 }
 
-export function idbDelete(db: IDBDatabase, key: string): void {
-  const tx = db.transaction(IDB_STORE, "readwrite");
-  tx.objectStore(IDB_STORE).delete(key);
+export function idbDelete(db: IDBDatabase, key: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () =>
+      reject(tx.error ?? new DOMException("Transaction failed"));
+    tx.onabort = () =>
+      reject(tx.error ?? new DOMException("Transaction aborted"));
+  });
 }
 
 /** Get any value from IDB (used for tile cache entries). */
@@ -79,7 +104,18 @@ export function idbGetAny<T>(
 }
 
 /** Put any value into IDB (used for tile cache entries). */
-export function idbPutAny(db: IDBDatabase, key: string, value: unknown): void {
-  const tx = db.transaction(IDB_STORE, "readwrite");
-  tx.objectStore(IDB_STORE).put(value, key);
+export function idbPutAny(
+  db: IDBDatabase,
+  key: string,
+  value: unknown,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () =>
+      reject(tx.error ?? new DOMException("Transaction failed"));
+    tx.onabort = () =>
+      reject(tx.error ?? new DOMException("Transaction aborted"));
+  });
 }
