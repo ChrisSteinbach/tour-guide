@@ -51,8 +51,9 @@ let appState: AppState = {
   updateProgress: 0,
 };
 
-// Operational handle (not part of state machine)
+// Operational handles (not part of state machine)
 let stopWatcher: StopFn | null = null;
+let loadController = new AbortController();
 
 // ── Dispatch ─────────────────────────────────────────────────
 
@@ -97,13 +98,23 @@ function executeEffect(effect: Effect): void {
       sessionStorage.setItem("tour-guide-started", "1");
       break;
     case "loadData":
-      loadLanguageData(effect.lang);
+      loadController.abort();
+      loadController = new AbortController();
+      loadLanguageData(effect.lang, loadController.signal);
       break;
     case "loadMonolithic":
-      loadMonolithic(effect.lang, appState.loadGeneration);
+      loadMonolithic(
+        effect.lang,
+        appState.loadGeneration,
+        loadController.signal,
+      );
       break;
     case "loadTiles":
-      void loadTilesForPosition(effect.lang, appState.loadGeneration);
+      void loadTilesForPosition(
+        effect.lang,
+        appState.loadGeneration,
+        loadController.signal,
+      );
       break;
     case "cleanMonolithicCache":
       void cleanMonolithicCache(effect.lang);
@@ -308,7 +319,7 @@ function listenForSwUpdate(): void {
 
 // ── Data loading ─────────────────────────────────────────────
 
-function loadMonolithic(lang: Lang, gen: number): void {
+function loadMonolithic(lang: Lang, gen: number, signal: AbortSignal): void {
   let lastRenderTime = 0;
   let lastRenderedPct = -2;
   const onProgress = (fraction: number) => {
@@ -326,6 +337,7 @@ function loadMonolithic(lang: Lang, gen: number): void {
     `${import.meta.env.BASE_URL}triangulation-${lang}.bin`,
     `triangulation-v3-${lang}`,
     onProgress,
+    signal,
   )
     .then((q) => {
       if (gen !== appState.loadGeneration) return;
@@ -345,7 +357,11 @@ function loadMonolithic(lang: Lang, gen: number): void {
     });
 }
 
-async function loadTilesForPosition(lang: Lang, gen: number): Promise<void> {
+async function loadTilesForPosition(
+  lang: Lang,
+  gen: number,
+  signal: AbortSignal,
+): Promise<void> {
   if (gen !== appState.loadGeneration) return;
   if (!(appState.query instanceof TiledQuery) || !appState.position) return;
 
@@ -357,6 +373,7 @@ async function loadTilesForPosition(lang: Lang, gen: number): Promise<void> {
 
   const allTiles = [primary, ...adjacent];
   for (const id of allTiles) {
+    if (signal.aborted) return;
     if (tq.hasTile(id) || appState.loadingTiles.has(id)) continue;
     const entry = tq.getTileEntry(id);
     if (!entry) continue;
@@ -364,12 +381,13 @@ async function loadTilesForPosition(lang: Lang, gen: number): Promise<void> {
     const isPrimary = id === primary;
     appState.loadingTiles.add(id);
 
-    const loadOne = loadTile(import.meta.env.BASE_URL, lang, entry)
+    const loadOne = loadTile(import.meta.env.BASE_URL, lang, entry, signal)
       .then((tileQuery) => {
         if (gen !== appState.loadGeneration) return;
         dispatch({ type: "tileLoaded", id, tileQuery, gen });
       })
       .catch((err) => {
+        if (signal.aborted) return;
         // eslint-disable-next-line no-console
         console.error(`Failed to load tile ${id}:`, err);
       });
@@ -380,16 +398,17 @@ async function loadTilesForPosition(lang: Lang, gen: number): Promise<void> {
   }
 }
 
-function loadLanguageData(lang: Lang): void {
+function loadLanguageData(lang: Lang, signal: AbortSignal): void {
   const gen = appState.loadGeneration;
   const baseUrl = import.meta.env.BASE_URL;
 
-  loadTileIndex(baseUrl, lang)
+  loadTileIndex(baseUrl, lang, signal)
     .then((index) => {
       if (gen !== appState.loadGeneration) return;
       dispatch({ type: "tileIndexLoaded", index, lang, gen });
     })
     .catch((err) => {
+      if (signal.aborted) return;
       if (gen !== appState.loadGeneration) return;
       // eslint-disable-next-line no-console
       console.warn(

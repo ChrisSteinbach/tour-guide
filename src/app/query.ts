@@ -395,6 +395,7 @@ export async function loadQuery(
   url: string,
   cacheKey = "triangulation-v2",
   onProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
 ): Promise<NearestQuery> {
   // Try IDB for cached typed arrays (no parse, no deserialize)
   const t0 = performance.now();
@@ -419,6 +420,16 @@ export async function loadQuery(
   // First load: fetch binary → deserialize → cache
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 120_000);
+  // Abort the internal controller when the external signal fires
+  if (signal) {
+    if (signal.aborted) {
+      controller.abort();
+    } else {
+      signal.addEventListener("abort", () => controller.abort(), {
+        once: true,
+      });
+    }
+  }
   const buf = await fetchWithProgress(
     url,
     onProgress,

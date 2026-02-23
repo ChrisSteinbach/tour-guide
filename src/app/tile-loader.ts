@@ -198,6 +198,7 @@ interface CachedTileData {
 export async function loadTileIndex(
   baseUrl: string,
   lang: Lang,
+  signal?: AbortSignal,
 ): Promise<TileIndex | null> {
   const url = `${baseUrl}tiles/${lang}/index.json`;
   const cacheKey = `tile-index-v1-${lang}`;
@@ -205,7 +206,7 @@ export async function loadTileIndex(
   const db = typeof indexedDB !== "undefined" ? await idbOpen() : null;
 
   try {
-    const response = await fetch(url, { cache: "no-store" });
+    const response = await fetch(url, { cache: "no-store", signal });
     if (response.status === 404) {
       console.log("[tiles] No tile index found — falling back to monolithic");
       return null;
@@ -226,6 +227,8 @@ export async function loadTileIndex(
 
     return index;
   } catch (err) {
+    // Abort — don't fall back to cache, just propagate
+    if (signal?.aborted) throw err;
     // Network error — try IDB cache
     if (db) {
       const cached = await idbGetAny<string>(db, cacheKey);
@@ -248,6 +251,7 @@ export async function loadTile(
   baseUrl: string,
   lang: Lang,
   entry: TileEntry,
+  signal?: AbortSignal,
 ): Promise<NearestQuery> {
   const cacheKey = `tile-v1-${lang}-${entry.id}`;
   const db = typeof indexedDB !== "undefined" ? await idbOpen() : null;
@@ -273,7 +277,7 @@ export async function loadTile(
 
   // Fetch from network
   const url = `${baseUrl}tiles/${lang}/${entry.id}.bin`;
-  const response = await fetch(url);
+  const response = await fetch(url, signal ? { signal } : undefined);
   if (!response.ok) {
     throw new Error(
       `Failed to fetch tile ${entry.id}: HTTP ${response.status}`,
