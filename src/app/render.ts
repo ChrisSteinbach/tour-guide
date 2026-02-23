@@ -85,9 +85,7 @@ export function renderNearbyHeader(
   titleGroup.append(h1, subtitle);
 
   const headerControls = document.createElement("div");
-  headerControls.style.display = "flex";
-  headerControls.style.alignItems = "center";
-  headerControls.style.gap = "8px";
+  headerControls.className = "header-controls";
 
   if (onTogglePause) {
     const pauseBtn = document.createElement("button");

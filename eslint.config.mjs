@@ -55,6 +55,14 @@ export default tseslint.config(
     },
   },
 
+  // App entry point uses console for operational diagnostics
+  {
+    files: ["src/app/main.ts"],
+    rules: {
+      "no-console": "off",
+    },
+  },
+
   // Test file overrides
   {
     files: ["**/*.test.ts"],

@@ -145,7 +145,6 @@ function executeEffect(effect: Effect): void {
       void checkForUpdateBackground(effect.lang);
       break;
     case "log":
-      // eslint-disable-next-line no-console
       console.log(effect.message);
       break;
   }
@@ -346,13 +345,13 @@ function loadMonolithic(lang: Lang, gen: number, signal: AbortSignal): void {
         ...appState,
         query: { mode: "monolithic", query: q },
       };
-      // eslint-disable-next-line no-console
+
       console.log(`Loaded ${q.size} articles (${lang})`);
       void checkForUpdateBackground(lang);
     })
     .catch((err) => {
       if (gen !== appState.loadGeneration) return;
-      // eslint-disable-next-line no-console
+
       console.error(`Failed to load triangulation data (${lang}):`, err);
     })
     .finally(() => {
@@ -393,7 +392,7 @@ async function loadTilesForPosition(
       })
       .catch((err) => {
         if (signal.aborted) return;
-        // eslint-disable-next-line no-console
+
         console.error(`Failed to load tile ${id}:`, err);
       });
 
@@ -415,7 +414,7 @@ function loadLanguageData(lang: Lang, signal: AbortSignal): void {
     .catch((err) => {
       if (signal.aborted) return;
       if (gen !== appState.loadGeneration) return;
-      // eslint-disable-next-line no-console
+
       console.warn(
         "[tiles] Tile index failed, falling back to monolithic:",
         err,
@@ -441,7 +440,6 @@ async function startUpdateDownload(
     });
     dispatch({ type: "updateDownloaded", query: q, lang });
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.error("Update download failed:", err);
     dispatch({ type: "updateFailed" });
   }

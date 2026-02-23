@@ -20,7 +20,7 @@ export interface CachedData {
   triangleVertices: Uint32Array;
   triangleNeighbors: Uint32Array;
   articles: string[]; // titles — lighter for structured clone than objects
-  contentHash?: string;
+  contentTag?: string;
 }
 
 export function idbOpen(): Promise<IDBDatabase | null> {

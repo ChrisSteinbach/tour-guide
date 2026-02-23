@@ -280,9 +280,14 @@ async function fetchWithProgress(
   return response.arrayBuffer();
 }
 
-// ---------- Content hashing ----------
+// ---------- Content tag ----------
 
-async function hashBuffer(buf: ArrayBuffer): Promise<string> {
+/**
+ * Compute a short change-detection tag from a buffer.
+ * Truncates SHA-256 to 8 hex chars (32 bits) — enough for cache
+ * invalidation, not a cryptographic fingerprint.
+ */
+async function computeContentTag(buf: ArrayBuffer): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", buf);
   const bytes = new Uint8Array(digest);
   let hex = "";
@@ -305,8 +310,8 @@ export async function checkForUpdate(
     if (!db) return null;
 
     const cached = await idbGet(db, cacheKey);
-    if (!cached?.contentHash) {
-      console.log("[update] No cached contentHash — skipping freshness check");
+    if (!cached?.contentTag) {
+      console.log("[update] No cached contentTag — skipping freshness check");
       return null;
     }
 
@@ -317,10 +322,10 @@ export async function checkForUpdate(
       return null;
     }
 
-    console.log(`[update] Cached: ${cached.contentHash}`);
+    console.log(`[update] Cached: ${cached.contentTag}`);
     console.log(`[update] Server: ${serverHash}`);
 
-    if (serverHash === cached.contentHash) {
+    if (serverHash === cached.contentTag) {
       console.log("[update] Data is up to date");
       return null;
     }
@@ -354,7 +359,7 @@ export async function fetchUpdate(
   ).finally(() => clearTimeout(timeoutId));
 
   const { fd, articles } = deserializeBinary(buf);
-  const contentHash = await hashBuffer(buf);
+  const contentTag = await computeContentTag(buf);
 
   const db = typeof indexedDB !== "undefined" ? await idbOpen() : null;
   if (db) {
@@ -364,7 +369,7 @@ export async function fetchUpdate(
       triangleVertices: fd.triangleVertices,
       triangleNeighbors: fd.triangleNeighbors,
       articles: articles.map((a) => a.title),
-      contentHash,
+      contentTag,
     }).catch((err) => console.warn("[idb] Cache write failed:", err));
     idbDelete(db, `update-dismissed-${cacheKey}`).catch((err) =>
       console.warn("[idb] Cache delete failed:", err),
@@ -447,14 +452,14 @@ export async function loadQuery(
   );
 
   if (db) {
-    const contentHash = await hashBuffer(buf);
+    const contentTag = await computeContentTag(buf);
     idbPut(db, cacheKey, {
       vertexPoints: fd.vertexPoints,
       vertexTriangles: fd.vertexTriangles,
       triangleVertices: fd.triangleVertices,
       triangleNeighbors: fd.triangleNeighbors,
       articles: articles.map((a) => a.title),
-      contentHash,
+      contentTag,
     }).catch((err) => console.warn("[idb] Cache write failed:", err));
   }
 
