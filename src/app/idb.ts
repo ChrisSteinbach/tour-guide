@@ -1,4 +1,15 @@
 // IndexedDB helpers — shared by query.ts and tile-loader.ts
+//
+// Single object store with versioned key prefixes:
+//   triangulation-v3-{lang}                 main triangulation data
+//   update-dismissed-triangulation-v3-{lang} dismissed-update hash
+//   tile-index-v1-{lang}                    tile index JSON
+//   tile-v1-{lang}-{id}                     individual tile data
+//   tile-lru-v1-{lang}                      tile LRU eviction list
+//
+// Schema migration strategy: bump the version in the key prefix (e.g.
+// v3 → v4). Old keys are orphaned and ignored — no IDB version bump or
+// onupgradeneeded migration needed.
 
 export const IDB_NAME = "tour-guide";
 export const IDB_STORE = "cache";

@@ -99,6 +99,8 @@ Float32 vertices give sub-meter precision on Earth. Uint32 indices and typed arr
 
 Background freshness checks compare the server's `Last-Modified` header against the cached value. If newer data exists, a dismissible banner prompts the user to update.
 
+IDB uses a single object store with versioned key prefixes (e.g. `triangulation-v3-{lang}`, `tile-v1-{lang}-{id}`). Schema migration is handled by bumping the version in the prefix — old keys are orphaned and ignored, avoiding the need for `onupgradeneeded` migration logic. See `idb.ts` for the full key inventory.
+
 ### Nearest-Neighbor Query (`query.ts: NearestQuery`)
 
 The `NearestQuery` class wraps the flat Delaunay data and provides `findNearest(lat, lon, k)`:
