@@ -241,6 +241,44 @@ export class NearestQuery {
   }
 }
 
+// ---------- Streaming fetch ----------
+
+async function fetchWithProgress(
+  url: string,
+  onProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
+): Promise<ArrayBuffer> {
+  const response = await fetch(url, {
+    cache: "no-store",
+    ...(signal && { signal }),
+  });
+
+  const total = Number(response.headers.get("Content-Length") || 0);
+  if (onProgress && response.body && total > 0) {
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+    onProgress(0);
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.byteLength;
+      onProgress(Math.min(received / total, 1));
+    }
+    const result = new Uint8Array(received);
+    let offset = 0;
+    for (const chunk of chunks) {
+      result.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return result.buffer;
+  }
+
+  if (onProgress) onProgress(-1);
+  return response.arrayBuffer();
+}
+
 // ---------- Content hashing ----------
 
 async function hashBuffer(buf: ArrayBuffer): Promise<string> {
@@ -306,33 +344,13 @@ export async function fetchUpdate(
   serverHash: string,
   onProgress?: (fraction: number) => void,
 ): Promise<NearestQuery> {
-  const response = await fetch(url, { cache: "no-store" });
-
-  let buf: ArrayBuffer;
-  const total = Number(response.headers.get("Content-Length") || 0);
-  if (onProgress && response.body && total > 0) {
-    const reader = response.body.getReader();
-    const chunks: Uint8Array[] = [];
-    let received = 0;
-    onProgress(0);
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      received += value.byteLength;
-      onProgress(Math.min(received / total, 1));
-    }
-    const result = new Uint8Array(received);
-    let offset = 0;
-    for (const chunk of chunks) {
-      result.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-    buf = result.buffer;
-  } else {
-    if (onProgress) onProgress(-1);
-    buf = await response.arrayBuffer();
-  }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 120_000);
+  const buf = await fetchWithProgress(
+    url,
+    onProgress,
+    controller.signal,
+  ).finally(() => clearTimeout(timeoutId));
 
   const { fd, articles } = deserializeBinary(buf);
   const contentHash = await hashBuffer(buf);
@@ -401,58 +419,32 @@ export async function loadQuery(
   // First load: fetch binary → deserialize → cache
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 120_000);
-  try {
-    const response = await fetch(url, { signal: controller.signal });
+  const buf = await fetchWithProgress(
+    url,
+    onProgress,
+    controller.signal,
+  ).finally(() => clearTimeout(timeoutId));
 
-    let buf: ArrayBuffer;
-    const total = Number(response.headers.get("Content-Length") || 0);
-    if (onProgress && response.body && total > 0) {
-      const reader = response.body.getReader();
-      const chunks: Uint8Array[] = [];
-      let received = 0;
-      onProgress(0);
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        received += value.byteLength;
-        onProgress(Math.min(received / total, 1));
-      }
-      const result = new Uint8Array(received);
-      let offset = 0;
-      for (const chunk of chunks) {
-        result.set(chunk, offset);
-        offset += chunk.byteLength;
-      }
-      buf = result.buffer;
-    } else {
-      if (onProgress) onProgress(-1); // indeterminate
-      buf = await response.arrayBuffer();
-    }
+  const tFetch = performance.now();
+  const sizeMB = (buf.byteLength / (1024 * 1024)).toFixed(1);
+  console.log(`[perf] Fetched ${sizeMB} MB in ${(tFetch - t0).toFixed(0)}ms`);
 
-    const tFetch = performance.now();
-    const sizeMB = (buf.byteLength / (1024 * 1024)).toFixed(1);
-    console.log(`[perf] Fetched ${sizeMB} MB in ${(tFetch - t0).toFixed(0)}ms`);
+  const { fd, articles } = deserializeBinary(buf);
+  console.log(
+    `[perf] Deserialized in ${(performance.now() - tFetch).toFixed(0)}ms`,
+  );
 
-    const { fd, articles } = deserializeBinary(buf);
-    console.log(
-      `[perf] Deserialized in ${(performance.now() - tFetch).toFixed(0)}ms`,
-    );
-
-    if (db) {
-      const contentHash = await hashBuffer(buf);
-      idbPut(db, cacheKey, {
-        vertexPoints: fd.vertexPoints,
-        vertexTriangles: fd.vertexTriangles,
-        triangleVertices: fd.triangleVertices,
-        triangleNeighbors: fd.triangleNeighbors,
-        articles: articles.map((a) => a.title),
-        contentHash,
-      }).catch((err) => console.warn("[idb] Cache write failed:", err));
-    }
-
-    return new NearestQuery(fd, articles);
-  } finally {
-    clearTimeout(timeoutId);
+  if (db) {
+    const contentHash = await hashBuffer(buf);
+    idbPut(db, cacheKey, {
+      vertexPoints: fd.vertexPoints,
+      vertexTriangles: fd.vertexTriangles,
+      triangleVertices: fd.triangleVertices,
+      triangleNeighbors: fd.triangleNeighbors,
+      articles: articles.map((a) => a.title),
+      contentHash,
+    }).catch((err) => console.warn("[idb] Cache write failed:", err));
   }
+
+  return new NearestQuery(fd, articles);
 }
