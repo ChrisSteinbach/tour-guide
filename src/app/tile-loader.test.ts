@@ -1,4 +1,9 @@
-import { TiledQuery, updateLru, MAX_CACHED_TILES } from "./tile-loader";
+import {
+  TiledQuery,
+  updateLru,
+  MAX_CACHED_TILES,
+  loadTileIndex,
+} from "./tile-loader";
 import { NearestQuery, toFlatDelaunay } from "./query";
 import type { TileIndex, TileEntry } from "../tiles";
 import { GRID_DEG } from "../tiles";
@@ -325,5 +330,39 @@ describe("updateLru", () => {
     expect(updated.length).toBe(MAX_CACHED_TILES);
     expect(evict).toEqual(["t-0"]);
     expect(updated[updated.length - 1]).toBe("new-tile");
+  });
+});
+
+// ---------- loadTileIndex abort vs network error ----------
+
+describe("loadTileIndex", () => {
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("propagates abort instead of falling back to null", async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockRejectedValue(new DOMException("aborted", "AbortError"));
+
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      loadTileIndex("/base/", "en", controller.signal),
+    ).rejects.toThrow();
+  });
+
+  it("returns null on network error (graceful fallback)", async () => {
+    globalThis.fetch = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+
+    const result = await loadTileIndex("/base/", "en");
+    expect(result).toBeNull();
   });
 });

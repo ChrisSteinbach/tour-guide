@@ -159,4 +159,23 @@ describe("loadQuery", () => {
     const results = query.findNearest(90, 0);
     expect(results[0].title).toBe("Point +Z");
   });
+
+  it("rejects when signal is already aborted", async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockRejectedValue(new DOMException("aborted", "AbortError"));
+
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      loadQuery(
+        "http://test/triangulation.bin",
+        "test-key",
+        undefined,
+        controller.signal,
+      ),
+    ).rejects.toThrow();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
 });
