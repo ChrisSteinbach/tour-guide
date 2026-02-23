@@ -3,6 +3,54 @@ import { formatDistance } from "./format";
 import { SUPPORTED_LANGS, LANG_NAMES } from "../lang";
 import type { Lang } from "../lang";
 
+// ── Focus capture / restore ──────────────────────────────────
+
+type FocusInfo =
+  | { type: "langSelect" }
+  | { type: "pauseToggle" }
+  | { type: "showMore" }
+  | { type: "article"; title: string };
+
+function captureFocus(container: HTMLElement): FocusInfo | null {
+  const active = document.activeElement;
+  if (!active || !container.contains(active)) return null;
+
+  if (active.classList.contains("header-lang-select"))
+    return { type: "langSelect" };
+  if (active.classList.contains("pause-toggle")) return { type: "pauseToggle" };
+  if (active.classList.contains("show-more")) return { type: "showMore" };
+
+  const item = (active as HTMLElement).closest<HTMLElement>(".nearby-item");
+  if (item?.dataset.title)
+    return { type: "article", title: item.dataset.title };
+
+  return null;
+}
+
+function restoreFocus(container: HTMLElement, info: FocusInfo | null): void {
+  if (!info) return;
+
+  let target: HTMLElement | null = null;
+  switch (info.type) {
+    case "langSelect":
+      target = container.querySelector(".header-lang-select");
+      break;
+    case "pauseToggle":
+      target = container.querySelector(".pause-toggle");
+      break;
+    case "showMore":
+      target = container.querySelector(".show-more");
+      break;
+    case "article":
+      target =
+        Array.from(
+          container.querySelectorAll<HTMLElement>(".nearby-item"),
+        ).find((el) => el.dataset.title === info.title) ?? null;
+      break;
+  }
+  target?.focus();
+}
+
 /** Update only the distance badges in an already-rendered list. */
 export function updateNearbyDistances(
   container: HTMLElement,
@@ -98,6 +146,10 @@ export function renderNearbyList(
   paused?: boolean,
   onTogglePause?: () => void,
 ): void {
+  const isRerender = !!container.querySelector(".nearby-list");
+  const savedScrollY = isRerender ? window.scrollY : 0;
+  const savedFocus = isRerender ? captureFocus(container) : null;
+
   container.textContent = "";
 
   const header = renderNearbyHeader(
@@ -117,6 +169,7 @@ export function renderNearbyList(
     item.className = "nearby-item";
     item.setAttribute("role", "button");
     item.tabIndex = 0;
+    item.dataset.title = article.title;
     item.addEventListener("click", () => onSelectArticle(article));
     item.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
@@ -145,4 +198,9 @@ export function renderNearbyList(
 
   const showMoreBtn = renderShowMoreButton(nextCount, onShowMore);
   if (showMoreBtn) container.appendChild(showMoreBtn);
+
+  if (isRerender) {
+    window.scrollTo(0, savedScrollY);
+    restoreFocus(container, savedFocus);
+  }
 }

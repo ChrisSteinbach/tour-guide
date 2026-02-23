@@ -199,6 +199,161 @@ describe("renderNearbyList", () => {
       "old content",
     );
   });
+
+  it("sets data-title on each list item", () => {
+    const container = document.createElement("div");
+    renderNearbyList(
+      container,
+      makeArticles(2),
+      () => {},
+      "en",
+      () => {},
+    );
+    const items = container.querySelectorAll<HTMLElement>(".nearby-item");
+    expect(items[0].dataset.title).toBe("Article 0");
+    expect(items[1].dataset.title).toBe("Article 1");
+  });
+
+  it("restores scroll position on re-render", () => {
+    const container = document.createElement("div");
+    const args = [
+      container,
+      makeArticles(3),
+      () => {},
+      "en",
+      () => {},
+    ] as const;
+    renderNearbyList(...args);
+
+    Object.defineProperty(window, "scrollY", {
+      value: 250,
+      configurable: true,
+    });
+    const scrollToSpy = vi
+      .spyOn(window, "scrollTo")
+      .mockImplementation(() => {});
+
+    renderNearbyList(...args);
+    expect(scrollToSpy).toHaveBeenCalledWith(0, 250);
+
+    scrollToSpy.mockRestore();
+    Object.defineProperty(window, "scrollY", { value: 0, configurable: true });
+  });
+
+  it("does not restore scroll on first render", () => {
+    const container = document.createElement("div");
+    Object.defineProperty(window, "scrollY", {
+      value: 100,
+      configurable: true,
+    });
+    const scrollToSpy = vi
+      .spyOn(window, "scrollTo")
+      .mockImplementation(() => {});
+
+    renderNearbyList(
+      container,
+      makeArticles(2),
+      () => {},
+      "en",
+      () => {},
+    );
+    expect(scrollToSpy).not.toHaveBeenCalled();
+
+    scrollToSpy.mockRestore();
+    Object.defineProperty(window, "scrollY", { value: 0, configurable: true });
+  });
+
+  it("restores focus to language selector on re-render", () => {
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const args = [
+      container,
+      makeArticles(2),
+      () => {},
+      "en",
+      () => {},
+    ] as const;
+    renderNearbyList(...args);
+
+    const langSelect = container.querySelector<HTMLElement>(
+      ".header-lang-select",
+    )!;
+    langSelect.focus();
+    expect(document.activeElement).toBe(langSelect);
+
+    renderNearbyList(...args);
+    const newLangSelect = container.querySelector<HTMLElement>(
+      ".header-lang-select",
+    )!;
+    expect(document.activeElement).toBe(newLangSelect);
+
+    document.body.removeChild(container);
+    vi.restoreAllMocks();
+  });
+
+  it("restores focus to article item by title on re-render", () => {
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const args = [
+      container,
+      makeArticles(3),
+      () => {},
+      "en",
+      () => {},
+    ] as const;
+    renderNearbyList(...args);
+
+    const items = container.querySelectorAll<HTMLElement>(".nearby-item");
+    items[1].focus();
+    expect(document.activeElement).toBe(items[1]);
+
+    renderNearbyList(...args);
+    const newItems = container.querySelectorAll<HTMLElement>(".nearby-item");
+    expect(document.activeElement).toBe(newItems[1]);
+
+    document.body.removeChild(container);
+    vi.restoreAllMocks();
+  });
+
+  it("restores focus to pause button on re-render", () => {
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    renderNearbyList(
+      container,
+      makeArticles(2),
+      () => {},
+      "en",
+      () => {},
+      () => {},
+      20,
+      false,
+      () => {},
+    );
+
+    const pauseBtn = container.querySelector<HTMLElement>(".pause-toggle")!;
+    pauseBtn.focus();
+    expect(document.activeElement).toBe(pauseBtn);
+
+    renderNearbyList(
+      container,
+      makeArticles(2),
+      () => {},
+      "en",
+      () => {},
+      () => {},
+      20,
+      false,
+      () => {},
+    );
+    const newPauseBtn = container.querySelector<HTMLElement>(".pause-toggle")!;
+    expect(document.activeElement).toBe(newPauseBtn);
+
+    document.body.removeChild(container);
+    vi.restoreAllMocks();
+  });
 });
 
 // ── updateNearbyDistances ────────────────────────────────────
