@@ -87,7 +87,7 @@ export function findNearestTiled(
  * Adjacent tiles are those where the position is within EDGE_PROXIMITY_DEG of a boundary.
  */
 export function tilesForPosition(
-  index: TileIndex,
+  index: Map<string, TileEntry>,
   lat: number,
   lon: number,
 ): { primary: string; adjacent: string[] } {
@@ -147,20 +147,28 @@ export function tilesForPosition(
   }
 
   // Filter to tiles that exist in the index
-  const existing = adjacent.filter((id) => tileExistsInIndex(index, id));
+  const existing = adjacent.filter((id) => tileExistsInMap(index, id));
 
   return { primary, adjacent: existing };
 }
 
-export function tileExistsInIndex(index: TileIndex, id: string): boolean {
-  return index.tiles.some((t) => t.id === id);
+/** Build a Map<id, TileEntry> from a TileIndex for O(1) lookup. */
+export function buildTileMap(index: TileIndex): Map<string, TileEntry> {
+  return new Map(index.tiles.map((t) => [t.id, t]));
+}
+
+export function tileExistsInMap(
+  tileMap: Map<string, TileEntry>,
+  id: string,
+): boolean {
+  return tileMap.has(id);
 }
 
 export function getTileEntry(
-  index: TileIndex,
+  tileMap: Map<string, TileEntry>,
   id: string,
 ): TileEntry | undefined {
-  return index.tiles.find((t) => t.id === id);
+  return tileMap.get(id);
 }
 
 // ---------- Tile index loader ----------

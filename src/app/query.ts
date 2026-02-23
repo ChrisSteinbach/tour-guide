@@ -197,6 +197,7 @@ export class NearestQuery {
     // BFS expansion on Delaunay vertex neighbors for k > 1
     const visited = new Set<number>([nearestIdx]);
     const frontier = [nearestIdx];
+    let frontierHead = 0;
     const candidates: { idx: number; d: number }[] = [
       {
         idx: nearestIdx,
@@ -205,8 +206,8 @@ export class NearestQuery {
     ];
 
     const target = Math.max(k * 2, k + 6);
-    while (frontier.length > 0 && candidates.length < target) {
-      const current = frontier.shift()!;
+    while (frontierHead < frontier.length && candidates.length < target) {
+      const current = frontier[frontierHead++];
       for (const nIdx of flatNeighbors(this.fd, current)) {
         if (visited.has(nIdx)) continue;
         visited.add(nIdx);

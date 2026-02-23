@@ -369,9 +369,9 @@ async function loadTilesForPosition(
   if (gen !== appState.loadGeneration) return;
   if (appState.query.mode !== "tiled" || !appState.position) return;
 
-  const { index, tiles } = appState.query;
+  const { tileMap, tiles } = appState.query;
   const { primary, adjacent } = tilesForPosition(
-    index,
+    tileMap,
     appState.position.lat,
     appState.position.lon,
   );
@@ -380,7 +380,7 @@ async function loadTilesForPosition(
   for (const id of allTiles) {
     if (signal.aborted) return;
     if (tiles.has(id) || appState.loadingTiles.has(id)) continue;
-    const entry = getTileEntry(index, id);
+    const entry = getTileEntry(tileMap, id);
     if (!entry) continue;
 
     const isPrimary = id === primary;

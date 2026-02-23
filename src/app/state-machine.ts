@@ -4,8 +4,8 @@
 import type { NearbyArticle, UserPosition } from "./types";
 import type { LocationError } from "./location";
 import type { NearestQuery } from "./query";
-import { findNearestTiled } from "./tile-loader";
-import type { TileIndex } from "../tiles";
+import { findNearestTiled, buildTileMap } from "./tile-loader";
+import type { TileIndex, TileEntry } from "../tiles";
 import type { Lang } from "../lang";
 import { distanceMeters, distanceBetweenPositions } from "./format";
 import { mockArticles } from "./mock-data";
@@ -32,6 +32,7 @@ export type QueryState =
   | {
       mode: "tiled";
       index: TileIndex;
+      tileMap: Map<string, TileEntry>;
       tiles: ReadonlyMap<string, NearestQuery>;
     };
 
@@ -486,6 +487,7 @@ export function transition(state: AppState, event: Event): TransitionResult {
         const tiledQuery: QueryState = {
           mode: "tiled",
           index: event.index,
+          tileMap: buildTileMap(event.index),
           tiles: new Map(),
         };
         const effects: Effect[] = [

@@ -13,6 +13,7 @@ import type { NearbyArticle, UserPosition } from "./types";
 import type { LocationError } from "./location";
 import { NearestQuery, toFlatDelaunay } from "./query";
 import type { TileIndex } from "../tiles";
+import { buildTileMap } from "./tile-loader";
 import { mockArticles, mockPosition } from "./mock-data";
 import {
   toCartesian,
@@ -291,6 +292,7 @@ describe("useMockData event", () => {
     const tiledQuery: QueryState = {
       mode: "tiled",
       index,
+      tileMap: buildTileMap(index),
       tiles: new Map(),
     };
     const state = makeState({ query: tiledQuery });
@@ -366,6 +368,7 @@ describe("position event", () => {
     const tiledQuery: QueryState = {
       mode: "tiled",
       index,
+      tileMap: buildTileMap(index),
       tiles: new Map(),
     };
     const state = makeState({
@@ -908,6 +911,7 @@ describe("tileLoaded event", () => {
     const tiledQuery: QueryState = {
       mode: "tiled",
       index,
+      tileMap: buildTileMap(index),
       tiles: new Map(),
     };
     const state = makeState({
@@ -942,6 +946,7 @@ describe("tileLoaded event", () => {
     const tiledQuery: QueryState = {
       mode: "tiled",
       index,
+      tileMap: buildTileMap(index),
       tiles: new Map(),
     };
     const state = makeState({

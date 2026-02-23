@@ -1,8 +1,9 @@
 import {
   findNearestTiled,
   tilesForPosition,
-  tileExistsInIndex,
+  tileExistsInMap,
   getTileEntry,
+  buildTileMap,
   updateLru,
   MAX_CACHED_TILES,
   loadTileIndex,
@@ -63,6 +64,11 @@ function makeIndex(tileIds: string[]): TileIndex {
   };
 }
 
+/** Build a tile map from tile IDs (shorthand for tests). */
+function makeTileMap(tileIds: string[]): Map<string, TileEntry> {
+  return buildTileMap(makeIndex(tileIds));
+}
+
 // Well-spread articles for building valid convex hulls.
 // Need enough points so BFS in NearestQuery can expand to k results.
 const GLOBAL_ARTICLES = [
@@ -119,41 +125,41 @@ describe("findNearestTiled", () => {
 
 describe("tilesForPosition", () => {
   it("returns only primary when position is in center of tile", () => {
-    const index = makeIndex(["18-36"]);
+    const tileMap = makeTileMap(["18-36"]);
 
-    const { primary, adjacent } = tilesForPosition(index, 2.5, 2.5);
+    const { primary, adjacent } = tilesForPosition(tileMap, 2.5, 2.5);
     expect(primary).toBe("18-36");
     expect(adjacent).toEqual([]);
   });
 
   it("includes adjacent tiles when near south edge", () => {
-    const index = makeIndex(["18-36", "17-36"]);
+    const tileMap = makeTileMap(["18-36", "17-36"]);
 
-    const { primary, adjacent } = tilesForPosition(index, 0.5, 2.5);
+    const { primary, adjacent } = tilesForPosition(tileMap, 0.5, 2.5);
     expect(primary).toBe("18-36");
     expect(adjacent).toContain("17-36");
   });
 
   it("includes adjacent tiles when near north edge", () => {
-    const index = makeIndex(["18-36", "19-36"]);
+    const tileMap = makeTileMap(["18-36", "19-36"]);
 
-    const { primary, adjacent } = tilesForPosition(index, 4.5, 2.5);
+    const { primary, adjacent } = tilesForPosition(tileMap, 4.5, 2.5);
     expect(primary).toBe("18-36");
     expect(adjacent).toContain("19-36");
   });
 
   it("includes adjacent tiles when near west edge", () => {
-    const index = makeIndex(["18-36", "18-35"]);
+    const tileMap = makeTileMap(["18-36", "18-35"]);
 
-    const { primary, adjacent } = tilesForPosition(index, 2.5, 0.5);
+    const { primary, adjacent } = tilesForPosition(tileMap, 2.5, 0.5);
     expect(primary).toBe("18-36");
     expect(adjacent).toContain("18-35");
   });
 
   it("includes corner tiles when near corner", () => {
-    const index = makeIndex(["18-36", "17-36", "18-35", "17-35"]);
+    const tileMap = makeTileMap(["18-36", "17-36", "18-35", "17-35"]);
 
-    const { primary, adjacent } = tilesForPosition(index, 0.5, 0.5);
+    const { primary, adjacent } = tilesForPosition(tileMap, 0.5, 0.5);
     expect(primary).toBe("18-36");
     expect(adjacent).toContain("17-36");
     expect(adjacent).toContain("18-35");
@@ -161,41 +167,41 @@ describe("tilesForPosition", () => {
   });
 
   it("wraps longitude at date line (east)", () => {
-    const index = makeIndex(["18-71", "18-00"]);
+    const tileMap = makeTileMap(["18-71", "18-00"]);
 
-    const { primary, adjacent } = tilesForPosition(index, 2.5, 179.5);
+    const { primary, adjacent } = tilesForPosition(tileMap, 2.5, 179.5);
     expect(primary).toBe("18-71");
     expect(adjacent).toContain("18-00");
   });
 
   it("wraps longitude at date line (west)", () => {
-    const index = makeIndex(["18-00", "18-71"]);
+    const tileMap = makeTileMap(["18-00", "18-71"]);
 
-    const { primary, adjacent } = tilesForPosition(index, 2.5, -179.5);
+    const { primary, adjacent } = tilesForPosition(tileMap, 2.5, -179.5);
     expect(primary).toBe("18-00");
     expect(adjacent).toContain("18-71");
   });
 
   it("clamps latitude (no adjacent south below row 0)", () => {
-    const index = makeIndex(["00-36"]);
+    const tileMap = makeTileMap(["00-36"]);
 
-    const { primary, adjacent } = tilesForPosition(index, -89.5, 2.5);
+    const { primary, adjacent } = tilesForPosition(tileMap, -89.5, 2.5);
     expect(primary).toBe("00-36");
     expect(adjacent).toEqual([]);
   });
 
   it("clamps latitude (no adjacent north above max row)", () => {
-    const index = makeIndex(["35-36"]);
+    const tileMap = makeTileMap(["35-36"]);
 
-    const { primary, adjacent } = tilesForPosition(index, 89.5, 2.5);
+    const { primary, adjacent } = tilesForPosition(tileMap, 89.5, 2.5);
     expect(primary).toBe("35-36");
     expect(adjacent).toEqual([]);
   });
 
   it("excludes adjacent tiles not present in the index", () => {
-    const index = makeIndex(["18-36"]);
+    const tileMap = makeTileMap(["18-36"]);
 
-    const { primary, adjacent } = tilesForPosition(index, 0.5, 2.5);
+    const { primary, adjacent } = tilesForPosition(tileMap, 0.5, 2.5);
     expect(primary).toBe("18-36");
     expect(adjacent).toEqual([]);
   });
@@ -203,27 +209,27 @@ describe("tilesForPosition", () => {
 
 // ---------- Tile index helpers ----------
 
-describe("tileExistsInIndex", () => {
-  it("returns true for tiles in the index", () => {
-    const index = makeIndex(["18-36", "18-37"]);
-    expect(tileExistsInIndex(index, "18-36")).toBe(true);
+describe("tileExistsInMap", () => {
+  it("returns true for tiles in the map", () => {
+    const tileMap = makeTileMap(["18-36", "18-37"]);
+    expect(tileExistsInMap(tileMap, "18-36")).toBe(true);
   });
 
-  it("returns false for tiles not in the index", () => {
-    const index = makeIndex(["18-36"]);
-    expect(tileExistsInIndex(index, "99-99")).toBe(false);
+  it("returns false for tiles not in the map", () => {
+    const tileMap = makeTileMap(["18-36"]);
+    expect(tileExistsInMap(tileMap, "99-99")).toBe(false);
   });
 });
 
 describe("getTileEntry", () => {
   it("returns entry when tile exists", () => {
-    const index = makeIndex(["18-36"]);
-    expect(getTileEntry(index, "18-36")?.id).toBe("18-36");
+    const tileMap = makeTileMap(["18-36"]);
+    expect(getTileEntry(tileMap, "18-36")?.id).toBe("18-36");
   });
 
   it("returns undefined when tile does not exist", () => {
-    const index = makeIndex(["18-36"]);
-    expect(getTileEntry(index, "99-99")).toBeUndefined();
+    const tileMap = makeTileMap(["18-36"]);
+    expect(getTileEntry(tileMap, "99-99")).toBeUndefined();
   });
 });
 
