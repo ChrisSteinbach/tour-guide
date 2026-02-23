@@ -14,20 +14,14 @@ export function updateNearbyDistances(
   }
 }
 
-/** Build and replace the contents of `container` with a nearby-articles list. */
-export function renderNearbyList(
-  container: HTMLElement,
-  articles: NearbyArticle[],
-  onSelectArticle: (article: NearbyArticle) => void,
+/** Render the header bar with title, pause button, and language selector. */
+export function renderNearbyHeader(
+  articleCount: number,
   currentLang: Lang,
   onLangChange: (lang: Lang) => void,
-  onShowMore?: () => void,
-  nextCount?: number,
-  paused?: boolean,
+  paused: boolean,
   onTogglePause?: () => void,
-): void {
-  container.innerHTML = "";
-
+): HTMLElement {
   const header = document.createElement("header");
   header.className = "app-header";
 
@@ -38,7 +32,7 @@ export function renderNearbyList(
   const h1 = document.createElement("h1");
   h1.textContent = "WikiRadar";
   const subtitle = document.createElement("p");
-  const subtitleText = `${articles.length} nearby attraction${articles.length !== 1 ? "s" : ""}`;
+  const subtitleText = `${articleCount} nearby attraction${articleCount !== 1 ? "s" : ""}`;
   subtitle.textContent = paused ? `${subtitleText} · paused` : subtitleText;
   titleGroup.append(h1, subtitle);
 
@@ -76,6 +70,43 @@ export function renderNearbyList(
   headerControls.appendChild(langSelect);
   row.append(titleGroup, headerControls);
   header.appendChild(row);
+  return header;
+}
+
+/** Render a "Show N" button, or null if there's no next tier. */
+export function renderShowMoreButton(
+  nextCount: number | undefined,
+  onShowMore?: () => void,
+): HTMLElement | null {
+  if (!onShowMore || nextCount === undefined) return null;
+  const btn = document.createElement("button");
+  btn.className = "show-more";
+  btn.textContent = `Show ${nextCount}`;
+  btn.addEventListener("click", onShowMore);
+  return btn;
+}
+
+/** Build and replace the contents of `container` with a nearby-articles list. */
+export function renderNearbyList(
+  container: HTMLElement,
+  articles: NearbyArticle[],
+  onSelectArticle: (article: NearbyArticle) => void,
+  currentLang: Lang,
+  onLangChange: (lang: Lang) => void,
+  onShowMore?: () => void,
+  nextCount?: number,
+  paused?: boolean,
+  onTogglePause?: () => void,
+): void {
+  container.innerHTML = "";
+
+  const header = renderNearbyHeader(
+    articles.length,
+    currentLang,
+    onLangChange,
+    paused ?? false,
+    onTogglePause,
+  );
 
   const list = document.createElement("ul");
   list.className = "nearby-list";
@@ -112,11 +143,6 @@ export function renderNearbyList(
 
   container.append(header, list);
 
-  if (onShowMore && nextCount !== undefined) {
-    const btn = document.createElement("button");
-    btn.className = "show-more";
-    btn.textContent = `Show ${nextCount}`;
-    btn.addEventListener("click", onShowMore);
-    container.appendChild(btn);
-  }
+  const showMoreBtn = renderShowMoreButton(nextCount, onShowMore);
+  if (showMoreBtn) container.appendChild(showMoreBtn);
 }

@@ -369,10 +369,7 @@ describe("position event", () => {
     });
     expect(next.phase.phase).toBe("browsing");
     expect(next.position).toEqual(parisNearby);
-    const hasRender =
-      effectTypes(effects).includes("renderBrowsingList") ||
-      effectTypes(effects).includes("updateDistances");
-    expect(hasRender).toBe(true);
+    expect(effectTypes(effects)).toContain("updateDistances");
   });
 
   it("does not requery when moved less than 15m", () => {
