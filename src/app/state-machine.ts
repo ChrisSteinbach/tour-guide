@@ -100,7 +100,11 @@ export type Event =
   | { type: "useMockData"; mockPosition: UserPosition }
   | { type: "position"; pos: UserPosition }
   | { type: "gpsError"; error: LocationError }
-  | { type: "dataReady" }
+  | { type: "monolithicLoaded"; query: NearestQuery; lang: Lang; gen: number }
+  | { type: "monolithicFailed"; gen: number }
+  | { type: "tileLoadStarted"; id: string }
+  | { type: "updateProgress"; fraction: number }
+  | { type: "updateAvailable"; serverHash: string; lang: Lang }
   | {
       type: "tileIndexLoaded";
       index: TileIndex | null;
@@ -249,16 +253,77 @@ export function transition(state: AppState, event: Event): TransitionResult {
       return { next, effects: [...effects, { type: "render" }] };
     }
 
-    case "dataReady": {
-      if (state.phase.phase !== "downloading") {
+    case "monolithicLoaded": {
+      if (event.gen !== state.loadGeneration) {
         return { next: state, effects: [] };
       }
-      if (state.position) {
-        return enterBrowsing(state);
+      const next: AppState = {
+        ...state,
+        query: { mode: "monolithic", query: event.query },
+      };
+      const effects: Effect[] = [
+        { type: "checkForUpdate", lang: event.lang },
+        {
+          type: "log",
+          message: `Loaded ${event.query.size} articles (${event.lang})`,
+        },
+      ];
+      if (state.phase.phase === "downloading") {
+        if (next.position) {
+          const result = enterBrowsing(next);
+          return {
+            next: result.next,
+            effects: [...effects, ...result.effects],
+          };
+        }
+        return {
+          next: { ...next, phase: { phase: "locating" } },
+          effects: [...effects, { type: "render" }],
+        };
+      }
+      return { next, effects };
+    }
+
+    case "monolithicFailed": {
+      if (event.gen !== state.loadGeneration) {
+        return { next: state, effects: [] };
+      }
+      if (state.phase.phase === "downloading") {
+        if (state.position) {
+          return enterBrowsing(state);
+        }
+        return {
+          next: { ...state, phase: { phase: "locating" } },
+          effects: [{ type: "render" }],
+        };
+      }
+      return { next: state, effects: [] };
+    }
+
+    case "tileLoadStarted": {
+      const nextTiles = new Set(state.loadingTiles);
+      nextTiles.add(event.id);
+      return { next: { ...state, loadingTiles: nextTiles }, effects: [] };
+    }
+
+    case "updateProgress": {
+      const clamped = event.fraction < 0 ? 0 : event.fraction;
+      return {
+        next: { ...state, updateProgress: clamped },
+        effects: [{ type: "showUpdateBanner" }],
+      };
+    }
+
+    case "updateAvailable": {
+      if (state.currentLang !== event.lang) {
+        return { next: state, effects: [] };
       }
       return {
-        next: { ...state, phase: { phase: "locating" } },
-        effects: [{ type: "render" }],
+        next: {
+          ...state,
+          pendingUpdate: { serverHash: event.serverHash, lang: event.lang },
+        },
+        effects: [{ type: "showUpdateBanner" }],
       };
     }
 

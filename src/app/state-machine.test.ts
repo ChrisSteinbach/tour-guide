@@ -209,16 +209,106 @@ describe("start event", () => {
   });
 });
 
-// ── dataReady event (tour-guide-fed) ─────────────────────────
+// ── monolithicLoaded event ────────────────────────────────────
 
-describe("dataReady event", () => {
+describe("monolithicLoaded event", () => {
+  it("sets query and enters browsing from downloading when position known", () => {
+    const state = makeState({
+      phase: { phase: "downloading", progress: 0.5 },
+      position: paris,
+    });
+    const { next, effects } = transition(state, {
+      type: "monolithicLoaded",
+      query: sampleNearestQuery,
+      lang: "en",
+      gen: 0,
+    });
+    expect(next.phase.phase).toBe("browsing");
+    expect(next.query).toEqual({
+      mode: "monolithic",
+      query: sampleNearestQuery,
+    });
+    expect(effectTypes(effects)).toContain("renderBrowsingList");
+  });
+
+  it("sets query and enters locating from downloading when no position", () => {
+    const state = makeState({
+      phase: { phase: "downloading", progress: 0.5 },
+    });
+    const { next, effects } = transition(state, {
+      type: "monolithicLoaded",
+      query: sampleNearestQuery,
+      lang: "en",
+      gen: 0,
+    });
+    expect(next.phase.phase).toBe("locating");
+    expect(next.query).toEqual({
+      mode: "monolithic",
+      query: sampleNearestQuery,
+    });
+    expect(effectTypes(effects)).toContain("render");
+  });
+
+  it("emits checkForUpdate and log effects", () => {
+    const state = makeState({
+      phase: { phase: "downloading", progress: 0.5 },
+      position: paris,
+    });
+    const { effects } = transition(state, {
+      type: "monolithicLoaded",
+      query: sampleNearestQuery,
+      lang: "en",
+      gen: 0,
+    });
+    expect(effectTypes(effects)).toContain("checkForUpdate");
+    expect(effectTypes(effects)).toContain("log");
+  });
+
+  it("no-ops when gen does not match", () => {
+    const state = makeState({
+      phase: { phase: "downloading", progress: 0.5 },
+      loadGeneration: 2,
+    });
+    const { next, effects } = transition(state, {
+      type: "monolithicLoaded",
+      query: sampleNearestQuery,
+      lang: "en",
+      gen: 1,
+    });
+    expect(next).toBe(state);
+    expect(effects).toEqual([]);
+  });
+
+  it("sets query without phase change when not in downloading phase", () => {
+    const state = browsingState();
+    const { next, effects } = transition(state, {
+      type: "monolithicLoaded",
+      query: sampleNearestQuery,
+      lang: "en",
+      gen: 0,
+    });
+    expect(next.query).toEqual({
+      mode: "monolithic",
+      query: sampleNearestQuery,
+    });
+    expect(next.phase.phase).toBe("browsing");
+    expect(effectTypes(effects)).toContain("checkForUpdate");
+    expect(effectTypes(effects)).toContain("log");
+  });
+});
+
+// ── monolithicFailed event ────────────────────────────────────
+
+describe("monolithicFailed event", () => {
   it("enters browsing from downloading when position known", () => {
     const state = makeState({
       phase: { phase: "downloading", progress: 0.5 },
-      query: sampleQuery,
       position: paris,
     });
-    const { next, effects } = transition(state, { type: "dataReady" });
+    const { next, effects } = transition(state, {
+      type: "monolithicFailed",
+      gen: 0,
+    });
     expect(next.phase.phase).toBe("browsing");
     expect(effectTypes(effects)).toContain("renderBrowsingList");
   });
@@ -226,16 +316,98 @@ describe("dataReady event", () => {
   it("enters locating from downloading when no position", () => {
     const state = makeState({
       phase: { phase: "downloading", progress: 0.5 },
-      query: sampleQuery,
     });
-    const { next, effects } = transition(state, { type: "dataReady" });
+    const { next, effects } = transition(state, {
+      type: "monolithicFailed",
+      gen: 0,
+    });
     expect(next.phase.phase).toBe("locating");
     expect(effectTypes(effects)).toContain("render");
   });
 
+  it("no-ops when gen does not match", () => {
+    const state = makeState({
+      phase: { phase: "downloading", progress: 0.5 },
+      loadGeneration: 2,
+    });
+    const { next, effects } = transition(state, {
+      type: "monolithicFailed",
+      gen: 1,
+    });
+    expect(next).toBe(state);
+    expect(effects).toEqual([]);
+  });
+
   it("no-ops when not in downloading phase", () => {
     const state = makeState();
-    const { next, effects } = transition(state, { type: "dataReady" });
+    const { next, effects } = transition(state, {
+      type: "monolithicFailed",
+      gen: 0,
+    });
+    expect(next).toBe(state);
+    expect(effects).toEqual([]);
+  });
+});
+
+// ── tileLoadStarted event ─────────────────────────────────────
+
+describe("tileLoadStarted event", () => {
+  it("adds id to loadingTiles set", () => {
+    const state = makeState({ loadingTiles: new Set(["a"]) });
+    const { next, effects } = transition(state, {
+      type: "tileLoadStarted",
+      id: "b",
+    });
+    expect(next.loadingTiles.has("a")).toBe(true);
+    expect(next.loadingTiles.has("b")).toBe(true);
+    expect(effects).toEqual([]);
+  });
+});
+
+// ── updateProgress event ──────────────────────────────────────
+
+describe("updateProgress event", () => {
+  it("sets updateProgress and emits showUpdateBanner", () => {
+    const state = makeState({ updateDownloading: true });
+    const { next, effects } = transition(state, {
+      type: "updateProgress",
+      fraction: 0.5,
+    });
+    expect(next.updateProgress).toBe(0.5);
+    expect(effectTypes(effects)).toContain("showUpdateBanner");
+  });
+
+  it("clamps negative fraction to 0", () => {
+    const state = makeState({ updateDownloading: true });
+    const { next } = transition(state, {
+      type: "updateProgress",
+      fraction: -1,
+    });
+    expect(next.updateProgress).toBe(0);
+  });
+});
+
+// ── updateAvailable event ─────────────────────────────────────
+
+describe("updateAvailable event", () => {
+  it("sets pendingUpdate and emits showUpdateBanner", () => {
+    const state = makeState({ currentLang: "en" });
+    const { next, effects } = transition(state, {
+      type: "updateAvailable",
+      serverHash: "abc123",
+      lang: "en",
+    });
+    expect(next.pendingUpdate).toEqual({ serverHash: "abc123", lang: "en" });
+    expect(effectTypes(effects)).toContain("showUpdateBanner");
+  });
+
+  it("no-ops when lang does not match currentLang", () => {
+    const state = makeState({ currentLang: "sv" });
+    const { next, effects } = transition(state, {
+      type: "updateAvailable",
+      serverHash: "abc123",
+      lang: "en",
+    });
     expect(next).toBe(state);
     expect(effects).toEqual([]);
   });

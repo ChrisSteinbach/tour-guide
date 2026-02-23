@@ -340,23 +340,12 @@ function loadMonolithic(lang: Lang, gen: number, signal: AbortSignal): void {
     signal,
   )
     .then((q) => {
-      if (gen !== appState.loadGeneration) return;
-      appState = {
-        ...appState,
-        query: { mode: "monolithic", query: q },
-      };
-
-      console.log(`Loaded ${q.size} articles (${lang})`);
-      void checkForUpdateBackground(lang);
+      dispatch({ type: "monolithicLoaded", query: q, lang, gen });
     })
     .catch((err) => {
       if (gen !== appState.loadGeneration) return;
-
       console.error(`Failed to load triangulation data (${lang}):`, err);
-    })
-    .finally(() => {
-      if (gen !== appState.loadGeneration) return;
-      dispatch({ type: "dataReady" });
+      dispatch({ type: "monolithicFailed", gen });
     });
 }
 
@@ -383,7 +372,7 @@ async function loadTilesForPosition(
     if (!entry) continue;
 
     const isPrimary = id === primary;
-    appState.loadingTiles.add(id);
+    dispatch({ type: "tileLoadStarted", id });
 
     const loadOne = loadTile(import.meta.env.BASE_URL, lang, entry, signal)
       .then((tileQuery) => {
@@ -432,11 +421,7 @@ async function startUpdateDownload(
 
   try {
     const q = await fetchUpdate(url, cacheKey, serverHash, (fraction) => {
-      appState = {
-        ...appState,
-        updateProgress: fraction < 0 ? 0 : fraction,
-      };
-      renderUpdateBannerDOM();
+      dispatch({ type: "updateProgress", fraction });
     });
     dispatch({ type: "updateDownloaded", query: q, lang });
   } catch (err) {
@@ -449,12 +434,8 @@ async function checkForUpdateBackground(lang: Lang): Promise<void> {
   const cacheKey = `triangulation-v3-${lang}`;
   const shaUrl = `${import.meta.env.BASE_URL}triangulation-${lang}.sha`;
   const info = await checkForUpdate(shaUrl, cacheKey);
-  if (!info || appState.currentLang !== lang) return;
-  appState = {
-    ...appState,
-    pendingUpdate: { serverHash: info.serverHash, lang },
-  };
-  renderUpdateBannerDOM();
+  if (!info) return;
+  dispatch({ type: "updateAvailable", serverHash: info.serverHash, lang });
 }
 
 // ── Popstate handler ─────────────────────────────────────────
