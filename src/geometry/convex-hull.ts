@@ -55,23 +55,22 @@ export function orient3D(
 type HalfEdgeInfo = { faceIdx: number; edgePos: number };
 
 // Encode directed edge (a→b) as a single number: a * N + b
-// N must be > max vertex index. Set once per convexHull call.
-let _edgeMul = 0;
-
-function edgeKey(a: number, b: number): number {
-  return a * _edgeMul + b;
+// N must be > max vertex index.
+function edgeKey(a: number, b: number, mul: number): number {
+  return a * mul + b;
 }
 
 function registerFaceEdges(
   faces: (HullFace | null)[],
   halfEdges: Map<number, HalfEdgeInfo>,
   fi: number,
+  edgeMul: number,
 ) {
   const f = faces[fi]!;
   for (let e = 0; e < 3; e++) {
     const a = f.vertices[e];
     const b = f.vertices[(e + 1) % 3];
-    halfEdges.set(edgeKey(a, b), { faceIdx: fi, edgePos: e });
+    halfEdges.set(edgeKey(a, b, edgeMul), { faceIdx: fi, edgePos: e });
   }
 }
 
@@ -79,12 +78,13 @@ function removeFaceEdges(
   faces: (HullFace | null)[],
   halfEdges: Map<number, HalfEdgeInfo>,
   fi: number,
+  edgeMul: number,
 ) {
   const f = faces[fi]!;
   for (let e = 0; e < 3; e++) {
     const a = f.vertices[e];
     const b = f.vertices[(e + 1) % 3];
-    halfEdges.delete(edgeKey(a, b));
+    halfEdges.delete(edgeKey(a, b, edgeMul));
   }
 }
 
@@ -349,8 +349,8 @@ export function convexHull(points: Point3D[]): ConvexHull {
   // Validate on original points (clear error messages for degenerate input)
   const [i0, i1, i2, i3] = findInitialTetrahedron(points);
 
-  // Set up numeric edge key multiplier
-  _edgeMul = points.length;
+  // Numeric edge key multiplier: must be > max vertex index
+  const edgeMul = points.length;
 
   // Perturbed copy for orient3D tests; original points stored in output
   const pp = perturbPoints(points);
@@ -381,8 +381,9 @@ export function convexHull(points: Point3D[]): ConvexHull {
   const halfEdges = new Map<number, HalfEdgeInfo>();
 
   // Register initial faces and link adjacency via half-edge twins
-  for (let fi = 0; fi < 4; fi++) registerFaceEdges(faces, halfEdges, fi);
-  linkAllAdjacency(faces, halfEdges);
+  for (let fi = 0; fi < 4; fi++)
+    registerFaceEdges(faces, halfEdges, fi, edgeMul);
+  linkAllAdjacency(faces, halfEdges, edgeMul);
 
   // Spatial grid index for fast face lookup (resolution scales with √n)
   const gridRes = Math.max(
@@ -405,6 +406,7 @@ export function convexHull(points: Point3D[]): ConvexHull {
       hintFace,
       liveFaces,
       faceGrid,
+      edgeMul,
     );
     hintFace = result[0];
     liveFaces += result[1];
@@ -420,6 +422,7 @@ export function convexHull(points: Point3D[]): ConvexHull {
 function linkAllAdjacency(
   faces: (HullFace | null)[],
   halfEdges: Map<number, HalfEdgeInfo>,
+  edgeMul: number,
 ) {
   for (let fi = 0; fi < faces.length; fi++) {
     const f = faces[fi];
@@ -427,7 +430,7 @@ function linkAllAdjacency(
     for (let e = 0; e < 3; e++) {
       const a = f.vertices[e];
       const b = f.vertices[(e + 1) % 3];
-      const twin = halfEdges.get(edgeKey(b, a));
+      const twin = halfEdges.get(edgeKey(b, a, edgeMul));
       if (twin) {
         f.neighbor[e] = twin.faceIdx;
       }
@@ -449,6 +452,7 @@ function addPoint(
   hintFace: number,
   liveFaces: number,
   faceGrid: FaceGrid,
+  edgeMul: number,
 ): [number, number] {
   const p = points[pi];
 
@@ -542,7 +546,7 @@ function addPoint(
 
   // Delete visible faces
   for (const fi of visible) {
-    removeFaceEdges(faces, halfEdges, fi);
+    removeFaceEdges(faces, halfEdges, fi, edgeMul);
     faces[fi] = null;
   }
 
@@ -569,7 +573,7 @@ function addPoint(
 
     faces.push(newFace);
     newFaceIndices.push(newFi);
-    registerFaceEdges(faces, halfEdges, newFi);
+    registerFaceEdges(faces, halfEdges, newFi, edgeMul);
   }
 
   // Link new faces to each other via half-edge twin lookup (edges 1 and 2)
@@ -578,7 +582,7 @@ function addPoint(
     for (let e = 1; e < 3; e++) {
       const ea = f.vertices[e];
       const eb = f.vertices[(e + 1) % 3];
-      const twin = halfEdges.get(edgeKey(eb, ea));
+      const twin = halfEdges.get(edgeKey(eb, ea, edgeMul));
       if (twin) {
         f.neighbor[e] = twin.faceIdx;
         const tf = faces[twin.faceIdx]!;
