@@ -23,6 +23,14 @@ export default tseslint.config(
   {
     rules: {
       eqeqeq: ["error", "always"],
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "AssignmentExpression[left.property.name='innerHTML']",
+          message:
+            "Use textContent or createElement instead of innerHTML to prevent XSS.",
+        },
+      ],
       "no-console": "warn",
       "no-param-reassign": "error",
 

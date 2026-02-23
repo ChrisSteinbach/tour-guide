@@ -13,7 +13,7 @@ function renderStatusScreen(
   container: HTMLElement,
   content: HTMLElement[],
 ): void {
-  container.innerHTML = "";
+  container.textContent = "";
 
   const header = document.createElement("header");
   header.className = "app-header";

@@ -187,7 +187,7 @@ describe("renderNearbyList", () => {
 
   it("clears container before rendering", () => {
     const container = document.createElement("div");
-    container.innerHTML = "<p>old content</p>";
+    container.appendChild(document.createElement("p"));
     renderNearbyList(
       container,
       makeArticles(1),

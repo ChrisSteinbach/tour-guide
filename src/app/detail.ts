@@ -35,7 +35,7 @@ export function renderDetailLoading(
   article: NearbyArticle,
   onBack: () => void,
 ): void {
-  container.innerHTML = "";
+  container.textContent = "";
 
   const header = renderDetailHeader(article, onBack);
   const body = document.createElement("div");
@@ -54,7 +54,7 @@ export function renderDetailReady(
   summary: ArticleSummary,
   onBack: () => void,
 ): void {
-  container.innerHTML = "";
+  container.textContent = "";
 
   const header = renderDetailHeader(article, onBack);
   const content = document.createElement("div");
@@ -116,7 +116,7 @@ export function renderDetailError(
   onRetry: () => void,
   lang: Lang = "en",
 ): void {
-  container.innerHTML = "";
+  container.textContent = "";
 
   const header = renderDetailHeader(article, onBack);
   const body = document.createElement("div");

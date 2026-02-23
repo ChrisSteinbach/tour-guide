@@ -98,7 +98,7 @@ export function renderNearbyList(
   paused?: boolean,
   onTogglePause?: () => void,
 ): void {
-  container.innerHTML = "";
+  container.textContent = "";
 
   const header = renderNearbyHeader(
     articles.length,

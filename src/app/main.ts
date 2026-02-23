@@ -278,16 +278,22 @@ function renderAppUpdateBanner(): void {
   const banner = document.createElement("div");
   banner.id = "app-update-banner";
   banner.className = "update-banner";
-  banner.innerHTML = `
-    <span class="update-banner-text">App update available</span>
-    <div class="update-banner-actions">
-      <button class="update-banner-btn update-banner-accept">Reload</button>
-    </div>`;
-  banner
-    .querySelector(".update-banner-accept")!
-    .addEventListener("click", () => {
-      window.location.reload();
-    });
+  const text = document.createElement("span");
+  text.className = "update-banner-text";
+  text.textContent = "App update available";
+
+  const actions = document.createElement("div");
+  actions.className = "update-banner-actions";
+
+  const reloadBtn = document.createElement("button");
+  reloadBtn.className = "update-banner-btn update-banner-accept";
+  reloadBtn.textContent = "Reload";
+  reloadBtn.addEventListener("click", () => {
+    window.location.reload();
+  });
+
+  actions.appendChild(reloadBtn);
+  banner.append(text, actions);
   document.body.appendChild(banner);
 }
 
