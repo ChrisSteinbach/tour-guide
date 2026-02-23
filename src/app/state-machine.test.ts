@@ -5,13 +5,13 @@ import {
   NEARBY_TIERS,
   REQUERY_DISTANCE_M,
   type AppState,
+  type QueryState,
   type Phase,
   type Effect,
 } from "./state-machine";
 import type { NearbyArticle, UserPosition } from "./types";
 import type { LocationError } from "./location";
 import { NearestQuery, toFlatDelaunay } from "./query";
-import { TiledQuery } from "./tile-loader";
 import type { TileIndex } from "../tiles";
 import { mockArticles, mockPosition } from "./mock-data";
 import {
@@ -26,7 +26,7 @@ import {
 function makeState(overrides: Partial<AppState> = {}): AppState {
   return {
     phase: { phase: "welcome" },
-    query: null,
+    query: { mode: "none" },
     position: null,
     currentLang: "en",
     loadGeneration: 0,
@@ -56,7 +56,11 @@ function buildQuery(
   return new NearestQuery(fd, meta);
 }
 
-const sampleQuery = buildQuery(mockArticles);
+const sampleNearestQuery = buildQuery(mockArticles);
+const sampleQuery: QueryState = {
+  mode: "monolithic",
+  query: sampleNearestQuery,
+};
 
 function browsingState(
   overrides: Partial<AppState> & {
@@ -73,7 +77,11 @@ function browsingState(
     lastQueryPos,
     ...stateOverrides
   } = overrides;
-  const defaultArticles = sampleQuery.findNearest(paris.lat, paris.lon, 10);
+  const defaultArticles = sampleNearestQuery.findNearest(
+    paris.lat,
+    paris.lon,
+    10,
+  );
   return makeState({
     query: sampleQuery,
     position: paris,
@@ -127,7 +135,7 @@ describe("REQUERY_DISTANCE_M", () => {
 // ── getNearby ────────────────────────────────────────────────
 
 describe("getNearby", () => {
-  it("returns articles sorted by distance from query engine", () => {
+  it("returns articles sorted by distance from monolithic query", () => {
     const results = getNearby(sampleQuery, paris, 5);
     expect(results).toHaveLength(5);
     for (let i = 1; i < results.length; i++) {
@@ -137,8 +145,8 @@ describe("getNearby", () => {
     }
   });
 
-  it("falls back to mock articles when query is null", () => {
-    const results = getNearby(null, paris, 10);
+  it("falls back to mock articles when query mode is none", () => {
+    const results = getNearby({ mode: "none" }, paris, 10);
     expect(results.length).toBeGreaterThan(0);
     expect(results[0].title).toBeDefined();
     for (let i = 1; i < results.length; i++) {
@@ -259,7 +267,7 @@ describe("useMockData event", () => {
     expect(effectTypes(effects)).toContain("render");
   });
 
-  it("triggers loadTiles for TiledQuery", () => {
+  it("triggers loadTiles for tiled query", () => {
     const index: TileIndex = {
       version: 1,
       gridDeg: 5,
@@ -280,8 +288,12 @@ describe("useMockData event", () => {
         },
       ],
     };
-    const tq = new TiledQuery(index);
-    const state = makeState({ query: tq });
+    const tiledQuery: QueryState = {
+      mode: "tiled",
+      index,
+      tiles: new Map(),
+    };
+    const state = makeState({ query: tiledQuery });
     const { effects } = transition(state, {
       type: "useMockData",
       mockPosition,
@@ -330,7 +342,7 @@ describe("position event", () => {
     expect(effectTypes(effects)).toContain("renderBrowsingList");
   });
 
-  it("enters loadingTiles from locating when TiledQuery with no tiles", () => {
+  it("enters loadingTiles from locating when tiled query with no tiles", () => {
     const index: TileIndex = {
       version: 1,
       gridDeg: 5,
@@ -351,8 +363,15 @@ describe("position event", () => {
         },
       ],
     };
-    const tq = new TiledQuery(index);
-    const state = makeState({ phase: { phase: "locating" }, query: tq });
+    const tiledQuery: QueryState = {
+      mode: "tiled",
+      index,
+      tiles: new Map(),
+    };
+    const state = makeState({
+      phase: { phase: "locating" },
+      query: tiledQuery,
+    });
     const { next, effects } = transition(state, {
       type: "position",
       pos: paris,
@@ -395,7 +414,7 @@ describe("position event", () => {
   });
 
   it("triggers render in detail phase", () => {
-    const articles = sampleQuery.findNearest(paris.lat, paris.lon, 10);
+    const articles = sampleNearestQuery.findNearest(paris.lat, paris.lon, 10);
     const state = makeState({
       query: sampleQuery,
       position: paris,
@@ -602,7 +621,7 @@ describe("langChanged event", () => {
       lang: "sv",
     });
     expect(next.currentLang).toBe("sv");
-    expect(next.query).toBeNull();
+    expect(next.query.mode).toBe("none");
     expect(next.phase.phase).toBe("downloading");
     expect(next.loadGeneration).toBe(state.loadGeneration + 1);
     expect(next.downloadProgress).toBe(-1);
@@ -690,7 +709,7 @@ describe("updateDownloaded event", () => {
       query: newQuery,
       lang: "en",
     });
-    expect(next.query).toBe(newQuery);
+    expect(next.query).toEqual({ mode: "monolithic", query: newQuery });
     expect(next.pendingUpdate).toBeNull();
     expect(next.updateDownloading).toBe(false);
     expect(effectTypes(effects)).toContain("removeUpdateBanner");
@@ -704,7 +723,8 @@ describe("updateDownloaded event", () => {
       query: newQuery,
       lang: "en",
     });
-    expect(next.query).not.toBe(newQuery); // keeps old query
+    expect(next.query.mode).not.toBe("none"); // keeps old query
+    expect(next.query).toBe(state.query); // exact same reference
     expect(effectTypes(effects)).toContain("removeUpdateBanner");
   });
 });
@@ -793,7 +813,7 @@ describe("tileIndexLoaded event", () => {
     ],
   };
 
-  it("sets TiledQuery when index exists", () => {
+  it("sets tiled query state when index exists", () => {
     const state = makeState();
     const { next, effects } = transition(state, {
       type: "tileIndexLoaded",
@@ -801,7 +821,11 @@ describe("tileIndexLoaded event", () => {
       lang: "en",
       gen: 0,
     });
-    expect(next.query).toBeInstanceOf(TiledQuery);
+    expect(next.query.mode).toBe("tiled");
+    if (next.query.mode === "tiled") {
+      expect(next.query.index).toBe(tileIndex);
+      expect(next.query.tiles.size).toBe(0);
+    }
     expect(effectTypes(effects)).toContain("cleanMonolithicCache");
   });
 
@@ -824,7 +848,7 @@ describe("tileIndexLoaded event", () => {
       lang: "en",
       gen: 0,
     });
-    expect(next.query).toBeNull();
+    expect(next.query.mode).toBe("none");
     expect(effectTypes(effects)).toContain("loadMonolithic");
   });
 
@@ -881,10 +905,14 @@ describe("tileLoaded event", () => {
         },
       ],
     };
-    const tq = new TiledQuery(index);
+    const tiledQuery: QueryState = {
+      mode: "tiled",
+      index,
+      tiles: new Map(),
+    };
     const state = makeState({
       phase: { phase: "loadingTiles" },
-      query: tq,
+      query: tiledQuery,
       position: paris,
       loadingTiles: new Set(["27-36"]),
     });
@@ -897,6 +925,9 @@ describe("tileLoaded event", () => {
     });
     expect(next.phase.phase).toBe("browsing");
     expect(next.loadingTiles.has("27-36")).toBe(false);
+    if (next.query.mode === "tiled") {
+      expect(next.query.tiles.has("27-36")).toBe(true);
+    }
     expect(effectTypes(effects)).toContain("renderBrowsingList");
   });
 
@@ -908,9 +939,13 @@ describe("tileLoaded event", () => {
       generated: "2024-01-01",
       tiles: [],
     };
-    const tq = new TiledQuery(index);
+    const tiledQuery: QueryState = {
+      mode: "tiled",
+      index,
+      tiles: new Map(),
+    };
     const state = makeState({
-      query: tq,
+      query: tiledQuery,
       loadGeneration: 2,
     });
     const tileQuery = buildQuery(mockArticles.slice(0, 5));

@@ -4,7 +4,7 @@
 import type { NearbyArticle, UserPosition } from "./types";
 import type { LocationError } from "./location";
 import type { NearestQuery } from "./query";
-import { TiledQuery } from "./tile-loader";
+import { findNearestTiled } from "./tile-loader";
 import type { TileIndex } from "../tiles";
 import type { Lang } from "../lang";
 import { distanceMeters, distanceBetweenPositions } from "./format";
@@ -24,20 +24,33 @@ export function getNextTier(nearbyCount: number): number | undefined {
     : undefined;
 }
 
-type QueryEngine = NearestQuery | TiledQuery;
+// ── Query state (discriminated union — all query state is visible) ──
 
-/** Compute nearby articles using the current query engine. */
+export type QueryState =
+  | { mode: "none" }
+  | { mode: "monolithic"; query: NearestQuery }
+  | {
+      mode: "tiled";
+      index: TileIndex;
+      tiles: ReadonlyMap<string, NearestQuery>;
+    };
+
+/** Compute nearby articles using the current query state. */
 export function getNearby(
-  query: QueryEngine | null,
+  queryState: QueryState,
   pos: UserPosition,
   count: number,
 ): NearbyArticle[] {
-  if (query) {
-    return query.findNearest(pos.lat, pos.lon, count);
+  switch (queryState.mode) {
+    case "monolithic":
+      return queryState.query.findNearest(pos.lat, pos.lon, count);
+    case "tiled":
+      return findNearestTiled(queryState.tiles, pos.lat, pos.lon, count);
+    case "none":
+      return mockArticles
+        .map((a) => ({ ...a, distanceM: distanceMeters(pos, a) }))
+        .sort((a, b) => a.distanceM - b.distanceM);
   }
-  return mockArticles
-    .map((a) => ({ ...a, distanceM: distanceMeters(pos, a) }))
-    .sort((a, b) => a.distanceM - b.distanceM);
 }
 
 // ── Phase (discriminated union for the UI state) ─────────────
@@ -68,7 +81,7 @@ export type Phase =
 
 export interface AppState {
   phase: Phase;
-  query: NearestQuery | TiledQuery | null;
+  query: QueryState;
   position: UserPosition | null;
   currentLang: Lang;
   loadGeneration: number;
@@ -140,7 +153,7 @@ type TransitionResult = { next: AppState; effects: Effect[] };
 /** Enter browsing (or loadingTiles if tiled with no tiles yet). */
 function enterBrowsing(state: AppState): TransitionResult {
   if (!state.position) return { next: state, effects: [] };
-  if (state.query instanceof TiledQuery && state.query.loadedTileCount === 0) {
+  if (state.query.mode === "tiled" && state.query.tiles.size === 0) {
     return {
       next: { ...state, phase: { phase: "loadingTiles" } },
       effects: [{ type: "render" }],
@@ -202,7 +215,7 @@ export function transition(state: AppState, event: Event): TransitionResult {
       const effects: Effect[] = [{ type: "storeStarted" }];
       if (event.hasGeolocation) effects.push({ type: "startGps" });
 
-      if (state.query !== null) {
+      if (state.query.mode !== "none") {
         if (state.position) {
           const result = enterBrowsing(state);
           return {
@@ -374,7 +387,7 @@ export function transition(state: AppState, event: Event): TransitionResult {
       const hasStarted = state.phase.phase !== "welcome";
       const next: AppState = {
         ...state,
-        query: null,
+        query: { mode: "none" },
         currentLang: event.lang,
         loadGeneration: state.loadGeneration + 1,
         loadingTiles: new Set(),
@@ -424,7 +437,10 @@ export function transition(state: AppState, event: Event): TransitionResult {
       if (state.currentLang !== event.lang) {
         return { next, effects: [{ type: "removeUpdateBanner" }] };
       }
-      const withQuery = { ...next, query: event.query };
+      const withQuery: AppState = {
+        ...next,
+        query: { mode: "monolithic", query: event.query },
+      };
       const requery = forceRequery(withQuery);
       return {
         next: requery.next,
@@ -467,11 +483,15 @@ export function transition(state: AppState, event: Event): TransitionResult {
         return { next: state, effects: [] };
       }
       if (event.index) {
-        const tq = new TiledQuery(event.index);
+        const tiledQuery: QueryState = {
+          mode: "tiled",
+          index: event.index,
+          tiles: new Map(),
+        };
         const effects: Effect[] = [
           { type: "cleanMonolithicCache", lang: event.lang },
         ];
-        let next: AppState = { ...state, query: tq };
+        let next: AppState = { ...state, query: tiledQuery };
 
         // Handle dataReady inline — tiled data is "ready" once index loads
         if (next.phase.phase === "downloading") {
@@ -501,13 +521,18 @@ export function transition(state: AppState, event: Event): TransitionResult {
       if (event.gen !== state.loadGeneration) {
         return { next: state, effects: [] };
       }
-      if (!(state.query instanceof TiledQuery)) {
+      if (state.query.mode !== "tiled") {
         return { next: state, effects: [] };
       }
-      state.query.addTile(event.id, event.tileQuery);
+      const newTiles = new Map(state.query.tiles);
+      newTiles.set(event.id, event.tileQuery);
       const newLoadingTiles = new Set(state.loadingTiles);
       newLoadingTiles.delete(event.id);
-      const next: AppState = { ...state, loadingTiles: newLoadingTiles };
+      const next: AppState = {
+        ...state,
+        query: { ...state.query, tiles: newTiles },
+        loadingTiles: newLoadingTiles,
+      };
 
       if (state.phase.phase === "loadingTiles" && state.position) {
         return enterBrowsing(next);
@@ -532,7 +557,7 @@ function handleUseMockData(
   const effects: Effect[] = [{ type: "stopGps" }];
   const next: AppState = { ...state, position: event.mockPosition };
 
-  if (state.query === null) {
+  if (state.query.mode === "none") {
     return {
       next: {
         ...next,
@@ -542,7 +567,7 @@ function handleUseMockData(
     };
   }
 
-  if (state.query instanceof TiledQuery) {
+  if (state.query.mode === "tiled") {
     const result = enterBrowsing(next);
     return {
       next: result.next,
@@ -565,7 +590,7 @@ function handlePosition(
   const next: AppState = { ...state, position: event.pos };
   const effects: Effect[] = [];
 
-  if (state.query instanceof TiledQuery) {
+  if (state.query.mode === "tiled") {
     if (
       state.phase.phase === "locating" ||
       state.phase.phase === "loadingTiles" ||

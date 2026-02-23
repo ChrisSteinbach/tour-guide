@@ -1,5 +1,8 @@
 import {
-  TiledQuery,
+  findNearestTiled,
+  tilesForPosition,
+  tileExistsInIndex,
+  getTileEntry,
   updateLru,
   MAX_CACHED_TILES,
   loadTileIndex,
@@ -77,20 +80,15 @@ const GLOBAL_ARTICLES = [
   { title: "Norway", lat: 62, lon: 10 },
 ];
 
-// ---------- TiledQuery.findNearest ----------
+// ---------- findNearestTiled ----------
 
-describe("TiledQuery.findNearest", () => {
+describe("findNearestTiled", () => {
   it("returns results from a single tile", () => {
-    const index = makeIndex(["18-36"]);
-    const tq = new TiledQuery(index);
+    const tiles = new Map([["18-36", buildQuery(GLOBAL_ARTICLES)]]);
 
-    const q = buildQuery(GLOBAL_ARTICLES);
-    tq.addTile("18-36", q);
-
-    const results = tq.findNearest(0, 0, 3);
+    const results = findNearestTiled(tiles, 0, 0, 3);
     expect(results.length).toBe(3);
     expect(results[0].title).toBeDefined();
-    // Results should be sorted by distance
     for (let i = 1; i < results.length; i++) {
       expect(results[i].distanceM).toBeGreaterThanOrEqual(
         results[i - 1].distanceM,
@@ -99,179 +97,133 @@ describe("TiledQuery.findNearest", () => {
   });
 
   it("de-duplicates articles across tiles by title", () => {
-    const index = makeIndex(["18-36", "18-37"]);
-    const tq = new TiledQuery(index);
+    const tiles = new Map([
+      ["18-36", buildQuery(GLOBAL_ARTICLES)],
+      ["18-37", buildQuery(GLOBAL_ARTICLES)],
+    ]);
 
-    // Both tiles contain the same global articles (simulating buffer overlap)
-    const q1 = buildQuery(GLOBAL_ARTICLES);
-    const q2 = buildQuery(GLOBAL_ARTICLES);
-    tq.addTile("18-36", q1);
-    tq.addTile("18-37", q2);
-
-    const results = tq.findNearest(0, 0, 6);
+    const results = findNearestTiled(tiles, 0, 0, 6);
     const titles = results.map((r) => r.title);
-    // No duplicates
     expect(new Set(titles).size).toBe(titles.length);
   });
 
   it("returns empty array when no tiles loaded", () => {
-    const index = makeIndex(["18-36"]);
-    const tq = new TiledQuery(index);
+    const tiles = new Map<string, NearestQuery>();
 
-    const results = tq.findNearest(0, 0, 5);
+    const results = findNearestTiled(tiles, 0, 0, 5);
     expect(results).toEqual([]);
   });
 });
 
-// ---------- TiledQuery.tilesForPosition ----------
+// ---------- tilesForPosition ----------
 
-describe("TiledQuery.tilesForPosition", () => {
+describe("tilesForPosition", () => {
   it("returns only primary when position is in center of tile", () => {
-    // Center of tile 18-36 (lat=0-5, lon=0-5) → center ≈ 2.5, 2.5
     const index = makeIndex(["18-36"]);
-    const tq = new TiledQuery(index);
 
-    const { primary, adjacent } = tq.tilesForPosition(2.5, 2.5);
+    const { primary, adjacent } = tilesForPosition(index, 2.5, 2.5);
     expect(primary).toBe("18-36");
     expect(adjacent).toEqual([]);
   });
 
   it("includes adjacent tiles when near south edge", () => {
-    // Tile 18-36: south=0, north=5. Position at lat=0.5 is 0.5° from south edge
     const index = makeIndex(["18-36", "17-36"]);
-    const tq = new TiledQuery(index);
 
-    const { primary, adjacent } = tq.tilesForPosition(0.5, 2.5);
+    const { primary, adjacent } = tilesForPosition(index, 0.5, 2.5);
     expect(primary).toBe("18-36");
     expect(adjacent).toContain("17-36");
   });
 
   it("includes adjacent tiles when near north edge", () => {
-    // Tile 18-36: north=5. Position at lat=4.5 is 0.5° from north edge
     const index = makeIndex(["18-36", "19-36"]);
-    const tq = new TiledQuery(index);
 
-    const { primary, adjacent } = tq.tilesForPosition(4.5, 2.5);
+    const { primary, adjacent } = tilesForPosition(index, 4.5, 2.5);
     expect(primary).toBe("18-36");
     expect(adjacent).toContain("19-36");
   });
 
   it("includes adjacent tiles when near west edge", () => {
-    // Tile 18-36: west=0. Position at lon=0.5 is 0.5° from west edge
     const index = makeIndex(["18-36", "18-35"]);
-    const tq = new TiledQuery(index);
 
-    const { primary, adjacent } = tq.tilesForPosition(2.5, 0.5);
+    const { primary, adjacent } = tilesForPosition(index, 2.5, 0.5);
     expect(primary).toBe("18-36");
     expect(adjacent).toContain("18-35");
   });
 
   it("includes corner tiles when near corner", () => {
-    // Near south-west corner of tile 18-36: lat=0.5, lon=0.5
     const index = makeIndex(["18-36", "17-36", "18-35", "17-35"]);
-    const tq = new TiledQuery(index);
 
-    const { primary, adjacent } = tq.tilesForPosition(0.5, 0.5);
+    const { primary, adjacent } = tilesForPosition(index, 0.5, 0.5);
     expect(primary).toBe("18-36");
-    expect(adjacent).toContain("17-36"); // south
-    expect(adjacent).toContain("18-35"); // west
-    expect(adjacent).toContain("17-35"); // south-west corner
+    expect(adjacent).toContain("17-36");
+    expect(adjacent).toContain("18-35");
+    expect(adjacent).toContain("17-35");
   });
 
   it("wraps longitude at date line (east)", () => {
-    // Tile at col=71 (east=180). Position near east edge should wrap to col=0
     const index = makeIndex(["18-71", "18-00"]);
-    const tq = new TiledQuery(index);
 
-    // Tile 18-71: west=175, east=180. Position at lon=179.5 → near east edge
-    const { primary, adjacent } = tq.tilesForPosition(2.5, 179.5);
+    const { primary, adjacent } = tilesForPosition(index, 2.5, 179.5);
     expect(primary).toBe("18-71");
     expect(adjacent).toContain("18-00");
   });
 
   it("wraps longitude at date line (west)", () => {
-    // Tile at col=0 (west=-180). Position near west edge should wrap to col=71
     const index = makeIndex(["18-00", "18-71"]);
-    const tq = new TiledQuery(index);
 
-    // Tile 18-00: west=-180, east=-175. Position at lon=-179.5 → near west edge
-    const { primary, adjacent } = tq.tilesForPosition(2.5, -179.5);
+    const { primary, adjacent } = tilesForPosition(index, 2.5, -179.5);
     expect(primary).toBe("18-00");
     expect(adjacent).toContain("18-71");
   });
 
   it("clamps latitude (no adjacent south below row 0)", () => {
-    // Row 0: south=-90. Position near south edge has no row below
     const index = makeIndex(["00-36"]);
-    const tq = new TiledQuery(index);
 
-    const { primary, adjacent } = tq.tilesForPosition(-89.5, 2.5);
+    const { primary, adjacent } = tilesForPosition(index, -89.5, 2.5);
     expect(primary).toBe("00-36");
-    // No south neighbor (row -1 doesn't exist)
     expect(adjacent).toEqual([]);
   });
 
   it("clamps latitude (no adjacent north above max row)", () => {
-    // Row 35: north=90. Position near north edge has no row above
     const index = makeIndex(["35-36"]);
-    const tq = new TiledQuery(index);
 
-    const { primary, adjacent } = tq.tilesForPosition(89.5, 2.5);
+    const { primary, adjacent } = tilesForPosition(index, 89.5, 2.5);
     expect(primary).toBe("35-36");
     expect(adjacent).toEqual([]);
   });
 
   it("excludes adjacent tiles not present in the index", () => {
-    // Near south edge but south tile doesn't exist in index
     const index = makeIndex(["18-36"]);
-    const tq = new TiledQuery(index);
 
-    const { primary, adjacent } = tq.tilesForPosition(0.5, 2.5);
+    const { primary, adjacent } = tilesForPosition(index, 0.5, 2.5);
     expect(primary).toBe("18-36");
-    // 17-36 would be adjacent but isn't in the index
     expect(adjacent).toEqual([]);
   });
 });
 
-// ---------- TiledQuery metadata ----------
+// ---------- Tile index helpers ----------
 
-describe("TiledQuery metadata", () => {
-  it("reports size from index", () => {
-    const index = makeIndex(["18-36", "18-37", "19-36"]);
-    const tq = new TiledQuery(index);
-    expect(tq.size).toBe(3);
-  });
-
-  it("reports loaded tile count", () => {
+describe("tileExistsInIndex", () => {
+  it("returns true for tiles in the index", () => {
     const index = makeIndex(["18-36", "18-37"]);
-    const tq = new TiledQuery(index);
-    expect(tq.loadedTileCount).toBe(0);
-
-    tq.addTile("18-36", buildQuery(GLOBAL_ARTICLES));
-    expect(tq.loadedTileCount).toBe(1);
+    expect(tileExistsInIndex(index, "18-36")).toBe(true);
   });
 
-  it("hasTile returns correct state", () => {
+  it("returns false for tiles not in the index", () => {
     const index = makeIndex(["18-36"]);
-    const tq = new TiledQuery(index);
-    expect(tq.hasTile("18-36")).toBe(false);
-
-    tq.addTile("18-36", buildQuery(GLOBAL_ARTICLES));
-    expect(tq.hasTile("18-36")).toBe(true);
+    expect(tileExistsInIndex(index, "99-99")).toBe(false);
   });
+});
 
-  it("tileExists checks the index", () => {
-    const index = makeIndex(["18-36", "18-37"]);
-    const tq = new TiledQuery(index);
-    expect(tq.tileExists("18-36")).toBe(true);
-    expect(tq.tileExists("99-99")).toBe(false);
-  });
-
-  it("getTileEntry returns entry or undefined", () => {
+describe("getTileEntry", () => {
+  it("returns entry when tile exists", () => {
     const index = makeIndex(["18-36"]);
-    const tq = new TiledQuery(index);
-    expect(tq.getTileEntry("18-36")?.id).toBe("18-36");
-    expect(tq.getTileEntry("99-99")).toBeUndefined();
+    expect(getTileEntry(index, "18-36")?.id).toBe("18-36");
+  });
+
+  it("returns undefined when tile does not exist", () => {
+    const index = makeIndex(["18-36"]);
+    expect(getTileEntry(index, "99-99")).toBeUndefined();
   });
 });
 

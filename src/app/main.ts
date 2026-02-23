@@ -17,7 +17,8 @@ import {
 } from "./detail";
 import { loadQuery, checkForUpdate, fetchUpdate, dismissUpdate } from "./query";
 import {
-  TiledQuery,
+  tilesForPosition,
+  getTileEntry,
   loadTileIndex,
   loadTile,
   cleanMonolithicCache,
@@ -40,7 +41,7 @@ const app = document.getElementById("app")!;
 
 let appState: AppState = {
   phase: { phase: "welcome" },
-  query: null,
+  query: { mode: "none" },
   position: null,
   currentLang: getStoredLang(),
   loadGeneration: 0,
@@ -341,7 +342,10 @@ function loadMonolithic(lang: Lang, gen: number, signal: AbortSignal): void {
   )
     .then((q) => {
       if (gen !== appState.loadGeneration) return;
-      appState = { ...appState, query: q };
+      appState = {
+        ...appState,
+        query: { mode: "monolithic", query: q },
+      };
       // eslint-disable-next-line no-console
       console.log(`Loaded ${q.size} articles (${lang})`);
       void checkForUpdateBackground(lang);
@@ -363,10 +367,11 @@ async function loadTilesForPosition(
   signal: AbortSignal,
 ): Promise<void> {
   if (gen !== appState.loadGeneration) return;
-  if (!(appState.query instanceof TiledQuery) || !appState.position) return;
+  if (appState.query.mode !== "tiled" || !appState.position) return;
 
-  const tq = appState.query;
-  const { primary, adjacent } = tq.tilesForPosition(
+  const { index, tiles } = appState.query;
+  const { primary, adjacent } = tilesForPosition(
+    index,
     appState.position.lat,
     appState.position.lon,
   );
@@ -374,8 +379,8 @@ async function loadTilesForPosition(
   const allTiles = [primary, ...adjacent];
   for (const id of allTiles) {
     if (signal.aborted) return;
-    if (tq.hasTile(id) || appState.loadingTiles.has(id)) continue;
-    const entry = tq.getTileEntry(id);
+    if (tiles.has(id) || appState.loadingTiles.has(id)) continue;
+    const entry = getTileEntry(index, id);
     if (!entry) continue;
 
     const isPrimary = id === primary;

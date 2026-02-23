@@ -54,130 +54,113 @@ async function touchLru(
   );
 }
 
-// ---------- TiledQuery ----------
+// ---------- Tile query functions ----------
 
-export class TiledQuery {
-  private tiles = new Map<string, NearestQuery>();
-  private index: TileIndex;
+/** Query all loaded tiles, de-duplicate by title, sort by distance, take top-k. */
+export function findNearestTiled(
+  tiles: ReadonlyMap<string, NearestQuery>,
+  lat: number,
+  lon: number,
+  k = 1,
+): QueryResult[] {
+  if (tiles.size === 0) return [];
 
-  constructor(index: TileIndex) {
-    this.index = index;
-  }
+  const seen = new Set<string>();
+  const results: QueryResult[] = [];
 
-  /** Query all loaded tiles, de-duplicate by title, sort by distance, take top-k. */
-  findNearest(lat: number, lon: number, k = 1): QueryResult[] {
-    if (this.tiles.size === 0) return [];
-
-    const seen = new Set<string>();
-    const results: QueryResult[] = [];
-
-    for (const tileQuery of this.tiles.values()) {
-      // Ask each tile for k results — we'll merge and dedup
-      const tileResults = tileQuery.findNearest(lat, lon, k);
-      for (const r of tileResults) {
-        if (!seen.has(r.title)) {
-          seen.add(r.title);
-          results.push(r);
-        }
+  for (const tileQuery of tiles.values()) {
+    const tileResults = tileQuery.findNearest(lat, lon, k);
+    for (const r of tileResults) {
+      if (!seen.has(r.title)) {
+        seen.add(r.title);
+        results.push(r);
       }
     }
-
-    results.sort((a, b) => a.distanceM - b.distanceM);
-    return results.slice(0, k);
   }
 
-  /**
-   * Returns primary and adjacent tile IDs for a position.
-   * Adjacent tiles are those where the position is within EDGE_PROXIMITY_DEG of a boundary.
-   */
-  tilesForPosition(
-    lat: number,
-    lon: number,
-  ): { primary: string; adjacent: string[] } {
-    const { row, col } = tileFor(lat, lon);
-    const primary = tileId(row, col);
+  results.sort((a, b) => a.distanceM - b.distanceM);
+  return results.slice(0, k);
+}
 
-    const adjacent: string[] = [];
+/**
+ * Returns primary and adjacent tile IDs for a position.
+ * Adjacent tiles are those where the position is within EDGE_PROXIMITY_DEG of a boundary.
+ */
+export function tilesForPosition(
+  index: TileIndex,
+  lat: number,
+  lon: number,
+): { primary: string; adjacent: string[] } {
+  const { row, col } = tileFor(lat, lon);
+  const primary = tileId(row, col);
 
-    // Compute position within the tile
-    const tileSouth = row * GRID_DEG - 90;
-    const tileWest = col * GRID_DEG - 180;
-    const distFromSouth = lat - tileSouth;
-    const distFromNorth = tileSouth + GRID_DEG - lat;
-    const distFromWest = lon - tileWest;
-    const distFromEast = tileWest + GRID_DEG - lon;
+  const adjacent: string[] = [];
 
-    const nearSouth = distFromSouth < EDGE_PROXIMITY_DEG;
-    const nearNorth = distFromNorth < EDGE_PROXIMITY_DEG;
-    const nearWest = distFromWest < EDGE_PROXIMITY_DEG;
-    const nearEast = distFromEast < EDGE_PROXIMITY_DEG;
+  // Compute position within the tile
+  const tileSouth = row * GRID_DEG - 90;
+  const tileWest = col * GRID_DEG - 180;
+  const distFromSouth = lat - tileSouth;
+  const distFromNorth = tileSouth + GRID_DEG - lat;
+  const distFromWest = lon - tileWest;
+  const distFromEast = tileWest + GRID_DEG - lon;
 
-    const maxRow = Math.floor(180 / GRID_DEG) - 1; // 35
-    const maxCol = Math.floor(360 / GRID_DEG) - 1; // 71
+  const nearSouth = distFromSouth < EDGE_PROXIMITY_DEG;
+  const nearNorth = distFromNorth < EDGE_PROXIMITY_DEG;
+  const nearWest = distFromWest < EDGE_PROXIMITY_DEG;
+  const nearEast = distFromEast < EDGE_PROXIMITY_DEG;
 
-    // Cardinal neighbors
-    if (nearSouth && row > 0) {
-      adjacent.push(tileId(row - 1, col));
-    }
-    if (nearNorth && row < maxRow) {
-      adjacent.push(tileId(row + 1, col));
-    }
-    if (nearWest) {
-      const wCol = col > 0 ? col - 1 : maxCol; // wrap longitude
-      adjacent.push(tileId(row, wCol));
-    }
-    if (nearEast) {
-      const eCol = col < maxCol ? col + 1 : 0; // wrap longitude
-      adjacent.push(tileId(row, eCol));
-    }
+  const maxRow = Math.floor(180 / GRID_DEG) - 1; // 35
+  const maxCol = Math.floor(360 / GRID_DEG) - 1; // 71
 
-    // Corner neighbors
-    if (nearSouth && nearWest && row > 0) {
-      const wCol = col > 0 ? col - 1 : maxCol;
-      adjacent.push(tileId(row - 1, wCol));
-    }
-    if (nearSouth && nearEast && row > 0) {
-      const eCol = col < maxCol ? col + 1 : 0;
-      adjacent.push(tileId(row - 1, eCol));
-    }
-    if (nearNorth && nearWest && row < maxRow) {
-      const wCol = col > 0 ? col - 1 : maxCol;
-      adjacent.push(tileId(row + 1, wCol));
-    }
-    if (nearNorth && nearEast && row < maxRow) {
-      const eCol = col < maxCol ? col + 1 : 0;
-      adjacent.push(tileId(row + 1, eCol));
-    }
-
-    // Filter to tiles that exist in the index
-    const existing = adjacent.filter((id) => this.tileExists(id));
-
-    return { primary, adjacent: existing };
+  // Cardinal neighbors
+  if (nearSouth && row > 0) {
+    adjacent.push(tileId(row - 1, col));
+  }
+  if (nearNorth && row < maxRow) {
+    adjacent.push(tileId(row + 1, col));
+  }
+  if (nearWest) {
+    const wCol = col > 0 ? col - 1 : maxCol; // wrap longitude
+    adjacent.push(tileId(row, wCol));
+  }
+  if (nearEast) {
+    const eCol = col < maxCol ? col + 1 : 0; // wrap longitude
+    adjacent.push(tileId(row, eCol));
   }
 
-  hasTile(id: string): boolean {
-    return this.tiles.has(id);
+  // Corner neighbors
+  if (nearSouth && nearWest && row > 0) {
+    const wCol = col > 0 ? col - 1 : maxCol;
+    adjacent.push(tileId(row - 1, wCol));
+  }
+  if (nearSouth && nearEast && row > 0) {
+    const eCol = col < maxCol ? col + 1 : 0;
+    adjacent.push(tileId(row - 1, eCol));
+  }
+  if (nearNorth && nearWest && row < maxRow) {
+    const wCol = col > 0 ? col - 1 : maxCol;
+    adjacent.push(tileId(row + 1, wCol));
+  }
+  if (nearNorth && nearEast && row < maxRow) {
+    const eCol = col < maxCol ? col + 1 : 0;
+    adjacent.push(tileId(row + 1, eCol));
   }
 
-  addTile(id: string, query: NearestQuery): void {
-    this.tiles.set(id, query);
-  }
+  // Filter to tiles that exist in the index
+  const existing = adjacent.filter((id) => tileExistsInIndex(index, id));
 
-  tileExists(id: string): boolean {
-    return this.index.tiles.some((t) => t.id === id);
-  }
+  return { primary, adjacent: existing };
+}
 
-  getTileEntry(id: string): TileEntry | undefined {
-    return this.index.tiles.find((t) => t.id === id);
-  }
+export function tileExistsInIndex(index: TileIndex, id: string): boolean {
+  return index.tiles.some((t) => t.id === id);
+}
 
-  get size(): number {
-    return this.index.tiles.length;
-  }
-
-  get loadedTileCount(): number {
-    return this.tiles.size;
-  }
+export function getTileEntry(
+  index: TileIndex,
+  id: string,
+): TileEntry | undefined {
+  return index.tiles.find((t) => t.id === id);
 }
 
 // ---------- Tile index loader ----------
