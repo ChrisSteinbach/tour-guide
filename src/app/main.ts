@@ -228,26 +228,47 @@ function renderUpdateBannerDOM(): void {
     document.body.appendChild(banner);
   }
 
+  banner.textContent = "";
+
   if (appState.updateDownloading) {
     const pct = Math.round(appState.updateProgress * 100);
-    banner.innerHTML = `
-      <span class="update-banner-text">Downloading update\u2026 ${pct}%</span>
-      <div class="update-banner-progress">
-        <div class="update-banner-progress-fill" style="width:${pct}%"></div>
-      </div>`;
+
+    const text = document.createElement("span");
+    text.className = "update-banner-text";
+    text.textContent = `Downloading update\u2026 ${pct}%`;
+
+    const progress = document.createElement("div");
+    progress.className = "update-banner-progress";
+    const fill = document.createElement("div");
+    fill.className = "update-banner-progress-fill";
+    fill.style.width = `${pct}%`;
+    progress.appendChild(fill);
+
+    banner.append(text, progress);
   } else {
-    banner.innerHTML = `
-      <span class="update-banner-text">New article data available</span>
-      <div class="update-banner-actions">
-        <button class="update-banner-btn update-banner-accept">Update</button>
-        <button class="update-banner-btn update-banner-dismiss">Not now</button>
-      </div>`;
-    banner
-      .querySelector(".update-banner-accept")!
-      .addEventListener("click", () => dispatch({ type: "acceptUpdate" }));
-    banner
-      .querySelector(".update-banner-dismiss")!
-      .addEventListener("click", () => dispatch({ type: "declineUpdate" }));
+    const text = document.createElement("span");
+    text.className = "update-banner-text";
+    text.textContent = "New article data available";
+
+    const actions = document.createElement("div");
+    actions.className = "update-banner-actions";
+
+    const acceptBtn = document.createElement("button");
+    acceptBtn.className = "update-banner-btn update-banner-accept";
+    acceptBtn.textContent = "Update";
+    acceptBtn.addEventListener("click", () =>
+      dispatch({ type: "acceptUpdate" }),
+    );
+
+    const dismissBtn = document.createElement("button");
+    dismissBtn.className = "update-banner-btn update-banner-dismiss";
+    dismissBtn.textContent = "Not now";
+    dismissBtn.addEventListener("click", () =>
+      dispatch({ type: "declineUpdate" }),
+    );
+
+    actions.append(acceptBtn, dismissBtn);
+    banner.append(text, actions);
   }
 }
 
