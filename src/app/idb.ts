@@ -8,11 +8,20 @@
 //   tile-lru-v1-{lang}                      tile LRU eviction list
 //
 // Schema migration strategy: bump the version in the key prefix (e.g.
-// v3 → v4). Old keys are orphaned and ignored — no IDB version bump or
-// onupgradeneeded migration needed.
+// v3 → v4) and update CURRENT_KEY_PREFIXES below. Old keys are cleaned
+// up automatically on app startup by idbCleanupOldKeys.
 
 export const IDB_NAME = "tour-guide";
 export const IDB_STORE = "cache";
+
+/** Current key prefixes. Update when bumping a schema version. */
+export const CURRENT_KEY_PREFIXES = [
+  "triangulation-v3-",
+  "update-dismissed-triangulation-v3-",
+  "tile-index-v1-",
+  "tile-v1-",
+  "tile-lru-v1-",
+];
 
 export interface CachedData {
   vertexPoints: Float64Array;
@@ -129,4 +138,39 @@ export function idbPutAny(
     tx.onabort = () =>
       reject(tx.error ?? new DOMException("Transaction aborted"));
   });
+}
+
+/**
+ * Delete IDB keys that don't match any current version prefix.
+ * Returns the number of keys deleted.
+ */
+export async function idbCleanupOldKeys(db: IDBDatabase): Promise<number> {
+  const keys: IDBValidKey[] = await new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readonly");
+    const req = tx.objectStore(IDB_STORE).getAllKeys();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () =>
+      reject(req.error ?? new DOMException("getAllKeys failed"));
+  });
+
+  const orphaned = keys.filter(
+    (key) =>
+      typeof key === "string" &&
+      !CURRENT_KEY_PREFIXES.some((p) => key.startsWith(p)),
+  );
+
+  if (orphaned.length === 0) return 0;
+
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    const store = tx.objectStore(IDB_STORE);
+    for (const key of orphaned) store.delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () =>
+      reject(tx.error ?? new DOMException("Transaction failed"));
+    tx.onabort = () =>
+      reject(tx.error ?? new DOMException("Transaction aborted"));
+  });
+
+  return orphaned.length;
 }

@@ -16,6 +16,7 @@ import {
   renderDetailError,
 } from "./detail";
 import { loadQuery, checkForUpdate, fetchUpdate, dismissUpdate } from "./query";
+import { idbOpen, idbCleanupOldKeys } from "./idb";
 import {
   tilesForPosition,
   getTileEntry,
@@ -445,6 +446,18 @@ window.addEventListener("popstate", () => {
 });
 
 // ── Bootstrap ────────────────────────────────────────────────
+
+// Clean up orphaned IDB keys from old schema versions
+if (typeof indexedDB !== "undefined") {
+  void idbOpen().then((db) => {
+    if (!db) return;
+    idbCleanupOldKeys(db)
+      .then((n) => {
+        if (n > 0) console.log(`[idb] Cleaned up ${n} orphaned key(s)`);
+      })
+      .catch(() => {});
+  });
+}
 
 listenForSwUpdate();
 dispatch({ type: "langChanged", lang: appState.currentLang });
