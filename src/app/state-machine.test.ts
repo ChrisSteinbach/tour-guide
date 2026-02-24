@@ -158,11 +158,15 @@ describe("getNearby", () => {
     }
   });
 
-  it("threads lastTriangle through monolithic query state", () => {
-    const { query: updated } = getNearby(sampleQuery, paris, 5);
-    expect(updated.mode).toBe("monolithic");
-    if (updated.mode === "monolithic") {
-      expect(typeof updated.lastTriangle).toBe("number");
+  it("updates lastTriangle as position changes", () => {
+    // Query from Paris, then from a distant position — the walk hint should change
+    const { query: afterParis } = getNearby(sampleQuery, paris, 5);
+    const distant: UserPosition = { lat: -33.8688, lon: 151.2093 }; // Sydney
+    const { query: afterSydney } = getNearby(afterParis, distant, 5);
+    expect(afterParis.mode).toBe("monolithic");
+    expect(afterSydney.mode).toBe("monolithic");
+    if (afterParis.mode === "monolithic" && afterSydney.mode === "monolithic") {
+      expect(afterSydney.lastTriangle).not.toBe(afterParis.lastTriangle);
     }
   });
 });
