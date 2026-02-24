@@ -33,9 +33,6 @@ function makeState(overrides: Partial<AppState> = {}): AppState {
     loadGeneration: 0,
     loadingTiles: new Set(),
     downloadProgress: -1,
-    pendingUpdate: null,
-    updateDownloading: false,
-    updateProgress: 0,
     ...overrides,
   };
 }
@@ -58,10 +55,31 @@ function buildQuery(
 }
 
 const sampleNearestQuery = buildQuery(mockArticles);
+const sampleIndex: TileIndex = {
+  version: 1,
+  gridDeg: 5,
+  bufferDeg: 0.5,
+  generated: "2024-01-01",
+  tiles: [
+    {
+      id: "27-36",
+      row: 27,
+      col: 36,
+      south: 45,
+      north: 50,
+      west: 0,
+      east: 5,
+      articles: 100,
+      bytes: 1000,
+      hash: "abc",
+    },
+  ],
+};
 const sampleQuery: QueryState = {
-  mode: "monolithic",
-  query: sampleNearestQuery,
-  lastTriangle: sampleNearestQuery.defaultTriangle,
+  mode: "tiled",
+  index: sampleIndex,
+  tileMap: buildTileMap(sampleIndex),
+  tiles: new Map([["27-36", sampleNearestQuery]]),
 };
 
 function browsingState(
@@ -137,7 +155,7 @@ describe("REQUERY_DISTANCE_M", () => {
 // ── getNearby ────────────────────────────────────────────────
 
 describe("getNearby", () => {
-  it("returns articles sorted by distance from monolithic query", () => {
+  it("returns articles sorted by distance from tiled query", () => {
     const { articles } = getNearby(sampleQuery, paris, 5);
     expect(articles).toHaveLength(5);
     for (let i = 1; i < articles.length; i++) {
@@ -155,18 +173,6 @@ describe("getNearby", () => {
       expect(articles[i].distanceM).toBeGreaterThanOrEqual(
         articles[i - 1].distanceM,
       );
-    }
-  });
-
-  it("updates lastTriangle as position changes", () => {
-    // Query from Paris, then from a distant position — the walk hint should change
-    const { query: afterParis } = getNearby(sampleQuery, paris, 5);
-    const distant: UserPosition = { lat: -33.8688, lon: 151.2093 }; // Sydney
-    const { query: afterSydney } = getNearby(afterParis, distant, 5);
-    expect(afterParis.mode).toBe("monolithic");
-    expect(afterSydney.mode).toBe("monolithic");
-    if (afterParis.mode === "monolithic" && afterSydney.mode === "monolithic") {
-      expect(afterSydney.lastTriangle).not.toBe(afterParis.lastTriangle);
     }
   });
 });
@@ -222,148 +228,6 @@ describe("start event", () => {
   });
 });
 
-// ── monolithicLoaded event ────────────────────────────────────
-
-describe("monolithicLoaded event", () => {
-  it("sets query and enters browsing from downloading when position known", () => {
-    const state = makeState({
-      phase: { phase: "downloading", progress: 0.5 },
-      position: paris,
-    });
-    const { next, effects } = transition(state, {
-      type: "monolithicLoaded",
-      query: sampleNearestQuery,
-      lang: "en",
-      gen: 0,
-    });
-    expect(next.phase.phase).toBe("browsing");
-    expect(next.query.mode).toBe("monolithic");
-    if (next.query.mode === "monolithic") {
-      expect(next.query.query).toBe(sampleNearestQuery);
-      expect(next.query.lastTriangle).toBe(sampleNearestQuery.defaultTriangle);
-    }
-    expect(effectTypes(effects)).toContain("renderBrowsingList");
-  });
-
-  it("sets query and enters locating from downloading when no position", () => {
-    const state = makeState({
-      phase: { phase: "downloading", progress: 0.5 },
-    });
-    const { next, effects } = transition(state, {
-      type: "monolithicLoaded",
-      query: sampleNearestQuery,
-      lang: "en",
-      gen: 0,
-    });
-    expect(next.phase.phase).toBe("locating");
-    expect(next.query.mode).toBe("monolithic");
-    if (next.query.mode === "monolithic") {
-      expect(next.query.query).toBe(sampleNearestQuery);
-      expect(next.query.lastTriangle).toBe(sampleNearestQuery.defaultTriangle);
-    }
-    expect(effectTypes(effects)).toContain("render");
-  });
-
-  it("emits checkForUpdate and log effects", () => {
-    const state = makeState({
-      phase: { phase: "downloading", progress: 0.5 },
-      position: paris,
-    });
-    const { effects } = transition(state, {
-      type: "monolithicLoaded",
-      query: sampleNearestQuery,
-      lang: "en",
-      gen: 0,
-    });
-    expect(effectTypes(effects)).toContain("checkForUpdate");
-    expect(effectTypes(effects)).toContain("log");
-  });
-
-  it("no-ops when gen does not match", () => {
-    const state = makeState({
-      phase: { phase: "downloading", progress: 0.5 },
-      loadGeneration: 2,
-    });
-    const { next, effects } = transition(state, {
-      type: "monolithicLoaded",
-      query: sampleNearestQuery,
-      lang: "en",
-      gen: 1,
-    });
-    expect(next).toBe(state);
-    expect(effects).toEqual([]);
-  });
-
-  it("sets query without phase change when not in downloading phase", () => {
-    const state = browsingState();
-    const { next, effects } = transition(state, {
-      type: "monolithicLoaded",
-      query: sampleNearestQuery,
-      lang: "en",
-      gen: 0,
-    });
-    expect(next.query.mode).toBe("monolithic");
-    if (next.query.mode === "monolithic") {
-      expect(next.query.query).toBe(sampleNearestQuery);
-    }
-    expect(next.phase.phase).toBe("browsing");
-    expect(effectTypes(effects)).toContain("checkForUpdate");
-    expect(effectTypes(effects)).toContain("log");
-  });
-});
-
-// ── monolithicFailed event ────────────────────────────────────
-
-describe("monolithicFailed event", () => {
-  it("enters browsing from downloading when position known", () => {
-    const state = makeState({
-      phase: { phase: "downloading", progress: 0.5 },
-      position: paris,
-    });
-    const { next, effects } = transition(state, {
-      type: "monolithicFailed",
-      gen: 0,
-    });
-    expect(next.phase.phase).toBe("browsing");
-    expect(effectTypes(effects)).toContain("renderBrowsingList");
-  });
-
-  it("enters locating from downloading when no position", () => {
-    const state = makeState({
-      phase: { phase: "downloading", progress: 0.5 },
-    });
-    const { next, effects } = transition(state, {
-      type: "monolithicFailed",
-      gen: 0,
-    });
-    expect(next.phase.phase).toBe("locating");
-    expect(effectTypes(effects)).toContain("render");
-  });
-
-  it("no-ops when gen does not match", () => {
-    const state = makeState({
-      phase: { phase: "downloading", progress: 0.5 },
-      loadGeneration: 2,
-    });
-    const { next, effects } = transition(state, {
-      type: "monolithicFailed",
-      gen: 1,
-    });
-    expect(next).toBe(state);
-    expect(effects).toEqual([]);
-  });
-
-  it("no-ops when not in downloading phase", () => {
-    const state = makeState();
-    const { next, effects } = transition(state, {
-      type: "monolithicFailed",
-      gen: 0,
-    });
-    expect(next).toBe(state);
-    expect(effects).toEqual([]);
-  });
-});
-
 // ── tileLoadStarted event ─────────────────────────────────────
 
 describe("tileLoadStarted event", () => {
@@ -375,55 +239,6 @@ describe("tileLoadStarted event", () => {
     });
     expect(next.loadingTiles.has("a")).toBe(true);
     expect(next.loadingTiles.has("b")).toBe(true);
-    expect(effects).toEqual([]);
-  });
-});
-
-// ── updateProgress event ──────────────────────────────────────
-
-describe("updateProgress event", () => {
-  it("sets updateProgress and emits showUpdateBanner", () => {
-    const state = makeState({ updateDownloading: true });
-    const { next, effects } = transition(state, {
-      type: "updateProgress",
-      fraction: 0.5,
-    });
-    expect(next.updateProgress).toBe(0.5);
-    expect(effectTypes(effects)).toContain("showUpdateBanner");
-  });
-
-  it("clamps negative fraction to 0", () => {
-    const state = makeState({ updateDownloading: true });
-    const { next } = transition(state, {
-      type: "updateProgress",
-      fraction: -1,
-    });
-    expect(next.updateProgress).toBe(0);
-  });
-});
-
-// ── updateAvailable event ─────────────────────────────────────
-
-describe("updateAvailable event", () => {
-  it("sets pendingUpdate and emits showUpdateBanner", () => {
-    const state = makeState({ currentLang: "en" });
-    const { next, effects } = transition(state, {
-      type: "updateAvailable",
-      serverHash: "abc123",
-      lang: "en",
-    });
-    expect(next.pendingUpdate).toEqual({ serverHash: "abc123", lang: "en" });
-    expect(effectTypes(effects)).toContain("showUpdateBanner");
-  });
-
-  it("no-ops when lang does not match currentLang", () => {
-    const state = makeState({ currentLang: "sv" });
-    const { next, effects } = transition(state, {
-      type: "updateAvailable",
-      serverHash: "abc123",
-      lang: "en",
-    });
-    expect(next).toBe(state);
     expect(effects).toEqual([]);
   });
 });
@@ -819,10 +634,8 @@ describe("langChanged event", () => {
     expect(next.phase.phase).toBe("downloading");
     expect(next.loadGeneration).toBe(state.loadGeneration + 1);
     expect(next.downloadProgress).toBe(-1);
-    expect(next.pendingUpdate).toBeNull();
     expect(next.loadingTiles.size).toBe(0);
     expect(effectTypes(effects)).toContain("storeLang");
-    expect(effectTypes(effects)).toContain("removeUpdateBanner");
     expect(effectTypes(effects)).toContain("loadData");
     expect(effectTypes(effects)).toContain("render");
   });
@@ -837,108 +650,6 @@ describe("langChanged event", () => {
     expect(next.currentLang).toBe("sv");
     expect(effectTypes(effects)).not.toContain("render");
     expect(effectTypes(effects)).toContain("loadData");
-  });
-});
-
-// ── acceptUpdate event (tour-guide-e3f) ──────────────────────
-
-describe("acceptUpdate event", () => {
-  it("starts update download when pending", () => {
-    const state = makeState({
-      pendingUpdate: { serverHash: "abc123", lang: "en" },
-    });
-    const { next, effects } = transition(state, { type: "acceptUpdate" });
-    expect(next.updateDownloading).toBe(true);
-    expect(next.updateProgress).toBe(0);
-    expect(effectTypes(effects)).toContain("showUpdateBanner");
-    expect(effectTypes(effects)).toContain("loadUpdate");
-  });
-
-  it("no-ops without pending update", () => {
-    const state = makeState();
-    const { next, effects } = transition(state, { type: "acceptUpdate" });
-    expect(next).toBe(state);
-    expect(effects).toEqual([]);
-  });
-});
-
-// ── declineUpdate event (tour-guide-e3f) ─────────────────────
-
-describe("declineUpdate event", () => {
-  it("dismisses and removes banner", () => {
-    const state = makeState({
-      pendingUpdate: { serverHash: "abc123", lang: "en" },
-    });
-    const { next, effects } = transition(state, { type: "declineUpdate" });
-    expect(next.pendingUpdate).toBeNull();
-    expect(effectTypes(effects)).toContain("dismissUpdate");
-    expect(effectTypes(effects)).toContain("removeUpdateBanner");
-    const dismiss = effects.find((e) => e.type === "dismissUpdate") as Extract<
-      Effect,
-      { type: "dismissUpdate" }
-    >;
-    expect(dismiss.cacheKey).toBe("triangulation-v3-en");
-    expect(dismiss.serverHash).toBe("abc123");
-  });
-
-  it("no-ops without pending update", () => {
-    const state = makeState();
-    const { next, effects } = transition(state, { type: "declineUpdate" });
-    expect(next).toBe(state);
-    expect(effects).toEqual([]);
-  });
-});
-
-// ── updateDownloaded event (tour-guide-e3f) ──────────────────
-
-describe("updateDownloaded event", () => {
-  it("replaces query and requeries when lang matches", () => {
-    const newQuery = buildQuery(mockArticles.slice(0, 5));
-    const state = browsingState({
-      pendingUpdate: { serverHash: "abc", lang: "en" },
-      updateDownloading: true,
-    });
-    const { next, effects } = transition(state, {
-      type: "updateDownloaded",
-      query: newQuery,
-      lang: "en",
-    });
-    expect(next.query.mode).toBe("monolithic");
-    if (next.query.mode === "monolithic") {
-      expect(next.query.query).toBe(newQuery);
-      expect(next.query.lastTriangle).toBe(newQuery.defaultTriangle);
-    }
-    expect(next.pendingUpdate).toBeNull();
-    expect(next.updateDownloading).toBe(false);
-    expect(effectTypes(effects)).toContain("removeUpdateBanner");
-  });
-
-  it("ignores when lang changed during download", () => {
-    const newQuery = buildQuery(mockArticles.slice(0, 5));
-    const state = browsingState({ currentLang: "sv" });
-    const { next, effects } = transition(state, {
-      type: "updateDownloaded",
-      query: newQuery,
-      lang: "en",
-    });
-    expect(next.query.mode).not.toBe("none"); // keeps old query
-    expect(next.query).toBe(state.query); // exact same reference
-    expect(effectTypes(effects)).toContain("removeUpdateBanner");
-  });
-});
-
-// ── updateFailed event (tour-guide-e3f) ──────────────────────
-
-describe("updateFailed event", () => {
-  it("clears update state and removes banner", () => {
-    const state = makeState({
-      pendingUpdate: { serverHash: "abc", lang: "en" },
-      updateDownloading: true,
-    });
-    const { next, effects } = transition(state, { type: "updateFailed" });
-    expect(next.pendingUpdate).toBeNull();
-    expect(next.updateDownloading).toBe(false);
-    expect(effectTypes(effects)).toContain("removeUpdateBanner");
   });
 });
 
@@ -1013,7 +724,7 @@ describe("tileIndexLoaded event", () => {
 
   it("sets tiled query state when index exists", () => {
     const state = makeState();
-    const { next, effects } = transition(state, {
+    const { next } = transition(state, {
       type: "tileIndexLoaded",
       index: tileIndex,
       lang: "en",
@@ -1024,7 +735,6 @@ describe("tileIndexLoaded event", () => {
       expect(next.query.index).toBe(tileIndex);
       expect(next.query.tiles.size).toBe(0);
     }
-    expect(effectTypes(effects)).toContain("cleanMonolithicCache");
   });
 
   it("triggers loadTiles when position known", () => {
@@ -1038,7 +748,7 @@ describe("tileIndexLoaded event", () => {
     expect(effectTypes(effects)).toContain("loadTiles");
   });
 
-  it("falls back to monolithic when index is null", () => {
+  it("enters downloading with log when index is null", () => {
     const state = makeState();
     const { next, effects } = transition(state, {
       type: "tileIndexLoaded",
@@ -1047,7 +757,10 @@ describe("tileIndexLoaded event", () => {
       gen: 0,
     });
     expect(next.query.mode).toBe("none");
-    expect(effectTypes(effects)).toContain("loadMonolithic");
+    expect(next.phase.phase).toBe("downloading");
+    expect(effectTypes(effects)).toContain("log");
+    expect(effectTypes(effects)).toContain("render");
+    expect(effectTypes(effects)).not.toContain("loadMonolithic");
   });
 
   it("ignores stale generation", () => {

@@ -7,7 +7,7 @@ import {
   toCartesian,
 } from "../geometry";
 import type { Point3D } from "../geometry";
-import { NearestQuery, loadQuery, toFlatDelaunay } from "./query";
+import { NearestQuery, toFlatDelaunay } from "./query";
 
 // ---------- Fixtures ----------
 
@@ -132,71 +132,5 @@ describe("NearestQuery (Float32 round-trip)", () => {
     // B and C should be ~900–1000 m away, definitely not 0
     expect(results[1].distanceM).toBeGreaterThan(500);
     expect(results[2].distanceM).toBeGreaterThan(500);
-  });
-});
-
-describe("loadQuery", () => {
-  let originalFetch: typeof globalThis.fetch;
-
-  beforeEach(() => {
-    originalFetch = globalThis.fetch;
-  });
-
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
-  });
-
-  it("fetches binary and returns a working NearestQuery", async () => {
-    const points = OCTAHEDRON.map((o) => o.point);
-    const hull = convexHull(points);
-    const tri = buildTriangulation(hull);
-    const articles = OCTAHEDRON.map((o) => ({ title: o.title }));
-    const data = serialize(tri, articles);
-    const binData = serializeBinary(data);
-
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      headers: new Headers(),
-      body: null,
-      arrayBuffer: () => Promise.resolve(binData),
-    });
-
-    const query = await loadQuery("http://test/triangulation.bin");
-    expect(query.size).toBe(6);
-    const { results } = query.findNearest(90, 0);
-    expect(results[0].title).toBe("Point +Z");
-  });
-
-  it("rejects on non-ok HTTP response", async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 500,
-      headers: new Headers(),
-      body: null,
-      arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
-    });
-
-    await expect(loadQuery("http://test/triangulation.bin")).rejects.toThrow(
-      "HTTP 500",
-    );
-  });
-
-  it("rejects when signal is already aborted", async () => {
-    globalThis.fetch = vi
-      .fn()
-      .mockRejectedValue(new DOMException("aborted", "AbortError"));
-
-    const controller = new AbortController();
-    controller.abort();
-
-    await expect(
-      loadQuery(
-        "http://test/triangulation.bin",
-        "test-key",
-        undefined,
-        controller.signal,
-      ),
-    ).rejects.toThrow();
-    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 });

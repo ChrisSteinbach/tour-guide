@@ -1,12 +1,9 @@
 import {
-  idbPut,
-  idbPutString,
   idbPutAny,
   idbDelete,
   idbCleanupOldKeys,
   CURRENT_KEY_PREFIXES,
 } from "./idb";
-import type { CachedData } from "./idb";
 
 // ---------- Fake IDB ----------
 
@@ -44,47 +41,7 @@ function fakeDb(outcome: "complete" | "error" | "abort"): IDBDatabase {
   } as unknown as IDBDatabase;
 }
 
-const DUMMY_DATA: CachedData = {
-  vertexPoints: new Float64Array(0),
-  vertexTriangles: new Uint32Array(0),
-  triangleVertices: new Uint32Array(0),
-  triangleNeighbors: new Uint32Array(0),
-  articles: [],
-};
-
 // ---------- Tests ----------
-
-describe("idbPut", () => {
-  it("resolves on successful transaction", async () => {
-    await expect(
-      idbPut(fakeDb("complete"), "k", DUMMY_DATA),
-    ).resolves.toBeUndefined();
-  });
-
-  it("rejects with tx.error on onerror", async () => {
-    await expect(idbPut(fakeDb("error"), "k", DUMMY_DATA)).rejects.toThrow(
-      "Quota exceeded",
-    );
-  });
-
-  it("rejects on abort (quota scenario)", async () => {
-    await expect(idbPut(fakeDb("abort"), "k", DUMMY_DATA)).rejects.toThrow(
-      "Quota exceeded",
-    );
-  });
-});
-
-describe("idbPutString", () => {
-  it("resolves on success", async () => {
-    await expect(
-      idbPutString(fakeDb("complete"), "k", "v"),
-    ).resolves.toBeUndefined();
-  });
-
-  it("rejects on error", async () => {
-    await expect(idbPutString(fakeDb("error"), "k", "v")).rejects.toThrow();
-  });
-});
 
 describe("idbPutAny", () => {
   it("resolves on success", async () => {
@@ -156,7 +113,7 @@ function fakeDbWithKeys(keys: string[]): {
 describe("idbCleanupOldKeys", () => {
   it("deletes keys with old version prefixes", async () => {
     const { db, deleted } = fakeDbWithKeys([
-      "triangulation-v3-en", // current
+      "triangulation-v3-en", // old (monolithic removed)
       "triangulation-v2-en", // old
       "triangulation-v1-en", // old
       "tile-v1-en-42", // current
@@ -165,15 +122,19 @@ describe("idbCleanupOldKeys", () => {
 
     const count = await idbCleanupOldKeys(db);
 
-    expect(count).toBe(2);
-    expect(deleted).toEqual(["triangulation-v2-en", "triangulation-v1-en"]);
+    expect(count).toBe(3);
+    expect(deleted).toEqual([
+      "triangulation-v3-en",
+      "triangulation-v2-en",
+      "triangulation-v1-en",
+    ]);
   });
 
   it("returns 0 when all keys are current", async () => {
     const { db, deleted } = fakeDbWithKeys([
-      "triangulation-v3-en",
       "tile-index-v1-sv",
-      "update-dismissed-triangulation-v3-en",
+      "tile-v1-en-42",
+      "tile-lru-v1-en",
     ]);
 
     const count = await idbCleanupOldKeys(db);
@@ -210,13 +171,7 @@ describe("idbCleanupOldKeys", () => {
 
 describe("CURRENT_KEY_PREFIXES", () => {
   it("covers all documented key patterns", () => {
-    const testKeys = [
-      "triangulation-v3-en",
-      "update-dismissed-triangulation-v3-ja",
-      "tile-index-v1-sv",
-      "tile-v1-en-42",
-      "tile-lru-v1-en",
-    ];
+    const testKeys = ["tile-index-v1-sv", "tile-v1-en-42", "tile-lru-v1-en"];
 
     for (const key of testKeys) {
       const matched = CURRENT_KEY_PREFIXES.some((p) => key.startsWith(p));
