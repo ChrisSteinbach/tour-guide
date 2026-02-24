@@ -15,14 +15,12 @@ import {
   renderDetailReady,
   renderDetailError,
 } from "./detail";
-import { loadQuery, checkForUpdate, fetchUpdate, dismissUpdate } from "./query";
 import { idbOpen, idbCleanupOldKeys } from "./idb";
 import {
   tilesForPosition,
   getTileEntry,
   loadTileIndex,
   loadTile,
-  cleanMonolithicCache,
 } from "./tile-loader";
 import { DEFAULT_LANG, SUPPORTED_LANGS } from "../lang";
 import type { Lang } from "../lang";
@@ -104,22 +102,12 @@ function executeEffect(effect: Effect): void {
       loadController = new AbortController();
       loadLanguageData(effect.lang, loadController.signal);
       break;
-    case "loadMonolithic":
-      loadMonolithic(
-        effect.lang,
-        appState.loadGeneration,
-        loadController.signal,
-      );
-      break;
     case "loadTiles":
       void loadTilesForPosition(
         effect.lang,
         appState.loadGeneration,
         loadController.signal,
       );
-      break;
-    case "cleanMonolithicCache":
-      void cleanMonolithicCache(effect.lang);
       break;
     case "pushHistory":
       history.pushState({ view: "detail" }, "");
@@ -137,13 +125,8 @@ function executeEffect(effect: Effect): void {
       renderAppUpdateBanner();
       break;
     case "loadUpdate":
-      void startUpdateDownload(effect.serverHash, effect.lang);
-      break;
     case "dismissUpdate":
-      void dismissUpdate(effect.cacheKey, effect.serverHash);
-      break;
     case "checkForUpdate":
-      void checkForUpdateBackground(effect.lang);
       break;
     case "log":
       console.log(effect.message);
@@ -320,36 +303,6 @@ function listenForSwUpdate(): void {
 
 // ── Data loading ─────────────────────────────────────────────
 
-function loadMonolithic(lang: Lang, gen: number, signal: AbortSignal): void {
-  let lastRenderTime = 0;
-  let lastRenderedPct = -2;
-  const onProgress = (fraction: number) => {
-    if (gen !== appState.loadGeneration) return;
-    const pct = fraction < 0 ? -1 : Math.round(fraction * 100);
-    const now = performance.now();
-    if (pct !== lastRenderedPct && now - lastRenderTime >= 100) {
-      lastRenderedPct = pct;
-      lastRenderTime = now;
-      dispatch({ type: "downloadProgress", fraction, gen });
-    }
-  };
-
-  loadQuery(
-    `${import.meta.env.BASE_URL}triangulation-${lang}.bin`,
-    `triangulation-v3-${lang}`,
-    onProgress,
-    signal,
-  )
-    .then((q) => {
-      dispatch({ type: "monolithicLoaded", query: q, lang, gen });
-    })
-    .catch((err) => {
-      if (gen !== appState.loadGeneration) return;
-      console.error(`Failed to load triangulation data (${lang}):`, err);
-      dispatch({ type: "monolithicFailed", gen });
-    });
-}
-
 async function loadTilesForPosition(
   lang: Lang,
   gen: number,
@@ -405,38 +358,9 @@ function loadLanguageData(lang: Lang, signal: AbortSignal): void {
       if (signal.aborted) return;
       if (gen !== appState.loadGeneration) return;
 
-      console.warn(
-        "[tiles] Tile index failed, falling back to monolithic:",
-        err,
-      );
+      console.warn("[tiles] Tile index failed:", err);
       dispatch({ type: "tileIndexLoaded", index: null, lang, gen });
     });
-}
-
-async function startUpdateDownload(
-  serverHash: string,
-  lang: Lang,
-): Promise<void> {
-  const cacheKey = `triangulation-v3-${lang}`;
-  const url = `${import.meta.env.BASE_URL}triangulation-${lang}.bin`;
-
-  try {
-    const q = await fetchUpdate(url, cacheKey, serverHash, (fraction) => {
-      dispatch({ type: "updateProgress", fraction });
-    });
-    dispatch({ type: "updateDownloaded", query: q, lang });
-  } catch (err) {
-    console.error("Update download failed:", err);
-    dispatch({ type: "updateFailed" });
-  }
-}
-
-async function checkForUpdateBackground(lang: Lang): Promise<void> {
-  const cacheKey = `triangulation-v3-${lang}`;
-  const shaUrl = `${import.meta.env.BASE_URL}triangulation-${lang}.sha`;
-  const info = await checkForUpdate(shaUrl, cacheKey);
-  if (!info) return;
-  dispatch({ type: "updateAvailable", serverHash: info.serverHash, lang });
 }
 
 // ── Popstate handler ─────────────────────────────────────────
