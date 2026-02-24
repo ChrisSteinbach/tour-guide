@@ -173,25 +173,39 @@ export function toFlatDelaunay(data: TriangulationFile): FlatDelaunay {
 
 export class NearestQuery {
   readonly size: number;
+  readonly defaultTriangle: number;
   private fd: FlatDelaunay;
   private articles: ArticleMeta[];
-  private lastTriangle: number;
 
   constructor(fd: FlatDelaunay, articles: ArticleMeta[]) {
     this.fd = fd;
     this.articles = articles;
     this.size = fd.vertexTriangles.length;
-    this.lastTriangle = fd.vertexTriangles[0];
+    this.defaultTriangle = fd.vertexTriangles[0];
   }
 
-  findNearest(lat: number, lon: number, k = 1): QueryResult[] {
+  findNearest(
+    lat: number,
+    lon: number,
+    k = 1,
+    startTriangle?: number,
+  ): { results: QueryResult[]; lastTriangle: number } {
     const [qx, qy, qz] = toCartesian({ lat, lon });
-    const nearestIdx = flatFindNearest(this.fd, qx, qy, qz, this.lastTriangle);
+    const nearestIdx = flatFindNearest(
+      this.fd,
+      qx,
+      qy,
+      qz,
+      startTriangle ?? this.defaultTriangle,
+    );
 
-    this.lastTriangle = this.fd.vertexTriangles[nearestIdx];
+    const lastTriangle = this.fd.vertexTriangles[nearestIdx];
 
     if (k <= 1) {
-      return [this.buildResult(nearestIdx, qx, qy, qz)];
+      return {
+        results: [this.buildResult(nearestIdx, qx, qy, qz)],
+        lastTriangle,
+      };
     }
 
     // BFS expansion on Delaunay vertex neighbors for k > 1
@@ -220,9 +234,12 @@ export class NearestQuery {
     }
 
     candidates.sort((a, b) => a.d - b.d);
-    return candidates
-      .slice(0, k)
-      .map((c) => this.buildResult(c.idx, qx, qy, qz));
+    return {
+      results: candidates
+        .slice(0, k)
+        .map((c) => this.buildResult(c.idx, qx, qy, qz)),
+      lastTriangle,
+    };
   }
 
   private buildResult(

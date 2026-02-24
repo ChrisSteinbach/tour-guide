@@ -28,7 +28,7 @@ export function getNextTier(nearbyCount: number): number | undefined {
 
 export type QueryState =
   | { mode: "none" }
-  | { mode: "monolithic"; query: NearestQuery }
+  | { mode: "monolithic"; query: NearestQuery; lastTriangle: number }
   | {
       mode: "tiled";
       index: TileIndex;
@@ -41,16 +41,32 @@ export function getNearby(
   queryState: QueryState,
   pos: UserPosition,
   count: number,
-): NearbyArticle[] {
+): { articles: NearbyArticle[]; query: QueryState } {
   switch (queryState.mode) {
-    case "monolithic":
-      return queryState.query.findNearest(pos.lat, pos.lon, count);
+    case "monolithic": {
+      const { results, lastTriangle } = queryState.query.findNearest(
+        pos.lat,
+        pos.lon,
+        count,
+        queryState.lastTriangle,
+      );
+      return {
+        articles: results,
+        query: { ...queryState, lastTriangle },
+      };
+    }
     case "tiled":
-      return findNearestTiled(queryState.tiles, pos.lat, pos.lon, count);
+      return {
+        articles: findNearestTiled(queryState.tiles, pos.lat, pos.lon, count),
+        query: queryState,
+      };
     case "none":
-      return mockArticles
-        .map((a) => ({ ...a, distanceM: distanceMeters(pos, a) }))
-        .sort((a, b) => a.distanceM - b.distanceM);
+      return {
+        articles: mockArticles
+          .map((a) => ({ ...a, distanceM: distanceMeters(pos, a) }))
+          .sort((a, b) => a.distanceM - b.distanceM),
+        query: queryState,
+      };
   }
 }
 
@@ -168,10 +184,11 @@ function enterBrowsing(state: AppState): TransitionResult {
     state.phase.phase === "browsing"
       ? state.phase.nearbyCount
       : NEARBY_TIERS[0];
-  const articles = getNearby(state.query, state.position, count);
+  const { articles, query } = getNearby(state.query, state.position, count);
   return {
     next: {
       ...state,
+      query,
       phase: {
         phase: "browsing",
         articles,
@@ -190,12 +207,17 @@ function forceRequery(state: AppState): TransitionResult {
     return { next: state, effects: [] };
   }
   const p = state.phase;
-  const articles = getNearby(state.query, state.position, p.nearbyCount);
+  const { articles, query } = getNearby(
+    state.query,
+    state.position,
+    p.nearbyCount,
+  );
   const same =
     articles.length === p.articles.length &&
     articles.every((a, i) => a.title === p.articles[i].title);
   const next: AppState = {
     ...state,
+    query,
     phase: {
       phase: "browsing",
       nearbyCount: p.nearbyCount,
@@ -259,7 +281,11 @@ export function transition(state: AppState, event: Event): TransitionResult {
       }
       const next: AppState = {
         ...state,
-        query: { mode: "monolithic", query: event.query },
+        query: {
+          mode: "monolithic",
+          query: event.query,
+          lastTriangle: event.query.defaultTriangle,
+        },
       };
       const effects: Effect[] = [
         { type: "checkForUpdate", lang: event.lang },
@@ -353,10 +379,15 @@ export function transition(state: AppState, event: Event): TransitionResult {
       }
       const nextTier = getNextTier(state.phase.nearbyCount);
       if (nextTier === undefined) return { next: state, effects: [] };
-      const articles = getNearby(state.query, state.position, nextTier);
+      const { articles, query } = getNearby(
+        state.query,
+        state.position,
+        nextTier,
+      );
       return {
         next: {
           ...state,
+          query,
           phase: { ...state.phase, nearbyCount: nextTier, articles },
         },
         effects: [{ type: "renderBrowsingList" }],
@@ -369,7 +400,7 @@ export function transition(state: AppState, event: Event): TransitionResult {
       }
       const nowPaused = !state.phase.paused;
       if (!nowPaused && state.position) {
-        const articles = getNearby(
+        const { articles, query } = getNearby(
           state.query,
           state.position,
           state.phase.nearbyCount,
@@ -377,6 +408,7 @@ export function transition(state: AppState, event: Event): TransitionResult {
         return {
           next: {
             ...state,
+            query,
             phase: {
               ...state.phase,
               paused: false,
@@ -505,7 +537,11 @@ export function transition(state: AppState, event: Event): TransitionResult {
       }
       const withQuery: AppState = {
         ...next,
-        query: { mode: "monolithic", query: event.query },
+        query: {
+          mode: "monolithic",
+          query: event.query,
+          lastTriangle: event.query.defaultTriangle,
+        },
       };
       const requery = forceRequery(withQuery);
       return {

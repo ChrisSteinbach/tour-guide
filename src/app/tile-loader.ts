@@ -69,7 +69,7 @@ export function findNearestTiled(
   const results: QueryResult[] = [];
 
   for (const tileQuery of tiles.values()) {
-    const tileResults = tileQuery.findNearest(lat, lon, k);
+    const { results: tileResults } = tileQuery.findNearest(lat, lon, k);
     for (const r of tileResults) {
       if (!seen.has(r.title)) {
         seen.add(r.title);

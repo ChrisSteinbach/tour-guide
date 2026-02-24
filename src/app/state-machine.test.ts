@@ -61,6 +61,7 @@ const sampleNearestQuery = buildQuery(mockArticles);
 const sampleQuery: QueryState = {
   mode: "monolithic",
   query: sampleNearestQuery,
+  lastTriangle: sampleNearestQuery.defaultTriangle,
 };
 
 function browsingState(
@@ -78,7 +79,7 @@ function browsingState(
     lastQueryPos,
     ...stateOverrides
   } = overrides;
-  const defaultArticles = sampleNearestQuery.findNearest(
+  const { results: defaultArticles } = sampleNearestQuery.findNearest(
     paris.lat,
     paris.lon,
     10,
@@ -137,23 +138,31 @@ describe("REQUERY_DISTANCE_M", () => {
 
 describe("getNearby", () => {
   it("returns articles sorted by distance from monolithic query", () => {
-    const results = getNearby(sampleQuery, paris, 5);
-    expect(results).toHaveLength(5);
-    for (let i = 1; i < results.length; i++) {
-      expect(results[i].distanceM).toBeGreaterThanOrEqual(
-        results[i - 1].distanceM,
+    const { articles } = getNearby(sampleQuery, paris, 5);
+    expect(articles).toHaveLength(5);
+    for (let i = 1; i < articles.length; i++) {
+      expect(articles[i].distanceM).toBeGreaterThanOrEqual(
+        articles[i - 1].distanceM,
       );
     }
   });
 
   it("falls back to mock articles when query mode is none", () => {
-    const results = getNearby({ mode: "none" }, paris, 10);
-    expect(results.length).toBeGreaterThan(0);
-    expect(results[0].title).toBeDefined();
-    for (let i = 1; i < results.length; i++) {
-      expect(results[i].distanceM).toBeGreaterThanOrEqual(
-        results[i - 1].distanceM,
+    const { articles } = getNearby({ mode: "none" }, paris, 10);
+    expect(articles.length).toBeGreaterThan(0);
+    expect(articles[0].title).toBeDefined();
+    for (let i = 1; i < articles.length; i++) {
+      expect(articles[i].distanceM).toBeGreaterThanOrEqual(
+        articles[i - 1].distanceM,
       );
+    }
+  });
+
+  it("threads lastTriangle through monolithic query state", () => {
+    const { query: updated } = getNearby(sampleQuery, paris, 5);
+    expect(updated.mode).toBe("monolithic");
+    if (updated.mode === "monolithic") {
+      expect(typeof updated.lastTriangle).toBe("number");
     }
   });
 });
@@ -224,10 +233,11 @@ describe("monolithicLoaded event", () => {
       gen: 0,
     });
     expect(next.phase.phase).toBe("browsing");
-    expect(next.query).toEqual({
-      mode: "monolithic",
-      query: sampleNearestQuery,
-    });
+    expect(next.query.mode).toBe("monolithic");
+    if (next.query.mode === "monolithic") {
+      expect(next.query.query).toBe(sampleNearestQuery);
+      expect(next.query.lastTriangle).toBe(sampleNearestQuery.defaultTriangle);
+    }
     expect(effectTypes(effects)).toContain("renderBrowsingList");
   });
 
@@ -242,10 +252,11 @@ describe("monolithicLoaded event", () => {
       gen: 0,
     });
     expect(next.phase.phase).toBe("locating");
-    expect(next.query).toEqual({
-      mode: "monolithic",
-      query: sampleNearestQuery,
-    });
+    expect(next.query.mode).toBe("monolithic");
+    if (next.query.mode === "monolithic") {
+      expect(next.query.query).toBe(sampleNearestQuery);
+      expect(next.query.lastTriangle).toBe(sampleNearestQuery.defaultTriangle);
+    }
     expect(effectTypes(effects)).toContain("render");
   });
 
@@ -287,10 +298,10 @@ describe("monolithicLoaded event", () => {
       lang: "en",
       gen: 0,
     });
-    expect(next.query).toEqual({
-      mode: "monolithic",
-      query: sampleNearestQuery,
-    });
+    expect(next.query.mode).toBe("monolithic");
+    if (next.query.mode === "monolithic") {
+      expect(next.query.query).toBe(sampleNearestQuery);
+    }
     expect(next.phase.phase).toBe("browsing");
     expect(effectTypes(effects)).toContain("checkForUpdate");
     expect(effectTypes(effects)).toContain("log");
@@ -589,7 +600,11 @@ describe("position event", () => {
   });
 
   it("triggers render in detail phase", () => {
-    const articles = sampleNearestQuery.findNearest(paris.lat, paris.lon, 10);
+    const { results: articles } = sampleNearestQuery.findNearest(
+      paris.lat,
+      paris.lon,
+      10,
+    );
     const state = makeState({
       query: sampleQuery,
       position: paris,
@@ -884,7 +899,11 @@ describe("updateDownloaded event", () => {
       query: newQuery,
       lang: "en",
     });
-    expect(next.query).toEqual({ mode: "monolithic", query: newQuery });
+    expect(next.query.mode).toBe("monolithic");
+    if (next.query.mode === "monolithic") {
+      expect(next.query.query).toBe(newQuery);
+      expect(next.query.lastTriangle).toBe(newQuery.defaultTriangle);
+    }
     expect(next.pendingUpdate).toBeNull();
     expect(next.updateDownloading).toBe(false);
     expect(effectTypes(effects)).toContain("removeUpdateBanner");

@@ -47,20 +47,20 @@ describe("NearestQuery", () => {
   });
 
   it("finds nearest to axis point", () => {
-    const results = nq.findNearest(90, 0);
+    const { results } = nq.findNearest(90, 0);
     expect(results).toHaveLength(1);
     expect(results[0].title).toBe("Point +Z");
     expect(results[0].distanceM).toBeLessThan(1);
   });
 
   it("finds nearest to interpolated point", () => {
-    const results = nq.findNearest(5, 5);
+    const { results } = nq.findNearest(5, 5);
     expect(results).toHaveLength(1);
     expect(results[0].title).toBe("Point +X");
   });
 
   it("returns k=3 results sorted by ascending distance", () => {
-    const results = nq.findNearest(45, 0, 3);
+    const { results } = nq.findNearest(45, 0, 3);
     expect(results).toHaveLength(3);
     for (let i = 1; i < results.length; i++) {
       expect(results[i].distanceM).toBeGreaterThanOrEqual(
@@ -71,21 +71,27 @@ describe("NearestQuery", () => {
 
   it("computes distances in meters correctly", () => {
     const EARTH_RADIUS_M = 6_371_000;
-    const results = nq.findNearest(90, 0, 2);
+    const { results } = nq.findNearest(90, 0, 2);
     expect(results[0].distanceM).toBeLessThan(1);
     const expectedM = (Math.PI / 2) * EARTH_RADIUS_M;
     expect(Math.abs(results[1].distanceM - expectedM)).toBeLessThan(1000);
   });
 
   it("returns correct lat/lon in results", () => {
-    const results = nq.findNearest(90, 0);
+    const { results } = nq.findNearest(90, 0);
     expect(results[0].lat).toBeCloseTo(90, 0);
   });
 
   it("handles k larger than vertex count", () => {
-    const results = nq.findNearest(0, 0, 10);
+    const { results } = nq.findNearest(0, 0, 10);
     expect(results.length).toBeLessThanOrEqual(6);
     expect(results.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("returns lastTriangle for warm-start", () => {
+    const { lastTriangle } = nq.findNearest(90, 0);
+    expect(typeof lastTriangle).toBe("number");
+    expect(lastTriangle).toBeGreaterThanOrEqual(0);
   });
 });
 
@@ -120,7 +126,7 @@ describe("NearestQuery (Float32 round-trip)", () => {
     const query = new NearestQuery(fd, metas);
 
     // Query from point A's location — should find A as nearest, not B or C
-    const results = query.findNearest(59.308, 18.028, 3);
+    const { results } = query.findNearest(59.308, 18.028, 3);
     expect(results[0].title).toBe("A");
     expect(results[0].distanceM).toBeLessThan(10); // essentially 0 after quantisation
     // B and C should be ~900–1000 m away, definitely not 0
@@ -156,7 +162,7 @@ describe("loadQuery", () => {
 
     const query = await loadQuery("http://test/triangulation.bin");
     expect(query.size).toBe(6);
-    const results = query.findNearest(90, 0);
+    const { results } = query.findNearest(90, 0);
     expect(results[0].title).toBe("Point +Z");
   });
 
