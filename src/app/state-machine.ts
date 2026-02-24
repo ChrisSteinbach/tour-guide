@@ -91,9 +91,6 @@ export interface AppState {
   loadGeneration: number;
   loadingTiles: Set<string>;
   downloadProgress: number;
-  pendingUpdate: { serverHash: string; lang: Lang } | null;
-  updateDownloading: boolean;
-  updateProgress: number;
 }
 
 // ── Event (all inputs to the state machine) ──────────────────
@@ -104,8 +101,6 @@ export type Event =
   | { type: "position"; pos: UserPosition }
   | { type: "gpsError"; error: LocationError }
   | { type: "tileLoadStarted"; id: string }
-  | { type: "updateProgress"; fraction: number }
-  | { type: "updateAvailable"; serverHash: string; lang: Lang }
   | {
       type: "tileIndexLoaded";
       index: TileIndex | null;
@@ -118,15 +113,7 @@ export type Event =
   | { type: "selectArticle"; article: NearbyArticle }
   | { type: "back" }
   | { type: "showMore" }
-  | { type: "togglePause" }
-  | { type: "acceptUpdate" }
-  | { type: "declineUpdate" }
-  | {
-      type: "updateDownloaded";
-      query: NearestQuery;
-      lang: Lang;
-    }
-  | { type: "updateFailed" };
+  | { type: "togglePause" };
 
 // ── Effect (all side effects the machine requests) ───────────
 
@@ -140,14 +127,9 @@ export type Effect =
   | { type: "storeStarted" }
   | { type: "loadData"; lang: Lang }
   | { type: "loadTiles"; lang: Lang }
-  | { type: "loadUpdate"; serverHash: string; lang: Lang }
-  | { type: "dismissUpdate"; cacheKey: string; serverHash: string }
   | { type: "pushHistory" }
   | { type: "fetchSummary"; article: NearbyArticle }
-  | { type: "showUpdateBanner" }
-  | { type: "removeUpdateBanner" }
   | { type: "showAppUpdateBanner" }
-  | { type: "checkForUpdate"; lang: Lang }
   | { type: "log"; message: string };
 
 // ── Internal helpers ─────────────────────────────────────────
@@ -262,27 +244,6 @@ export function transition(state: AppState, event: Event): TransitionResult {
       const nextTiles = new Set(state.loadingTiles);
       nextTiles.add(event.id);
       return { next: { ...state, loadingTiles: nextTiles }, effects: [] };
-    }
-
-    case "updateProgress": {
-      const clamped = event.fraction < 0 ? 0 : event.fraction;
-      return {
-        next: { ...state, updateProgress: clamped },
-        effects: [{ type: "showUpdateBanner" }],
-      };
-    }
-
-    case "updateAvailable": {
-      if (state.currentLang !== event.lang) {
-        return { next: state, effects: [] };
-      }
-      return {
-        next: {
-          ...state,
-          pendingUpdate: { serverHash: event.serverHash, lang: event.lang },
-        },
-        effects: [{ type: "showUpdateBanner" }],
-      };
     }
 
     case "useMockData":
@@ -411,7 +372,6 @@ export function transition(state: AppState, event: Event): TransitionResult {
     case "langChanged": {
       const effects: Effect[] = [
         { type: "storeLang", lang: event.lang },
-        { type: "removeUpdateBanner" },
         { type: "loadData", lang: event.lang },
       ];
       const hasStarted = state.phase.phase !== "welcome";
@@ -422,60 +382,12 @@ export function transition(state: AppState, event: Event): TransitionResult {
         loadGeneration: state.loadGeneration + 1,
         loadingTiles: new Set(),
         downloadProgress: -1,
-        pendingUpdate: null,
-        updateDownloading: false,
-        updateProgress: 0,
         phase: hasStarted
           ? { phase: "downloading", progress: -1 }
           : state.phase,
       };
       if (hasStarted) effects.push({ type: "render" });
       return { next, effects };
-    }
-
-    case "acceptUpdate": {
-      if (!state.pendingUpdate) return { next: state, effects: [] };
-      const { serverHash, lang } = state.pendingUpdate;
-      return {
-        next: { ...state, updateDownloading: true, updateProgress: 0 },
-        effects: [
-          { type: "showUpdateBanner" },
-          { type: "loadUpdate", serverHash, lang },
-        ],
-      };
-    }
-
-    case "declineUpdate": {
-      if (!state.pendingUpdate) return { next: state, effects: [] };
-      const { serverHash, lang } = state.pendingUpdate;
-      const cacheKey = `triangulation-v3-${lang}`;
-      return {
-        next: { ...state, pendingUpdate: null },
-        effects: [
-          { type: "dismissUpdate", cacheKey, serverHash },
-          { type: "removeUpdateBanner" },
-        ],
-      };
-    }
-
-    case "updateDownloaded": {
-      const next: AppState = {
-        ...state,
-        pendingUpdate: null,
-        updateDownloading: false,
-      };
-      return { next, effects: [{ type: "removeUpdateBanner" }] };
-    }
-
-    case "updateFailed": {
-      return {
-        next: {
-          ...state,
-          pendingUpdate: null,
-          updateDownloading: false,
-        },
-        effects: [{ type: "removeUpdateBanner" }],
-      };
     }
 
     // ── Download progress (tour-guide-8y4) ───────────────────

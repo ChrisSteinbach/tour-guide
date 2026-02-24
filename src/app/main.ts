@@ -46,9 +46,6 @@ let appState: AppState = {
   loadGeneration: 0,
   loadingTiles: new Set(),
   downloadProgress: -1,
-  pendingUpdate: null,
-  updateDownloading: false,
-  updateProgress: 0,
 };
 
 // Operational handles (not part of state machine)
@@ -115,18 +112,8 @@ function executeEffect(effect: Effect): void {
     case "fetchSummary":
       void fetchAndRenderSummary(effect.article);
       break;
-    case "showUpdateBanner":
-      renderUpdateBannerDOM();
-      break;
-    case "removeUpdateBanner":
-      document.getElementById("update-banner")?.remove();
-      break;
     case "showAppUpdateBanner":
       renderAppUpdateBanner();
-      break;
-    case "loadUpdate":
-    case "dismissUpdate":
-    case "checkForUpdate":
       break;
     case "log":
       console.log(effect.message);
@@ -209,61 +196,6 @@ async function fetchAndRenderSummary(article: NearbyArticle): Promise<void> {
       () => void fetchAndRenderSummary(article),
       appState.currentLang,
     );
-  }
-}
-
-// ── Update banner DOM ────────────────────────────────────────
-
-function renderUpdateBannerDOM(): void {
-  let banner = document.getElementById("update-banner");
-  if (!banner) {
-    banner = document.createElement("div");
-    banner.id = "update-banner";
-    banner.className = "update-banner";
-    document.body.appendChild(banner);
-  }
-
-  banner.textContent = "";
-
-  if (appState.updateDownloading) {
-    const pct = Math.round(appState.updateProgress * 100);
-
-    const text = document.createElement("span");
-    text.className = "update-banner-text";
-    text.textContent = `Downloading update\u2026 ${pct}%`;
-
-    const progress = document.createElement("div");
-    progress.className = "update-banner-progress";
-    const fill = document.createElement("div");
-    fill.className = "update-banner-progress-fill";
-    fill.style.width = `${pct}%`;
-    progress.appendChild(fill);
-
-    banner.append(text, progress);
-  } else {
-    const text = document.createElement("span");
-    text.className = "update-banner-text";
-    text.textContent = "New article data available";
-
-    const actions = document.createElement("div");
-    actions.className = "update-banner-actions";
-
-    const acceptBtn = document.createElement("button");
-    acceptBtn.className = "update-banner-btn update-banner-accept";
-    acceptBtn.textContent = "Update";
-    acceptBtn.addEventListener("click", () =>
-      dispatch({ type: "acceptUpdate" }),
-    );
-
-    const dismissBtn = document.createElement("button");
-    dismissBtn.className = "update-banner-btn update-banner-dismiss";
-    dismissBtn.textContent = "Not now";
-    dismissBtn.addEventListener("click", () =>
-      dispatch({ type: "declineUpdate" }),
-    );
-
-    actions.append(acceptBtn, dismissBtn);
-    banner.append(text, actions);
   }
 }
 

@@ -406,22 +406,3 @@ body {
 .update-banner-btn:active {
   background: rgba(255, 255, 255, 0.1);
 }
-
-.update-banner-dismiss {
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.update-banner-progress {
-  width: 100%;
-  height: 3px;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.update-banner-progress-fill {
-  height: 100%;
-  background: #8ab4f8;
-  border-radius: 2px;
-  transition: width 0.15s ease-out;
-}
