@@ -183,7 +183,7 @@ interface CachedTileData {
 }
 
 /**
- * Fetch tile index. Returns null on 404 (triggers monolithic fallback).
+ * Fetch tile index. Returns null on 404.
  * Caches in IDB, falls back to cached index on network error.
  */
 export async function loadTileIndex(
@@ -199,7 +199,7 @@ export async function loadTileIndex(
   try {
     const response = await fetch(url, { cache: "no-store", signal });
     if (response.status === 404) {
-      console.log("[tiles] No tile index found — falling back to monolithic");
+      console.log("[tiles] No tile index found");
       return null;
     }
     if (!response.ok) {
@@ -299,19 +299,4 @@ export async function loadTile(
   }
 
   return new NearestQuery(fd, articles);
-}
-
-/** Delete old monolithic IDB cache on first tiled load. */
-export async function cleanMonolithicCache(lang: Lang): Promise<void> {
-  try {
-    const db = await idbOpen();
-    if (db) {
-      idbDelete(db, `triangulation-v3-${lang}`).catch((err) =>
-        console.warn("[idb] Monolithic cache cleanup failed:", err),
-      );
-      console.log(`[tiles] Cleaned up monolithic cache for ${lang}`);
-    }
-  } catch {
-    // ignore
-  }
 }
