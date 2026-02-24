@@ -155,6 +155,7 @@ describe("loadQuery", () => {
     const binData = serializeBinary(data);
 
     globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
       headers: new Headers(),
       body: null,
       arrayBuffer: () => Promise.resolve(binData),
@@ -164,6 +165,20 @@ describe("loadQuery", () => {
     expect(query.size).toBe(6);
     const { results } = query.findNearest(90, 0);
     expect(results[0].title).toBe("Point +Z");
+  });
+
+  it("rejects on non-ok HTTP response", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      headers: new Headers(),
+      body: null,
+      arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
+    });
+
+    await expect(loadQuery("http://test/triangulation.bin")).rejects.toThrow(
+      "HTTP 500",
+    );
   });
 
   it("rejects when signal is already aborted", async () => {

@@ -270,6 +270,7 @@ async function fetchWithProgress(
     cache: "no-store",
     ...(signal && { signal }),
   });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
   const total = Number(response.headers.get("Content-Length") || 0);
   if (onProgress && response.body && total > 0) {
