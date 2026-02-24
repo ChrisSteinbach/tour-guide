@@ -6,6 +6,7 @@ import {
   dumpPath,
   downloadDump,
   downloadAllDumps,
+  fetchWithRetry,
   formatBytes,
   DUMP_TABLES,
 } from "./dump-download.js";
@@ -41,6 +42,96 @@ describe("dumpPath", () => {
     expect(dumpPath("en", "page", "/tmp/dumps")).toBe(
       "/tmp/dumps/enwiki-latest-page.sql.gz",
     );
+  });
+});
+
+describe("fetchWithRetry", () => {
+  const noDelay = async () => {};
+
+  it("returns response on first success", async () => {
+    const fetchFn = (async () => new Response("ok")) as unknown as typeof fetch;
+
+    const response = await fetchWithRetry("http://example.com", fetchFn, {
+      delayFn: noDelay,
+    });
+
+    expect(response.ok).toBe(true);
+    expect(await response.text()).toBe("ok");
+  });
+
+  it("retries on 503 and returns eventual success", async () => {
+    let attempt = 0;
+    const fetchFn = (async () => {
+      attempt++;
+      if (attempt === 1) return new Response(null, { status: 503 });
+      return new Response("recovered");
+    }) as unknown as typeof fetch;
+
+    const response = await fetchWithRetry("http://example.com", fetchFn, {
+      delayFn: noDelay,
+    });
+
+    expect(await response.text()).toBe("recovered");
+    expect(attempt).toBe(2);
+  });
+
+  it("retries on network error and returns eventual success", async () => {
+    let attempt = 0;
+    const fetchFn = (async () => {
+      attempt++;
+      if (attempt === 1) throw new TypeError("fetch failed");
+      return new Response("recovered");
+    }) as unknown as typeof fetch;
+
+    const response = await fetchWithRetry("http://example.com", fetchFn, {
+      delayFn: noDelay,
+    });
+
+    expect(await response.text()).toBe("recovered");
+    expect(attempt).toBe(2);
+  });
+
+  it("returns 404 without retrying", async () => {
+    let attempt = 0;
+    const fetchFn = (async () => {
+      attempt++;
+      return new Response(null, { status: 404, statusText: "Not Found" });
+    }) as unknown as typeof fetch;
+
+    const response = await fetchWithRetry("http://example.com", fetchFn, {
+      delayFn: noDelay,
+    });
+
+    expect(response.status).toBe(404);
+    expect(attempt).toBe(1);
+  });
+
+  it("throws after exhausting retries", async () => {
+    const fetchFn = (async () =>
+      new Response(null, { status: 503 })) as unknown as typeof fetch;
+
+    await expect(
+      fetchWithRetry("http://example.com", fetchFn, {
+        maxRetries: 2,
+        delayFn: noDelay,
+      }),
+    ).rejects.toThrow("503");
+  });
+
+  it("applies exponential backoff between retries", async () => {
+    const delays: number[] = [];
+    const fetchFn = (async () =>
+      new Response(null, { status: 500 })) as unknown as typeof fetch;
+
+    await fetchWithRetry("http://example.com", fetchFn, {
+      maxRetries: 3,
+      baseDelayMs: 100,
+      delayFn: async (ms) => {
+        delays.push(ms);
+      },
+    }).catch(() => {});
+
+    expect(delays).toEqual([100, 200, 400]);
   });
 });
 

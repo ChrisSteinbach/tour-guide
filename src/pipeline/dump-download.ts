@@ -37,6 +37,15 @@ export function dumpPath(
   return `${dir}/${wiki}-latest-${table}.sql.gz`;
 }
 
+export interface RetryOptions {
+  /** Maximum number of retry attempts (default: 3) */
+  maxRetries?: number;
+  /** Base delay in ms before first retry; doubles each attempt (default: 1000) */
+  baseDelayMs?: number;
+  /** Delay function, injectable for testing (default: real setTimeout) */
+  delayFn?: (ms: number) => Promise<void>;
+}
+
 export interface DownloadOptions {
   /** Language to download dumps for */
   lang: Lang;
@@ -54,6 +63,8 @@ export interface DownloadOptions {
   onComplete?: (table: DumpTable, bytes: number) => void;
   /** Skip download if file already exists */
   skipExisting?: boolean;
+  /** Retry options for transient network/server failures */
+  retry?: RetryOptions;
 }
 
 export interface DownloadResult {
@@ -61,6 +72,46 @@ export interface DownloadResult {
   path: string;
   bytes: number;
   skipped: boolean;
+}
+
+const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Fetch with exponential backoff for transient failures.
+ *
+ * Retries on network errors (DNS, TCP reset) and retryable HTTP statuses
+ * (408, 429, 5xx). Returns immediately for success or non-retryable errors.
+ */
+export async function fetchWithRetry(
+  url: string,
+  fetchFn: typeof fetch,
+  opts: RetryOptions = {},
+): Promise<Response> {
+  const { maxRetries = 3, baseDelayMs = 1000, delayFn = sleep } = opts;
+
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      await delayFn(baseDelayMs * 2 ** (attempt - 1));
+    }
+
+    try {
+      const response = await fetchFn(url);
+      if (response.ok || !RETRYABLE_STATUSES.has(response.status)) {
+        return response;
+      }
+      lastError = new Error(`HTTP ${response.status} ${response.statusText}`);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError;
 }
 
 /**
@@ -77,6 +128,7 @@ export async function downloadDump(
     onProgress,
     onComplete,
     skipExisting = false,
+    retry,
   } = opts;
 
   const url = dumpUrl(lang, table);
@@ -91,7 +143,7 @@ export async function downloadDump(
   // Ensure directory exists
   mkdirSync(dir, { recursive: true });
 
-  const response = await fetchFn(url);
+  const response = await fetchWithRetry(url, fetchFn, retry);
   if (!response.ok) {
     throw new Error(
       `Failed to download ${url}: ${response.status} ${response.statusText}`,
