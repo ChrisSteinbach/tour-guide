@@ -28,7 +28,6 @@ export function getNextTier(nearbyCount: number): number | undefined {
 
 export type QueryState =
   | { mode: "none" }
-  | { mode: "monolithic"; query: NearestQuery; lastTriangle: number }
   | {
       mode: "tiled";
       index: TileIndex;
@@ -43,18 +42,6 @@ export function getNearby(
   count: number,
 ): { articles: NearbyArticle[]; query: QueryState } {
   switch (queryState.mode) {
-    case "monolithic": {
-      const { results, lastTriangle } = queryState.query.findNearest(
-        pos.lat,
-        pos.lon,
-        count,
-        queryState.lastTriangle,
-      );
-      return {
-        articles: results,
-        query: { ...queryState, lastTriangle },
-      };
-    }
     case "tiled":
       return {
         articles: findNearestTiled(queryState.tiles, pos.lat, pos.lon, count),
@@ -116,8 +103,6 @@ export type Event =
   | { type: "useMockData"; mockPosition: UserPosition }
   | { type: "position"; pos: UserPosition }
   | { type: "gpsError"; error: LocationError }
-  | { type: "monolithicLoaded"; query: NearestQuery; lang: Lang; gen: number }
-  | { type: "monolithicFailed"; gen: number }
   | { type: "tileLoadStarted"; id: string }
   | { type: "updateProgress"; fraction: number }
   | { type: "updateAvailable"; serverHash: string; lang: Lang }
@@ -154,9 +139,7 @@ export type Effect =
   | { type: "storeLang"; lang: Lang }
   | { type: "storeStarted" }
   | { type: "loadData"; lang: Lang }
-  | { type: "loadMonolithic"; lang: Lang }
   | { type: "loadTiles"; lang: Lang }
-  | { type: "cleanMonolithicCache"; lang: Lang }
   | { type: "loadUpdate"; serverHash: string; lang: Lang }
   | { type: "dismissUpdate"; cacheKey: string; serverHash: string }
   | { type: "pushHistory" }
@@ -273,57 +256,6 @@ export function transition(state: AppState, event: Event): TransitionResult {
         };
       }
       return { next, effects: [...effects, { type: "render" }] };
-    }
-
-    case "monolithicLoaded": {
-      if (event.gen !== state.loadGeneration) {
-        return { next: state, effects: [] };
-      }
-      const next: AppState = {
-        ...state,
-        query: {
-          mode: "monolithic",
-          query: event.query,
-          lastTriangle: event.query.defaultTriangle,
-        },
-      };
-      const effects: Effect[] = [
-        { type: "checkForUpdate", lang: event.lang },
-        {
-          type: "log",
-          message: `Loaded ${event.query.size} articles (${event.lang})`,
-        },
-      ];
-      if (state.phase.phase === "downloading") {
-        if (next.position) {
-          const result = enterBrowsing(next);
-          return {
-            next: result.next,
-            effects: [...effects, ...result.effects],
-          };
-        }
-        return {
-          next: { ...next, phase: { phase: "locating" } },
-          effects: [...effects, { type: "render" }],
-        };
-      }
-      return { next, effects };
-    }
-
-    case "monolithicFailed": {
-      if (event.gen !== state.loadGeneration) {
-        return { next: state, effects: [] };
-      }
-      if (state.phase.phase === "downloading") {
-        if (state.position) {
-          return enterBrowsing(state);
-        }
-        return {
-          next: { ...state, phase: { phase: "locating" } },
-          effects: [{ type: "render" }],
-        };
-      }
-      return { next: state, effects: [] };
     }
 
     case "tileLoadStarted": {
@@ -532,22 +464,7 @@ export function transition(state: AppState, event: Event): TransitionResult {
         pendingUpdate: null,
         updateDownloading: false,
       };
-      if (state.currentLang !== event.lang) {
-        return { next, effects: [{ type: "removeUpdateBanner" }] };
-      }
-      const withQuery: AppState = {
-        ...next,
-        query: {
-          mode: "monolithic",
-          query: event.query,
-          lastTriangle: event.query.defaultTriangle,
-        },
-      };
-      const requery = forceRequery(withQuery);
-      return {
-        next: requery.next,
-        effects: [{ type: "removeUpdateBanner" }, ...requery.effects],
-      };
+      return { next, effects: [{ type: "removeUpdateBanner" }] };
     }
 
     case "updateFailed": {
@@ -591,9 +508,7 @@ export function transition(state: AppState, event: Event): TransitionResult {
           tileMap: buildTileMap(event.index),
           tiles: new Map(),
         };
-        const effects: Effect[] = [
-          { type: "cleanMonolithicCache", lang: event.lang },
-        ];
+        const effects: Effect[] = [];
         let next: AppState = { ...state, query: tiledQuery };
 
         // Handle dataReady inline — tiled data is "ready" once index loads
@@ -613,10 +528,19 @@ export function transition(state: AppState, event: Event): TransitionResult {
         }
         return { next, effects };
       }
-      // No tile index — fall back to monolithic
+      // No tile index available — show indeterminate downloading state
       return {
-        next: state,
-        effects: [{ type: "loadMonolithic", lang: event.lang }],
+        next: {
+          ...state,
+          phase: { phase: "downloading", progress: -1 },
+        },
+        effects: [
+          {
+            type: "log",
+            message: `Tile index not available for ${event.lang}`,
+          },
+          { type: "render" },
+        ],
       };
     }
 
@@ -670,20 +594,16 @@ function handleUseMockData(
     };
   }
 
-  if (state.query.mode === "tiled") {
-    const result = enterBrowsing(next);
-    return {
-      next: result.next,
-      effects: [
-        ...effects,
-        { type: "loadTiles", lang: state.currentLang },
-        ...result.effects,
-      ],
-    };
-  }
-
+  // mode === "tiled"
   const result = enterBrowsing(next);
-  return { next: result.next, effects: [...effects, ...result.effects] };
+  return {
+    next: result.next,
+    effects: [
+      ...effects,
+      { type: "loadTiles", lang: state.currentLang },
+      ...result.effects,
+    ],
+  };
 }
 
 function handlePosition(
