@@ -71,7 +71,8 @@ export function parseValues(valuesStr: string): SqlRow[] {
         row.push(val);
       } else if (
         valuesStr[i] === "N" &&
-        valuesStr.substring(i, i + 4) === "NULL"
+        valuesStr.substring(i, i + 4) === "NULL" &&
+        (i + 4 >= len || valuesStr[i + 4] === "," || valuesStr[i + 4] === ")")
       ) {
         row.push(null);
         i += 4;

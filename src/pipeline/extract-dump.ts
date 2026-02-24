@@ -14,6 +14,7 @@ import { SUPPORTED_LANGS, DEFAULT_LANG } from "../lang.js";
 import type { Lang } from "../lang.js";
 import { downloadAllDumps, dumpPath, formatBytes } from "./dump-download.js";
 import { streamDump } from "./dump-parser.js";
+import { validateCanary } from "./canary.js";
 
 // ---------- Types ----------
 
@@ -225,6 +226,24 @@ export async function extractDump(opts: ExtractDumpOptions): Promise<{
   console.error(
     `  Output: ${outputPath} (${articleCount.toLocaleString()} articles)`,
   );
+
+  // Phase 3: Canary validation
+  onPhase?.("Validating known landmarks");
+  const canary = await validateCanary(outputPath, lang);
+  if (canary.checked > 0) {
+    console.error(
+      `  Canary: ${canary.matched}/${canary.checked} landmarks found`,
+    );
+    if (canary.missing.length > 0) {
+      for (const m of canary.missing) console.error(`  ⚠ ${m}`);
+    }
+    if (!canary.passed) {
+      for (const f of canary.mismatches) console.error(`  ✗ ${f}`);
+      throw new Error(
+        `Pipeline canary failed: ${canary.mismatches.length} landmark(s) have wrong coordinates`,
+      );
+    }
+  }
 
   return { articleCount, outputPath };
 }

@@ -139,6 +139,11 @@ describe("parseValues", () => {
     const rows = parseValues("(1,'hello, (world)')");
     expect(rows).toEqual([[1, "hello, (world)"]]);
   });
+
+  it("does not mismatch NULL prefix in longer tokens", () => {
+    const rows = parseValues("(1,NULLIFY)");
+    expect(rows).toEqual([[1, "NULLIFY"]]);
+  });
 });
 
 describe("parseCreateTable", () => {
