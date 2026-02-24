@@ -448,16 +448,14 @@ window.addEventListener("popstate", () => {
 // ── Bootstrap ────────────────────────────────────────────────
 
 // Clean up orphaned IDB keys from old schema versions
-if (typeof indexedDB !== "undefined") {
-  void idbOpen().then((db) => {
-    if (!db) return;
-    idbCleanupOldKeys(db)
-      .then((n) => {
-        if (n > 0) console.log(`[idb] Cleaned up ${n} orphaned key(s)`);
-      })
-      .catch(() => {});
-  });
-}
+void idbOpen().then((db) => {
+  if (!db) return;
+  idbCleanupOldKeys(db)
+    .then((n) => {
+      if (n > 0) console.log(`[idb] Cleaned up ${n} orphaned key(s)`);
+    })
+    .catch(() => {});
+});
 
 listenForSwUpdate();
 dispatch({ type: "langChanged", lang: appState.currentLang });

@@ -194,7 +194,7 @@ export async function loadTileIndex(
   const url = `${baseUrl}tiles/${lang}/index.json`;
   const cacheKey = `tile-index-v1-${lang}`;
 
-  const db = typeof indexedDB !== "undefined" ? await idbOpen() : null;
+  const db = await idbOpen();
 
   try {
     const response = await fetch(url, { cache: "no-store", signal });
@@ -245,7 +245,7 @@ export async function loadTile(
   signal?: AbortSignal,
 ): Promise<NearestQuery> {
   const cacheKey = `tile-v1-${lang}-${entry.id}`;
-  const db = typeof indexedDB !== "undefined" ? await idbOpen() : null;
+  const db = await idbOpen();
 
   // Check IDB cache
   if (db) {
@@ -304,7 +304,7 @@ export async function loadTile(
 /** Delete old monolithic IDB cache on first tiled load. */
 export async function cleanMonolithicCache(lang: Lang): Promise<void> {
   try {
-    const db = typeof indexedDB !== "undefined" ? await idbOpen() : null;
+    const db = await idbOpen();
     if (db) {
       idbDelete(db, `triangulation-v3-${lang}`).catch((err) =>
         console.warn("[idb] Monolithic cache cleanup failed:", err),

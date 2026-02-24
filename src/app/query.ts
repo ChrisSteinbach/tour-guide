@@ -324,7 +324,7 @@ export async function checkForUpdate(
   cacheKey: string,
 ): Promise<UpdateInfo | null> {
   try {
-    const db = typeof indexedDB !== "undefined" ? await idbOpen() : null;
+    const db = await idbOpen();
     if (!db) return null;
 
     const cached = await idbGet(db, cacheKey);
@@ -379,7 +379,7 @@ export async function fetchUpdate(
   const { fd, articles } = deserializeBinary(buf);
   const contentTag = await computeContentTag(buf);
 
-  const db = typeof indexedDB !== "undefined" ? await idbOpen() : null;
+  const db = await idbOpen();
   if (db) {
     idbPut(db, cacheKey, {
       vertexPoints: fd.vertexPoints,
@@ -402,7 +402,7 @@ export async function dismissUpdate(
   serverHash: string,
 ): Promise<void> {
   try {
-    const db = typeof indexedDB !== "undefined" ? await idbOpen() : null;
+    const db = await idbOpen();
     if (db) {
       idbPutString(db, `update-dismissed-${cacheKey}`, serverHash).catch(
         (err) => console.warn("[idb] Cache write failed:", err),
@@ -423,7 +423,7 @@ export async function loadQuery(
 ): Promise<NearestQuery> {
   // Try IDB for cached typed arrays (no parse, no deserialize)
   const t0 = performance.now();
-  const db = typeof indexedDB !== "undefined" ? await idbOpen() : null;
+  const db = await idbOpen();
   if (db) {
     const cached = await idbGet(db, cacheKey);
     if (cached) {

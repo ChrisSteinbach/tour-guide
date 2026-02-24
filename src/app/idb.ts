@@ -32,13 +32,18 @@ export interface CachedData {
   contentTag?: string;
 }
 
+let dbPromise: Promise<IDBDatabase | null> | null = null;
+
 export function idbOpen(): Promise<IDBDatabase | null> {
-  return new Promise((resolve) => {
+  if (dbPromise) return dbPromise;
+  if (typeof indexedDB === "undefined") return Promise.resolve(null);
+  dbPromise = new Promise((resolve) => {
     const req = indexedDB.open(IDB_NAME, 1);
     req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => resolve(null);
   });
+  return dbPromise;
 }
 
 export function idbGet(
