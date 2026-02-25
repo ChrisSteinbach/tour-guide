@@ -33,15 +33,42 @@ export function idbOpen(): Promise<IDBDatabase | null> {
   return dbPromise;
 }
 
-export function idbDelete(db: IDBDatabase, key: string): Promise<void> {
+// ---------- Generic transaction helpers ----------
+
+/** Run a readonly request against the store and return its result. */
+function idbRead<T>(
+  db: IDBDatabase,
+  fn: (store: IDBObjectStore) => IDBRequest<T>,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readonly");
+    const req = fn(tx.objectStore(IDB_STORE));
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error ?? new DOMException("Request failed"));
+  });
+}
+
+/** Run a readwrite transaction against the store. */
+function idbWrite(
+  db: IDBDatabase,
+  fn: (store: IDBObjectStore) => void,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(IDB_STORE, "readwrite");
-    tx.objectStore(IDB_STORE).delete(key);
+    fn(tx.objectStore(IDB_STORE));
     tx.oncomplete = () => resolve();
     tx.onerror = () =>
       reject(tx.error ?? new DOMException("Transaction failed"));
     tx.onabort = () =>
       reject(tx.error ?? new DOMException("Transaction aborted"));
+  });
+}
+
+// ---------- Public API ----------
+
+export function idbDelete(db: IDBDatabase, key: string): Promise<void> {
+  return idbWrite(db, (store) => {
+    store.delete(key);
   });
 }
 
@@ -50,12 +77,7 @@ export function idbGetAny<T>(
   db: IDBDatabase,
   key: string,
 ): Promise<T | undefined> {
-  return new Promise((resolve) => {
-    const tx = db.transaction(IDB_STORE, "readonly");
-    const req = tx.objectStore(IDB_STORE).get(key);
-    req.onsuccess = () => resolve(req.result as T | undefined);
-    req.onerror = () => resolve(undefined);
-  });
+  return idbRead(db, (store) => store.get(key)) as Promise<T | undefined>;
 }
 
 /** Put any value into IDB (used for tile cache entries). */
@@ -64,14 +86,8 @@ export function idbPutAny(
   key: string,
   value: unknown,
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(IDB_STORE, "readwrite");
-    tx.objectStore(IDB_STORE).put(value, key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () =>
-      reject(tx.error ?? new DOMException("Transaction failed"));
-    tx.onabort = () =>
-      reject(tx.error ?? new DOMException("Transaction aborted"));
+  return idbWrite(db, (store) => {
+    store.put(value, key);
   });
 }
 
@@ -80,13 +96,7 @@ export function idbPutAny(
  * Returns the number of keys deleted.
  */
 export async function idbCleanupOldKeys(db: IDBDatabase): Promise<number> {
-  const keys: IDBValidKey[] = await new Promise((resolve, reject) => {
-    const tx = db.transaction(IDB_STORE, "readonly");
-    const req = tx.objectStore(IDB_STORE).getAllKeys();
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () =>
-      reject(req.error ?? new DOMException("getAllKeys failed"));
-  });
+  const keys = await idbRead<IDBValidKey[]>(db, (store) => store.getAllKeys());
 
   const orphaned = keys.filter(
     (key) =>
@@ -96,15 +106,8 @@ export async function idbCleanupOldKeys(db: IDBDatabase): Promise<number> {
 
   if (orphaned.length === 0) return 0;
 
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(IDB_STORE, "readwrite");
-    const store = tx.objectStore(IDB_STORE);
+  await idbWrite(db, (store) => {
     for (const key of orphaned) store.delete(key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () =>
-      reject(tx.error ?? new DOMException("Transaction failed"));
-    tx.onabort = () =>
-      reject(tx.error ?? new DOMException("Transaction aborted"));
   });
 
   return orphaned.length;

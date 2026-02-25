@@ -1,5 +1,14 @@
 import type { Lang } from "../lang";
 
+/** Shape of the Wikipedia REST API /page/summary response (subset we use). */
+interface WikiSummaryResponse {
+  title?: string;
+  extract?: string;
+  description?: string;
+  thumbnail?: { source?: string; width?: number; height?: number };
+  content_urls?: { desktop?: { page?: string } };
+}
+
 export interface ArticleSummary {
   title: string;
   extract: string;
@@ -36,13 +45,7 @@ export async function fetchArticleSummary(
   if (res.status === 404) throw new Error("Article not found");
   if (!res.ok) throw new Error(`Wikipedia API error: ${res.status}`);
 
-  const data = (await res.json()) as {
-    title?: string;
-    extract?: string;
-    description?: string;
-    thumbnail?: { source?: string; width?: number; height?: number };
-    content_urls?: { desktop?: { page?: string } };
-  };
+  const data = (await res.json()) as WikiSummaryResponse;
   const summary: ArticleSummary = {
     title: data.title ?? title,
     extract: data.extract ?? "",

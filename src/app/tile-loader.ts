@@ -21,15 +21,10 @@ export function updateLru(
   tileId: string,
   maxEntries = MAX_CACHED_TILES,
 ): { updated: string[]; evict: string[] } {
-  const filtered = lru.filter((id) => id !== tileId);
-  filtered.push(tileId);
-
-  const evict: string[] = [];
-  while (filtered.length > maxEntries) {
-    evict.push(filtered.shift()!);
-  }
-
-  return { updated: filtered, evict };
+  const updated = lru.filter((id) => id !== tileId);
+  updated.push(tileId);
+  const evict = updated.splice(0, Math.max(0, updated.length - maxEntries));
+  return { updated, evict };
 }
 
 /** Update LRU tracking in IDB and evict tiles over the cap. */
