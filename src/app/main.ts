@@ -26,6 +26,7 @@ import { DEFAULT_LANG, SUPPORTED_LANGS } from "../lang";
 import type { Lang } from "../lang";
 import {
   transition,
+  getNearby,
   getNextTier,
   type AppState,
   type Effect,
@@ -115,6 +116,16 @@ function executeEffect(effect: Effect): void {
     case "showAppUpdateBanner":
       renderAppUpdateBanner();
       break;
+    case "requery": {
+      const articles = getNearby(appState.query, effect.pos, effect.count);
+      dispatch({
+        type: "queryResult",
+        articles,
+        queryPos: effect.pos,
+        count: effect.count,
+      });
+      break;
+    }
     case "log":
       console.log(effect.message);
       break;

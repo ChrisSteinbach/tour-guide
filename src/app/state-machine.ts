@@ -40,20 +40,14 @@ export function getNearby(
   queryState: QueryState,
   pos: UserPosition,
   count: number,
-): { articles: NearbyArticle[]; query: QueryState } {
+): NearbyArticle[] {
   switch (queryState.mode) {
     case "tiled":
-      return {
-        articles: findNearestTiled(queryState.tiles, pos.lat, pos.lon, count),
-        query: queryState,
-      };
+      return findNearestTiled(queryState.tiles, pos.lat, pos.lon, count);
     case "none":
-      return {
-        articles: mockArticles
-          .map((a) => ({ ...a, distanceM: distanceMeters(pos, a) }))
-          .sort((a, b) => a.distanceM - b.distanceM),
-        query: queryState,
-      };
+      return mockArticles
+        .map((a) => ({ ...a, distanceM: distanceMeters(pos, a) }))
+        .sort((a, b) => a.distanceM - b.distanceM);
   }
 }
 
@@ -113,7 +107,13 @@ export type Event =
   | { type: "selectArticle"; article: NearbyArticle }
   | { type: "back" }
   | { type: "showMore" }
-  | { type: "togglePause" };
+  | { type: "togglePause" }
+  | {
+      type: "queryResult";
+      articles: NearbyArticle[];
+      queryPos: UserPosition;
+      count: number;
+    };
 
 // ── Effect (all side effects the machine requests) ───────────
 
@@ -130,7 +130,8 @@ export type Effect =
   | { type: "pushHistory" }
   | { type: "fetchSummary"; article: NearbyArticle }
   | { type: "showAppUpdateBanner" }
-  | { type: "log"; message: string };
+  | { type: "log"; message: string }
+  | { type: "requery"; pos: UserPosition; count: number };
 
 // ── Internal helpers ─────────────────────────────────────────
 
@@ -149,20 +150,20 @@ function enterBrowsing(state: AppState): TransitionResult {
     state.phase.phase === "browsing"
       ? state.phase.nearbyCount
       : NEARBY_TIERS[0];
-  const { articles, query } = getNearby(state.query, state.position, count);
+  const prevArticles =
+    state.phase.phase === "browsing" ? state.phase.articles : [];
   return {
     next: {
       ...state,
-      query,
       phase: {
         phase: "browsing",
-        articles,
+        articles: prevArticles,
         nearbyCount: count,
         paused: false,
         lastQueryPos: state.position,
       },
     },
-    effects: [{ type: "renderBrowsingList" }],
+    effects: [{ type: "requery", pos: state.position, count }],
   };
 }
 
@@ -171,30 +172,18 @@ function forceRequery(state: AppState): TransitionResult {
   if (state.phase.phase !== "browsing" || !state.position) {
     return { next: state, effects: [] };
   }
-  const p = state.phase;
-  const { articles, query } = getNearby(
-    state.query,
-    state.position,
-    p.nearbyCount,
-  );
-  const same =
-    articles.length === p.articles.length &&
-    articles.every((a, i) => a.title === p.articles[i].title);
-  const next: AppState = {
-    ...state,
-    query,
-    phase: {
-      phase: "browsing",
-      nearbyCount: p.nearbyCount,
-      paused: p.paused,
-      articles,
-      lastQueryPos: state.position,
+  return {
+    next: {
+      ...state,
+      phase: {
+        ...state.phase,
+        lastQueryPos: state.position,
+      },
     },
+    effects: [
+      { type: "requery", pos: state.position, count: state.phase.nearbyCount },
+    ],
   };
-  if (same) {
-    return { next, effects: [{ type: "updateDistances" }] };
-  }
-  return { next, effects: [{ type: "renderBrowsingList" }] };
 }
 
 // ── Transition function ──────────────────────────────────────
@@ -272,18 +261,12 @@ export function transition(state: AppState, event: Event): TransitionResult {
       }
       const nextTier = getNextTier(state.phase.nearbyCount);
       if (nextTier === undefined) return { next: state, effects: [] };
-      const { articles, query } = getNearby(
-        state.query,
-        state.position,
-        nextTier,
-      );
       return {
         next: {
           ...state,
-          query,
-          phase: { ...state.phase, nearbyCount: nextTier, articles },
+          phase: { ...state.phase, nearbyCount: nextTier },
         },
-        effects: [{ type: "renderBrowsingList" }],
+        effects: [{ type: "requery", pos: state.position, count: nextTier }],
       };
     }
 
@@ -293,23 +276,22 @@ export function transition(state: AppState, event: Event): TransitionResult {
       }
       const nowPaused = !state.phase.paused;
       if (!nowPaused && state.position) {
-        const { articles, query } = getNearby(
-          state.query,
-          state.position,
-          state.phase.nearbyCount,
-        );
         return {
           next: {
             ...state,
-            query,
             phase: {
               ...state.phase,
               paused: false,
-              articles,
               lastQueryPos: state.position,
             },
           },
-          effects: [{ type: "renderBrowsingList" }],
+          effects: [
+            {
+              type: "requery",
+              pos: state.position,
+              count: state.phase.nearbyCount,
+            },
+          ],
         };
       }
       return {
@@ -318,6 +300,32 @@ export function transition(state: AppState, event: Event): TransitionResult {
           phase: { ...state.phase, paused: nowPaused },
         },
         effects: [{ type: "renderBrowsingList" }],
+      };
+    }
+
+    // ── Query result (async-ready requery response) ─────────
+
+    case "queryResult": {
+      if (state.phase.phase !== "browsing") {
+        return { next: state, effects: [] };
+      }
+      const p = state.phase;
+      const same =
+        event.articles.length === p.articles.length &&
+        event.articles.every((a, i) => a.title === p.articles[i].title);
+      return {
+        next: {
+          ...state,
+          phase: {
+            ...p,
+            articles: event.articles,
+            nearbyCount: event.count,
+            lastQueryPos: event.queryPos,
+          },
+        },
+        effects: [
+          same ? { type: "updateDistances" } : { type: "renderBrowsingList" },
+        ],
       };
     }
 

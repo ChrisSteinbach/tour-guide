@@ -156,7 +156,7 @@ describe("REQUERY_DISTANCE_M", () => {
 
 describe("getNearby", () => {
   it("returns articles sorted by distance from tiled query", () => {
-    const { articles } = getNearby(sampleQuery, paris, 5);
+    const articles = getNearby(sampleQuery, paris, 5);
     expect(articles).toHaveLength(5);
     for (let i = 1; i < articles.length; i++) {
       expect(articles[i].distanceM).toBeGreaterThanOrEqual(
@@ -166,7 +166,7 @@ describe("getNearby", () => {
   });
 
   it("falls back to mock articles when query mode is none", () => {
-    const { articles } = getNearby({ mode: "none" }, paris, 10);
+    const articles = getNearby({ mode: "none" }, paris, 10);
     expect(articles.length).toBeGreaterThan(0);
     expect(articles[0].title).toBeDefined();
     for (let i = 1; i < articles.length; i++) {
@@ -189,7 +189,7 @@ describe("start event", () => {
     expect(next.phase.phase).toBe("browsing");
     expect(effectTypes(effects)).toContain("storeStarted");
     expect(effectTypes(effects)).toContain("startGps");
-    expect(effectTypes(effects)).toContain("renderBrowsingList");
+    expect(effectTypes(effects)).toContain("requery");
   });
 
   it("enters locating when query ready but no position", () => {
@@ -255,7 +255,7 @@ describe("useMockData event", () => {
     expect(next.phase.phase).toBe("browsing");
     expect(next.position).toBe(mockPosition);
     expect(effectTypes(effects)).toContain("stopGps");
-    expect(effectTypes(effects)).toContain("renderBrowsingList");
+    expect(effectTypes(effects)).toContain("requery");
   });
 
   it("enters downloading when no query", () => {
@@ -343,7 +343,7 @@ describe("position event", () => {
       pos: paris,
     });
     expect(next.phase.phase).toBe("browsing");
-    expect(effectTypes(effects)).toContain("renderBrowsingList");
+    expect(effectTypes(effects)).toContain("requery");
   });
 
   it("enters loadingTiles from locating when tiled query with no tiles", () => {
@@ -393,7 +393,7 @@ describe("position event", () => {
     });
     expect(next.phase.phase).toBe("browsing");
     expect(next.position).toEqual(parisNearby);
-    expect(effectTypes(effects)).toContain("updateDistances");
+    expect(effectTypes(effects)).toContain("requery");
   });
 
   it("does not requery when moved less than 15m", () => {
@@ -403,8 +403,7 @@ describe("position event", () => {
       pos: parisSame,
     });
     expect(next.position).toEqual(parisSame);
-    expect(effectTypes(effects)).not.toContain("renderBrowsingList");
-    expect(effectTypes(effects)).not.toContain("updateDistances");
+    expect(effectTypes(effects)).not.toContain("requery");
   });
 
   it("does not requery when paused", () => {
@@ -414,8 +413,7 @@ describe("position event", () => {
       pos: parisNearby,
     });
     expect(next.position).toEqual(parisNearby);
-    expect(effectTypes(effects)).not.toContain("renderBrowsingList");
-    expect(effectTypes(effects)).not.toContain("updateDistances");
+    expect(effectTypes(effects)).not.toContain("requery");
   });
 
   it("triggers render in detail phase", () => {
@@ -493,7 +491,7 @@ describe("showMore event", () => {
     if (next.phase.phase === "browsing") {
       expect(next.phase.nearbyCount).toBe(20);
     }
-    expect(effectTypes(effects)).toContain("renderBrowsingList");
+    expect(effectTypes(effects)).toContain("requery");
   });
 
   it("no-ops at max tier", () => {
@@ -530,7 +528,7 @@ describe("togglePause event", () => {
       expect(next.phase.paused).toBe(false);
       expect(next.phase.lastQueryPos).toBe(paris);
     }
-    expect(effectTypes(effects)).toContain("renderBrowsingList");
+    expect(effectTypes(effects)).toContain("requery");
   });
 
   it("no-ops when not browsing", () => {
@@ -840,7 +838,7 @@ describe("tileLoaded event", () => {
     if (next.query.mode === "tiled") {
       expect(next.query.tiles.has("27-36")).toBe(true);
     }
-    expect(effectTypes(effects)).toContain("renderBrowsingList");
+    expect(effectTypes(effects)).toContain("requery");
   });
 
   it("ignores stale generation", () => {
@@ -867,6 +865,83 @@ describe("tileLoaded event", () => {
       id: "27-36",
       tileQuery,
       gen: 1,
+    });
+    expect(next).toBe(state);
+    expect(effects).toEqual([]);
+  });
+});
+
+// ── queryResult event ────────────────────────────────────
+
+describe("queryResult event", () => {
+  it("renders list when articles change", () => {
+    const state = browsingState();
+    const newArticles: NearbyArticle[] = [
+      { title: "New Place", lat: 48.86, lon: 2.35, distanceM: 100 },
+    ];
+    const { next, effects } = transition(state, {
+      type: "queryResult",
+      articles: newArticles,
+      queryPos: paris,
+      count: 10,
+    });
+    expect(next.phase.phase).toBe("browsing");
+    if (next.phase.phase === "browsing") {
+      expect(next.phase.articles).toBe(newArticles);
+      expect(next.phase.nearbyCount).toBe(10);
+      expect(next.phase.lastQueryPos).toBe(paris);
+    }
+    expect(effectTypes(effects)).toContain("renderBrowsingList");
+    expect(effectTypes(effects)).not.toContain("updateDistances");
+  });
+
+  it("updates distances when article titles unchanged", () => {
+    const state = browsingState();
+    const browsing = state.phase as Extract<Phase, { phase: "browsing" }>;
+    const updatedArticles = browsing.articles.map((a) => ({
+      ...a,
+      distanceM: a.distanceM + 1,
+    }));
+    const { next, effects } = transition(state, {
+      type: "queryResult",
+      articles: updatedArticles,
+      queryPos: paris,
+      count: 10,
+    });
+    expect(next.phase.phase).toBe("browsing");
+    if (next.phase.phase === "browsing") {
+      expect(next.phase.articles).toBe(updatedArticles);
+    }
+    expect(effectTypes(effects)).toContain("updateDistances");
+    expect(effectTypes(effects)).not.toContain("renderBrowsingList");
+  });
+
+  it("updates nearbyCount and lastQueryPos", () => {
+    const state = browsingState({ nearbyCount: 10 });
+    const newPos: UserPosition = { lat: 48.86, lon: 2.3 };
+    const browsing = state.phase as Extract<Phase, { phase: "browsing" }>;
+    const { next } = transition(state, {
+      type: "queryResult",
+      articles: browsing.articles,
+      queryPos: newPos,
+      count: 20,
+    });
+    if (next.phase.phase === "browsing") {
+      expect(next.phase.nearbyCount).toBe(20);
+      expect(next.phase.lastQueryPos).toBe(newPos);
+    }
+  });
+
+  it("ignores when not in browsing phase", () => {
+    const state = makeState({ phase: { phase: "locating" } });
+    const articles: NearbyArticle[] = [
+      { title: "Test", lat: 0, lon: 0, distanceM: 0 },
+    ];
+    const { next, effects } = transition(state, {
+      type: "queryResult",
+      articles,
+      queryPos: paris,
+      count: 10,
     });
     expect(next).toBe(state);
     expect(effects).toEqual([]);
