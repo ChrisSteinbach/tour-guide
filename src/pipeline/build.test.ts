@@ -124,7 +124,7 @@ describe("tiled pipeline (e2e)", () => {
     // Run the pipeline in the temp directory (it resolves paths relative to cwd)
     execFileSync(
       join(process.cwd(), "node_modules", ".bin", "tsx"),
-      [join(process.cwd(), "src/pipeline/build.ts"), "--tiled"],
+      [join(process.cwd(), "src/pipeline/build.ts")],
       { cwd: testDir, timeout: 30_000 },
     );
 

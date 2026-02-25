@@ -8,13 +8,13 @@ WikiRadar is a Wikipedia-powered tour guide PWA. It uses spherical Delaunay tria
 Wikipedia SQL Dumps (geo_tags, page, page_props)
   ↓  extract-dump.ts: download, parse, join, deduplicate
 data/articles-{lang}.json  (NDJSON: title, lat, lon, desc)
-  ↓  build.ts: toCartesian → convexHull → buildTriangulation → serializeBinary
-data/triangulation-{lang}.bin  (Float32/Uint32 typed arrays + UTF-8 article titles)
-  ↓  pipeline.yml: gzip → GitHub Release "data-latest"
-  ↓  deploy.yml: download → decompress → bundle into dist/app/
+  ↓  build.ts: per-tile toCartesian → convexHull → buildTriangulation → serializeBinary
+data/tiles/{lang}/index.json + {row}-{col}.bin  (per-tile triangulations)
+  ↓  pipeline.yml: compress → GitHub Release "data-latest"
+  ↓  deploy.yml: download → decompress → bundle into dist/app/tiles/
 GitHub Pages CDN
-  ↓  query.ts: fetch → deserializeBinary → IDB cache
-FlatDelaunay (typed arrays in memory)
+  ↓  tile-loader.ts: fetch index → fetch tile → deserializeBinary → IDB cache
+FlatDelaunay (typed arrays in memory, per tile)
   ↓  NearestQuery.findNearest(): triangle walk → greedy vertex walk → BFS k-nearest
 k nearest articles with distances
   ↓  render.ts → detail.ts → wiki-api.ts
@@ -47,15 +47,14 @@ Descriptions are batch-fetched from the Wikidata API using Q-IDs found in the `p
 
 **Entry point:** `src/pipeline/build.ts` — `npm run pipeline -- --lang=en`
 
-Reads extracted NDJSON and produces a compact binary file for the app:
+Reads extracted NDJSON and produces per-tile binary files for the app:
 
 1. **Read articles** — Parses NDJSON, applies optional `--limit` and `--bounds` filters.
-2. **Convert to Cartesian** — `toCartesian({lat, lon})` projects each point onto a unit sphere as `[x, y, z]`.
-3. **Convex hull** — `convexHull(points)` builds the 3D convex hull incrementally. On a unit sphere, hull faces are exactly the spherical Delaunay triangles.
-4. **Extract Delaunay** — `buildTriangulation(hull)` enriches hull faces with circumcenters and vertex-to-triangle mappings, drops interior points, and compacts indices.
-5. **Serialize** — `serializeBinary(data)` writes a compact binary format.
+2. **Assign to tiles** — Each article maps to a 5° lat/lon grid cell. See `docs/tiling.md` for the tiling strategy.
+3. **Build per-tile triangulations** — For each populated tile, collect native articles plus a 0.5° buffer zone, then: `toCartesian` → `convexHull` → `buildTriangulation` → `serializeBinary`. Tiles with fewer than 4 articles are skipped.
+4. **Write tile index** — `data/tiles/{lang}/index.json` manifest listing all tiles with bounding boxes, article counts, byte sizes, and content hashes.
 
-**Output:** `data/triangulation-{lang}.bin`
+**Output:** `data/tiles/{lang}/` (index.json + per-tile .bin files)
 
 ### Binary Format
 
@@ -142,9 +141,9 @@ Distance uses chord length (`2 * asin(||v - q|| / 2)`) rather than `acos(dot(v, 
 Runs monthly (1st of month, 03:00 UTC) or on manual trigger. Languages processed in parallel:
 
 1. **Extract** — Downloads Wikipedia dumps (cached between runs), joins tables, outputs NDJSON
-2. **Build** — Runs pipeline to produce `.bin` files
-3. **Compress** — gzip both `.json` and `.bin` outputs
-4. **Publish** — Uploads `triangulation-*.bin.gz` to a `data-latest` GitHub Release
+2. **Build** — Runs pipeline to produce tiled output (`data/tiles/{lang}/`)
+3. **Compress** — Archives tile directories
+4. **Publish** — Uploads tile archives to a `data-latest` GitHub Release
 
 Smart merge: downloads the existing release first, so rebuilding one language preserves the others.
 
@@ -152,10 +151,10 @@ Smart merge: downloads the existing release first, so rebuilding one language pr
 
 Runs on every push to `main`:
 
-1. Downloads `triangulation-*.bin.gz` from `data-latest` release
-2. Decompresses `.bin` files
+1. Downloads tile archives from `data-latest` release
+2. Decompresses tile files
 3. Builds the app (`npm run build`)
-4. Copies `.bin` files into `dist/app/`
+4. Copies tile directories into `dist/app/tiles/`
 5. Deploys to GitHub Pages
 
 Data and app code are decoupled — data updates don't require app rebuilds, and app deploys pull the latest data from the release.

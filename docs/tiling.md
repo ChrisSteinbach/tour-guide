@@ -1,6 +1,6 @@
 # Geographic Tiling Strategy
 
-The app currently downloads a single ~108 MB binary file (`triangulation-en.bin`) before showing any results. On a typical mobile connection this means 10-100 seconds of waiting. This document describes a tiling strategy that breaks the monolith into geographic chunks so the app can show results within seconds of getting the user's position.
+The app uses geographic tiling to break the full dataset into small chunks so it can show results within seconds of getting the user's position. Instead of downloading a single monolithic file, the app fetches a small tile index and then loads only the nearby tiles on demand.
 
 ## 1. Tile Scheme
 
@@ -78,12 +78,12 @@ Buffer articles are included in the triangulation and the article list. They are
 
 The 0.5° buffer increases per-tile article counts by roughly 10-20%, bringing the average tile from ~130 KB to ~150 KB (~75 KB gzipped). Total data across all tiles is approximately 1.15x the monolith size.
 
-### Pipeline changes
+### Pipeline
 
-The pipeline (`src/pipeline/build.ts`) gains a `--tiled` flag:
+The pipeline (`src/pipeline/build.ts`) always produces tiled output:
 
 ```bash
-npm run pipeline -- --lang=en --tiled
+npm run pipeline -- --lang=en
 ```
 
 Pseudocode for the tiled pipeline:
@@ -218,74 +218,17 @@ Each tile is cached independently in IndexedDB, keyed by `tile-v1-{lang}-{id}` w
 3. Only re-fetches tiles whose hash changed.
 4. Loads the primary tile from IDB in ~1ms (same speed as today's monolithic cache).
 
-## 5. Migration Path
-
-### Phase 1: Pipeline outputs both formats
-
-The `--tiled` flag produces tile files alongside the existing monolithic file. The monolithic pipeline continues to work unchanged. This allows testing the tiled output without affecting production.
-
-```bash
-# Monolithic (unchanged)
-npm run pipeline -- --lang=en
-
-# Tiled (new)
-npm run pipeline -- --lang=en --tiled
-```
-
-Output structure:
-
-```
-data/
-  triangulation-en.bin              # monolithic (unchanged)
-  tiles/en/
-    index.json                      # tile manifest
-    00-12.bin                       # individual tiles
-    14-38.bin
-    ...
-```
-
-### Phase 2: App supports both formats
-
-The app checks for a tile index at `{baseUrl}tiles/{lang}/index.json`:
-
-- **Index found**: use tiled loading (new path)
-- **Index not found (404)**: fall back to monolithic `triangulation-{lang}.bin` (current path)
-
-This makes the transition seamless. The app works with either format, and the server can switch over per-language or all at once.
-
-### Phase 3: Deploy workflow changes
-
-The pipeline CI (`pipeline.yml`) adds a tiled output step:
-
-```yaml
-- name: Build tiled triangulation
-  run: npm run pipeline -- --lang=${{ matrix.lang }} --tiled
-
-- name: Compress tiles
-  run: |
-    tar czf data/tiles-${{ matrix.lang }}.tar.gz -C data/tiles ${{ matrix.lang }}
-```
-
-The deploy CI (`deploy.yml`) downloads and unpacks the tile archives into `dist/app/tiles/`.
-
-The monolithic file can be dropped once all languages are migrated and the tiled format is verified in production.
+## 5. Implementation Notes
 
 ### Binary format
 
-The per-tile binary format is **identical** to the current monolithic format (docs/binary-format.md). The only difference is scale — a tile file for 1,500 articles is ~150 KB instead of 108 MB. No version bump or format change is needed.
+The per-tile binary format is **identical** to the format documented in docs/binary-format.md. The only difference is scale — a tile file for 1,500 articles is ~150 KB instead of 108 MB. No version bump or format change is needed.
 
 The `deserializeBinary()` function in `src/geometry/serialization.ts` works unchanged on tile files.
 
-### IDB cache key migration
+### IDB cache keys
 
-Current cache key: `triangulation-v3-{lang}` (one entry per language).
-Tiled cache keys: `tile-v1-{lang}-{id}` (one entry per tile per language).
-
-On migration, the app can delete the old monolithic cache entry when it first loads tile data:
-
-```typescript
-idbDelete(db, `triangulation-v3-${lang}`);
-```
+Tiled cache keys: `tile-v1-{lang}-{id}` (one entry per tile per language). The tile index is cached as `tile-index-v1-{lang}`.
 
 ## Summary
 

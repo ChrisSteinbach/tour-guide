@@ -1,8 +1,8 @@
 // Offline build pipeline
-// Reads pre-extracted NDJSON articles, builds Delaunay triangulation, outputs static data
+// Reads pre-extracted NDJSON articles, builds tiled Delaunay triangulation
 // Run with: npm run pipeline [--limit=N] [--bounds=south,north,west,east]
 
-import { createReadStream, readFileSync, writeFileSync } from "node:fs";
+import { createReadStream, writeFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { createInterface } from "node:readline";
@@ -15,7 +15,7 @@ import {
   serialize,
   serializeBinary,
 } from "../geometry/index.js";
-import type { ArticleMeta, TriangulationFile } from "../geometry/index.js";
+import type { ArticleMeta } from "../geometry/index.js";
 import { SUPPORTED_LANGS, DEFAULT_LANG } from "../lang.js";
 import type { Lang } from "../lang.js";
 import { isInBounds, parseBounds } from "./extract-dump.js";
@@ -28,16 +28,10 @@ import type { TileEntry, TileIndex } from "../tiles.js";
 function parseArgs(): {
   limit: number;
   bounds: Bounds | null;
-  json: boolean;
-  convert: boolean;
-  tiled: boolean;
   lang: Lang;
 } {
   let limit = Infinity;
   let bounds: Bounds | null = null;
-  let json = false;
-  let convert = false;
-  let tiled = false;
   let lang: Lang = DEFAULT_LANG;
 
   for (const arg of process.argv.slice(2)) {
@@ -48,12 +42,6 @@ function parseArgs(): {
       }
     } else if (arg.startsWith("--bounds=")) {
       bounds = parseBounds(arg.slice("--bounds=".length));
-    } else if (arg === "--json") {
-      json = true;
-    } else if (arg === "--convert") {
-      convert = true;
-    } else if (arg === "--tiled") {
-      tiled = true;
     } else if (arg.startsWith("--lang=")) {
       const val = arg.slice("--lang=".length);
       if (!(SUPPORTED_LANGS as readonly string[]).includes(val)) {
@@ -65,7 +53,7 @@ function parseArgs(): {
     }
   }
 
-  return { limit, bounds, json, convert, tiled, lang };
+  return { limit, bounds, lang };
 }
 
 // ---------- NDJSON reader ----------
@@ -98,27 +86,6 @@ async function readArticles(
   }
 
   return articles;
-}
-
-// ---------- Main ----------
-
-function writeBinary(data: TriangulationFile, outputPath: string): void {
-  const buf = serializeBinary(data);
-  writeFileSync(outputPath, Buffer.from(buf));
-  const sizeMB = (buf.byteLength / 1024 / 1024).toFixed(1);
-  console.log(`  → ${sizeMB} MB binary written to ${outputPath}`);
-
-  const hash = hashBuffer(buf);
-  const shaPath = outputPath.replace(/\.bin$/, ".sha");
-  writeFileSync(shaPath, hash, "utf-8");
-  console.log(`  → Hash ${hash} written to ${shaPath}`);
-}
-
-function writeJson(data: TriangulationFile, outputPath: string): void {
-  const json = JSON.stringify(data);
-  writeFileSync(outputPath, json, "utf-8");
-  const sizeMB = (Buffer.byteLength(json) / 1024 / 1024).toFixed(1);
-  console.log(`  → ${sizeMB} MB JSON written to ${outputPath}`);
 }
 
 // ---------- Tiling ----------
@@ -292,7 +259,7 @@ async function buildTiled(articles: Article[], lang: Lang): Promise<void> {
 }
 
 async function main() {
-  const { limit, bounds, json, convert, tiled, lang } = parseArgs();
+  const { limit, bounds, lang } = parseArgs();
 
   console.log("tour-guide build pipeline\n");
   console.log(`  --lang=${lang}`);
@@ -301,29 +268,6 @@ async function main() {
     console.log(
       `  --bounds=${bounds.south},${bounds.north},${bounds.west},${bounds.east}`,
     );
-  if (json) console.log(`  --json (JSON output)`);
-  if (convert) console.log(`  --convert (converting existing JSON to binary)`);
-  if (tiled) console.log(`  --tiled (tiled output)`);
-
-  // --convert mode: read existing JSON → write binary
-  if (convert) {
-    const jsonPath = resolve(`data/triangulation-${lang}.json`);
-    const binPath = resolve(`data/triangulation-${lang}.bin`);
-    console.log(`\nReading ${jsonPath}...`);
-    const t0 = performance.now();
-    const data = JSON.parse(
-      readFileSync(jsonPath, "utf-8"),
-    ) as TriangulationFile;
-    const t1 = performance.now();
-    console.log(
-      `  → Parsed in ${((t1 - t0) / 1000).toFixed(1)}s (${data.vertexCount} vertices, ${data.triangleCount} triangles)`,
-    );
-    console.log("\nWriting binary...");
-    writeBinary(data, binPath);
-    const t2 = performance.now();
-    console.log(`\nDone in ${((t2 - t0) / 1000).toFixed(1)}s`);
-    return;
-  }
 
   const inputPath = resolve(`data/articles-${lang}.json`);
 
@@ -343,64 +287,7 @@ async function main() {
     );
   }
 
-  // --tiled mode: build per-tile triangulations
-  if (tiled) {
-    await buildTiled(articles, lang);
-    return;
-  }
-
-  // Step 2: Convert to Cartesian
-  console.log("\nStep 2: Converting to Cartesian coordinates...");
-  const t2 = performance.now();
-  const points = articles.map((a) => toCartesian({ lat: a.lat, lon: a.lon }));
-  const t3 = performance.now();
-  console.log(
-    `  → ${points.length} points in ${((t3 - t2) / 1000).toFixed(1)}s`,
-  );
-
-  // Step 3: Build convex hull
-  console.log("\nStep 3: Building convex hull...");
-  const t4 = performance.now();
-  const hull = convexHull(points);
-  const t5 = performance.now();
-  console.log(
-    `  → ${hull.faces.length} faces in ${((t5 - t4) / 1000).toFixed(1)}s`,
-  );
-
-  // Step 4: Extract Delaunay triangulation
-  console.log("\nStep 4: Building Delaunay triangulation...");
-  const t6 = performance.now();
-  const tri = buildTriangulation(hull);
-  const t7 = performance.now();
-  console.log(
-    `  → ${tri.vertices.length} vertices, ${tri.triangles.length} triangles in ${((t7 - t6) / 1000).toFixed(1)}s`,
-  );
-
-  // Step 5: Serialize and write output
-  if (tri.originalIndices.length < articles.length) {
-    console.log(
-      `  → ${tri.originalIndices.length} of ${articles.length} vertices on hull (interior points filtered)`,
-    );
-  }
-  const meta: ArticleMeta[] = tri.originalIndices.map((i) => ({
-    title: articles[i].title,
-  }));
-  const data = serialize(tri, meta);
-  const t8 = performance.now();
-
-  if (json) {
-    console.log(`\nStep 5: Serializing to data/triangulation-${lang}.json...`);
-    writeJson(data, resolve(`data/triangulation-${lang}.json`));
-  } else {
-    console.log(`\nStep 5: Serializing to data/triangulation-${lang}.bin...`);
-    writeBinary(data, resolve(`data/triangulation-${lang}.bin`));
-  }
-
-  const t9 = performance.now();
-  console.log(`  Written in ${((t9 - t8) / 1000).toFixed(1)}s`);
-
-  const totalTime = ((t9 - t0) / 1000).toFixed(1);
-  console.log(`\nDone in ${totalTime}s`);
+  await buildTiled(articles, lang);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

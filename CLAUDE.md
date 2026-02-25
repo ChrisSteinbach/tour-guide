@@ -50,17 +50,11 @@ Output format (one JSON object per line):
 
 ### Pipeline
 
-`npm run pipeline` reads extracted NDJSON articles, builds a spherical Delaunay triangulation, and writes a compact binary file used by the app at runtime.
+`npm run pipeline` reads extracted NDJSON articles, builds per-tile spherical Delaunay triangulations, and writes tiled binary files used by the app at runtime.
 
 ```bash
-# Build triangulation for a language (default: en)
+# Build tiled triangulation for a language (default: en)
 npm run pipeline -- --lang=en
-
-# Output JSON instead of binary (for debugging)
-npm run pipeline -- --lang=en --json
-
-# Convert existing JSON to binary
-npm run pipeline -- --lang=en --convert
 
 # Limit articles or restrict to a bounding box (for quick local testing)
 npm run pipeline -- --lang=en --limit=10000
@@ -68,20 +62,20 @@ npm run pipeline -- --lang=en --bounds=49.44,50.19,5.73,6.53
 ```
 
 Input: `data/articles-{lang}.json` (NDJSON from extraction step)
-Output: `data/triangulation-{lang}.bin` (or `.json` with `--json`)
+Output: `data/tiles/{lang}/` (index.json + per-tile .bin files)
 
 ### Data Refresh & Deployment
 
 Data is refreshed automatically via GitHub Actions (`pipeline.yml`) on a monthly schedule or manual trigger. The workflow:
 
 1. **Extract** — Downloads Wikipedia SQL dumps and joins geo_tags/page for each language (en, sv, ja)
-2. **Build** — Runs the pipeline to produce `triangulation-{lang}.bin`
-3. **Publish** — Uploads compressed `.bin.gz` files to a `data-latest` GitHub Release
+2. **Build** — Runs the pipeline to produce tiled output in `data/tiles/{lang}/`
+3. **Publish** — Uploads compressed tile archives to a `data-latest` GitHub Release
 
 Deployment (`deploy.yml`) runs on every push to main:
 
-1. Downloads `triangulation-*.bin.gz` from the `data-latest` release
-2. Decompresses and copies `.bin` files into `dist/app/`
+1. Downloads tile archives from `data-latest` release
+2. Decompresses tile files into `dist/app/tiles/`
 3. Deploys to GitHub Pages
 
 To refresh data manually:
