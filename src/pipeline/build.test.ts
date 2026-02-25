@@ -123,8 +123,8 @@ describe("tiled pipeline (e2e)", () => {
   it("produces index.json and per-tile .bin files that deserialize correctly", () => {
     // Run the pipeline in the temp directory (it resolves paths relative to cwd)
     execFileSync(
-      "npx",
-      ["tsx", join(process.cwd(), "src/pipeline/build.ts"), "--tiled"],
+      join(process.cwd(), "node_modules", ".bin", "tsx"),
+      [join(process.cwd(), "src/pipeline/build.ts"), "--tiled"],
       { cwd: testDir, timeout: 30_000 },
     );
 
