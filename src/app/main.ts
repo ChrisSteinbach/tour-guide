@@ -6,6 +6,7 @@ import {
   renderLoading,
   renderLoadingProgress,
   renderError,
+  renderDataUnavailable,
   renderWelcome,
 } from "./status";
 import { watchLocation, type StopFn } from "./location";
@@ -172,6 +173,11 @@ function renderPhase(): void {
       return;
     case "loadingTiles":
       renderLoading(app, "Loading nearby articles\u2026");
+      return;
+    case "dataUnavailable":
+      renderDataUnavailable(app, appState.currentLang, (lang) =>
+        dispatch({ type: "langChanged", lang }),
+      );
       return;
     case "error":
       renderError(app, appState.phase.error, () =>

@@ -108,6 +108,33 @@ export function renderWelcome(
   renderStatusScreen(container, [tagline, langSelect, startBtn, demoLink]);
 }
 
+/** Render the data-unavailable state with language picker. */
+export function renderDataUnavailable(
+  container: HTMLElement,
+  currentLang: Lang,
+  onLangChange: (lang: Lang) => void,
+): void {
+  const msg = document.createElement("p");
+  msg.className = "status-message";
+  msg.textContent = `No data available for ${LANG_NAMES[currentLang]}. Try a different language.`;
+
+  const langSelect = document.createElement("select");
+  langSelect.className = "lang-select";
+  langSelect.setAttribute("aria-label", "Wikipedia language");
+  for (const code of SUPPORTED_LANGS) {
+    const opt = document.createElement("option");
+    opt.value = code;
+    opt.textContent = LANG_NAMES[code];
+    if (code === currentLang) opt.selected = true;
+    langSelect.appendChild(opt);
+  }
+  langSelect.addEventListener("change", () => {
+    onLangChange(langSelect.value as Lang);
+  });
+
+  renderStatusScreen(container, [msg, langSelect]);
+}
+
 /** Render the error state with a message and fallback button. */
 export function renderError(
   container: HTMLElement,

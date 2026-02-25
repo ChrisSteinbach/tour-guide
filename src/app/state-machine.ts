@@ -59,6 +59,7 @@ export type Phase =
   | { phase: "locating" }
   | { phase: "loadingTiles" }
   | { phase: "error"; error: LocationError }
+  | { phase: "dataUnavailable" }
   | {
       phase: "browsing";
       articles: NearbyArticle[];
@@ -463,11 +464,11 @@ export function transition(state: AppState, event: Event): TransitionResult {
         }
         return { next, effects };
       }
-      // No tile index available — show indeterminate downloading state
+      // No tile index available — let user pick a different language
       return {
         next: {
           ...state,
-          phase: { phase: "downloading", progress: -1 },
+          phase: { phase: "dataUnavailable" },
         },
         effects: [
           {
