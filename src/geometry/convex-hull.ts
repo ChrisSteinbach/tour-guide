@@ -365,7 +365,8 @@ export function convexHull(points: Point3D[]): ConvexHull {
   const faceGrid = new FaceGrid(gridRes);
   for (let fi = 0; fi < 4; fi++) faceGrid.update(pp, faces, fi);
 
-  // Insert remaining points
+  // Insert remaining points (free-list reuses deleted face slots)
+  const freeSlots: number[] = [];
   let hintFace = 0;
   let liveFaces = 4;
   for (let pi = 0; pi < points.length; pi++) {
@@ -379,6 +380,7 @@ export function convexHull(points: Point3D[]): ConvexHull {
       liveFaces,
       faceGrid,
       edgeMul,
+      freeSlots,
     );
     hintFace = result[0];
     liveFaces += result[1];
@@ -425,6 +427,7 @@ function addPoint(
   liveFaces: number,
   faceGrid: FaceGrid,
   edgeMul: number,
+  freeSlots: number[],
 ): [number, number] {
   const p = points[pi];
 
@@ -516,20 +519,29 @@ function addPoint(
     }
   }
 
-  // Delete visible faces
+  // Delete visible faces and reclaim their slots
   for (const fi of visible) {
     removeFaceEdges(faces, halfEdges, fi, edgeMul);
     faces[fi] = null;
+    freeSlots.push(fi);
   }
 
-  // Create new faces from horizon edges to the new point
+  // Create new faces from horizon edges to the new point, reusing free slots
   const newFaceIndices: number[] = [];
   for (const h of horizon) {
-    const newFi = faces.length;
     const newFace: HullFace = {
       vertices: [h.a, h.b, pi],
       neighbor: [-1, -1, -1],
     };
+
+    let newFi: number;
+    if (freeSlots.length > 0) {
+      newFi = freeSlots.pop()!;
+      faces[newFi] = newFace;
+    } else {
+      newFi = faces.length;
+      faces.push(newFace);
+    }
 
     // Edge 0 (h.a → h.b) is shared with the non-visible neighbor
     const neighborFace = faces[h.neighborFace]!;
@@ -543,7 +555,6 @@ function addPoint(
       }
     }
 
-    faces.push(newFace);
     newFaceIndices.push(newFi);
     registerFaceEdges(faces, halfEdges, newFi, edgeMul);
   }
