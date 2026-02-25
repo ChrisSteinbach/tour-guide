@@ -3,7 +3,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   // Global ignores
-  { ignores: ["dist/", "data/", "node_modules/"] },
+  { ignores: ["dist/", "data/", "node_modules/", "src/geometry/vendor/"] },
 
   // Base JS recommended rules
   eslint.configs.recommended,

@@ -2,6 +2,7 @@
 // For unit-sphere points, the convex hull faces are the spherical Delaunay triangulation
 
 import type { Point3D } from "./index";
+import { orient3D } from "./predicates";
 
 // ---------- Types ----------
 
@@ -15,39 +16,6 @@ export interface HullFace {
 export interface ConvexHull {
   points: Point3D[];
   faces: HullFace[];
-}
-
-// ---------- Predicates ----------
-
-/**
- * Signed volume of tetrahedron (a, b, c, d).
- * Positive when d is above the plane of (a, b, c), where "above" is the side
- * the normal (b-a)×(c-a) points toward.
- *
- * For the convex hull: a point p is visible from outward-facing face (v0,v1,v2)
- * when orient3D(v0, v1, v2, p) > 0.
- */
-export function orient3D(
-  a: Point3D,
-  b: Point3D,
-  c: Point3D,
-  d: Point3D,
-): number {
-  const abx = b[0] - a[0],
-    aby = b[1] - a[1],
-    abz = b[2] - a[2];
-  const acx = c[0] - a[0],
-    acy = c[1] - a[1],
-    acz = c[2] - a[2];
-  const adx = d[0] - a[0],
-    ady = d[1] - a[1],
-    adz = d[2] - a[2];
-
-  return (
-    abx * (acy * adz - acz * ady) -
-    aby * (acx * adz - acz * adx) +
-    abz * (acx * ady - acy * adx)
-  );
 }
 
 // ---------- Half-edge map (numeric keys for performance) ----------
@@ -92,15 +60,17 @@ function removeFaceEdges(
 
 /**
  * Add a small deterministic random perturbation to each point to prevent
- * degenerate configurations (coplanar/cospherical points) that cause
- * orient3D to return ambiguous near-zero results.
+ * degenerate configurations (coincident/cospherical points) that produce
+ * zero-area triangles in the triangulation output.
+ *
+ * Robust predicates (Shewchuk) fix sign-correctness: orient3D returns the
+ * exact sign even for near-coplanar inputs. Perturbation is complementary —
+ * it prevents exactly-coincident points from producing degenerate hull faces
+ * with zero area, which would break downstream triangle walks.
  *
  * The perturbation is ~1e-6 per coordinate (≈0.1m on Earth's surface),
- * which is negligible for navigation but ensures orient3D values are
- * well above the ~1e-15 floating-point error bound.
- *
- * Only the perturbed copy is used for orient3D tests; the original
- * unperturbed points are stored in the output hull.
+ * which is negligible for navigation. Only the perturbed copy is used for
+ * orient3D tests; the original unperturbed points are stored in the output hull.
  */
 function perturbPoints(points: Point3D[]): Point3D[] {
   const SCALE = 1e-6;

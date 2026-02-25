@@ -1,5 +1,6 @@
-import { convexHull, orient3D } from "./convex-hull";
+import { convexHull } from "./convex-hull";
 import type { ConvexHull } from "./convex-hull";
+import { orient3D } from "./predicates";
 import { toCartesian } from "./index";
 import type { Point3D } from "./index";
 
@@ -59,20 +60,23 @@ function validateHull(hull: ConvexHull, allOnHull = true) {
   }
 
   // Outward orientation: every face normal points away from origin (for unit-sphere points).
-  // orient3D(v0, v1, v2, origin) should be < 0 (origin is below/inside every face)
+  // orient3D(v0, v1, v2, origin) should be <= 0 (origin is below/inside every face).
+  // Tolerance: the hull is built with perturbed points (~1e-6 perturbation) but stores
+  // unperturbed ones, so faces from near-coincident clusters can have small positive
+  // orient3D values proportional to the perturbation scale.
   const origin: Point3D = [0, 0, 0];
   for (let fi = 0; fi < nF; fi++) {
     const [a, b, c] = faces[fi].vertices;
     const vol = orient3D(points[a], points[b], points[c], origin);
-    expect(vol).toBeLessThan(0);
+    expect(vol).toBeLessThan(1e-6);
   }
 
-  // Convexity: no point is visible from any face
+  // Convexity: no point is visible from any face (same tolerance as outward-orientation)
   for (let fi = 0; fi < nF; fi++) {
     const [a, b, c] = faces[fi].vertices;
     for (let pi = 0; pi < points.length; pi++) {
       const vol = orient3D(points[a], points[b], points[c], points[pi]);
-      expect(vol).toBeLessThanOrEqual(1e-10);
+      expect(vol).toBeLessThan(1e-6);
     }
   }
 
@@ -101,7 +105,7 @@ describe("orient3D", () => {
     const b: Point3D = [0, 1, 0];
     const c: Point3D = [-1, -1, 0];
     const d: Point3D = [0.5, 0.5, 0];
-    expect(Math.abs(orient3D(a, b, c, d))).toBeLessThan(1e-15);
+    expect(orient3D(a, b, c, d)).toBe(0);
   });
 
   it("swapping two vertices flips the sign", () => {
@@ -111,7 +115,7 @@ describe("orient3D", () => {
     const d: Point3D = [1, 1, 1];
     const v1 = orient3D(a, b, c, d);
     const v2 = orient3D(a, c, b, d);
-    expect(Math.abs(v1 + v2)).toBeLessThan(1e-15);
+    expect(v1 + v2).toBe(0);
   });
 });
 
@@ -319,6 +323,142 @@ describe("convexHull", () => {
       const hull = convexHull(points);
       // All 7 sphere points are hull vertices: F = 2V - 4 = 10
       expect(hull.faces.length).toBe(10);
+      validateHull(hull);
+    });
+  });
+
+  describe("near-degenerate inputs", () => {
+    /** Generate n random unit-sphere points with a seeded PRNG */
+    function randomSpherePoints(n: number, seed: number): Point3D[] {
+      let state = seed | 0;
+      function rand(): number {
+        state = (Math.imul(state, 1664525) + 1013904223) | 0;
+        return (state >>> 0) / 0x100000000;
+      }
+
+      const points: Point3D[] = [];
+      for (let i = 0; i < n; i++) {
+        let x: number, y: number, s: number;
+        do {
+          x = 2 * rand() - 1;
+          y = 2 * rand() - 1;
+          s = x * x + y * y;
+        } while (s >= 1 || s === 0);
+        const z = 1 - 2 * s;
+        const r = 2 * Math.sqrt(1 - s);
+        points.push([x * r, y * r, z]);
+      }
+      return points;
+    }
+
+    it("great circle: equator points + poles (maximally coplanar with origin)", () => {
+      // 100 points on the equator are all coplanar through the origin,
+      // plus two poles. This is the worst case for orient3D: every
+      // equator triplet + origin has orient3D ≈ 0.
+      const points: Point3D[] = [];
+      for (let i = 0; i < 100; i++) {
+        const theta = (2 * Math.PI * i) / 100;
+        points.push([Math.cos(theta), Math.sin(theta), 0]);
+      }
+      points.push([0, 0, 1]); // north pole
+      points.push([0, 0, -1]); // south pole
+
+      const hull = convexHull(points);
+      const nV = new Set(hull.faces.flatMap((f) => f.vertices)).size;
+      expect(hull.faces.length).toBe(2 * nV - 4);
+      validateHull(hull);
+    });
+
+    it("near-coincident clusters: 4 anchors × 5 points within ~1e-8", () => {
+      // Clusters of near-coincident points stress orient3D with tiny
+      // determinant values near the floating-point noise floor.
+      const anchors: Point3D[] = [
+        [1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1],
+        [-1, 0, 0],
+      ];
+      const EPS = 1e-8;
+      let state = 0xdeadbeef | 0;
+      function rand(): number {
+        state = (Math.imul(state, 1664525) + 1013904223) | 0;
+        return ((state >>> 0) / 0x100000000 - 0.5) * EPS;
+      }
+
+      const points: Point3D[] = [];
+      for (const anchor of anchors) {
+        for (let j = 0; j < 5; j++) {
+          const px = anchor[0] + rand();
+          const py = anchor[1] + rand();
+          const pz = anchor[2] + rand();
+          const len = Math.sqrt(px * px + py * py + pz * pz);
+          points.push([px / len, py / len, pz / len]);
+        }
+      }
+
+      const hull = convexHull(points);
+      const nV = new Set(hull.faces.flatMap((f) => f.vertices)).size;
+      expect(hull.faces.length).toBe(2 * nV - 4);
+      validateHull(hull);
+    });
+
+    it("regular lat/lon grid: systematic near-coplanarity from grid structure", () => {
+      // A regular grid produces many near-coplanar configurations because
+      // grid lines share common planes through the origin.
+      const points: Point3D[] = [];
+      for (let lat = -80; lat <= 80; lat += 20) {
+        for (let lon = -180; lon < 180; lon += 20) {
+          points.push(toCartesian({ lat, lon }));
+        }
+      }
+      // Add poles
+      points.push([0, 0, 1]);
+      points.push([0, 0, -1]);
+
+      const hull = convexHull(points);
+      const nV = new Set(hull.faces.flatMap((f) => f.vertices)).size;
+      expect(hull.faces.length).toBe(2 * nV - 4);
+      validateHull(hull);
+    });
+
+    it("Fibonacci sphere: 500 uniformly distributed points with near-degeneracies", () => {
+      // Fibonacci sphere lattice produces near-degenerate configurations
+      // from its quasi-uniform distribution pattern.
+      const n = 500;
+      const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+      const points: Point3D[] = [];
+      for (let i = 0; i < n; i++) {
+        const y = 1 - (2 * i) / (n - 1);
+        const radius = Math.sqrt(1 - y * y);
+        const theta = goldenAngle * i;
+        points.push([radius * Math.cos(theta), radius * Math.sin(theta), y]);
+      }
+
+      const hull = convexHull(points);
+      const nV = new Set(hull.faces.flatMap((f) => f.vertices)).size;
+      expect(hull.faces.length).toBe(2 * nV - 4);
+      validateHull(hull);
+    });
+
+    it("mixed: random points combined with axis-aligned coplanar points", () => {
+      // Mix random points with points that lie exactly on coordinate planes,
+      // creating many exact coplanarities.
+      const points: Point3D[] = randomSpherePoints(50, 999);
+
+      // Add points in the xy-plane
+      for (let i = 0; i < 20; i++) {
+        const theta = (2 * Math.PI * i) / 20;
+        points.push([Math.cos(theta), Math.sin(theta), 0]);
+      }
+      // Add points in the xz-plane
+      for (let i = 0; i < 20; i++) {
+        const theta = (2 * Math.PI * i) / 20;
+        points.push([Math.cos(theta), 0, Math.sin(theta)]);
+      }
+
+      const hull = convexHull(points);
+      const nV = new Set(hull.faces.flatMap((f) => f.vertices)).size;
+      expect(hull.faces.length).toBe(2 * nV - 4);
       validateHull(hull);
     });
   });

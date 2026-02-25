@@ -131,7 +131,8 @@ export function sphericalCircumcenter(
 
 // ---------- Convex hull (re-exports) ----------
 
-export { convexHull, orient3D } from "./convex-hull";
+export { convexHull } from "./convex-hull";
+export { orient3D } from "./predicates";
 export type { HullFace, ConvexHull } from "./convex-hull";
 
 // ---------- Delaunay triangulation (re-exports) ----------
