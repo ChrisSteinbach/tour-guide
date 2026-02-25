@@ -33,6 +33,7 @@ function makeState(overrides: Partial<AppState> = {}): AppState {
     loadGeneration: 0,
     loadingTiles: new Set(),
     downloadProgress: -1,
+    updateBanner: null,
     ...overrides,
   };
 }
@@ -615,6 +616,38 @@ describe("back event", () => {
     const { next, effects } = transition(state, { type: "back" });
     expect(next).toBe(state);
     expect(effects).toEqual([]);
+  });
+});
+
+// ── swUpdateAvailable event (tour-guide-2lw) ─────────────
+
+describe("swUpdateAvailable event", () => {
+  it("sets updateBanner and emits showAppUpdateBanner", () => {
+    const state = makeState();
+    const { next, effects } = transition(state, {
+      type: "swUpdateAvailable",
+    });
+    expect(next.updateBanner).toBe("app");
+    expect(effectTypes(effects)).toContain("showAppUpdateBanner");
+  });
+
+  it("no-ops when app update banner already showing", () => {
+    const state = makeState({ updateBanner: "app" });
+    const { next, effects } = transition(state, {
+      type: "swUpdateAvailable",
+    });
+    expect(next).toBe(state);
+    expect(effects).toEqual([]);
+  });
+
+  it("works in any phase", () => {
+    const state = browsingState();
+    const { next, effects } = transition(state, {
+      type: "swUpdateAvailable",
+    });
+    expect(next.updateBanner).toBe("app");
+    expect(next.phase.phase).toBe("browsing");
+    expect(effectTypes(effects)).toContain("showAppUpdateBanner");
   });
 });
 

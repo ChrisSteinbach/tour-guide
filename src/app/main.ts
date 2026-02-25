@@ -47,6 +47,7 @@ let appState: AppState = {
   loadGeneration: 0,
   loadingTiles: new Set(),
   downloadProgress: -1,
+  updateBanner: null,
 };
 
 // Operational handles (not part of state machine)
@@ -212,7 +213,6 @@ async function fetchAndRenderSummary(article: NearbyArticle): Promise<void> {
 
 function renderAppUpdateBanner(): void {
   if (document.getElementById("app-update-banner")) return;
-  document.getElementById("update-banner")?.remove();
   const banner = document.createElement("div");
   banner.id = "app-update-banner";
   banner.className = "update-banner";
@@ -240,7 +240,7 @@ function listenForSwUpdate(): void {
   const initialController = navigator.serviceWorker.controller;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
     if (!initialController) return;
-    renderAppUpdateBanner();
+    dispatch({ type: "swUpdateAvailable" });
   });
 }
 

@@ -85,6 +85,8 @@ export interface AppState {
   loadGeneration: number;
   loadingTiles: Set<string>;
   downloadProgress: number;
+  /** Which update banner (if any) is showing. App updates take priority. */
+  updateBanner: null | "app";
 }
 
 // ── Event (all inputs to the state machine) ──────────────────
@@ -113,7 +115,8 @@ export type Event =
       articles: NearbyArticle[];
       queryPos: UserPosition;
       count: number;
-    };
+    }
+  | { type: "swUpdateAvailable" };
 
 // ── Effect (all side effects the machine requests) ───────────
 
@@ -372,6 +375,18 @@ export function transition(state: AppState, event: Event): TransitionResult {
           },
         },
         effects: [{ type: "renderBrowsingList" }],
+      };
+    }
+
+    // ── Update banner (tour-guide-2lw) ─────────────────────
+
+    case "swUpdateAvailable": {
+      if (state.updateBanner === "app") {
+        return { next: state, effects: [] };
+      }
+      return {
+        next: { ...state, updateBanner: "app" },
+        effects: [{ type: "showAppUpdateBanner" }],
       };
     }
 
