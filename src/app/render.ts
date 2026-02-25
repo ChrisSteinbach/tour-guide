@@ -132,6 +132,76 @@ export function renderShowMoreButton(
   return btn;
 }
 
+/** Create a single article list item element. */
+function createArticleItem(
+  article: NearbyArticle,
+  onSelectArticle: (article: NearbyArticle) => void,
+): HTMLLIElement {
+  const li = document.createElement("li");
+  const item = document.createElement("div");
+  item.className = "nearby-item";
+  item.setAttribute("role", "button");
+  item.tabIndex = 0;
+  item.dataset.title = article.title;
+  item.addEventListener("click", () => onSelectArticle(article));
+  item.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onSelectArticle(article);
+    }
+  });
+
+  const info = document.createElement("div");
+  info.className = "nearby-info";
+  const name = document.createElement("span");
+  name.className = "nearby-name";
+  name.textContent = article.title;
+  info.appendChild(name);
+
+  const badge = document.createElement("span");
+  badge.className = "nearby-distance";
+  badge.textContent = formatDistance(article.distanceM);
+
+  item.append(info, badge);
+  li.appendChild(item);
+  return li;
+}
+
+/**
+ * Reconcile list items by article title key.
+ * Reuses existing DOM nodes for articles still present, only creating nodes
+ * for new articles. Removed articles are discarded by replaceChildren.
+ */
+function reconcileListItems(
+  ul: HTMLUListElement,
+  articles: NearbyArticle[],
+  onSelectArticle: (article: NearbyArticle) => void,
+): void {
+  const existingByTitle = new Map<string, HTMLLIElement>();
+  for (const child of Array.from(ul.children)) {
+    const li = child as HTMLLIElement;
+    const item = li.querySelector<HTMLElement>(".nearby-item");
+    if (item?.dataset.title) {
+      existingByTitle.set(item.dataset.title, li);
+    }
+  }
+
+  const newChildren: HTMLLIElement[] = [];
+  for (const article of articles) {
+    const existing = existingByTitle.get(article.title);
+    if (existing) {
+      const badge = existing.querySelector(".nearby-distance");
+      if (badge) badge.textContent = formatDistance(article.distanceM);
+      existingByTitle.delete(article.title);
+      newChildren.push(existing);
+    } else {
+      newChildren.push(createArticleItem(article, onSelectArticle));
+    }
+  }
+
+  ul.replaceChildren(...newChildren);
+}
+
 /** Build and replace the contents of `container` with a nearby-articles list. */
 export function renderNearbyList(
   container: HTMLElement,
@@ -144,61 +214,64 @@ export function renderNearbyList(
   paused?: boolean,
   onTogglePause?: () => void,
 ): void {
-  const isRerender = !!container.querySelector(".nearby-list");
-  const savedScrollY = isRerender ? window.scrollY : 0;
-  const savedFocus = isRerender ? captureFocus(container) : null;
+  const existingList =
+    container.querySelector<HTMLUListElement>(".nearby-list");
 
-  container.textContent = "";
+  if (!existingList) {
+    // First render: build from scratch
+    container.textContent = "";
 
-  const header = renderNearbyHeader(
+    const header = renderNearbyHeader(
+      articles.length,
+      currentLang,
+      onLangChange,
+      paused ?? false,
+      onTogglePause,
+    );
+
+    const list = document.createElement("ul");
+    list.className = "nearby-list";
+    for (const article of articles) {
+      list.appendChild(createArticleItem(article, onSelectArticle));
+    }
+
+    container.append(header, list);
+    const showMoreBtn = renderShowMoreButton(nextCount, onShowMore);
+    if (showMoreBtn) container.appendChild(showMoreBtn);
+    return;
+  }
+
+  // Re-render: incremental update
+  const savedScrollY = window.scrollY;
+  const savedFocus = captureFocus(container);
+
+  // Replace header (cheap — ~5 nodes with fresh event listeners)
+  const oldHeader = container.querySelector("header.app-header");
+  const newHeader = renderNearbyHeader(
     articles.length,
     currentLang,
     onLangChange,
     paused ?? false,
     onTogglePause,
   );
-
-  const list = document.createElement("ul");
-  list.className = "nearby-list";
-
-  for (const article of articles) {
-    const li = document.createElement("li");
-    const item = document.createElement("div");
-    item.className = "nearby-item";
-    item.setAttribute("role", "button");
-    item.tabIndex = 0;
-    item.dataset.title = article.title;
-    item.addEventListener("click", () => onSelectArticle(article));
-    item.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        onSelectArticle(article);
-      }
-    });
-
-    const info = document.createElement("div");
-    info.className = "nearby-info";
-    const name = document.createElement("span");
-    name.className = "nearby-name";
-    name.textContent = article.title;
-    info.appendChild(name);
-
-    const badge = document.createElement("span");
-    badge.className = "nearby-distance";
-    badge.textContent = formatDistance(article.distanceM);
-
-    item.append(info, badge);
-    li.appendChild(item);
-    list.appendChild(li);
+  if (oldHeader) {
+    oldHeader.replaceWith(newHeader);
   }
 
-  container.append(header, list);
+  // Reconcile article list items by title key
+  reconcileListItems(existingList, articles, onSelectArticle);
 
-  const showMoreBtn = renderShowMoreButton(nextCount, onShowMore);
-  if (showMoreBtn) container.appendChild(showMoreBtn);
-
-  if (isRerender) {
-    window.scrollTo(0, savedScrollY);
-    restoreFocus(container, savedFocus);
+  // Update show-more button
+  const oldShowMore = container.querySelector(".show-more");
+  const newShowMore = renderShowMoreButton(nextCount, onShowMore);
+  if (oldShowMore && newShowMore) {
+    oldShowMore.replaceWith(newShowMore);
+  } else if (oldShowMore) {
+    oldShowMore.remove();
+  } else if (newShowMore) {
+    container.appendChild(newShowMore);
   }
+
+  window.scrollTo(0, savedScrollY);
+  restoreFocus(container, savedFocus);
 }

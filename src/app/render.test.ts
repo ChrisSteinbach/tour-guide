@@ -356,6 +356,117 @@ describe("renderNearbyList", () => {
   });
 });
 
+// ── reconciliation on re-render ──────────────────────────────
+
+describe("renderNearbyList reconciliation", () => {
+  function makeArticles(n: number): NearbyArticle[] {
+    return Array.from({ length: n }, (_, i) => ({
+      title: `Article ${i}`,
+      lat: 48 + i * 0.01,
+      lon: 2 + i * 0.01,
+      distanceM: (i + 1) * 100,
+    }));
+  }
+
+  it("reuses DOM nodes for articles present in both renders", () => {
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    const container = document.createElement("div");
+    renderNearbyList(
+      container,
+      makeArticles(3),
+      () => {},
+      "en",
+      () => {},
+    );
+
+    const originalItems = Array.from(
+      container.querySelectorAll(".nearby-item"),
+    );
+
+    renderNearbyList(
+      container,
+      makeArticles(3),
+      () => {},
+      "en",
+      () => {},
+    );
+
+    const newItems = Array.from(container.querySelectorAll(".nearby-item"));
+    expect(newItems[0]).toBe(originalItems[0]);
+    expect(newItems[1]).toBe(originalItems[1]);
+    expect(newItems[2]).toBe(originalItems[2]);
+    vi.restoreAllMocks();
+  });
+
+  it("creates new nodes only for new articles", () => {
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    const container = document.createElement("div");
+    const original = makeArticles(3);
+    renderNearbyList(
+      container,
+      original,
+      () => {},
+      "en",
+      () => {},
+    );
+
+    const originalItems = Array.from(
+      container.querySelectorAll(".nearby-item"),
+    );
+
+    // Drop Article 0, keep 1 and 2, add Article 3
+    const updated = [
+      ...original.slice(1),
+      { title: "Article 3", lat: 49, lon: 3, distanceM: 400 },
+    ];
+    renderNearbyList(
+      container,
+      updated,
+      () => {},
+      "en",
+      () => {},
+    );
+
+    const newItems = Array.from(
+      container.querySelectorAll<HTMLElement>(".nearby-item"),
+    );
+    expect(newItems).toHaveLength(3);
+    expect(newItems[0]).toBe(originalItems[1]);
+    expect(newItems[1]).toBe(originalItems[2]);
+    expect(newItems[2].dataset.title).toBe("Article 3");
+    vi.restoreAllMocks();
+  });
+
+  it("updates distance badges on reused nodes", () => {
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    const container = document.createElement("div");
+    renderNearbyList(
+      container,
+      makeArticles(2),
+      () => {},
+      "en",
+      () => {},
+    );
+
+    const updated = makeArticles(2).map((a) => ({
+      ...a,
+      distanceM: a.distanceM + 500,
+    }));
+    renderNearbyList(
+      container,
+      updated,
+      () => {},
+      "en",
+      () => {},
+    );
+
+    const badges = container.querySelectorAll(".nearby-distance");
+    expect(badges[0].textContent).toBe("600 m");
+    expect(badges[1].textContent).toBe("700 m");
+    vi.restoreAllMocks();
+  });
+});
+
 // ── updateNearbyDistances ────────────────────────────────────
 
 describe("updateNearbyDistances", () => {
