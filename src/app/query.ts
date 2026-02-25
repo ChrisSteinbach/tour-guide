@@ -209,6 +209,14 @@ export class NearestQuery {
       },
     ];
 
+    // How many BFS candidates to explore before sorting and taking the top k.
+    // Spherical Delaunay vertices have average degree ≤ 6 (Euler: E ≤ 3V−6).
+    // k+6: for small k, ensures at least one full neighbor ring beyond the
+    //       nearest vertex, so we don't miss closer points one hop away.
+    // k*2: for large k, provides a proportional 2× oversampling margin as the
+    //       search fans out across multiple hops (~⌈k/6⌉ rings).
+    // Crossover at k=6. In practice the Delaunay locality property means the
+    // true k-nearest are almost always within these bounds.
     const target = Math.max(k * 2, k + 6);
     while (frontierHead < frontier.length && candidates.length < target) {
       const current = frontier[frontierHead++];
