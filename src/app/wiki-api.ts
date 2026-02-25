@@ -19,6 +19,10 @@ export interface ArticleSummary {
   pageUrl: string;
 }
 
+// In-memory LRU via Map insertion order. The app has two other caches at
+// different layers — an IndexedDB array in tile-loader.ts and Workbox runtime
+// caching in vite.config.ts. They intentionally differ in backend, lifetime,
+// and eviction strategy, so no shared abstraction is warranted.
 const MAX_CACHE_SIZE = 100;
 const cache = new Map<string, ArticleSummary>();
 
