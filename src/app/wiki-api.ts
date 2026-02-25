@@ -57,7 +57,8 @@ export async function fetchArticleSummary(
 
   cache.set(cacheKey, summary);
   if (cache.size > MAX_CACHE_SIZE) {
-    cache.delete(cache.keys().next().value!);
+    const oldest = cache.keys().next().value;
+    if (oldest) cache.delete(oldest);
   }
   return summary;
 }

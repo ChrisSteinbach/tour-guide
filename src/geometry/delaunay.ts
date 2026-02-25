@@ -12,10 +12,10 @@ export interface DelaunayTriangle {
   vertices: [number, number, number];
   /** neighbor[i] shares edge vertices[i] → vertices[(i+1)%3] */
   neighbor: [number, number, number];
-  /** Point on unit sphere equidistant to the 3 vertices */
-  circumcenter: Point3D;
-  /** Angular distance (radians) from circumcenter to vertices */
-  circumradius: number;
+  /** Point on unit sphere equidistant to the 3 vertices (computed by buildTriangulation, absent after deserialization) */
+  circumcenter?: Point3D;
+  /** Angular distance (radians) from circumcenter to vertices (computed by buildTriangulation, absent after deserialization) */
+  circumradius?: number;
 }
 
 export interface DelaunayVertex {

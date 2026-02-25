@@ -99,10 +99,8 @@ export function serialize(
 /**
  * Reconstruct a SphericalDelaunay from a serialized TriangulationFile.
  *
- * Circumcenter and circumradius are set to dummy values — they are not used
- * by locateTriangle() or findNearest(), and recomputing them would require
- * importing sphericalCircumcenter here. If needed, they can be recomputed
- * from the vertex positions.
+ * Circumcenter/circumradius are omitted — they are not used by
+ * locateTriangle() or findNearest().
  */
 export function deserialize(data: TriangulationFile): {
   tri: SphericalDelaunay;
@@ -122,7 +120,6 @@ export function deserialize(data: TriangulationFile): {
   }
 
   // Reconstruct triangles
-  const dummyCenter: Point3D = [0, 0, 0];
   const triangles = new Array<DelaunayTriangle>(triangleCount);
   for (let i = 0; i < triangleCount; i++) {
     triangles[i] = {
@@ -136,9 +133,6 @@ export function deserialize(data: TriangulationFile): {
         data.triangleNeighbors[i * 3 + 1],
         data.triangleNeighbors[i * 3 + 2],
       ],
-      // Not used by point-location or nearest-neighbor; set to dummy values
-      circumcenter: dummyCenter,
-      circumradius: 0,
     };
   }
 

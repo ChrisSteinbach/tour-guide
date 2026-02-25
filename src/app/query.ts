@@ -71,6 +71,7 @@ function flatLocate(
   qz: number,
   start?: number,
 ): number {
+  if (fd.vertexTriangles.length === 0) return 0;
   let cur = start ?? fd.vertexTriangles[0];
   const maxSteps = Math.max(fd.triangleVertices.length / 3, 100);
   for (let step = 0; step < maxSteps; step++) {

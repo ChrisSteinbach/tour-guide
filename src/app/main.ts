@@ -36,7 +36,11 @@ import {
 
 const LANG_STORAGE_KEY = "tour-guide-lang";
 
-const app = document.getElementById("app")!;
+const app =
+  document.getElementById("app") ??
+  (() => {
+    throw new Error("Missing #app element in document");
+  })();
 
 // ── State ────────────────────────────────────────────────────
 

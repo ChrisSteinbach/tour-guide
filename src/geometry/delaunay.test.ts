@@ -67,24 +67,33 @@ function validateTriangulation(tri: SphericalDelaunay) {
 
   // Circumcenters on unit sphere (length ≈ 1)
   for (let ti = 0; ti < nT; ti++) {
-    const len = vecLength(triangles[ti].circumcenter);
+    const len = vecLength(triangles[ti].circumcenter!);
     expect(len).toBeCloseTo(1, 10);
   }
 
   // Circumradii positive
   for (let ti = 0; ti < nT; ti++) {
-    expect(triangles[ti].circumradius).toBeGreaterThan(0);
+    expect(triangles[ti].circumradius!).toBeGreaterThan(0);
   }
 
   // Circumcenters equidistant from all 3 vertices (within tolerance)
   for (let ti = 0; ti < nT; ti++) {
     const t = triangles[ti];
-    const da = sphericalDistance(t.circumcenter, vertices[t.vertices[0]].point);
-    const db = sphericalDistance(t.circumcenter, vertices[t.vertices[1]].point);
-    const dc = sphericalDistance(t.circumcenter, vertices[t.vertices[2]].point);
-    expect(da).toBeCloseTo(t.circumradius, 10);
-    expect(db).toBeCloseTo(t.circumradius, 10);
-    expect(dc).toBeCloseTo(t.circumradius, 10);
+    const da = sphericalDistance(
+      t.circumcenter!,
+      vertices[t.vertices[0]].point,
+    );
+    const db = sphericalDistance(
+      t.circumcenter!,
+      vertices[t.vertices[1]].point,
+    );
+    const dc = sphericalDistance(
+      t.circumcenter!,
+      vertices[t.vertices[2]].point,
+    );
+    expect(da).toBeCloseTo(t.circumradius!, 10);
+    expect(db).toBeCloseTo(t.circumradius!, 10);
+    expect(dc).toBeCloseTo(t.circumradius!, 10);
   }
 
   // Euler: F = 2V - 4 (count only vertices that appear in triangles)
@@ -121,7 +130,7 @@ describe("buildTriangulation", () => {
       // of 3 axis-aligned vertices, e.g. (1,0,0),(0,1,0),(0,0,1) → normalize(1,1,1)
       const s = 1 / Math.sqrt(3);
       for (const t of tri.triangles) {
-        const cc = t.circumcenter;
+        const cc = t.circumcenter!;
         // Each component should be ±1/√3
         expect(Math.abs(cc[0])).toBeCloseTo(s, 10);
         expect(Math.abs(cc[1])).toBeCloseTo(s, 10);
@@ -193,10 +202,10 @@ describe("buildTriangulation", () => {
       for (const t of tri.triangles) {
         for (const vi of t.vertices) {
           const dist = sphericalDistance(
-            t.circumcenter,
+            t.circumcenter!,
             tri.vertices[vi].point,
           );
-          expect(dist).toBeCloseTo(t.circumradius, 10);
+          expect(dist).toBeCloseTo(t.circumradius!, 10);
         }
       }
     });
@@ -219,10 +228,10 @@ describe("buildTriangulation", () => {
       for (const t of tri.triangles) {
         for (const vi of t.vertices) {
           const dist = sphericalDistance(
-            t.circumcenter,
+            t.circumcenter!,
             tri.vertices[vi].point,
           );
-          expect(dist).toBeCloseTo(t.circumradius, 10);
+          expect(dist).toBeCloseTo(t.circumradius!, 10);
         }
       }
     });
@@ -247,10 +256,10 @@ describe("buildTriangulation", () => {
       for (const t of tri.triangles) {
         for (const vi of t.vertices) {
           const dist = sphericalDistance(
-            t.circumcenter,
+            t.circumcenter!,
             tri.vertices[vi].point,
           );
-          expect(dist).toBeCloseTo(t.circumradius, 10);
+          expect(dist).toBeCloseTo(t.circumradius!, 10);
         }
       }
     });

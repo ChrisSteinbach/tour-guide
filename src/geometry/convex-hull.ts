@@ -24,6 +24,8 @@ type HalfEdgeInfo = { faceIdx: number; edgePos: number };
 
 // Encode directed edge (a→b) as a single number: a * N + b
 // N must be > max vertex index.
+// Note: a * N + b overflows Number.MAX_SAFE_INTEGER when N > ~94.9M.
+// Safe for current use (≤1.2M points, max key ≈1.44 trillion).
 function edgeKey(a: number, b: number, mul: number): number {
   return a * mul + b;
 }
