@@ -4,7 +4,7 @@ This document describes how tour-guide obtains geotagged Wikipedia articles and 
 
 ## Overview
 
-The extraction pipeline downloads and joins `geo_tags` and `page` tables from Wikipedia SQL dumps. This captures all articles with `{{coord}}` templates, is fast (~10 minutes for English), and works offline after the initial download.
+The extraction pipeline downloads and joins `geo_tags` and `page` tables from Wikipedia SQL dumps. This captures all articles with `{{coord}}` templates and works offline after the initial download (~10 minutes for English on a modern laptop with cached dumps).
 
 Article descriptions are not extracted — the app fetches them on demand from the Wikipedia REST API when the user opens an article detail view.
 
@@ -87,6 +87,17 @@ The `--lang` flag controls which language to extract:
 ```bash
 npm run extract -- --lang=ja
 ```
+
+## Adding a New Language
+
+To add a fourth language (e.g. German `de`):
+
+1. Add the language code to the `SUPPORTED_LANGS` array in `src/lang.ts`.
+2. Run extraction: `npm run extract -- --lang=de`
+3. Run the pipeline: `npm run pipeline -- --lang=de`
+4. Add the language to the CI matrix in `.github/workflows/pipeline.yml` so it's included in monthly rebuilds.
+
+No special parsing is needed — the SQL dump format is identical across all Wikipedia languages. CJK titles (Japanese, Chinese, Korean) are handled transparently via UTF-8.
 
 ## What Happens Next
 

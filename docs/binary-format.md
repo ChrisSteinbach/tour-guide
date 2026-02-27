@@ -25,13 +25,13 @@ Notation: **V** = vertex count, **T** = triangle count. All multi-byte integers 
 
 ## Header (24 bytes)
 
-| Offset | Size | Type   | Field          | Description                                 |
-| ------ | ---- | ------ | -------------- | ------------------------------------------- |
-| 0      | 4    | Uint32 | vertexCount    | Number of vertices (V)                      |
-| 4      | 4    | Uint32 | triangleCount  | Number of triangles (T)                     |
-| 8      | 4    | Uint32 | articlesOffset | Byte offset where the articles JSON begins  |
-| 12     | 4    | Uint32 | articlesLength | Byte length of the articles JSON (unpadded) |
-| 16     | 8    | -      | reserved       | Zero-filled, reserved for future use        |
+| Offset | Size | Type   | Field          | Description                                                                                             |
+| ------ | ---- | ------ | -------------- | ------------------------------------------------------------------------------------------------------- |
+| 0      | 4    | Uint32 | vertexCount    | Number of vertices (V)                                                                                  |
+| 4      | 4    | Uint32 | triangleCount  | Number of triangles (T)                                                                                 |
+| 8      | 4    | Uint32 | articlesOffset | Byte offset where the articles JSON begins                                                              |
+| 12     | 4    | Uint32 | articlesLength | Byte length of the articles JSON (unpadded)                                                             |
+| 16     | 8    | -      | reserved       | Zero-filled, reserved for future use. A format version field will be placed here if the layout changes. |
 
 ## Numeric Sections
 
@@ -63,8 +63,6 @@ Begins at byte `articlesOffset` (which equals `24 + V*3*4 + V*4 + T*3*4 + T*3*4`
 
 Contains a UTF-8-encoded JSON array of article titles — a `string[]` with exactly **V** entries, one per vertex, in the same order as the vertex arrays. So `articles[i]` is the title for vertex `i`.
 
-Note: the deserializer also accepts `[title, description]` tuples for forward-compatibility, but the current serializer only writes plain strings.
-
 The JSON byte length is stored in the header's `articlesLength` field. The section is zero-padded to a 4-byte boundary (the padding bytes are not included in `articlesLength`).
 
 ## Size Calculation
@@ -78,7 +76,7 @@ totalSize = 24                           // header
           + ceil(articlesLength / 4) * 4 // articles JSON (padded)
 ```
 
-For reference, the English Wikipedia dataset (~1.2M articles) produces a file around 120 MB.
+For reference, encoding all ~1.2M English articles in a single file would produce ~120 MB. In practice, the tiled system produces ~800 smaller files totaling ~138 MB (see [tiling.md](tiling.md)).
 
 ## Producing and Consuming
 

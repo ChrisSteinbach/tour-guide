@@ -35,6 +35,27 @@ The dev server starts at `https://localhost:5173/` with a self-signed
 certificate (HTTPS is required for the Geolocation API). Use the "Or try with
 demo data" option for quick testing without GPS.
 
+### Prerequisites
+
+- **Node.js** 18+ (ES2022 target; tested with Node 20 and 22)
+- **npm** 9+
+
+### Running tests
+
+```bash
+npm test              # Full lint + test suite
+npm run test:watch    # Watch mode during development
+```
+
+### Quick pipeline test
+
+The full extraction downloads multi-GB Wikipedia dumps. For local testing,
+use `--limit` or `--bounds` to work with a small subset:
+
+```bash
+npm run pipeline -- --lang=en --limit=10000
+```
+
 ## Commands
 
 | Command                 | Description                                       |
@@ -130,8 +151,14 @@ src/
 | Language      | Articles |
 | ------------- | -------- |
 | English (en)  | ~1.2M    |
-| Swedish (sv)  | varies   |
-| Japanese (ja) | varies   |
+| Swedish (sv)  | ~250K    |
+| Japanese (ja) | ~180K    |
+
+Counts are approximate and update monthly via the automated pipeline.
+
+## Browser support
+
+Requires a modern browser with IndexedDB, Service Workers, and the Geolocation API. Tested on recent versions of Chrome, Firefox, Safari, and Edge. No IE11 support.
 
 ## Documentation
 

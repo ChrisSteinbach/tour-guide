@@ -19,11 +19,16 @@ bd create "Add user authentication"
 # View all issues
 bd list
 
+# Find available work
+bd ready
+
 # View issue details
 bd show <issue-id>
 
 # Update issue status
 bd update <issue-id> --status in_progress
+
+# Complete work (alias: bd close <issue-id>)
 bd update <issue-id> --status done
 
 # Sync with git remote
