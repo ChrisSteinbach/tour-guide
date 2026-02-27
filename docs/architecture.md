@@ -30,18 +30,9 @@ Downloads two SQL dump files from `dumps.wikimedia.org` per language:
 - `page.sql.gz` — article titles and IDs (~2 GB for English)
 - `geo_tags.sql.gz` — geographic coordinates linked to page IDs (~600 MB)
 
-The extraction runs in four steps:
+The extraction downloads dumps, parses and joins the SQL tables, deduplicates by title, validates against known landmarks, and writes NDJSON. See [data-extraction.md](data-extraction.md) for the full step-by-step process.
 
-1. **Download** (`dump-download.ts`) — Streams dumps with progress callbacks. Files are cached in `data/dumps/` across runs.
-2. **Build page map** (`extract-dump.ts: buildPageMap`) — Parses the `page` dump into a `Map<page_id, title>`. Filters to namespace 0 (articles), excludes redirects.
-3. **Join & stream** (`extract-dump.ts: streamGeoArticles`) — Streams `geo_tags`, joins each row with the page map, filters to `globe=earth`, `primary=1`, valid coordinates (not Null Island), and optional bounding box. Deduplicates by title.
-4. **Write NDJSON** — One JSON object per line: `{"title":"Eiffel Tower","lat":48.8584,"lon":2.2945}`
-
-The SQL dump parser (`dump-parser.ts`) handles gzip decompression, MySQL `CREATE TABLE` schema discovery, and `INSERT INTO ... VALUES` parsing with full MySQL escape sequence support. It streams rows one at a time to keep memory usage bounded.
-
-Descriptions are not embedded in the extraction output. The app fetches them on demand from the Wikipedia REST API when the user opens an article detail view.
-
-**Output:** `data/articles-{lang}.json` — ~1.2M articles for English.
+**Output:** `data/articles-{lang}.json` (NDJSON, one article per line).
 
 ## Phase 2: Pipeline (Triangulation Build)
 
@@ -76,7 +67,7 @@ Articles section (at articlesOffset):
   UTF-8 JSON string array of titles, zero-padded to 4-byte alignment
 ```
 
-Float32 vertices give sub-meter precision on Earth. Uint32 indices and typed array views enable zero-copy deserialization in the browser. Article titles are stored separately to avoid bloating the numeric data.
+Float32 vertices give sub-meter precision on Earth. On deserialization, Uint32 index sections are zero-copy views into the original ArrayBuffer; Float32 vertices are copied into Float64Arrays for numerical stability. Article titles are stored separately to avoid bloating the numeric data. See [binary-format.md](binary-format.md) for the full byte-level specification.
 
 ## Phase 3: App (PWA Frontend)
 
@@ -84,7 +75,7 @@ Float32 vertices give sub-meter precision on Earth. Uint32 indices and typed arr
 
 ### Startup
 
-1. Register service worker (auto-update mode)
+1. Register service worker (auto-update: new versions install silently without prompting)
 2. Load triangulation for stored language (default: English)
 3. Show welcome screen with language selector and "Find nearby" / "Use demo data" buttons
 4. On start: begin GPS watch, render article list
@@ -111,7 +102,7 @@ Per-tile query steps:
 3. **Greedy vertex walk** — Check all Delaunay neighbors of the current best; move to any closer one. Repeat until no improvement.
 4. **BFS expansion** (k > 1) — Expand from the nearest vertex through Delaunay edges, collecting max(2k, k+6) candidates. Sort by distance, return top k.
 
-Distance uses chord length (`2 * asin(||v - q|| / 2)`) rather than `acos(dot(v, q))` to avoid catastrophic cancellation with Float32-precision coordinates.
+Distance uses chord length (`2 * asin(||v - q|| / 2)`, clamped for numerical safety) rather than `acos(dot(v, q))` to avoid catastrophic cancellation with Float32-precision coordinates.
 
 ### Rendering (`render.ts`, `detail.ts`)
 
@@ -135,6 +126,23 @@ Distance uses chord length (`2 * asin(||v - q|| / 2)`) rather than `acos(dot(v, 
 - `.bin` and `.json` data files use `NetworkOnly` — deliberately excluded from SW cache so that freshness checks always hit the server (the app manages its own IDB cache)
 - Wikipedia REST API responses use `StaleWhileRevalidate` (max 200 entries, 1-week expiry)
 - HTTPS dev server (required for geolocation API) with `0.0.0.0` binding for phone testing
+
+### Error Handling
+
+The app degrades gracefully for common failure scenarios:
+
+- **GPS denied** — The state machine transitions to an error screen suggesting the user enable location permissions or use demo data.
+- **Offline with no cache** — Tile fetches fail; the app shows an error screen. Previously cached tiles remain available.
+- **Tile fetch failure** — Individual tile loads can fail without crashing. The app shows results from tiles that did load.
+- **IDB quota exceeded** — Write failures are caught; the app continues with in-memory data. LRU eviction (`tile-loader.ts`) keeps cache size bounded (max 50 tiles).
+- **Wikipedia API errors** — Article detail view shows a fallback state. Responses are cached via StaleWhileRevalidate, so previously fetched summaries work offline.
+
+### Security & Privacy
+
+- **DOM rendering** — All user-visible text is rendered via `createElement`/`textContent`, not `innerHTML`. Wikipedia API responses are not injected as raw HTML.
+- **GPS data** — Location coordinates are used only for on-device nearest-neighbor queries. No GPS data is transmitted to any server other than the browser's standard Geolocation API provider.
+- **Third-party requests** — The only external requests are to Wikipedia's REST API (for article summaries) and GitHub Pages (for tile data). No analytics, tracking, or third-party scripts.
+- **Service worker scope** — The SW caches static assets and Wikipedia API responses only. Tile data bypasses the SW cache (managed via IDB instead).
 
 ## CI/CD
 
@@ -219,7 +227,7 @@ Two formats sharing the same logical structure:
 | Articles | `string[]`                    | UTF-8 JSON     |
 | Use case | Intermediate / debugging      | Production     |
 
-`deserializeBinary()` upcasts Float32 vertices to Float64 for math operations. Uint32 sections use zero-copy typed array views directly into the ArrayBuffer.
+`deserializeBinary()` copies Float32 vertices into Float64 for math precision. Uint32 sections are zero-copy typed array views directly into the ArrayBuffer.
 
 ## Key Files
 

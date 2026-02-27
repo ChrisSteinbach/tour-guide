@@ -42,13 +42,13 @@ English Wikipedia has ~1.2M geotagged articles. With ~800 populated tiles:
 | Sparse tile (100 articles)                | ~9 KB raw, **~4 KB gzipped**                                  |
 | Tile index manifest                       | ~70 KB raw, **~15 KB gzipped**                                |
 
-Loading times (index + one tile, including 2x RTT):
+Loading times (index + one tile, including 2x RTT). Bandwidth estimates are conservative approximations; actual performance varies by carrier, congestion, and device:
 
-| Scenario                 | 4G (10 Mbps) | 3G (1 Mbps) |
-| ------------------------ | ------------ | ----------- |
-| Average tile             | ~0.3s        | ~1.4s       |
-| Dense tile (London, NYC) | ~0.9s        | ~8s         |
-| Sparse tile (rural)      | ~0.2s        | ~0.6s       |
+| Scenario                 | 4G (~10 Mbps) | 3G (~1 Mbps) |
+| ------------------------ | ------------- | ------------ |
+| Average tile             | ~0.3s         | ~1.4s        |
+| Dense tile (London, NYC) | ~0.9s         | ~8s          |
+| Sparse tile (rural)      | ~0.2s         | ~0.6s        |
 
 The 3G dense-tile case exceeds 5 seconds, but dense areas (central London, Manhattan) have near-universal 4G/5G/wifi coverage. The realistic worst case — a user on 3G in a moderately dense area (~3,000 articles, ~300 KB gzipped) — loads in ~3 seconds.
 
@@ -140,7 +140,7 @@ A JSON manifest that the app fetches first. It lists every tile with enough meta
 | `tiles[].bytes`                 | Uncompressed file size for progress estimation                     |
 | `tiles[].hash`                  | Content hash (first 8 hex chars of SHA-256) for cache invalidation |
 
-The content hash replaces the current `Last-Modified` header approach for freshness checks. When the app already has a tile cached in IDB, it compares the cached hash against the index. Changed hash → refetch tile. Unchanged → skip. This aligns with the existing issue tour-guide-5du (replacing Last-Modified with content hashes).
+Content hashes drive cache invalidation. When the app already has a tile cached in IDB, it compares the cached hash against the index. Changed hash → refetch tile. Unchanged → skip.
 
 **Manifest size**: ~800 tiles x ~90 bytes JSON ≈ 72 KB raw. Gzipped: **~15 KB**. Well under the 100 KB target.
 
@@ -168,7 +168,7 @@ function mergedFindNearest(
   lon: number,
   k: number,
 ): QueryResult[] {
-  const all = tiles.flatMap((t) => t.findNearest(lat, lon, k));
+  const all = tiles.flatMap((t) => t.findNearest(lat, lon, k).results);
   const seen = new Set<string>();
   return all
     .filter((r) => {
@@ -181,7 +181,7 @@ function mergedFindNearest(
 }
 ```
 
-Each per-tile query takes O(sqrt(N_tile)) steps. With N_tile ≈ 1,500 instead of N = 1,200,000, this is ~39 steps vs ~1,095 steps — a 28x speedup per query. Even querying 4 tiles is faster than the current monolithic query.
+Each per-tile query takes O(sqrt(N_tile)) steps. With N_tile ≈ 1,500, this is ~39 steps per tile. Even querying 4 tiles in parallel stays well under a millisecond.
 
 ### Edge proximity detection
 
@@ -199,13 +199,11 @@ const nearEdge =
 
 ### App loading sequence
 
-The loading sequence changes slightly from today:
+The loading sequence:
 
-**Current:** fetch data (parallel with GPS) → GPS ready → query → show results
+fetch tile index (parallel with GPS) → GPS ready → fetch primary tile → query → show results
 
-**Tiled:** fetch tile index (parallel with GPS) → GPS ready → fetch primary tile → query → show results
-
-The tile index fetch is small (~15 KB gzipped) and completes well before GPS warmup (~1-3 seconds). So the effective latency is: **GPS warmup + tile fetch + deserialize**. Since tile fetch is 0.2-0.9s and deserialize is <50ms, the total is dominated by GPS warmup — same as today.
+The tile index fetch is small (~15 KB gzipped) and completes well before GPS warmup (~1-3 seconds). So the effective latency is: **GPS warmup + tile fetch + deserialize**. Since tile fetch is 0.2-0.9s and deserialize is <50ms, the total is dominated by GPS warmup.
 
 For the **demo data** path ("Use demo data" button), the app loads a hardcoded tile for the demo location (Paris / Eiffel Tower → tile row 27, col 36).
 
@@ -216,13 +214,13 @@ Each tile is cached independently in IndexedDB, keyed by `tile-v1-{lang}-{id}` w
 1. App fetches the tile index (always, to check for updates).
 2. Compares cached tile hashes against the index.
 3. Only re-fetches tiles whose hash changed.
-4. Loads the primary tile from IDB in ~1ms (same speed as today's monolithic cache).
+4. Loads the primary tile from IDB in ~1ms.
 
 ## 5. Implementation Notes
 
 ### Binary format
 
-The per-tile binary format is **identical** to the format documented in docs/binary-format.md. The only difference is scale — a tile file for 1,500 articles is ~150 KB instead of 108 MB. No version bump or format change is needed.
+The per-tile binary format is **identical** to the format documented in docs/binary-format.md. A typical tile file for 1,500 articles is ~150 KB.
 
 The `deserializeBinary()` function in `src/geometry/serialization.ts` works unchanged on tile files.
 
@@ -232,12 +230,11 @@ Tiled cache keys: `tile-v1-{lang}-{id}` (one entry per tile per language). The t
 
 ## Summary
 
-| Aspect                      | Current                     | Tiled                                 |
-| --------------------------- | --------------------------- | ------------------------------------- |
-| First load                  | ~120 MB monolith            | ~15 KB index + ~75 KB tile            |
-| Time to first result        | 10-100s on mobile           | **<5s on mobile**                     |
-| IDB cache hit               | ~1ms                        | ~1ms (per tile)                       |
-| Query speed (1.2M articles) | O(sqrt(1.2M)) ≈ 1,095 steps | O(sqrt(1,500)) ≈ 39 steps             |
-| Binary format               | unchanged                   | unchanged                             |
-| Total data size             | ~120 MB                     | ~138 MB (1.15x due to buffer overlap) |
-| Pipeline time               | single hull build           | parallel per-tile builds              |
+| Aspect               | Value                                            |
+| -------------------- | ------------------------------------------------ |
+| First load           | ~15 KB index + ~75 KB tile (average)             |
+| Time to first result | <5s on mobile (dominated by GPS warmup)          |
+| IDB cache hit        | ~1ms per tile                                    |
+| Query speed per tile | O(sqrt(1,500)) ≈ 39 steps                        |
+| Total data (English) | ~138 MB across ~800 tiles (1.15x buffer overlap) |
+| Pipeline             | Parallel per-tile builds                         |

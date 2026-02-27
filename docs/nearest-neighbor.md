@@ -25,7 +25,7 @@ The Delaunay property guarantees that each point's nearest neighbor is one of it
    - Delete visible faces, create new faces connecting horizon to the new point
    - Relink adjacency via a half-edge map (edge `a→b` encoded as `a × N + b`)
 
-4. **Fallback strategies** — If the greedy walk fails to find a visible face: FaceGrid spatial index lookup → local BFS from walk endpoint → linear scan (~0.06% of points).
+4. **Fallback strategies** — If the greedy walk fails to find a visible face: FaceGrid spatial index lookup → local BFS from walk endpoint → linear scan (rare, typically <1% of points).
 
 5. **Post-processing** (`buildTriangulation()` in `src/geometry/delaunay.ts`) — Computes circumcenters, builds vertex-to-triangle mapping, drops interior points, remaps indices.
 
@@ -59,7 +59,7 @@ For k-nearest queries, expand from the nearest vertex through Delaunay edges via
 
 The pipeline's geometry library (`src/geometry/index.ts`) uses `acos(dot(a, b))` for spherical distance, which is fine for Float64 pipeline math.
 
-The app's runtime query module (`src/app/query.ts`) uses **chord distance** instead: `2 * asin(||v - q|| / 2)`. This avoids catastrophic cancellation when vertex coordinates originate from Float32 storage (the binary format). For nearby points, the dot product is approximately 1 and `(1 - dot)` falls below Float32 rounding error, causing `acos` to collapse to 0. Chord distance computes differences instead, which stay above the noise floor.
+The app's runtime query module (`src/app/query.ts`) uses **chord distance** instead: `2 * asin(||v - q|| / 2)` (with clamping guards for numerical safety). This avoids catastrophic cancellation when vertex coordinates originate from Float32 storage (the binary format). For nearby points, the dot product is approximately 1 and `(1 - dot)` falls below Float32 rounding error, causing `acos` to collapse to 0. Chord distance computes differences instead, which stay above the noise floor.
 
 Both are monotonically related to great-circle distance, so they produce the same nearest-neighbor ordering.
 

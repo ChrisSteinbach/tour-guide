@@ -64,4 +64,4 @@ When ending a work session, ALL steps below are mandatory. Work is NOT complete 
 6. **Verify** — All changes committed AND pushed
 7. **Hand off** — Provide context for next session
 
-NEVER stop before pushing — that leaves work stranded locally. If push fails, resolve and retry until it succeeds.
+If quality gates fail, fix the issues before pushing. Never push broken code. NEVER stop before pushing — that leaves work stranded locally. If push fails, resolve and retry until it succeeds.

@@ -24,6 +24,8 @@ end-to-end data flow.
 
 ## Getting started
 
+Requires **Node.js 18+**.
+
 ```bash
 git clone https://github.com/ChrisSteinbach/tour-guide.git
 cd tour-guide
@@ -130,8 +132,12 @@ src/
 | Language      | Articles |
 | ------------- | -------- |
 | English (en)  | ~1.2M    |
-| Swedish (sv)  | varies   |
-| Japanese (ja) | varies   |
+| Swedish (sv)  | ~250K    |
+| Japanese (ja) | ~180K    |
+
+## Browser support
+
+Requires a modern browser with IndexedDB, Service Workers, and the Geolocation API. Tested on recent versions of Chrome, Firefox, Safari, and Edge. No IE11 support.
 
 ## Documentation
 
