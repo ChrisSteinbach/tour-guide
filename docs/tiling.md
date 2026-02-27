@@ -1,6 +1,6 @@
 # Geographic Tiling Strategy
 
-The app uses geographic tiling to break the full dataset into small chunks so it can show results within seconds of getting the user's position. Instead of downloading a single monolithic file, the app fetches a small tile index and then loads only the nearby tiles on demand.
+The app uses geographic tiling to break the full dataset into small chunks so it can show results within seconds of getting the user's position. The app fetches a small tile index and then loads only the nearby tiles on demand.
 
 ## 1. Tile Scheme
 
@@ -60,7 +60,7 @@ The 3G dense-tile case exceeds 5 seconds, but dense areas (central London, Manha
 
 Each tile gets its own self-contained spherical Delaunay triangulation. The pipeline builds one convex hull per tile, producing an independent binary file with its own vertex indices, triangle topology, and article list. No cross-tile references exist in the data.
 
-This means the existing binary format (docs/binary-format.md) is reused unchanged — a tile file is structurally identical to the current monolithic file, just smaller.
+This means the binary format (docs/binary-format.md) is reused unchanged — a tile file is structurally identical to a single monolithic file, just smaller.
 
 ### Buffer zone
 
@@ -89,7 +89,7 @@ npm run pipeline -- --lang=en
 Pseudocode for the tiled pipeline:
 
 ```
-1. Read all articles from NDJSON (same as today)
+1. Read all articles from NDJSON
 2. For each populated 5° cell:
    a. Collect articles inside the cell + 0.5° buffer
    b. If fewer than 4 articles (convex hull minimum), skip the tile
@@ -181,7 +181,7 @@ function mergedFindNearest(
 }
 ```
 
-Each per-tile query takes O(sqrt(N_tile)) steps. With N_tile ≈ 1,500, this is ~39 steps per tile. Even querying 4 tiles in parallel stays well under a millisecond.
+Each per-tile query takes O(sqrt(N_tile)) steps. With N_tile ≈ 1,500 instead of N = 1,200,000, this is ~39 steps vs ~1,095 steps — a 28x speedup per query. Even querying 4 tiles in parallel stays well under a millisecond.
 
 ### Edge proximity detection
 
@@ -230,11 +230,14 @@ Tiled cache keys: `tile-v1-{lang}-{id}` (one entry per tile per language). The t
 
 ## Summary
 
-| Aspect               | Value                                            |
-| -------------------- | ------------------------------------------------ |
-| First load           | ~15 KB index + ~75 KB tile (average)             |
-| Time to first result | <5s on mobile (dominated by GPS warmup)          |
-| IDB cache hit        | ~1ms per tile                                    |
-| Query speed per tile | O(sqrt(1,500)) ≈ 39 steps                        |
-| Total data (English) | ~138 MB across ~800 tiles (1.15x buffer overlap) |
-| Pipeline             | Parallel per-tile builds                         |
+Why tiling matters — comparison with a hypothetical monolithic approach:
+
+| Aspect                      | Monolithic (hypothetical)   | Tiled (current)                       |
+| --------------------------- | --------------------------- | ------------------------------------- |
+| First load                  | ~120 MB monolith            | ~15 KB index + ~75 KB tile            |
+| Time to first result        | 10-100s on mobile           | **<5s on mobile**                     |
+| IDB cache hit               | ~1ms                        | ~1ms (per tile)                       |
+| Query speed (1.2M articles) | O(sqrt(1.2M)) ≈ 1,095 steps | O(sqrt(1,500)) ≈ 39 steps             |
+| Binary format               | unchanged                   | unchanged                             |
+| Total data size             | ~120 MB                     | ~138 MB (1.15x due to buffer overlap) |
+| Pipeline time               | single hull build           | parallel per-tile builds              |
