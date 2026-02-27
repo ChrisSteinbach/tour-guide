@@ -126,13 +126,13 @@ Distance uses chord length (`2 * asin(||v - q|| / 2)`) rather than `acos(dot(v, 
 **Detail view:**
 
 - Fetches article summary from Wikipedia REST API (`wiki-api.ts`)
-- Displays thumbnail, description, extract, and links to Wikipedia and Google Maps directions
+- Displays thumbnail, description, extract, and links to Wikipedia and platform-native directions (Apple Maps on iOS, geo: URI on Android, Google Maps on desktop)
 - In-memory cache for API responses
 
 ### PWA & Service Worker (`vite.config.ts`)
 
 - Static assets (JS, CSS, HTML, SVG) are precached by Workbox
-- `.bin` data files use `NetworkOnly` — deliberately excluded from SW cache so that freshness checks always hit the server (the app manages its own IDB cache)
+- `.bin` and `.json` data files use `NetworkOnly` — deliberately excluded from SW cache so that freshness checks always hit the server (the app manages its own IDB cache)
 - Wikipedia REST API responses use `StaleWhileRevalidate` (max 200 entries, 1-week expiry)
 - HTTPS dev server (required for geolocation API) with `0.0.0.0` binding for phone testing
 
@@ -181,7 +181,7 @@ Incremental 3D convex hull algorithm. For unit-sphere points, hull faces are exa
 
 **Core predicate:** `orient3D(a, b, c, d)` — signed volume of tetrahedron. Positive means `d` is visible from face `(a, b, c)`.
 
-**Degeneracy handling:** Points receive ~1e-6 random perturbation (reprojected onto the sphere) to prevent numerical ambiguity from coplanar/cospherical configurations.
+**Degeneracy handling:** Points receive ~1e-6 deterministic perturbation via a seeded LCG PRNG (reprojected onto the sphere) to prevent numerical ambiguity from coplanar/cospherical configurations. The fixed seed ensures reproducible builds.
 
 **Per-insertion steps:**
 
@@ -260,7 +260,7 @@ src/lang.ts            Supported languages (en, sv, ja)
 src/tiles.ts           Tile types, grid constants, tile ID computation
 
 .github/workflows/
-  ci.yml               Lint + test on every push
+  ci.yml               Lint + test on pushes to main and PRs
   pipeline.yml         Monthly data extraction + build
   deploy.yml           App deployment to GitHub Pages
 ```
