@@ -1,6 +1,6 @@
 # Geographic Tiling Strategy
 
-The app uses geographic tiling to break the full dataset into small chunks so it can show results within seconds of getting the user's position. Instead of downloading a single monolithic file, the app fetches a small tile index and then loads only the nearby tiles on demand.
+The app uses geographic tiling to break the full dataset into small chunks so it can show results within seconds of getting the user's position. The app fetches a small tile index and then loads only the nearby tiles on demand.
 
 ## 1. Tile Scheme
 
@@ -60,7 +60,7 @@ The 3G dense-tile case exceeds 5 seconds, but dense areas (central London, Manha
 
 Each tile gets its own self-contained spherical Delaunay triangulation. The pipeline builds one convex hull per tile, producing an independent binary file with its own vertex indices, triangle topology, and article list. No cross-tile references exist in the data.
 
-This means the existing binary format (docs/binary-format.md) is reused unchanged — a tile file is structurally identical to the current monolithic file, just smaller.
+This means the binary format (docs/binary-format.md) is reused unchanged — a tile file is structurally identical to a single monolithic file, just smaller.
 
 ### Buffer zone
 
@@ -89,7 +89,7 @@ npm run pipeline -- --lang=en
 Pseudocode for the tiled pipeline:
 
 ```
-1. Read all articles from NDJSON (same as today)
+1. Read all articles from NDJSON
 2. For each populated 5° cell:
    a. Collect articles inside the cell + 0.5° buffer
    b. If fewer than 4 articles (convex hull minimum), skip the tile
@@ -140,7 +140,7 @@ A JSON manifest that the app fetches first. It lists every tile with enough meta
 | `tiles[].bytes`                 | Uncompressed file size for progress estimation                     |
 | `tiles[].hash`                  | Content hash (first 8 hex chars of SHA-256) for cache invalidation |
 
-The content hash replaces the current `Last-Modified` header approach for freshness checks. When the app already has a tile cached in IDB, it compares the cached hash against the index. Changed hash → refetch tile. Unchanged → skip. This aligns with the existing issue tour-guide-5du (replacing Last-Modified with content hashes).
+The content hash is used for freshness checks. When the app already has a tile cached in IDB, it compares the cached hash against the index. Changed hash → refetch tile. Unchanged → skip.
 
 **Manifest size**: ~800 tiles x ~90 bytes JSON ≈ 72 KB raw. Gzipped: **~15 KB**. Well under the 100 KB target.
 
@@ -181,7 +181,7 @@ function mergedFindNearest(
 }
 ```
 
-Each per-tile query takes O(sqrt(N_tile)) steps. With N_tile ≈ 1,500 instead of N = 1,200,000, this is ~39 steps vs ~1,095 steps — a 28x speedup per query. Even querying 4 tiles is faster than the current monolithic query.
+Each per-tile query takes O(sqrt(N_tile)) steps. With N_tile ≈ 1,500 instead of N = 1,200,000, this is ~39 steps vs ~1,095 steps — a 28x speedup per query. Even querying 4 tiles is faster than a single monolithic query would be.
 
 ### Edge proximity detection
 
@@ -199,13 +199,11 @@ const nearEdge =
 
 ### App loading sequence
 
-The loading sequence changes slightly from today:
+The loading sequence is:
 
-**Current:** fetch data (parallel with GPS) → GPS ready → query → show results
+fetch tile index (parallel with GPS) → GPS ready → fetch primary tile → query → show results
 
-**Tiled:** fetch tile index (parallel with GPS) → GPS ready → fetch primary tile → query → show results
-
-The tile index fetch is small (~15 KB gzipped) and completes well before GPS warmup (~1-3 seconds). So the effective latency is: **GPS warmup + tile fetch + deserialize**. Since tile fetch is 0.2-0.9s and deserialize is <50ms, the total is dominated by GPS warmup — same as today.
+The tile index fetch is small (~15 KB gzipped) and completes well before GPS warmup (~1-3 seconds). So the effective latency is: **GPS warmup + tile fetch + deserialize**. Since tile fetch is 0.2-0.9s and deserialize is <50ms, the total is dominated by GPS warmup.
 
 For the **demo data** path ("Use demo data" button), the app loads a hardcoded tile for the demo location (Paris / Eiffel Tower → tile row 27, col 36).
 
@@ -216,7 +214,7 @@ Each tile is cached independently in IndexedDB, keyed by `tile-v1-{lang}-{id}` w
 1. App fetches the tile index (always, to check for updates).
 2. Compares cached tile hashes against the index.
 3. Only re-fetches tiles whose hash changed.
-4. Loads the primary tile from IDB in ~1ms (same speed as today's monolithic cache).
+4. Loads the primary tile from IDB in ~1ms.
 
 ## 5. Implementation Notes
 
@@ -232,7 +230,9 @@ Tiled cache keys: `tile-v1-{lang}-{id}` (one entry per tile per language). The t
 
 ## Summary
 
-| Aspect                      | Current                     | Tiled                                 |
+Why tiling matters — comparison with a hypothetical monolithic approach:
+
+| Aspect                      | Monolithic (before)         | Tiled (current)                       |
 | --------------------------- | --------------------------- | ------------------------------------- |
 | First load                  | ~120 MB monolith            | ~15 KB index + ~75 KB tile            |
 | Time to first result        | 10-100s on mobile           | **<5s on mobile**                     |

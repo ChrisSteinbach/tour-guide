@@ -6,7 +6,10 @@
 
 ```bash
 npm test              # Lint + tests (runs npm run lint, then vitest run)
+npm run test:watch    # Tests in watch mode
+npm run test:coverage # Tests with coverage report
 npm run lint          # Type-check + ESLint + Prettier check (tsc && eslint && prettier)
+npm run lint:fix      # Auto-fix ESLint + Prettier issues
 npm run dev           # Start Vite dev server (binds 0.0.0.0 for phone testing)
 npm run build         # Production build → dist/app/
 npm run pipeline      # Run offline build pipeline (tsx src/pipeline/build.ts)
@@ -39,10 +42,12 @@ Vitest with globals — use `describe`, `it`, `expect` without imports. Tests li
 This project uses **beads** (`bd`) for issue tracking instead of markdown files or TodoWrite.
 
 ```bash
+bd list               # View all issues
 bd ready              # Find available work
 bd show <id>          # View issue details
+bd create "<title>"   # Create a new issue
 bd update <id> --status in_progress  # Claim work
-bd close <id>         # Complete work
+bd close <id>         # Complete work (alias for bd update --status done)
 bd sync               # Sync with git
 ```
 

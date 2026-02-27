@@ -136,6 +136,26 @@ Distance uses chord length (`2 * asin(||v - q|| / 2)`) rather than `acos(dot(v, 
 - Wikipedia REST API responses use `StaleWhileRevalidate` (max 200 entries, 1-week expiry)
 - HTTPS dev server (required for geolocation API) with `0.0.0.0` binding for phone testing
 
+### Failure Modes
+
+The app is designed for mobile networks where failures are common. Each subsystem degrades gracefully:
+
+| Scenario                                                     | Behavior                                                                                           | User experience                                                                                  |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| **Tile fetch failure**                                       | Error logged to console; app continues with remaining tiles                                        | Results from other loaded tiles still display; missing tile may cause gaps in sparse areas       |
+| **Tile index fetch failure**                                 | Falls back to IDB-cached index if available; if no cache, transitions to "data unavailable" screen | Offline revisit works; first-time offline shows language picker with "No data available" message |
+| **IndexedDB unavailable** (private browsing, quota exceeded) | `idbOpen()` returns `null`; all IDB reads/writes silently skip                                     | App works normally but without caching — tiles reload from network on each visit                 |
+| **GPS denied**                                               | State machine transitions to error screen with message and "Use demo data" button                  | User can grant permission and retry, or explore with Paris demo data                             |
+| **GPS timeout/unavailable**                                  | Same as GPS denied — error screen with demo data option                                            | Explicit user action required to proceed                                                         |
+| **Wikipedia API failure**                                    | Detail view shows error with "Retry" button and direct "Open on Wikipedia" link                    | User can retry or read the article on Wikipedia directly                                         |
+| **Wikipedia API 404**                                        | Treated as "article not found"                                                                     | Detail view shows error; Wikipedia link still works as fallback                                  |
+
+Key design decisions:
+
+- **GPS errors are phase-gated:** Only processed during the "locating" phase. GPS errors that arrive while the user is already browsing are silently ignored to avoid disrupting an active session.
+- **Three independent cache layers:** IDB (tile data, survives reload), in-memory LRU (article summaries, cleared on navigation), and Workbox runtime cache (Wikipedia API, StaleWhileRevalidate). Each operates independently so one failing doesn't cascade.
+- **No automatic retry for tile fetches:** Individual tile failures are swallowed so they don't block other concurrent tile loads. The app shows results from whichever tiles succeed.
+
 ## CI/CD
 
 ### Data Pipeline (`pipeline.yml`)
