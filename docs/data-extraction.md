@@ -1,29 +1,29 @@
-# Data Extraction
+# **Data Extraction**
 
 This document describes how tour-guide obtains geotagged Wikipedia articles and transforms them into the data files used by the app.
 
-## Overview
+## **Overview**
 
 The extraction pipeline downloads and joins `geo_tags` and `page` tables from Wikipedia SQL dumps. This captures all articles with `{{coord}}` templates, is fast (~10 minutes for English), and works offline after the initial download.
 
 Article descriptions are not extracted — the app fetches them on demand from the Wikipedia REST API when the user opens an article detail view.
 
-## SQL Dump Extraction
+## **I. SQL Dump Extraction**
 
 **Entry point:** `src/pipeline/extract-dump.ts` — `npm run extract`
 
-### Data Sources
+### **1\. Data Sources**
 
 Two SQL dump files are downloaded per language from `dumps.wikimedia.org`:
 
 | Table      | File                            | Contents                                        | Size (English) |
-| ---------- | ------------------------------- | ----------------------------------------------- | -------------- |
+| :--------- | :------------------------------ | :---------------------------------------------- | :------------- |
 | `page`     | `{wiki}-latest-page.sql.gz`     | Article IDs, titles, namespaces, redirect flags | ~2 GB          |
 | `geo_tags` | `{wiki}-latest-geo_tags.sql.gz` | Geographic coordinates linked to page IDs       | ~600 MB        |
 
 Files are downloaded to `data/dumps/` and cached across runs.
 
-### Extraction Steps
+### **2\. Extraction Steps**
 
 1. **Download** — Streams dump files with progress reporting. Skips files that already exist when `--skip-download` is set.
 2. **Build page map** — Parses the `page` dump into a `Map<page_id, title>`. Filters to namespace 0 (main articles) and excludes redirects.
@@ -31,7 +31,7 @@ Files are downloaded to `data/dumps/` and cached across runs.
 4. **Deduplicate** — Keeps the first occurrence of each title.
 5. **Write NDJSON** — Outputs one JSON object per line.
 
-### SQL Dump Parser
+### **3\. SQL Dump Parser**
 
 The parser (`src/pipeline/dump-parser.ts`) handles gzipped MySQL dump files:
 
@@ -39,7 +39,7 @@ The parser (`src/pipeline/dump-parser.ts`) handles gzipped MySQL dump files:
 - Parses `INSERT INTO ... VALUES` with full MySQL escape sequence support (`\'`, `\\`, `\n`, etc.)
 - Streams rows one at a time to keep memory usage bounded
 
-### Usage
+### **4\. Usage**
 
 ```bash
 # Full extraction (English)
@@ -52,7 +52,7 @@ npm run extract -- --lang=sv --skip-download
 npm run extract -- --lang=en --bounds=49.44,50.19,5.73,6.53
 ```
 
-### Output
+### **5\. Output**
 
 `data/articles-{lang}.json` — NDJSON, one article per line:
 
@@ -63,7 +63,7 @@ npm run extract -- --lang=en --bounds=49.44,50.19,5.73,6.53
 
 A full English extraction produces ~1.2M articles.
 
-## Descriptions
+## **II. Descriptions**
 
 Descriptions are **not** embedded in the extraction output. Instead, the app fetches them on demand via the [Wikipedia REST API](https://en.wikipedia.org/api/rest_v1/):
 
@@ -75,7 +75,7 @@ This returns the article's description, extract, thumbnail, and page URL. Respon
 
 This approach avoids bloating the static data files and ensures descriptions stay current.
 
-## Multi-Language Support
+## **III. Multi-Language Support**
 
 Three languages are supported: English (`en`), Swedish (`sv`), and Japanese (`ja`).
 
@@ -87,6 +87,6 @@ The `--lang` flag controls which language to extract:
 npm run extract -- --lang=ja
 ```
 
-## What Happens Next
+## **IV. What Happens Next**
 
 After extraction, the pipeline step (`npm run pipeline`) reads the NDJSON articles and builds a spherical Delaunay triangulation for nearest-neighbor queries. See [architecture.md](architecture.md) for the full data flow.

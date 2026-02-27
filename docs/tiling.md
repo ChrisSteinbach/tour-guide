@@ -1,16 +1,16 @@
-# Geographic Tiling Strategy
+# **Geographic Tiling Strategy**
 
 The app uses geographic tiling to break the full dataset into small chunks so it can show results within seconds of getting the user's position. Instead of downloading a single monolithic file, the app fetches a small tile index and then loads only the nearby tiles on demand.
 
-## 1. Tile Scheme
+## **I. Tile Scheme**
 
-### Fixed 5° lat/lon grid
+### **1\. Fixed 5 Degree Lat/Lon Grid**
 
-Partition the sphere into a regular grid of 5° latitude by 5° longitude cells. Each cell that contains at least one article becomes a tile. Empty cells (open ocean, uninhabited desert) produce no tile.
+Partition the sphere into a regular grid of 5 degree latitude by 5 degree longitude cells. Each cell that contains at least one article becomes a tile. Empty cells (open ocean, uninhabited desert) produce no tile.
 
 Grid dimensions: 72 columns (longitude) x 36 rows (latitude) = 2,592 cells. After filtering empties, English Wikipedia yields roughly **700-900 tiles**.
 
-Tile IDs use zero-padded row and column indices: `"14-38"` for row 14, column 38 (corresponding to 70°N-75°N, 190°-195° remapped as -170° to -165°). More precisely:
+Tile IDs use zero-padded row and column indices: `"14-38"` for row 14, column 38 (corresponding to 70 degrees N-75 degrees N, 190 degrees-195 degrees remapped as -170 degrees to -165 degrees). More precisely:
 
 ```
 row = floor((lat + 90) / 5)     // 0..35,  row 0 = 90°S–85°S
@@ -19,20 +19,20 @@ col = floor((lon + 180) / 5)    // 0..71,  col 0 = 180°W–175°W
 
 This makes tile lookup from a lat/lon position a single division — no library, no lookup table.
 
-### Why not geohash
+### **2\. Why Not Geohash**
 
 Geohash precision levels jump 32x between levels (32 → 1,024 → 32,768 cells). There is no level that naturally maps to the ~700-1,500 tile sweet spot without either producing too few tiles (level 2 = 1,024 total, ~300 populated) or too many (level 3 = 32,768 total, ~1,500 populated but extremely uneven sizes). Geohash cells also have alternating aspect ratios and require base-32 arithmetic for adjacency lookups.
 
-### Why not S2 cells
+### **3\. Why Not S2 Cells**
 
-S2 cells provide near-uniform area coverage and are theoretically optimal. However, computing S2 cell IDs from lat/lon requires implementing the S2 projection (~500+ lines of code), and the project's zero-dependency constraint makes this a poor fit for the app runtime. The non-uniform area of lat/lon cells at high latitudes is not a practical concern: virtually no Wikipedia articles exist above 70° where the distortion becomes significant, and the buffer zone (section 2) handles any boundary effects.
+S2 cells provide near-uniform area coverage and are theoretically optimal. However, computing S2 cell IDs from lat/lon requires implementing the S2 projection (~500+ lines of code), and the project's zero-dependency constraint makes this a poor fit for the app runtime. The non-uniform area of lat/lon cells at high latitudes is not a practical concern: virtually no Wikipedia articles exist above 70 degrees where the distortion becomes significant, and the buffer zone (section 2) handles any boundary effects.
 
-### Back-of-envelope math
+### **4\. Back-of-Envelope Math**
 
 English Wikipedia has ~1.2M geotagged articles. With ~800 populated tiles:
 
 | Metric                                    | Value                                                         |
-| ----------------------------------------- | ------------------------------------------------------------- |
+| :---------------------------------------- | :------------------------------------------------------------ |
 | Average articles per tile                 | ~1,500                                                        |
 | Bytes per article (numeric)               | ~64 (12 vertex + 4 vertexTri + 24 triVerts + 24 triNeighbors) |
 | Bytes per article (title)                 | ~25 (JSON string in array)                                    |
@@ -45,7 +45,7 @@ English Wikipedia has ~1.2M geotagged articles. With ~800 populated tiles:
 Loading times (index + one tile, including 2x RTT):
 
 | Scenario                 | 4G (10 Mbps) | 3G (1 Mbps) |
-| ------------------------ | ------------ | ----------- |
+| :----------------------- | :----------- | :---------- |
 | Average tile             | ~0.3s        | ~1.4s       |
 | Dense tile (London, NYC) | ~0.9s        | ~8s         |
 | Sparse tile (rural)      | ~0.2s        | ~0.6s       |
@@ -54,21 +54,21 @@ The 3G dense-tile case exceeds 5 seconds, but dense areas (central London, Manha
 
 **Result: first useful result in <5 seconds for all realistic mobile scenarios.**
 
-## 2. Per-Tile Triangulation
+## **II. Per-Tile Triangulation**
 
-### Independent Delaunay per tile
+### **1\. Independent Delaunay Per Tile**
 
 Each tile gets its own self-contained spherical Delaunay triangulation. The pipeline builds one convex hull per tile, producing an independent binary file with its own vertex indices, triangle topology, and article list. No cross-tile references exist in the data.
 
 This means the existing binary format (docs/binary-format.md) is reused unchanged — a tile file is structurally identical to the current monolithic file, just smaller.
 
-### Buffer zone
+### **2\. Buffer Zone**
 
 A tile's triangulation must include articles slightly beyond its boundary. Without this, nearest-neighbor queries for users near a tile edge would miss candidates in the adjacent tile. The triangle walk (`flatLocate`) would also produce degenerate triangulations at the boundary if the point set is artificially clipped to a rectangle.
 
-**Buffer width: 0.5°** (~55 km at the equator, scaling with cos(lat)). Each tile includes all articles within 0.5° of its 5° bounding box, giving an effective data area of 6° x 6°.
+**Buffer width: 0.5 degrees** (~55 km at the equator, scaling with cos(lat)). Each tile includes all articles within 0.5 degrees of its 5 degree bounding box, giving an effective data area of 6 degrees x 6 degrees.
 
-Why 0.5° is sufficient:
+Why 0.5 degrees is sufficient:
 
 - In **dense areas** (cities), nearest articles are <1 km away. The buffer is massive overkill.
 - In **moderate areas**, nearest articles are typically <10 km away. 55 km buffer covers them.
@@ -76,9 +76,9 @@ Why 0.5° is sufficient:
 
 Buffer articles are included in the triangulation and the article list. They are **not flagged** — the tile is fully self-contained. Duplicates across adjacent tiles are expected and harmless (the app de-duplicates by title when merging results).
 
-The 0.5° buffer increases per-tile article counts by roughly 10-20%, bringing the average tile from ~130 KB to ~150 KB (~75 KB gzipped). Total data across all tiles is approximately 1.15x the monolith size.
+The 0.5 degree buffer increases per-tile article counts by roughly 10-20%, bringing the average tile from ~130 KB to ~150 KB (~75 KB gzipped). Total data across all tiles is approximately 1.15x the monolith size.
 
-### Pipeline
+### **3\. Pipeline**
 
 The pipeline (`src/pipeline/build.ts`) always produces tiled output:
 
@@ -100,7 +100,7 @@ Pseudocode for the tiled pipeline:
 
 The existing `--bounds` flag already supports geographic subsetting of the article input. The tiled pipeline extends this to iterate over all cells.
 
-## 3. Tile Index Format
+## **III. Tile Index Format**
 
 A JSON manifest that the app fetches first. It lists every tile with enough metadata to decide what to load.
 
@@ -128,7 +128,7 @@ A JSON manifest that the app fetches first. It lists every tile with enough meta
 ```
 
 | Field                           | Purpose                                                            |
-| ------------------------------- | ------------------------------------------------------------------ |
+| :------------------------------ | :----------------------------------------------------------------- |
 | `version`                       | Format version for future changes                                  |
 | `gridDeg`                       | Cell size in degrees (5)                                           |
 | `bufferDeg`                     | Buffer zone width (0.5)                                            |
@@ -142,22 +142,22 @@ A JSON manifest that the app fetches first. It lists every tile with enough meta
 
 The content hash replaces the current `Last-Modified` header approach for freshness checks. When the app already has a tile cached in IDB, it compares the cached hash against the index. Changed hash → refetch tile. Unchanged → skip. This aligns with the existing issue tour-guide-5du (replacing Last-Modified with content hashes).
 
-**Manifest size**: ~800 tiles x ~90 bytes JSON ≈ 72 KB raw. Gzipped: **~15 KB**. Well under the 100 KB target.
+**Manifest size**: ~800 tiles x ~90 bytes JSON = 72 KB raw. Gzipped: **~15 KB**. Well under the 100 KB target.
 
-## 4. Boundary Handling
+## **IV. Boundary Handling**
 
-### Loading strategy
+### **1\. Loading Strategy**
 
 When the user's position is known, the app:
 
 1. **Fetches the tile index** (if not already cached). This is small and cacheable in IDB.
 2. **Determines the primary tile** from `floor((lat+90)/5)` and `floor((lon+180)/5)`.
 3. **Fetches and deserializes the primary tile**. Shows results immediately.
-4. **Checks proximity to edges**. If the user is within 1° of any tile boundary, identifies adjacent tiles that should be loaded.
+4. **Checks proximity to edges**. If the user is within 1 degree of any tile boundary, identifies adjacent tiles that should be loaded.
 5. **Prefetches adjacent tiles** in the background (up to 3 adjacent tiles for a corner case, typically 1-2).
 6. **Merges results** when adjacent tiles finish loading.
 
-### Cross-tile query merging
+### **2\. Cross-Tile Query Merging**
 
 The simplest correct approach: query each loaded tile's `NearestQuery` independently, concatenate all results, de-duplicate by title, sort by distance, and take the top k.
 
@@ -181,11 +181,11 @@ function mergedFindNearest(
 }
 ```
 
-Each per-tile query takes O(sqrt(N_tile)) steps. With N_tile ≈ 1,500 instead of N = 1,200,000, this is ~39 steps vs ~1,095 steps — a 28x speedup per query. Even querying 4 tiles is faster than the current monolithic query.
+Each per-tile query takes O(sqrt(N_tile)) steps. With N_tile = 1,500 instead of N = 1,200,000, this is ~39 steps vs ~1,095 steps — a 28x speedup per query. Even querying 4 tiles is faster than the current monolithic query.
 
-### Edge proximity detection
+### **3\. Edge Proximity Detection**
 
-"Near an edge" is defined as within 1° of latitude or longitude of the tile boundary. This is wider than the 0.5° buffer to ensure adjacent tiles are loaded before the buffer's coverage runs out. The check is trivial:
+"Near an edge" is defined as within 1 degree of latitude or longitude of the tile boundary. This is wider than the 0.5 degree buffer to ensure adjacent tiles are loaded before the buffer's coverage runs out. The check is trivial:
 
 ```typescript
 const tileS = row * 5 - 90;
@@ -197,7 +197,7 @@ const nearEdge =
   tileW + 5 - lon < 1;
 ```
 
-### App loading sequence
+### **4\. App Loading Sequence**
 
 The loading sequence changes slightly from today:
 
@@ -209,7 +209,7 @@ The tile index fetch is small (~15 KB gzipped) and completes well before GPS war
 
 For the **demo data** path ("Use demo data" button), the app loads a hardcoded tile for the demo location (Stockholm → tile row 32, col 39).
 
-### IDB caching
+### **5\. IDB Caching**
 
 Each tile is cached independently in IndexedDB, keyed by `tile-v1-{lang}-{id}` with the content hash from the manifest. On subsequent visits:
 
@@ -218,26 +218,26 @@ Each tile is cached independently in IndexedDB, keyed by `tile-v1-{lang}-{id}` w
 3. Only re-fetches tiles whose hash changed.
 4. Loads the primary tile from IDB in ~1ms (same speed as today's monolithic cache).
 
-## 5. Implementation Notes
+## **V. Implementation Notes**
 
-### Binary format
+### **1\. Binary Format**
 
 The per-tile binary format is **identical** to the format documented in docs/binary-format.md. The only difference is scale — a tile file for 1,500 articles is ~150 KB instead of 108 MB. No version bump or format change is needed.
 
 The `deserializeBinary()` function in `src/geometry/serialization.ts` works unchanged on tile files.
 
-### IDB cache keys
+### **2\. IDB Cache Keys**
 
 Tiled cache keys: `tile-v1-{lang}-{id}` (one entry per tile per language). The tile index is cached as `tile-index-v1-{lang}`.
 
-## Summary
+## **VI. Summary**
 
 | Aspect                      | Current                     | Tiled                                 |
-| --------------------------- | --------------------------- | ------------------------------------- |
+| :-------------------------- | :-------------------------- | :------------------------------------ |
 | First load                  | 108 MB monolith             | ~15 KB index + ~75 KB tile            |
 | Time to first result        | 10-100s on mobile           | **<5s on mobile**                     |
 | IDB cache hit               | ~1ms                        | ~1ms (per tile)                       |
-| Query speed (1.2M articles) | O(sqrt(1.2M)) ≈ 1,095 steps | O(sqrt(1,500)) ≈ 39 steps             |
+| Query speed (1.2M articles) | O(sqrt(1.2M)) = 1,095 steps | O(sqrt(1,500)) = 39 steps             |
 | Binary format               | unchanged                   | unchanged                             |
 | Total data size             | 108 MB                      | ~125 MB (1.15x due to buffer overlap) |
 | Pipeline time               | single hull build           | parallel per-tile builds              |

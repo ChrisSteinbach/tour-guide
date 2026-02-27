@@ -1,8 +1,8 @@
-# Architecture Overview
+# **Architecture Overview**
 
-WikiRadar is a Wikipedia-powered tour guide PWA. It uses spherical Delaunay triangulation to find nearby geotagged Wikipedia articles in O(√N) time. The system has three phases: **extract** (Wikipedia dumps → article coordinates), **pipeline** (coordinates → binary triangulation), and **app** (binary → nearest-neighbor queries → UI).
+WikiRadar is a Wikipedia-powered tour guide PWA. It uses spherical Delaunay triangulation to find nearby geotagged Wikipedia articles in O(sqrt(N)) time. The system has three phases: **extract** (Wikipedia dumps → article coordinates), **pipeline** (coordinates → binary triangulation), and **app** (binary → nearest-neighbor queries → UI).
 
-## End-to-End Data Flow
+## **End-to-End Data Flow**
 
 ```
 Wikipedia SQL Dumps (geo_tags, page)
@@ -21,7 +21,7 @@ k nearest articles with distances
 User-facing PWA
 ```
 
-## Phase 1: Extraction
+## **I. Phase 1: Extraction**
 
 **Entry point:** `src/pipeline/extract-dump.ts` — `npm run extract -- --lang=en`
 
@@ -43,20 +43,20 @@ Descriptions are not embedded in the extraction output. The app fetches them on 
 
 **Output:** `data/articles-{lang}.json` — ~1.2M articles for English.
 
-## Phase 2: Pipeline (Triangulation Build)
+## **II. Phase 2: Pipeline (Triangulation Build)**
 
 **Entry point:** `src/pipeline/build.ts` — `npm run pipeline -- --lang=en`
 
 Reads extracted NDJSON and produces per-tile binary files for the app:
 
 1. **Read articles** — Parses NDJSON, applies optional `--limit` and `--bounds` filters.
-2. **Assign to tiles** — Each article maps to a 5° lat/lon grid cell. See `docs/tiling.md` for the tiling strategy.
-3. **Build per-tile triangulations** — For each populated tile, collect native articles plus a 0.5° buffer zone, then: `toCartesian` → `convexHull` → `buildTriangulation` → `serializeBinary`. Tiles with fewer than 4 articles are skipped.
+2. **Assign to tiles** — Each article maps to a 5 degree lat/lon grid cell. See `docs/tiling.md` for the tiling strategy.
+3. **Build per-tile triangulations** — For each populated tile, collect native articles plus a 0.5 degree buffer zone, then: `toCartesian` → `convexHull` → `buildTriangulation` → `serializeBinary`. Tiles with fewer than 4 articles are skipped.
 4. **Write tile index** — `data/tiles/{lang}/index.json` manifest listing all tiles with bounding boxes, article counts, byte sizes, and content hashes.
 
 **Output:** `data/tiles/{lang}/` (index.json + per-tile .bin files)
 
-### Binary Format
+### **Binary Format**
 
 ```
 Header (24 bytes, little-endian):
@@ -78,42 +78,42 @@ Articles section (at articlesOffset):
 
 Float32 vertices give sub-meter precision on Earth. Uint32 indices and typed array views enable zero-copy deserialization in the browser. Article titles are stored separately to avoid bloating the numeric data.
 
-## Phase 3: App (PWA Frontend)
+## **III. Phase 3: App (PWA Frontend)**
 
 **Root:** `src/app/` — `npm run dev`
 
-### Startup
+### **1\. Startup**
 
 1. Register service worker (auto-update mode)
 2. Load triangulation for stored language (default: English)
 3. Show welcome screen with language selector and "Find nearby" / "Use demo data" buttons
 4. On start: begin GPS watch, render article list
 
-### Data Loading (`tile-loader.ts`)
+### **2\. Data Loading (`tile-loader.ts`)**
 
 The app uses geographic tiling — instead of downloading a monolithic file, it fetches a small tile index and then loads only nearby tiles on demand:
 
 1. **Fetch tile index** — `loadTileIndex()` fetches `tiles/{lang}/index.json` (small manifest of all tiles with content hashes). Cached in IDB for offline use.
-2. **Determine tiles** — `tilesForPosition()` computes the primary tile from the user's GPS position plus adjacent tiles if the user is within 1° of a tile boundary.
+2. **Determine tiles** — `tilesForPosition()` computes the primary tile from the user's GPS position plus adjacent tiles if the user is within 1 degree of a tile boundary.
 3. **Load tiles** — `loadTile()` fetches individual `.bin` files, calls `deserializeBinary()` (Float32→Float64 upcast for math precision, Uint32 views are zero-copy), and caches the result in IDB keyed by `tile-v1-{lang}-{id}` with content hash for freshness.
 4. **IDB cache hit** — Returns instantly (~1ms). Compares the cached tile's hash against the index; only refetches tiles whose hash changed.
 
 IDB uses a single object store with versioned key prefixes (e.g. `tile-index-v1-{lang}`, `tile-v1-{lang}-{id}`, `tile-lru-v1-{lang}`). Schema migration is handled by bumping the version in the prefix — old keys are orphaned and cleaned up on startup, avoiding the need for `onupgradeneeded` migration logic. See `idb.ts` for the full key inventory.
 
-### Nearest-Neighbor Query (`query.ts`)
+### **3\. Nearest-Neighbor Query (`query.ts`)**
 
 The `NearestQuery` class wraps the flat Delaunay data for a single tile and provides `findNearest(lat, lon, k)`. Cross-tile merging is handled by `findNearestTiled()` in `tile-loader.ts`, which queries each loaded tile independently, de-duplicates by title, sorts by distance, and returns the top k.
 
 Per-tile query steps:
 
-1. **Triangle walk** (`flatLocate`) — Starting from `defaultTriangle` (or a warm-start hint), walk adjacent triangles by testing which edge the query point lies outside of. Each step crosses to the neighbor sharing that edge. Converges in O(√N) steps.
+1. **Triangle walk** (`flatLocate`) — Starting from `defaultTriangle` (or a warm-start hint), walk adjacent triangles by testing which edge the query point lies outside of. Each step crosses to the neighbor sharing that edge. Converges in O(sqrt(N)) steps.
 2. **Seed vertex** — The closest vertex of the containing triangle.
 3. **Greedy vertex walk** — Check all Delaunay neighbors of the current best; move to any closer one. Repeat until no improvement.
 4. **BFS expansion** (k > 1) — Expand from the nearest vertex through Delaunay edges, collecting max(2k, k+6) candidates. Sort by distance, return top k.
 
 Distance uses chord length (`2 * asin(||v - q|| / 2)`) rather than `acos(dot(v, q))` to avoid catastrophic cancellation with Float32-precision coordinates.
 
-### Rendering (`render.ts`, `detail.ts`)
+### **4\. Rendering (`render.ts`, `detail.ts`)**
 
 **List view:**
 
@@ -129,16 +129,16 @@ Distance uses chord length (`2 * asin(||v - q|| / 2)`) rather than `acos(dot(v, 
 - Displays thumbnail, description, extract, and links to Wikipedia and Google Maps directions
 - In-memory cache for API responses
 
-### PWA & Service Worker (`vite.config.ts`)
+### **5\. PWA & Service Worker (`vite.config.ts`)**
 
 - Static assets (JS, CSS, HTML, SVG) are precached by Workbox
 - `.bin` data files use `NetworkOnly` — deliberately excluded from SW cache so that freshness checks always hit the server (the app manages its own IDB cache)
 - Wikipedia REST API responses use `StaleWhileRevalidate` (max 200 entries, 1-week expiry)
 - HTTPS dev server (required for geolocation API) with `0.0.0.0` binding for phone testing
 
-## CI/CD
+## **IV. CI/CD**
 
-### Data Pipeline (`pipeline.yml`)
+### **1\. Data Pipeline (`pipeline.yml`)**
 
 Runs monthly (1st of month, 03:00 UTC) or on manual trigger. Languages processed in parallel:
 
@@ -149,7 +149,7 @@ Runs monthly (1st of month, 03:00 UTC) or on manual trigger. Languages processed
 
 Smart merge: downloads the existing release first, so rebuilding one language preserves the others.
 
-### Deployment (`deploy.yml`)
+### **2\. Deployment (`deploy.yml`)**
 
 Runs on every push to `main`:
 
@@ -161,11 +161,11 @@ Runs on every push to `main`:
 
 Data and app code are decoupled — data updates don't require app rebuilds, and app deploys pull the latest data from the release.
 
-## Geometry Library
+## **V. Geometry Library**
 
 All modules live under `src/geometry/` and are shared by the pipeline and app.
 
-### Coordinate System
+### **1\. Coordinate System**
 
 Points are represented as `Point3D = [x, y, z]` on a unit sphere. `toCartesian({lat, lon})` converts geographic coordinates:
 
@@ -175,7 +175,7 @@ y = cos(lat) × sin(lon)
 z = sin(lat)
 ```
 
-### Convex Hull (`convex-hull.ts`)
+### **2\. Convex Hull (`convex-hull.ts`)**
 
 Incremental 3D convex hull algorithm. For unit-sphere points, hull faces are exactly the spherical Delaunay triangles.
 
@@ -191,9 +191,9 @@ Incremental 3D convex hull algorithm. For unit-sphere points, hull faces are exa
 4. Delete visible faces, create new faces connecting horizon to new point
 5. Relink adjacency via half-edge map (edge `a→b` encoded as `a × N + b`)
 
-**Spatial index:** `FaceGrid` (up to 128³ cells, scaling with ∛N) provides O(1) fallback when the greedy walk fails.
+**Spatial index:** `FaceGrid` (up to 128 cubed cells, scaling with cube-root(N)) provides O(1) fallback when the greedy walk fails.
 
-### Delaunay Triangulation (`delaunay.ts`)
+### **3\. Delaunay Triangulation (`delaunay.ts`)**
 
 `buildTriangulation(hull)` enriches hull output:
 
@@ -202,26 +202,26 @@ Incremental 3D convex hull algorithm. For unit-sphere points, hull faces are exa
 - Drops interior points (those not on the hull), remaps indices
 - Returns `SphericalDelaunay` with `originalIndices` mapping back to input
 
-### Point Location (`point-location.ts`)
+### **4\. Point Location (`point-location.ts`)**
 
-- `locateTriangle(query, hint)` — Triangle walk: O(√N) steps
+- `locateTriangle(query, hint)` — Triangle walk: O(sqrt(N)) steps
 - `findNearest(query)` — Locate triangle → closest vertex → greedy walk through Delaunay neighbors
 - `vertexNeighbors(v)` — Walks the triangle fan around a vertex
 
-### Serialization (`serialization.ts`)
+### **5\. Serialization (`serialization.ts`)**
 
 Two formats sharing the same logical structure:
 
-|          | JSON (`TriangulationFile`)    | Binary         |
-| -------- | ----------------------------- | -------------- |
-| Vertices | `number[]` (8 decimal places) | `Float32Array` |
-| Indices  | `number[]`                    | `Uint32Array`  |
-| Articles | `string[]`                    | UTF-8 JSON     |
-| Use case | Intermediate / debugging      | Production     |
+|              | JSON (`TriangulationFile`)    | Binary         |
+| :----------- | :---------------------------- | :------------- |
+| **Vertices** | `number[]` (8 decimal places) | `Float32Array` |
+| **Indices**  | `number[]`                    | `Uint32Array`  |
+| **Articles** | `string[]`                    | UTF-8 JSON     |
+| **Use case** | Intermediate / debugging      | Production     |
 
 `deserializeBinary()` upcasts Float32 vertices to Float64 for math operations. Uint32 sections use zero-copy typed array views directly into the ArrayBuffer.
 
-## Key Files
+## **VI. Key Files**
 
 ```
 src/pipeline/
@@ -265,7 +265,7 @@ src/tiles.ts           Tile types, grid constants, tile ID computation
   deploy.yml           App deployment to GitHub Pages
 ```
 
-## See Also
+## **VII. See Also**
 
 - [Nearest-Neighbor Theory](nearest-neighbor.md) — Voronoi/Delaunay theory, spherical adaptation, 3D convex hull approach, triangle walks
 - [Binary Format](binary-format.md) — Byte-level layout of `.bin` tile files
