@@ -53,7 +53,7 @@ Flat array of vertex indices forming each triangle: `[v0, v1, v2, v3, v4, v5, ..
 
 ### Triangle Neighbors — `Uint32[T * 3]`
 
-Flat array of adjacent triangle indices: `[n0, n1, n2, n3, n4, n5, ...]`. For triangle `t`, `triangleNeighbors[t*3 + e]` is the triangle sharing the edge opposite to vertex `e` in the triangle. More precisely, edge `e` connects `triangleVertices[t*3 + e]` and `triangleVertices[t*3 + (e+1) % 3]`, and the neighbor across that edge is `triangleNeighbors[t*3 + e]`.
+Flat array of adjacent triangle indices: `[n0, n1, n2, n3, n4, n5, ...]`. For triangle `t`, `triangleNeighbors[t*3 + e]` is the triangle sharing the edge from `triangleVertices[t*3 + e]` to `triangleVertices[t*3 + (e+1) % 3]`.
 
 This adjacency structure enables O(sqrt(N)) triangle-walk point location — starting from any triangle, the algorithm walks toward the query point by crossing edges until it reaches the containing triangle.
 
@@ -61,12 +61,9 @@ This adjacency structure enables O(sqrt(N)) triangle-walk point location — sta
 
 Begins at byte `articlesOffset` (which equals `24 + V*3*4 + V*4 + T*3*4 + T*3*4`).
 
-Contains a UTF-8-encoded JSON array of article titles. Each entry is either:
+Contains a UTF-8-encoded JSON array of article titles — a `string[]` with exactly **V** entries, one per vertex, in the same order as the vertex arrays. So `articles[i]` is the title for vertex `i`.
 
-- A **string** — the article title, or
-- A **`[title, description]` tuple** — title plus a short Wikidata description
-
-The array has exactly **V** entries, one per vertex, in the same order as the vertex arrays. So `articles[i]` is the metadata for vertex `i`.
+Note: the deserializer also accepts `[title, description]` tuples for forward-compatibility, but the current serializer only writes plain strings.
 
 The JSON byte length is stored in the header's `articlesLength` field. The section is zero-padded to a 4-byte boundary (the padding bytes are not included in `articlesLength`).
 
@@ -91,4 +88,4 @@ For reference, the English Wikipedia dataset (~1.2M articles) produces a file ar
 
 **Pipeline:** `src/pipeline/build.ts` calls `serialize()` then `serializeBinary()` and writes the result with `fs.writeFileSync`.
 
-**App:** `src/app/query.ts` fetches the `.bin` file over HTTP, calls `deserializeBinary()`, caches the typed arrays in IndexedDB, and wraps them in a `NearestQuery` instance for geographic lookups.
+**App:** `src/app/tile-loader.ts` fetches `.bin` tile files over HTTP, calls `deserializeBinary()`, and caches the typed arrays in IndexedDB. `src/app/query.ts` wraps the deserialized data in a `NearestQuery` instance for geographic lookups.

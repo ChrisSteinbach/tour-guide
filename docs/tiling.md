@@ -207,7 +207,7 @@ The loading sequence changes slightly from today:
 
 The tile index fetch is small (~15 KB gzipped) and completes well before GPS warmup (~1-3 seconds). So the effective latency is: **GPS warmup + tile fetch + deserialize**. Since tile fetch is 0.2-0.9s and deserialize is <50ms, the total is dominated by GPS warmup — same as today.
 
-For the **demo data** path ("Use demo data" button), the app loads a hardcoded tile for the demo location (Stockholm → tile row 32, col 39).
+For the **demo data** path ("Use demo data" button), the app loads a hardcoded tile for the demo location (Paris / Eiffel Tower → tile row 27, col 36).
 
 ### IDB caching
 
@@ -234,10 +234,10 @@ Tiled cache keys: `tile-v1-{lang}-{id}` (one entry per tile per language). The t
 
 | Aspect                      | Current                     | Tiled                                 |
 | --------------------------- | --------------------------- | ------------------------------------- |
-| First load                  | 108 MB monolith             | ~15 KB index + ~75 KB tile            |
+| First load                  | ~120 MB monolith            | ~15 KB index + ~75 KB tile            |
 | Time to first result        | 10-100s on mobile           | **<5s on mobile**                     |
 | IDB cache hit               | ~1ms                        | ~1ms (per tile)                       |
 | Query speed (1.2M articles) | O(sqrt(1.2M)) ≈ 1,095 steps | O(sqrt(1,500)) ≈ 39 steps             |
 | Binary format               | unchanged                   | unchanged                             |
-| Total data size             | 108 MB                      | ~125 MB (1.15x due to buffer overlap) |
+| Total data size             | ~120 MB                     | ~138 MB (1.15x due to buffer overlap) |
 | Pipeline time               | single hull build           | parallel per-tile builds              |

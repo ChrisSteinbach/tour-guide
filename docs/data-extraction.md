@@ -30,6 +30,7 @@ Files are downloaded to `data/dumps/` and cached across runs.
 3. **Join geo_tags** — Streams the `geo_tags` dump row by row. For each row, filters to `globe=earth` and `primary=1`, validates coordinates (rejects NaN, out-of-range, and Null Island 0,0), applies optional bounding box, and looks up the title from the page map.
 4. **Deduplicate** — Keeps the first occurrence of each title.
 5. **Write NDJSON** — Outputs one JSON object per line.
+6. **Canary validation** — Checks that known landmarks (e.g. Eiffel Tower, Statue of Liberty) appear in the output with correct coordinates. Fails the pipeline if landmarks have wrong coordinates (`canary.ts`).
 
 ### SQL Dump Parser
 
