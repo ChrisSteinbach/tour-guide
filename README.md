@@ -2,7 +2,7 @@
 
 A Wikipedia-powered tour guide PWA that finds nearby articles based on your
 geographic location. Uses spherical Delaunay triangulation for fast
-nearest-neighbor search across ~1.2 million geotagged Wikipedia articles.
+nearest-neighbor search across over a million geotagged Wikipedia articles.
 
 **[Try it live](https://chrissteinbach.github.io/tour-guide/)**
 
@@ -32,13 +32,14 @@ npm run dev
 ```
 
 The dev server starts at `https://localhost:5173/` with a self-signed
-certificate (HTTPS is required for the Geolocation API). Use the "Or try with
-demo data" option for quick testing without GPS.
+certificate (HTTPS is required for the Geolocation API). The server binds
+`0.0.0.0`, so you can test on other devices on your network using
+`https://<your-ip>:5173/`. Use the "Or try with demo data" option for quick
+testing without GPS.
 
 ### Prerequisites
 
 - **Node.js** 18+ (ES2022 target; tested with Node 20 and 22)
-- **npm** 9+
 
 ### Running tests
 

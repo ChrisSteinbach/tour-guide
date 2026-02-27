@@ -480,7 +480,7 @@ function addPoint(
 
   if (seed < 0) {
     // Full linear scan: check every face. O(n) but only triggers for the
-    // rare points (~0.06%) where walk, grid, and BFS all fail to find the
+    // rare points (typically <1%) where walk, grid, and BFS all fail to find the
     // visible face — typically tiny triangles between very close points.
     for (let fi = 0; fi < faces.length; fi++) {
       const f = faces[fi];
