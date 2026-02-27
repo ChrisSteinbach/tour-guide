@@ -49,25 +49,9 @@ Reads extracted NDJSON and produces per-tile binary files for the app:
 
 ### Binary Format
 
-```
-Header (24 bytes, little-endian):
-  [0..3]   vertexCount      uint32
-  [4..7]   triangleCount    uint32
-  [8..11]  articlesOffset   uint32
-  [12..15] articlesLength   uint32
-  [16..23] reserved         zeros
+Each tile is a compact binary blob containing a 24-byte header, four typed-array sections (vertex coordinates, vertex-to-triangle mapping, triangle vertices, triangle neighbors), and a UTF-8 JSON article title array. See [binary-format.md](binary-format.md) for the full byte-level specification.
 
-Numeric sections (typed array views):
-  vertexPoints       Float32[V × 3]    xyz per vertex
-  vertexTriangles    Uint32[V]         one incident triangle per vertex
-  triangleVertices   Uint32[T × 3]     three vertex indices per triangle
-  triangleNeighbors  Uint32[T × 3]     three neighbor face indices per triangle
-
-Articles section (at articlesOffset):
-  UTF-8 JSON string array of titles, zero-padded to 4-byte alignment
-```
-
-Float32 vertices give sub-meter precision on Earth. On deserialization, Uint32 index sections are zero-copy views into the original ArrayBuffer; Float32 vertices are copied into Float64Arrays for numerical stability. Article titles are stored separately to avoid bloating the numeric data. See [binary-format.md](binary-format.md) for the full byte-level specification.
+Float32 vertices give sub-meter precision on Earth. On deserialization, Uint32 index sections are zero-copy views into the original ArrayBuffer; Float32 vertices are copied into Float64Arrays for numerical stability.
 
 ## Phase 3: App (PWA Frontend)
 
@@ -144,7 +128,7 @@ The app is designed for mobile networks where failures are common. Each subsyste
 Key design decisions:
 
 - **GPS errors are phase-gated:** Only processed during the "locating" phase. GPS errors that arrive while the user is already browsing are silently ignored to avoid disrupting an active session.
-- **Three independent cache layers:** IDB (tile data, survives reload), in-memory LRU (article summaries, cleared on navigation), and Workbox runtime cache (Wikipedia API, StaleWhileRevalidate). Each operates independently so one failing doesn't cascade.
+- **Three independent cache layers:** IDB (tile data, survives reload), in-memory LRU (article summaries, session-scoped), and Workbox runtime cache (Wikipedia API, StaleWhileRevalidate). Each operates independently so one failing doesn't cascade.
 - **No automatic retry for tile fetches:** Individual tile failures are swallowed so they don't block other concurrent tile loads. The app shows results from whichever tiles succeed.
 
 ### Security & Privacy
@@ -240,6 +224,8 @@ Two formats sharing the same logical structure:
 `deserializeBinary()` copies Float32 vertices into Float64 for math precision. Uint32 sections are zero-copy typed array views directly into the ArrayBuffer.
 
 ## Key Files
+
+> **Note:** This list is manually maintained and may not reflect recent file additions or renames. Use your IDE or `find src -name '*.ts'` for the definitive file inventory.
 
 ```
 src/pipeline/

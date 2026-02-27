@@ -10,7 +10,7 @@ Partition the sphere into a regular grid of 5° latitude by 5° longitude cells.
 
 Grid dimensions: 72 columns (longitude) x 36 rows (latitude) = 2,592 cells. After filtering empties, English Wikipedia yields roughly **700-900 tiles**.
 
-Tile IDs use zero-padded row and column indices: `"14-38"` for row 14, column 38 (corresponding to 70°N-75°N, 190°-195° remapped as -170° to -165°). More precisely:
+Tile IDs use zero-padded row and column indices: `"14-38"` for row 14, column 38 (corresponding to 20°S–15°S, 10°E–15°E). More precisely:
 
 ```
 row = floor((lat + 90) / 5)     // 0..35,  row 0 = 90°S–85°S
@@ -29,7 +29,7 @@ S2 cells provide near-uniform area coverage and are theoretically optimal. Howev
 
 ### Back-of-envelope math
 
-English Wikipedia has ~1.2M geotagged articles. With ~800 populated tiles:
+English Wikipedia has over a million geotagged articles (see [data-extraction.md](data-extraction.md) for current counts). With ~800 populated tiles:
 
 | Metric                                    | Value                                                         |
 | ----------------------------------------- | ------------------------------------------------------------- |

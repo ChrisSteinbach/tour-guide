@@ -76,7 +76,7 @@ totalSize = 24                           // header
           + ceil(articlesLength / 4) * 4 // articles JSON (padded)
 ```
 
-For reference, encoding all ~1.2M English articles in a single file would produce ~120 MB. In practice, the tiled system produces ~800 smaller files totaling ~138 MB (see [tiling.md](tiling.md)).
+For reference, encoding all English articles (over a million; see [data-extraction.md](data-extraction.md) for current counts) in a single file would produce ~120 MB. In practice, the tiled system produces ~800 smaller files totaling ~138 MB (see [tiling.md](tiling.md)).
 
 ## Producing and Consuming
 
