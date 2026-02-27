@@ -92,7 +92,7 @@ Pseudocode for the tiled pipeline:
 1. Read all articles from NDJSON (same as today)
 2. For each populated 5° cell:
    a. Collect articles inside the cell + 0.5° buffer
-   b. If fewer than 4 articles (convex hull minimum), merge into nearest adjacent tile
+   b. If fewer than 4 articles (convex hull minimum), skip the tile
    c. Build convex hull → Delaunay triangulation → serialize to binary
    d. Write tile file: data/tiles/{lang}/{row}-{col}.bin
 3. Write tile index: data/tiles/{lang}/index.json

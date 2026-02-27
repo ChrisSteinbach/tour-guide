@@ -5,9 +5,9 @@ WikiRadar is a Wikipedia-powered tour guide PWA. It uses spherical Delaunay tria
 ## End-to-End Data Flow
 
 ```
-Wikipedia SQL Dumps (geo_tags, page, page_props)
+Wikipedia SQL Dumps (geo_tags, page)
   ↓  extract-dump.ts: download, parse, join, deduplicate
-data/articles-{lang}.json  (NDJSON: title, lat, lon, desc)
+data/articles-{lang}.json  (NDJSON: title, lat, lon)
   ↓  build.ts: per-tile toCartesian → convexHull → buildTriangulation → serializeBinary
 data/tiles/{lang}/index.json + {row}-{col}.bin  (per-tile triangulations)
   ↓  pipeline.yml: compress → GitHub Release "data-latest"
@@ -39,7 +39,7 @@ The extraction runs in four steps:
 
 The SQL dump parser (`dump-parser.ts`) handles gzip decompression, MySQL `CREATE TABLE` schema discovery, and `INSERT INTO ... VALUES` parsing with full MySQL escape sequence support. It streams rows one at a time to keep memory usage bounded.
 
-Descriptions are batch-fetched from the Wikidata API using Q-IDs found in the `page_props` table, adding a `desc` field to articles that have one.
+Descriptions are not embedded in the extraction output. The app fetches them on demand from the Wikipedia REST API when the user opens an article detail view.
 
 **Output:** `data/articles-{lang}.json` — ~1.2M articles for English.
 
@@ -89,22 +89,24 @@ Float32 vertices give sub-meter precision on Earth. Uint32 indices and typed arr
 3. Show welcome screen with language selector and "Find nearby" / "Use demo data" buttons
 4. On start: begin GPS watch, render article list
 
-### Data Loading (`query.ts`)
+### Data Loading (`tile-loader.ts`)
 
-`loadQuery()` implements a two-tier caching strategy:
+The app uses geographic tiling — instead of downloading a monolithic file, it fetches a small tile index and then loads only nearby tiles on demand:
 
-1. **IDB cache hit** — Returns instantly (~1ms for 1M articles). Stores deserialized typed arrays via structured clone.
-2. **Cache miss** — Fetches binary from server with streaming progress, calls `deserializeBinary()` (Float32→Float64 upcast for math precision, Uint32 views are zero-copy), caches result in IDB keyed by `triangulation-v3-{lang}`.
+1. **Fetch tile index** — `loadTileIndex()` fetches `tiles/{lang}/index.json` (small manifest of all tiles with content hashes). Cached in IDB for offline use.
+2. **Determine tiles** — `tilesForPosition()` computes the primary tile from the user's GPS position plus adjacent tiles if the user is within 1° of a tile boundary.
+3. **Load tiles** — `loadTile()` fetches individual `.bin` files, calls `deserializeBinary()` (Float32→Float64 upcast for math precision, Uint32 views are zero-copy), and caches the result in IDB keyed by `tile-v1-{lang}-{id}` with content hash for freshness.
+4. **IDB cache hit** — Returns instantly (~1ms). Compares the cached tile's hash against the index; only refetches tiles whose hash changed.
 
-Background freshness checks compare the server's `Last-Modified` header against the cached value. If newer data exists, a dismissible banner prompts the user to update.
+IDB uses a single object store with versioned key prefixes (e.g. `tile-index-v1-{lang}`, `tile-v1-{lang}-{id}`, `tile-lru-v1-{lang}`). Schema migration is handled by bumping the version in the prefix — old keys are orphaned and cleaned up on startup, avoiding the need for `onupgradeneeded` migration logic. See `idb.ts` for the full key inventory.
 
-IDB uses a single object store with versioned key prefixes (e.g. `triangulation-v3-{lang}`, `tile-v1-{lang}-{id}`). Schema migration is handled by bumping the version in the prefix — old keys are orphaned and ignored, avoiding the need for `onupgradeneeded` migration logic. See `idb.ts` for the full key inventory.
+### Nearest-Neighbor Query (`query.ts`)
 
-### Nearest-Neighbor Query (`query.ts: NearestQuery`)
+The `NearestQuery` class wraps the flat Delaunay data for a single tile and provides `findNearest(lat, lon, k)`. Cross-tile merging is handled by `findNearestTiled()` in `tile-loader.ts`, which queries each loaded tile independently, de-duplicates by title, sorts by distance, and returns the top k.
 
-The `NearestQuery` class wraps the flat Delaunay data and provides `findNearest(lat, lon, k)`:
+Per-tile query steps:
 
-1. **Triangle walk** (`flatLocate`) — Starting from `lastTriangle` (warm start), walk adjacent triangles by testing which edge the query point lies outside of. Each step crosses to the neighbor sharing that edge. Converges in O(√N) steps.
+1. **Triangle walk** (`flatLocate`) — Starting from `defaultTriangle` (or a warm-start hint), walk adjacent triangles by testing which edge the query point lies outside of. Each step crosses to the neighbor sharing that edge. Converges in O(√N) steps.
 2. **Seed vertex** — The closest vertex of the containing triangle.
 3. **Greedy vertex walk** — Check all Delaunay neighbors of the current best; move to any closer one. Repeat until no improvement.
 4. **BFS expansion** (k > 1) — Expand from the nearest vertex through Delaunay edges, collecting max(2k, k+6) candidates. Sort by distance, return top k.
@@ -215,7 +217,7 @@ Two formats sharing the same logical structure:
 | Vertices | `number[]` (8 decimal places) | `Float32Array` |
 | Indices  | `number[]`                    | `Uint32Array`  |
 | Articles | `string[]`                    | UTF-8 JSON     |
-| Use case | Debugging (`--json` flag)     | Production     |
+| Use case | Intermediate / debugging      | Production     |
 
 `deserializeBinary()` upcasts Float32 vertices to Float64 for math operations. Uint32 sections use zero-copy typed array views directly into the ArrayBuffer.
 
@@ -224,10 +226,10 @@ Two formats sharing the same logical structure:
 ```
 src/pipeline/
   extract-dump.ts      Extraction entry point (SQL dumps → NDJSON)
-  build.ts             Pipeline entry point (NDJSON → binary)
-  dump-download.ts     Streaming download with progress
+  build.ts             Pipeline entry point (NDJSON → tiled binary)
+  dump-download.ts     Streaming download with progress + retry
   dump-parser.ts       MySQL dump parser (gzip + SQL)
-  checkpoint.ts        Resumable extraction state
+  canary.ts            Post-extraction landmark validation
 
 src/geometry/
   index.ts             Coord conversion, distance, circumcenter
@@ -235,23 +237,30 @@ src/geometry/
   delaunay.ts          Spherical Delaunay from convex hull
   point-location.ts    Triangle walk, greedy nearest-neighbor
   serialization.ts     Typed arrays ↔ binary format
+  predicates.ts        Robust orient3D (Shewchuk)
 
 src/app/
-  main.ts              Bootstrap, GPS watch, language switching
-  query.ts             Binary loading, IDB cache, NearestQuery class
+  main.ts              Bootstrap, effect executor, language switching
+  state-machine.ts     Pure state machine (phase/event/effect)
+  query.ts             NearestQuery class (flat typed-array walks)
+  tile-loader.ts       Tile index + tile fetching, IDB cache, LRU eviction
+  idb.ts               IndexedDB helpers, versioned key prefixes
   render.ts            Article list with distance badges
   detail.ts            Article detail via Wikipedia REST API
   location.ts          Geolocation API wrapper
   status.ts            Loading, progress, error screens
   wiki-api.ts          Wikipedia REST API client
   format.ts            Distance formatting
+  mock-data.ts         Demo data for "Use demo data" flow
   types.ts             Shared types
   style.css            UI styling
   index.html           PWA root
 
 src/lang.ts            Supported languages (en, sv, ja)
+src/tiles.ts           Tile types, grid constants, tile ID computation
 
 .github/workflows/
+  ci.yml               Lint + test on every push
   pipeline.yml         Monthly data extraction + build
   deploy.yml           App deployment to GitHub Pages
 ```
@@ -259,4 +268,7 @@ src/lang.ts            Supported languages (en, sv, ja)
 ## See Also
 
 - [Nearest-Neighbor Theory](nearest-neighbor.md) — Voronoi/Delaunay theory, spherical adaptation, 3D convex hull approach, triangle walks
+- [Binary Format](binary-format.md) — Byte-level layout of `.bin` tile files
+- [Tiling Strategy](tiling.md) — Geographic tiling scheme, buffer zones, boundary handling
+- [Data Extraction](data-extraction.md) — Wikipedia dump extraction pipeline
 - [CLAUDE.md](../CLAUDE.md) — Command reference and development workflow
