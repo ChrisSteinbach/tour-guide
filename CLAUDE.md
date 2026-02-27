@@ -1,8 +1,8 @@
-# **CLAUDE.md**
+# CLAUDE.md
 
 **WikiRadar** — a Wikipedia-powered tour guide PWA using spherical nearest-neighbor search to find nearby Wikipedia articles. Deployed to GitHub Pages. Reference docs in `docs/`.
 
-## **I. Commands**
+## Commands
 
 ```bash
 npm test              # Lint + tests (runs npm run lint, then vitest run)
@@ -15,7 +15,7 @@ npm run extract       # Extract geotagged articles from Wikipedia dumps → data
 
 Run a single test file: `npx vitest run src/geometry/index.test.ts`
 
-## **II. Architecture**
+## Architecture
 
 Three modules under `src/`, sharing a common geometry library:
 
@@ -23,9 +23,9 @@ Three modules under `src/`, sharing a common geometry library:
 - **`src/pipeline/`** — Offline build: extracts Wikipedia coordinates, computes triangulation, outputs static tiles. Run via `tsx`.
 - **`src/app/`** — PWA frontend: loads pre-computed data, performs nearest-neighbor queries. Vite root (`root: "src/app"`).
 
-Core algorithm: spherical Delaunay triangulation (3D convex hull) → O(sqrt(N)) nearest-neighbor via triangle walks. See `docs/` for theory and data flow details.
+Core algorithm: spherical Delaunay triangulation (3D convex hull) → O(√N) nearest-neighbor via triangle walks. See `docs/` for theory and data flow details.
 
-## **III. Testing**
+## Testing
 
 Vitest with globals — use `describe`, `it`, `expect` without imports. Tests live alongside source as `*.test.ts` files. TypeScript strict mode, ES2022 target, ESNext modules.
 
@@ -34,7 +34,7 @@ Vitest with globals — use `describe`, `it`, `expect` without imports. Tests li
 - **One behavior per test.** Each failure should name the exact scenario.
 - **Pragmatic coverage.** Don't chase 100%. Every test should pay rent.
 
-## **IV. Issue Tracking**
+## Issue Tracking
 
 This project uses **beads** (`bd`) for issue tracking instead of markdown files or TodoWrite.
 
@@ -46,7 +46,7 @@ bd close <id>         # Complete work
 bd sync               # Sync with git
 ```
 
-## **V. Session Completion**
+## Session Completion
 
 When ending a work session, ALL steps below are mandatory. Work is NOT complete until `git push` succeeds.
 

@@ -1,4 +1,4 @@
-# **WikiRadar**
+# WikiRadar
 
 A Wikipedia-powered tour guide PWA that finds nearby articles based on your
 geographic location. Uses spherical Delaunay triangulation for fast
@@ -6,13 +6,13 @@ nearest-neighbor search across ~1.2 million geotagged Wikipedia articles.
 
 **[Try it live](https://chrissteinbach.github.io/tour-guide/)**
 
-## **How It Works**
+## How it works
 
 1. **Extract** — Download Wikipedia SQL dumps and join geo-coordinate data with
    article titles
 2. **Build** — Construct per-tile spherical Delaunay triangulations and
    serialize to compact binary files
-3. **Query** — The PWA loads tiles on demand and performs O(sqrt(N)) nearest-neighbor
+3. **Query** — The PWA loads tiles on demand and performs O(√N) nearest-neighbor
    lookups via triangle walks on the unit sphere
 
 Points are mapped to 3D Cartesian coordinates on a unit sphere, and the
@@ -22,7 +22,7 @@ great-circle distance. See [`docs/nearest-neighbor.md`](docs/nearest-neighbor.md
 for the theory and [`docs/architecture.md`](docs/architecture.md) for the
 end-to-end data flow.
 
-## **Getting Started**
+## Getting started
 
 ```bash
 git clone https://github.com/ChrisSteinbach/tour-guide.git
@@ -35,10 +35,10 @@ The dev server starts at `https://localhost:5173/` with a self-signed
 certificate (HTTPS is required for the Geolocation API). Use the "Or try with
 demo data" option for quick testing without GPS.
 
-## **I. Commands**
+## Commands
 
 | Command                 | Description                                       |
-| :---------------------- | :------------------------------------------------ |
+| ----------------------- | ------------------------------------------------- |
 | `npm run dev`           | Start Vite dev server (HTTPS, binds 0.0.0.0)      |
 | `npm run build`         | Production build to `dist/app/`                   |
 | `npm test`              | Lint + tests                                      |
@@ -48,9 +48,9 @@ demo data" option for quick testing without GPS.
 | `npm run extract`       | Extract geotagged articles from Wikipedia dumps   |
 | `npm run pipeline`      | Build tiled triangulation from extracted articles |
 
-## **II. Data Pipeline**
+## Data pipeline
 
-### **1\. Extraction**
+### Extraction
 
 Downloads Wikipedia `page` and `geo_tags` SQL dumps and joins them to produce
 geotagged articles as NDJSON:
@@ -72,9 +72,9 @@ Output format (one JSON object per line in `data/articles-{lang}.json`):
 { "title": "Eiffel Tower", "lat": 48.8584, "lon": 2.2945 }
 ```
 
-### **2\. Tiling and Triangulation**
+### Tiling and triangulation
 
-Reads extracted articles, partitions them into a 5 degree lat/lon grid with 0.5 degree
+Reads extracted articles, partitions them into a 5° lat/lon grid with 0.5°
 buffer zones, builds a spherical Delaunay triangulation per tile, and writes
 binary files:
 
@@ -88,7 +88,7 @@ Output: `data/tiles/{lang}/` containing `index.json` and per-tile `.bin` files.
 See [`docs/binary-format.md`](docs/binary-format.md) for the serialization
 format and [`docs/tiling.md`](docs/tiling.md) for the tiling strategy.
 
-### **3\. Automated Refresh**
+### Automated refresh
 
 A GitHub Actions workflow ([`pipeline.yml`](.github/workflows/pipeline.yml))
 runs monthly to re-extract and rebuild tiles for all supported languages (en,
@@ -96,7 +96,7 @@ sv, ja). Tile archives are published to a `data-latest` GitHub Release.
 Deployment ([`deploy.yml`](.github/workflows/deploy.yml)) downloads these
 archives and deploys the app to GitHub Pages on every push to main.
 
-## **III. Architecture**
+## Architecture
 
 ```
 src/
@@ -117,7 +117,7 @@ src/
   nearby Wikipedia articles with descriptions fetched from the Wikipedia REST
   API.
 
-## **IV. Tech Stack**
+## Tech stack
 
 - **TypeScript** (strict mode, ES2022) — zero runtime dependencies
 - **Vite** — dev server and production builds
@@ -125,15 +125,15 @@ src/
 - **Workbox** (via vite-plugin-pwa) — service worker for offline support
 - **GitHub Actions** — CI, monthly data refresh, GitHub Pages deployment
 
-## **V. Supported Languages**
+## Supported languages
 
 | Language      | Articles |
-| :------------ | :------- |
+| ------------- | -------- |
 | English (en)  | ~1.2M    |
 | Swedish (sv)  | varies   |
 | Japanese (ja) | varies   |
 
-## **VI. Documentation**
+## Documentation
 
 - [`docs/architecture.md`](docs/architecture.md) — End-to-end system design
 - [`docs/nearest-neighbor.md`](docs/nearest-neighbor.md) — Spherical nearest-neighbor theory
@@ -141,7 +141,7 @@ src/
 - [`docs/tiling.md`](docs/tiling.md) — Geographic tiling strategy
 - [`docs/data-extraction.md`](docs/data-extraction.md) — Wikipedia dump extraction pipeline
 
-## **VII. License**
+## License
 
 [ISC](LICENSE)
 
