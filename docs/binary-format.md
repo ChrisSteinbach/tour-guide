@@ -61,7 +61,9 @@ This adjacency structure enables O(sqrt(N)) triangle-walk point location — sta
 
 Begins at byte `articlesOffset` (which equals `24 + V*3*4 + V*4 + T*3*4 + T*3*4`).
 
-Contains a UTF-8-encoded JSON array of article titles — a `string[]` with exactly **V** entries, one per vertex, in the same order as the vertex arrays. So `articles[i]` is the title for vertex `i`.
+Contains a UTF-8-encoded JSON array with exactly **V** entries, one per vertex, in the same order as the vertex arrays. So `articles[i]` is the title for vertex `i`.
+
+Each entry is either a plain `string` (title only) or a `[string, string]` tuple (title + description). The serializer currently produces `string[]` only; the deserializer accepts both forms for forward compatibility.
 
 The JSON byte length is stored in the header's `articlesLength` field. The section is zero-padded to a 4-byte boundary (the padding bytes are not included in `articlesLength`).
 

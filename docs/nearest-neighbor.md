@@ -6,7 +6,7 @@ This document explains the theory behind WikiRadar's nearest-neighbor algorithm 
 
 For points on a unit sphere, the faces of their 3D convex hull are exactly the triangles of the spherical Delaunay triangulation (Brown, 1979). This means we can use a standard incremental convex hull algorithm to build the triangulation, then walk the resulting mesh to answer nearest-neighbor queries.
 
-The Delaunay property guarantees that each point's nearest neighbor is one of its Delaunay-adjacent vertices (average degree < 6 by Euler's formula). This makes greedy walks on the triangulation graph correct for nearest-neighbor search.
+The Delaunay property guarantees that each point's nearest neighbor is one of its Delaunay-adjacent vertices (average degree approximately 6 by Euler's formula, specifically 6 − 12/V). This makes greedy walks on the triangulation graph correct for nearest-neighbor search.
 
 ## Algorithm (as implemented)
 

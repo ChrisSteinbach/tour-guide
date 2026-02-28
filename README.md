@@ -37,6 +37,12 @@ certificate (HTTPS is required for the Geolocation API). The server binds
 `https://<your-ip>:5173/`. Use the "Or try with demo data" option for quick
 testing without GPS.
 
+The dev server serves tile data from `data/tiles/`. To generate it locally:
+
+```bash
+npm run pipeline -- --lang=en --limit=10000
+```
+
 ### Prerequisites
 
 - **Node.js** 18+ (ES2022 target; tested with Node 20 and 22)
@@ -84,7 +90,7 @@ npm run extract -- --lang=en
 # Reuse previously downloaded dumps
 npm run extract -- --lang=sv --skip-download
 
-# Geographic subset (south,north,west,east)
+# Geographic subset (south,north,west,east — not the WGS84 west,south,east,north convention)
 npm run extract -- --lang=en --bounds=49.44,50.19,5.73,6.53
 ```
 

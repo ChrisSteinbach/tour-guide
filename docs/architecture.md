@@ -104,7 +104,9 @@ Distance uses chord length (`2 * asin(||v - q|| / 2)`, clamped for numerical saf
 - Displays thumbnail, description, extract, and links to Wikipedia and platform-native directions (Apple Maps on iOS, geo: URI on Android, Google Maps on desktop)
 - In-memory cache for API responses
 
-### PWA & Service Worker (`vite.config.ts`)
+### PWA Manifest & Service Worker (`vite.config.ts`)
+
+The VitePWA plugin generates a web app manifest (`name: "WikiRadar"`, `display: "standalone"`, `theme_color: "#1a73e8"`). Icon assets: `icon.svg`, `icon-192.png`, `icon-512.png`.
 
 - Static assets (JS, CSS, HTML, SVG) are precached by Workbox
 - `.bin` and `.json` data files use `NetworkOnly` — deliberately excluded from SW cache so that freshness checks always hit the server (the app manages its own IDB cache)
@@ -133,7 +135,7 @@ Key design decisions:
 
 ### Security & Privacy
 
-- **DOM rendering** — All user-visible text is rendered via `createElement`/`textContent`, not `innerHTML`. Wikipedia API responses are not injected as raw HTML.
+- **DOM rendering** — All user-visible text is rendered via `createElement`/`textContent`, not `innerHTML` (enforced by ESLint's `no-restricted-syntax` rule — any `innerHTML` assignment fails CI). Wikipedia API responses are not injected as raw HTML.
 - **GPS data** — Location coordinates are used only for on-device nearest-neighbor queries. No GPS data is transmitted to any server other than the browser's standard Geolocation API provider.
 - **Third-party requests** — The only external requests are to Wikipedia's REST API (for article summaries) and GitHub Pages (for tile data). No analytics, tracking, or third-party scripts.
 - **Service worker scope** — The SW caches static assets and Wikipedia API responses only. Tile data bypasses the SW cache (managed via IDB instead).
@@ -206,9 +208,11 @@ Incremental 3D convex hull algorithm. For unit-sphere points, hull faces are exa
 
 ### Point Location (`point-location.ts`)
 
-- `locateTriangle(query, hint)` — Triangle walk: O(√N) steps
-- `findNearest(query)` — Locate triangle → closest vertex → greedy walk through Delaunay neighbors
-- `vertexNeighbors(v)` — Walks the triangle fan around a vertex
+- `locateTriangle(tri, query, startTriangle?)` — Triangle walk: O(√N) steps
+- `findNearest(tri, query, startTriangle?)` — Locate triangle → closest vertex → greedy walk through Delaunay neighbors
+- `vertexNeighbors(tri, v)` — Walks the triangle fan around a vertex
+
+All three are standalone functions taking a `SphericalDelaunay` as the first argument.
 
 ### Serialization (`serialization.ts`)
 
@@ -264,8 +268,8 @@ src/lang.ts            Supported languages (en, sv, ja)
 src/tiles.ts           Tile types, grid constants, tile ID computation
 
 .github/workflows/
-  ci.yml               Lint + test on pushes to main and PRs
-  pipeline.yml         Monthly data extraction + build
+  ci.yml               Three parallel jobs: lint (format + eslint), type-check (tsc), test (vitest + coverage)
+  pipeline.yml         Monthly data extraction + build (manual trigger accepts `langs` JSON array for selective rebuild)
   deploy.yml           App deployment to GitHub Pages
 ```
 

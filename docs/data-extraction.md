@@ -30,7 +30,7 @@ Files are downloaded to `data/dumps/` and cached across runs.
 3. **Join geo_tags** — Streams the `geo_tags` dump row by row. For each row, filters to `globe=earth` and `primary=1`, validates coordinates (rejects NaN, out-of-range, and Null Island 0,0), applies optional bounding box, and looks up the title from the page map.
 4. **Deduplicate** — Keeps the first occurrence of each title.
 5. **Write NDJSON** — Outputs one JSON object per line.
-6. **Canary validation** — Checks that known landmarks (e.g. Eiffel Tower, Statue of Liberty) appear in the output with correct coordinates. Fails the pipeline if landmarks have wrong coordinates (`canary.ts`).
+6. **Canary validation** — Checks per-language landmarks against the output (`canary.ts`). Each supported language has its own landmark set (e.g. en: Eiffel Tower, Statue of Liberty, Sydney Opera House; sv: Eiffeltornet, Globen; ja: エッフェル塔, 東京タワー). Coordinate mismatches fail the pipeline. Missing landmarks (expected for `--bounds` or `--limit` extractions) are reported but tolerated.
 
 ### SQL Dump Parser
 
@@ -39,6 +39,10 @@ The parser (`src/pipeline/dump-parser.ts`) handles gzipped MySQL dump files:
 - Discovers column schemas from `CREATE TABLE` statements
 - Parses `INSERT INTO ... VALUES` with full MySQL escape sequence support (`\'`, `\\`, `\n`, etc.)
 - Streams rows one at a time to keep memory usage bounded
+
+### Memory Requirements
+
+The extract command allocates up to 6 GB of heap memory (`--max-old-space-size=6144`) for the in-memory page map. English extraction requires ~4-5 GB peak. Ensure your machine has at least 8 GB RAM when extracting English. Smaller languages (sv, ja) use significantly less memory.
 
 ### Usage
 
@@ -49,7 +53,7 @@ npm run extract -- --lang=en
 # Skip download (reuse existing dumps)
 npm run extract -- --lang=sv --skip-download
 
-# Geographic subset (south,north,west,east)
+# Geographic subset (south,north,west,east — not the WGS84 west,south,east,north convention)
 npm run extract -- --lang=en --bounds=49.44,50.19,5.73,6.53
 ```
 

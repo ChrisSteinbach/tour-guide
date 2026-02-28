@@ -8,7 +8,7 @@
 npm test              # Lint + tests (runs npm run lint, then vitest run)
 npm run test:watch    # Tests in watch mode
 npm run test:coverage # Tests with coverage report
-npm run lint          # Type-check + ESLint + Prettier check (tsc && eslint && prettier)
+npm run lint          # Type-check + ESLint + Prettier check (tsc --noEmit && eslint src/ && prettier --check .)
 npm run lint:fix      # Auto-fix ESLint + Prettier issues
 npm run dev           # Start Vite dev server (binds 0.0.0.0 for phone testing)
 npm run build         # Production build → dist/app/
@@ -17,6 +17,12 @@ npm run extract       # Extract geotagged articles from Wikipedia dumps → data
 ```
 
 Run a single test file: `npx vitest run src/geometry/index.test.ts`
+
+Requires **Node.js 18+** (ES2022 target; tested with Node 20 and 22).
+
+## Pre-commit Hooks
+
+Husky runs lint-staged on every commit, auto-fixing ESLint and Prettier issues on staged `.ts` files. Hooks are installed automatically by `npm install` (via the `prepare` script).
 
 ## Architecture
 
