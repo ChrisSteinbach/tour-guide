@@ -163,22 +163,29 @@ When the user's position is known, the app:
 The simplest correct approach: query each loaded tile's `NearestQuery` independently, concatenate all results, de-duplicate by title, sort by distance, and take the top k.
 
 ```typescript
-function mergedFindNearest(
-  tiles: NearestQuery[],
+function findNearestTiled(
+  tiles: ReadonlyMap<string, NearestQuery>,
   lat: number,
   lon: number,
-  k: number,
+  k = 1,
 ): QueryResult[] {
-  const all = tiles.flatMap((t) => t.findNearest(lat, lon, k).results);
+  if (tiles.size === 0) return [];
+
   const seen = new Set<string>();
-  return all
-    .filter((r) => {
-      if (seen.has(r.title)) return false;
-      seen.add(r.title);
-      return true;
-    })
-    .sort((a, b) => a.distanceM - b.distanceM)
-    .slice(0, k);
+  const results: QueryResult[] = [];
+
+  for (const tileQuery of tiles.values()) {
+    const { results: tileResults } = tileQuery.findNearest(lat, lon, k);
+    for (const r of tileResults) {
+      if (!seen.has(r.title)) {
+        seen.add(r.title);
+        results.push(r);
+      }
+    }
+  }
+
+  results.sort((a, b) => a.distanceM - b.distanceM);
+  return results.slice(0, k);
 }
 ```
 
