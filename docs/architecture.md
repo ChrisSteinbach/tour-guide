@@ -1,6 +1,6 @@
 # Architecture Overview
 
-WikiRadar is a Wikipedia-powered tour guide PWA. It uses spherical Delaunay triangulation to find nearby geotagged Wikipedia articles in O(√N) time. The system has three phases: **extract** (Wikipedia dumps → article coordinates), **pipeline** (coordinates → binary triangulation), and **app** (binary → nearest-neighbor queries → UI).
+WikiRadar is a Wikipedia-powered tour guide PWA. It uses spherical Delaunay triangulation to find nearby geotagged Wikipedia articles in O(√N) expected time (dominated by the triangle walk; see query details in Phase 3). The system has three phases: **extract** (Wikipedia dumps → article coordinates), **pipeline** (coordinates → per-tile binary triangulations), and **app** (tiles → nearest-neighbor queries → UI).
 
 ## End-to-End Data Flow
 
