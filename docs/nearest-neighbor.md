@@ -31,7 +31,7 @@ The Delaunay property guarantees that each point's nearest neighbor is one of it
 
 The core geometric predicate is `orient3D(a, b, c, d)` — the sign of the 4×4 determinant giving the signed volume of tetrahedron `abcd`. This uses Shewchuk's robust exact arithmetic (vendored via mourner's `robust-predicates` port in `src/geometry/vendor/`). Positive means `d` is visible from face `(a, b, c)`.
 
-**Complexity:** O(N log N) expected for the incremental hull. FaceGrid provides O(1) amortized face lookup.
+**Complexity:** O(N log N) expected for the randomized incremental hull; O(N²) worst case (degenerate insertion orders). FaceGrid provides O(1) amortized face lookup. The implementation uses multiple fallback strategies (greedy walk → FaceGrid lookup → BFS → linear scan) to handle the pathological cases gracefully.
 
 ### Query phase (app runtime)
 

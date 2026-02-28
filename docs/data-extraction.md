@@ -53,7 +53,8 @@ npm run extract -- --lang=en
 # Skip download (reuse existing dumps)
 npm run extract -- --lang=sv --skip-download
 
-# Geographic subset (south,north,west,east — not the WGS84 west,south,east,north convention)
+# Geographic subset (south,north,west,east — latitude range first, then longitude range,
+# matching the row-then-column order used by the tiling grid; not the WGS84 west,south,east,north convention)
 npm run extract -- --lang=en --bounds=49.44,50.19,5.73,6.53
 ```
 
@@ -96,8 +97,8 @@ npm run extract -- --lang=ja
 
 To add a fourth language (e.g. German `de`):
 
-1. Add the language code to the `SUPPORTED_LANGS` array in `src/lang.ts`.
-2. Add canary landmarks for the new language in `src/pipeline/canary.ts` (the `LANDMARKS` record). Without these, extraction will succeed but data integrity won't be validated.
+1. Add the language code to the `SUPPORTED_LANGS` array in `src/lang.ts`. This automatically extends the `Lang` type.
+2. Add canary landmarks for the new language in `src/pipeline/canary.ts` (the `LANDMARKS` record). The `Record<Lang, ...>` type requires this — TypeScript will report a type error after step 1 until this step is done. Without canary landmarks, extraction will succeed but data integrity won't be validated.
 3. Run extraction: `npm run extract -- --lang=de`
 4. Run the pipeline: `npm run pipeline -- --lang=de`
 5. Add the language to the CI matrix in `.github/workflows/pipeline.yml` so it's included in monthly rebuilds.

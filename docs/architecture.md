@@ -73,7 +73,7 @@ The app uses geographic tiling — instead of downloading a monolithic file, it 
 3. **Load tiles** — `loadTile()` fetches individual `.bin` files, calls `deserializeBinary()` (Float32→Float64 upcast for math precision, Uint32 views are zero-copy), and caches the result in IDB keyed by `tile-v1-{lang}-{id}` with content hash for freshness.
 4. **IDB cache hit** — Returns instantly (~1ms). Compares the cached tile's hash against the index; only refetches tiles whose hash changed.
 
-IDB uses a single object store (created via `onupgradeneeded`) with versioned key prefixes (e.g. `tile-index-v1-{lang}`, `tile-v1-{lang}-{id}`, `tile-lru-v1-{lang}`). Data migration is handled by bumping the version in the prefix — old keys are orphaned and cleaned up on startup, avoiding the need for `onupgradeneeded`-based data migration. See `idb.ts` for the full key inventory.
+IDB uses a single object store (created via `onupgradeneeded`) with versioned key prefixes (e.g. `tile-index-v1-{lang}`, `tile-v1-{lang}-{id}`, `tile-lru-v1-{lang}`). Data migration is handled by bumping the version in the prefix — old keys are orphaned and cleaned up on startup, avoiding the need for `onupgradeneeded`-based data migration. This strategy works because all data shares one object store; adding a second store would require bumping the IDB version and using `onupgradeneeded`. See `idb.ts` for the full key inventory.
 
 ### Nearest-Neighbor Query (`query.ts`)
 
@@ -238,6 +238,7 @@ src/pipeline/
   dump-download.ts     Streaming download with progress + retry
   dump-parser.ts       MySQL dump parser (gzip + SQL)
   canary.ts            Post-extraction landmark validation
+  dump-test-fixtures.ts Test fixture generator for dump parser
 
 src/geometry/
   index.ts             Coord conversion, distance, circumcenter
@@ -268,7 +269,7 @@ src/lang.ts            Supported languages (en, sv, ja)
 src/tiles.ts           Tile types, grid constants, tile ID computation
 
 .github/workflows/
-  ci.yml               Three parallel jobs: lint (format + eslint), type-check (tsc), test (vitest + coverage)
+  ci.yml               Three parallel jobs: lint (Prettier check then ESLint), type-check (tsc --noEmit), test (vitest + coverage)
   pipeline.yml         Monthly data extraction + build (manual trigger accepts `langs` JSON array for selective rebuild)
   deploy.yml           App deployment to GitHub Pages
 ```
