@@ -189,7 +189,7 @@ function findNearestTiled(
 }
 ```
 
-Each per-tile walk takes O(sqrt(N_tile)) steps. With N_tile ≈ 1,500 instead of N = 1,200,000, this is ~39 steps vs ~1,095 steps — a 28x speedup per walk. A cross-tile query runs up to 4 walks plus a merge-sort of candidates, but even so, the total stays well under a millisecond.
+Each per-tile walk takes O(√N_tile) steps. With N_tile ≈ 1,500 instead of N = 1,200,000, this is ~39 steps vs ~1,095 steps — a 28x speedup per walk. A cross-tile query runs up to 4 walks plus a merge-sort of candidates, but even so, the total stays well under a millisecond.
 
 ### Edge proximity detection
 
@@ -240,12 +240,12 @@ Tiled cache keys: `tile-v1-{lang}-{id}` (one entry per tile per language). The t
 
 Why tiling matters — comparison with a hypothetical monolithic approach:
 
-| Aspect                      | Monolithic (hypothetical)   | Tiled (current)                       |
-| --------------------------- | --------------------------- | ------------------------------------- |
-| First load                  | ~120 MB monolith            | ~15 KB index + ~75 KB tile            |
-| Time to first result        | 10-100s on mobile           | **<5s on mobile**                     |
-| IDB cache hit               | ~1ms                        | ~1ms (per tile)                       |
-| Query speed (1.2M articles) | O(sqrt(1.2M)) ≈ 1,095 steps | O(sqrt(1,500)) ≈ 39 steps             |
-| Binary format               | unchanged                   | unchanged                             |
-| Total data size             | ~120 MB                     | ~138 MB (1.15x due to buffer overlap) |
-| Pipeline time               | single hull build           | parallel per-tile builds              |
+| Aspect                      | Monolithic (hypothetical) | Tiled (current)                       |
+| --------------------------- | ------------------------- | ------------------------------------- |
+| First load                  | ~120 MB monolith          | ~15 KB index + ~75 KB tile            |
+| Time to first result        | 10-100s on mobile         | **<5s on mobile**                     |
+| IDB cache hit               | ~1ms                      | ~1ms (per tile)                       |
+| Query speed (1.2M articles) | O(√1.2M) ≈ 1,095 steps    | O(√1,500) ≈ 39 steps                  |
+| Binary format               | unchanged                 | unchanged                             |
+| Total data size             | ~120 MB                   | ~138 MB (1.15x due to buffer overlap) |
+| Pipeline time               | single hull build         | parallel per-tile builds              |

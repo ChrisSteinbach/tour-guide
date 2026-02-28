@@ -43,7 +43,7 @@ Starting from a hint triangle (or the default), test which edge of the current t
 
 The edge test uses the sign of `dot(cross(a, b), q)` — the scalar triple product — to determine which side of the great circle through `a` and `b` the query `q` lies on.
 
-**Expected steps:** O(sqrt(N)) for uniformly distributed points.
+**Expected steps:** O(√N) for uniformly distributed points.
 
 **Step 2: Greedy vertex walk** (`flatFindNearest` in `query.ts`, `findNearest` in `point-location.ts`)
 
@@ -69,9 +69,9 @@ The project chose the convex-hull-to-Delaunay approach with triangle walks over 
 
 - **KD-trees:** O(log N) queries but no adjacency structure for k-nearest BFS expansion. Also requires balancing and doesn't naturally decompose into tiles.
 - **Hierarchical point location (Kirkpatrick):** O(log N) queries with O(N) storage, but complex to implement and doesn't benefit from warm-start hints across consecutive queries.
-- **Triangle walks:** O(sqrt(N)) expected but simple to implement, naturally support warm-starting from the previous query result (consecutive GPS positions are nearby), and the Delaunay adjacency structure directly supports k-nearest via BFS.
+- **Triangle walks:** O(√N) expected but simple to implement, naturally support warm-starting from the previous query result (consecutive GPS positions are nearby), and the Delaunay adjacency structure directly supports k-nearest via BFS.
 
-With tiling (N ≈ 1,500 per tile), the walk takes ~39 steps — fast enough that the O(sqrt(N)) vs O(log N) distinction is irrelevant in practice.
+With tiling (N ≈ 1,500 per tile), the walk takes ~39 steps — fast enough that the O(√N) vs O(log N) distinction is irrelevant in practice.
 
 ## References
 

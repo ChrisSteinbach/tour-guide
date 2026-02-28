@@ -10,8 +10,12 @@ npm run test:watch    # Tests in watch mode
 npm run test:coverage # Tests with coverage report
 npm run lint          # Type-check + ESLint + Prettier check (tsc --noEmit && eslint src/ && prettier --check .)
 npm run lint:fix      # Auto-fix ESLint + Prettier issues
+npm run lint:eslint   # ESLint only (no type-check)
+npm run format        # Prettier check only
+npm run format:fix    # Prettier auto-fix only
 npm run dev           # Start Vite dev server (binds 0.0.0.0 for phone testing)
 npm run build         # Production build → dist/app/
+npm run preview       # Preview production build locally
 npm run pipeline      # Run offline build pipeline (tsx src/pipeline/build.ts)
 npm run extract       # Extract geotagged articles from Wikipedia dumps → data/articles-{lang}.json
 ```

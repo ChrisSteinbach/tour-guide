@@ -55,7 +55,7 @@ Flat array of vertex indices forming each triangle: `[v0, v1, v2, v3, v4, v5, ..
 
 Flat array of adjacent triangle indices: `[n0, n1, n2, n3, n4, n5, ...]`. For triangle `t`, `triangleNeighbors[t*3 + e]` is the triangle sharing the edge from `triangleVertices[t*3 + e]` to `triangleVertices[t*3 + (e+1) % 3]`.
 
-This adjacency structure enables O(sqrt(N)) triangle-walk point location — starting from any triangle, the algorithm walks toward the query point by crossing edges until it reaches the containing triangle.
+This adjacency structure enables O(√N) triangle-walk point location — starting from any triangle, the algorithm walks toward the query point by crossing edges until it reaches the containing triangle.
 
 ## Articles Section
 

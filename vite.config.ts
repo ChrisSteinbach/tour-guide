@@ -4,29 +4,12 @@ import { VitePWA } from "vite-plugin-pwa";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
-/**
- * Serve data/triangulation-*.bin with gzip compression.
- * Falls back to data/triangulation.json for backwards compatibility.
- */
+/** Serve tile data from the data/ directory during development. */
 function serveData(): Plugin {
   return {
     name: "serve-data",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        const match = req.url?.match(/(triangulation-\w+\.bin)$/);
-        if (match) {
-          try {
-            const filePath = resolve(`data/${match[1]}`);
-            const stat = statSync(filePath);
-            res.setHeader("Content-Type", "application/octet-stream");
-            res.setHeader("Content-Length", stat.size);
-            res.setHeader("Last-Modified", stat.mtime.toUTCString());
-            createReadStream(filePath).pipe(res);
-          } catch {
-            next();
-          }
-          return;
-        }
         // Serve tile index: /tiles/{lang}/index.json
         const indexMatch = req.url?.match(/\/tiles\/(\w+)\/index\.json$/);
         if (indexMatch) {
@@ -51,18 +34,6 @@ function serveData(): Plugin {
             );
             const stat = statSync(filePath);
             res.setHeader("Content-Type", "application/octet-stream");
-            res.setHeader("Content-Length", stat.size);
-            createReadStream(filePath).pipe(res);
-          } catch {
-            next();
-          }
-          return;
-        }
-        if (req.url === "/triangulation.json") {
-          try {
-            const filePath = resolve("data/triangulation.json");
-            const stat = statSync(filePath);
-            res.setHeader("Content-Type", "application/json");
             res.setHeader("Content-Length", stat.size);
             createReadStream(filePath).pipe(res);
           } catch {
