@@ -6,7 +6,7 @@ The app is driven by a pure, functional state machine in `src/app/state-machine.
 transition(state, event) → { next, effects }
 ```
 
-The transition function has **no side effects** — it takes the current state and an event, returns the next state and a list of effects to execute. This makes the machine easy to test (982 lines of tests) and reason about.
+The transition function has **no side effects** — it takes the current state and an event, returns the next state and a list of effects to execute. This makes the machine easy to test (extensive test suite, ~1,000 lines) and reason about.
 
 `main.ts` hosts the dispatch loop and effect executor that wire the pure machine to the real world (DOM, GPS, network, storage).
 

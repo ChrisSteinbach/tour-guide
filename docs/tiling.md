@@ -127,18 +127,19 @@ A JSON manifest that the app fetches first. It lists every tile with enough meta
 }
 ```
 
-| Field                           | Purpose                                                            |
-| ------------------------------- | ------------------------------------------------------------------ |
-| `version`                       | Format version for future changes                                  |
-| `gridDeg`                       | Cell size in degrees (5)                                           |
-| `bufferDeg`                     | Buffer zone width (0.5)                                            |
-| `generated`                     | ISO 8601 timestamp of pipeline run                                 |
-| `tiles[].id`                    | Tile identifier, used in file path: `tiles/{lang}/{id}.bin`        |
-| `tiles[].row/col`               | Grid position for programmatic access                              |
-| `tiles[].south/north/west/east` | Bounding box (excluding buffer) for display/debugging              |
-| `tiles[].articles`              | Article count (excluding buffer duplicates) for UI hints           |
-| `tiles[].bytes`                 | Uncompressed file size for progress estimation                     |
-| `tiles[].hash`                  | Content hash (first 8 hex chars of SHA-256) for cache invalidation |
+| Field                           | Purpose                                                                |
+| ------------------------------- | ---------------------------------------------------------------------- |
+| `version`                       | Format version for future changes                                      |
+| `gridDeg`                       | Cell size in degrees (5)                                               |
+| `bufferDeg`                     | Buffer zone width (0.5)                                                |
+| `generated`                     | ISO 8601 timestamp of pipeline run                                     |
+| `hash`                          | Optional content hash of the full index (top-level cache invalidation) |
+| `tiles[].id`                    | Tile identifier, used in file path: `tiles/{lang}/{id}.bin`            |
+| `tiles[].row/col`               | Grid position for programmatic access                                  |
+| `tiles[].south/north/west/east` | Bounding box (excluding buffer) for display/debugging                  |
+| `tiles[].articles`              | Article count (excluding buffer duplicates) for UI hints               |
+| `tiles[].bytes`                 | Uncompressed file size for progress estimation                         |
+| `tiles[].hash`                  | Content hash (first 8 hex chars of SHA-256) for cache invalidation     |
 
 Content hashes drive cache invalidation. When the app already has a tile cached in IDB, it compares the cached hash against the index. Changed hash → refetch tile. Unchanged → skip.
 
