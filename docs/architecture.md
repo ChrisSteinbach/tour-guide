@@ -271,6 +271,7 @@ src/tiles.ts           Tile types, grid constants, tile ID computation
 
 ## See Also
 
+- [State Machine](state-machine.md) — App state machine: phases, events, effects, transition table
 - [Nearest-Neighbor Theory](nearest-neighbor.md) — Voronoi/Delaunay theory, spherical adaptation, 3D convex hull approach, triangle walks
 - [Binary Format](binary-format.md) — Byte-level layout of `.bin` tile files
 - [Tiling Strategy](tiling.md) — Geographic tiling scheme, buffer zones, boundary handling
