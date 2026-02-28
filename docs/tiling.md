@@ -33,7 +33,7 @@ English Wikipedia has over a million geotagged articles (see [data-extraction.md
 
 | Metric                                    | Value                                                                                                            |
 | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Average articles per tile                 | ~1,500                                                                                                           |
+| Average articles per tile (incl. buffer)  | ~1,500                                                                                                           |
 | Bytes per article (numeric)               | ~64 (12 vertex + 4 vertexTri + 24 triVerts + 24 triNeighbors; assumes T ≈ 2V, slightly higher in buffered tiles) |
 | Bytes per article (title)                 | ~25 (JSON string in array)                                                                                       |
 | **Total per article**                     | **~89 bytes**                                                                                                    |

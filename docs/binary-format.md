@@ -25,13 +25,13 @@ Notation: **V** = vertex count, **T** = triangle count. All multi-byte integers 
 
 ## Header (24 bytes)
 
-| Offset | Size | Type   | Field          | Description                                                                                             |
-| ------ | ---- | ------ | -------------- | ------------------------------------------------------------------------------------------------------- |
-| 0      | 4    | Uint32 | vertexCount    | Number of vertices (V)                                                                                  |
-| 4      | 4    | Uint32 | triangleCount  | Number of triangles (T)                                                                                 |
-| 8      | 4    | Uint32 | articlesOffset | Byte offset where the articles JSON begins                                                              |
-| 12     | 4    | Uint32 | articlesLength | Byte length of the articles JSON (unpadded)                                                             |
-| 16     | 8    | -      | reserved       | Zero-filled, reserved for future use. A format version field will be placed here if the layout changes. |
+| Offset | Size | Type   | Field          | Description                                                                                                                                                                                                                                              |
+| ------ | ---- | ------ | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0      | 4    | Uint32 | vertexCount    | Number of vertices (V)                                                                                                                                                                                                                                   |
+| 4      | 4    | Uint32 | triangleCount  | Number of triangles (T)                                                                                                                                                                                                                                  |
+| 8      | 4    | Uint32 | articlesOffset | Byte offset where the articles JSON begins                                                                                                                                                                                                               |
+| 12     | 4    | Uint32 | articlesLength | Byte length of the articles JSON (unpadded)                                                                                                                                                                                                              |
+| 16     | 8    | -      | reserved       | Zero-filled, reserved for future use. A format version field will be placed here if the layout changes. In the current design, format migration is handled by bumping the IDB key prefix (e.g. `tile-v1-` → `tile-v2-`), which orphans old cached tiles. |
 
 ## Numeric Sections
 

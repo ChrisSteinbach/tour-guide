@@ -126,6 +126,7 @@ The app is designed for mobile networks where failures are common. Each subsyste
 | **GPS timeout/unavailable**                                  | Same as GPS denied — error screen with demo data option                                            | Explicit user action required to proceed                                                         |
 | **Wikipedia API failure**                                    | Detail view shows error with "Retry" button and direct "Open on Wikipedia" link                    | User can retry or read the article on Wikipedia directly                                         |
 | **Wikipedia API 404**                                        | Treated as "article not found"                                                                     | Detail view shows error; Wikipedia link still works as fallback                                  |
+| **Tile deserialization failure** (corrupt/truncated `.bin`)  | `deserializeBinary()` throws; caught by tile-loader, error logged, tile skipped                    | Same as tile fetch failure — results from other loaded tiles still display                       |
 
 Key design decisions:
 
@@ -235,7 +236,7 @@ Two formats sharing the same logical structure:
 
 `deserializeBinary()` copies Float32 vertices into Float64 for math precision. Uint32 sections are zero-copy typed array views directly into the ArrayBuffer.
 
-## Key Files
+## Key Files (Selected)
 
 ```
 src/pipeline/

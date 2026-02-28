@@ -37,6 +37,8 @@ certificate via `@vitejs/plugin-basic-ssl` (HTTPS is required for the Geolocatio
 `https://<your-ip>:5173/`. Use the "Or try with demo data" option for quick
 testing without GPS.
 
+The production build assumes deployment at `/tour-guide/` (configured via `base` in `vite.config.ts`). If you deploy to a different path, update this value — tile loading uses `import.meta.env.BASE_URL` to construct fetch URLs.
+
 The dev server serves tile data from `data/tiles/`. To generate it locally:
 
 ```bash
@@ -95,10 +97,16 @@ npm run extract -- --lang=en
 # Reuse previously downloaded dumps
 npm run extract -- --lang=sv --skip-download
 
-# Geographic subset (south,north,west,east — latitude range first, then longitude range;
-# not the WGS84 west,south,east,north convention)
+# Geographic subset
 npm run extract -- --lang=en --bounds=49.44,50.19,5.73,6.53
 ```
+
+> **Warning:** `--bounds` uses `south,north,west,east` order (latitude range first, then
+> longitude range). This does **not** follow the WGS84 `west,south,east,north` convention.
+
+> **Note:** English extraction requires ~6 GB heap (set automatically via
+> `--max-old-space-size=6144`). Ensure at least 8 GB RAM. See
+> [`docs/data-extraction.md`](docs/data-extraction.md) for details.
 
 Output format (one JSON object per line in `data/articles-{lang}.json`):
 
