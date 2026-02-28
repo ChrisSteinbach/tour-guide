@@ -73,6 +73,7 @@ npm run pipeline -- --lang=en --limit=10000
 | `npm run test:watch`    | Tests in watch mode                               |
 | `npm run test:coverage` | Tests with coverage report                        |
 | `npm run lint`          | Type-check + ESLint + Prettier                    |
+| `npm run lint:fix`      | Auto-fix ESLint + Prettier issues                 |
 | `npm run extract`       | Extract geotagged articles from Wikipedia dumps   |
 | `npm run pipeline`      | Build tiled triangulation from extracted articles |
 
@@ -90,7 +91,8 @@ npm run extract -- --lang=en
 # Reuse previously downloaded dumps
 npm run extract -- --lang=sv --skip-download
 
-# Geographic subset (south,north,west,east — not the WGS84 west,south,east,north convention)
+# Geographic subset (south,north,west,east — latitude range first, then longitude range;
+# not the WGS84 west,south,east,north convention)
 npm run extract -- --lang=en --bounds=49.44,50.19,5.73,6.53
 ```
 
@@ -147,7 +149,7 @@ src/
 
 ## Tech stack
 
-- **TypeScript** (strict mode, ES2022) — zero runtime dependencies
+- **TypeScript** (strict mode, ES2022) — zero npm runtime dependencies (all application code is first-party)
 - **Vite** — dev server and production builds
 - **Vitest** — test runner
 - **Workbox** (via vite-plugin-pwa) — service worker for offline support
@@ -174,6 +176,10 @@ Requires a modern browser with IndexedDB, Service Workers, and the Geolocation A
 - [`docs/binary-format.md`](docs/binary-format.md) — Binary tile serialization format
 - [`docs/tiling.md`](docs/tiling.md) — Geographic tiling strategy
 - [`docs/data-extraction.md`](docs/data-extraction.md) — Wikipedia dump extraction pipeline
+
+## Naming
+
+The user-facing app is called **WikiRadar** (PWA manifest, UI, docs). The repository and npm package use the original working name **tour-guide** (repo URL, `package.json`, IDB database name, `sessionStorage` keys). Both names refer to the same project.
 
 ## License
 

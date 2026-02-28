@@ -134,40 +134,42 @@ The `start` event branches based on two conditions — whether tile data is read
 | No                  | —         | `downloading` (fetch tile index)                   |
 | No (no geolocation) | —         | `downloading` → `useMockData` (immediate fallback) |
 
-### Complete transition table
+### Transition table
 
-| From              | Event               | Condition                 | To                           | Key effects                     |
-| ----------------- | ------------------- | ------------------------- | ---------------------------- | ------------------------------- |
-| `welcome`         | `start`             | query=none                | `downloading`                | storeStarted, startGps, render  |
-| `welcome`         | `start`             | query ready, has position | `browsing`                   | storeStarted, startGps, requery |
-| `welcome`         | `start`             | query ready, no position  | `locating`                   | storeStarted, startGps, render  |
-| `welcome`         | `start`             | no geolocation            | `downloading` → mock         | storeStarted, stopGps, render   |
-| `downloading`     | `downloadProgress`  | —                         | `downloading`                | render (progress bar)           |
-| `downloading`     | `tileIndexLoaded`   | has index, has position   | `browsing` or `loadingTiles` | loadTiles, requery or render    |
-| `downloading`     | `tileIndexLoaded`   | has index, no position    | `locating`                   | render                          |
-| `downloading`     | `tileIndexLoaded`   | null index                | `dataUnavailable`            | log, render                     |
-| `downloading`     | `useMockData`       | query=none                | `downloading`                | stopGps, render                 |
-| `downloading`     | `useMockData`       | query=tiled               | `browsing` or `loadingTiles` | stopGps, loadTiles, requery     |
-| `locating`        | `position`          | tiled, no tiles loaded    | `loadingTiles`               | loadTiles, render               |
-| `locating`        | `position`          | tiles available           | `browsing`                   | loadTiles, requery              |
-| `locating`        | `gpsError`          | —                         | `error`                      | render                          |
-| `loadingTiles`    | `tileLoaded`        | has position              | `browsing`                   | requery                         |
-| `error`           | `useMockData`       | query=tiled               | `browsing`                   | stopGps, loadTiles, requery     |
-| `browsing`        | `position`          | moved ≥15m, not paused    | `browsing`                   | loadTiles, requery              |
-| `browsing`        | `position`          | moved <15m or paused      | `browsing`                   | (loadTiles only)                |
-| `browsing`        | `showMore`          | next tier available       | `browsing`                   | requery (with larger count)     |
-| `browsing`        | `togglePause`       | paused→unpaused           | `browsing`                   | requery                         |
-| `browsing`        | `togglePause`       | unpaused→paused           | `browsing`                   | renderBrowsingList              |
-| `browsing`        | `selectArticle`     | —                         | `detail`                     | pushHistory, fetchSummary       |
-| `browsing`        | `queryResult`       | articles changed          | `browsing`                   | renderBrowsingList              |
-| `browsing`        | `queryResult`       | same articles             | `browsing`                   | updateDistances                 |
-| `browsing`        | `langChanged`       | —                         | `downloading`                | storeLang, loadData, render     |
-| `detail`          | `back`              | —                         | `browsing`                   | renderBrowsingList              |
-| `detail`          | `position`          | —                         | `detail`                     | loadTiles, render               |
-| `detail`          | `tileLoaded`        | —                         | `detail`                     | requery (background update)     |
-| `dataUnavailable` | `langChanged`       | —                         | `downloading`                | storeLang, loadData, render     |
-| any               | `swUpdateAvailable` | no banner yet             | (unchanged)                  | showAppUpdateBanner             |
-| any               | `gpsError`          | not in `locating`         | (unchanged)                  | (ignored)                       |
+| From               | Event               | Condition                 | To                           | Key effects                      |
+| ------------------ | ------------------- | ------------------------- | ---------------------------- | -------------------------------- |
+| `welcome`          | `start`             | query=none                | `downloading`                | storeStarted, startGps, render   |
+| `welcome`          | `start`             | query ready, has position | `browsing`                   | storeStarted, startGps, requery  |
+| `welcome`          | `start`             | query ready, no position  | `locating`                   | storeStarted, startGps, render   |
+| `welcome`          | `start`             | no geolocation            | `downloading` → mock         | storeStarted, stopGps, render    |
+| `downloading`      | `downloadProgress`  | —                         | `downloading`                | render (progress bar)            |
+| `downloading`      | `tileIndexLoaded`   | has index, has position   | `browsing` or `loadingTiles` | loadTiles, requery or render     |
+| `downloading`      | `tileIndexLoaded`   | has index, no position    | `locating`                   | render                           |
+| `downloading`      | `tileIndexLoaded`   | null index                | `dataUnavailable`            | log, render                      |
+| `downloading`      | `useMockData`       | query=none                | `downloading`                | stopGps, render                  |
+| `downloading`      | `useMockData`       | query=tiled               | `browsing` or `loadingTiles` | stopGps, loadTiles, requery      |
+| `locating`         | `position`          | tiled, no tiles loaded    | `loadingTiles`               | loadTiles, render                |
+| `locating`         | `position`          | tiles available           | `browsing`                   | loadTiles, requery               |
+| `locating`         | `gpsError`          | —                         | `error`                      | render                           |
+| `loadingTiles`     | `tileLoaded`        | has position              | `browsing`                   | requery                          |
+| `error`            | `useMockData`       | query=tiled               | `browsing`                   | stopGps, loadTiles, requery      |
+| `browsing`         | `position`          | moved ≥15m, not paused    | `browsing`                   | loadTiles, requery               |
+| `browsing`         | `position`          | moved <15m or paused      | `browsing`                   | (loadTiles only)                 |
+| `browsing`         | `showMore`          | next tier available       | `browsing`                   | requery (with larger count)      |
+| `browsing`         | `togglePause`       | paused→unpaused           | `browsing`                   | requery                          |
+| `browsing`         | `togglePause`       | unpaused→paused           | `browsing`                   | renderBrowsingList               |
+| `browsing`         | `selectArticle`     | —                         | `detail`                     | pushHistory, fetchSummary        |
+| `browsing`         | `queryResult`       | articles changed          | `browsing`                   | renderBrowsingList               |
+| `browsing`         | `queryResult`       | same articles             | `browsing`                   | updateDistances                  |
+| `detail`           | `back`              | —                         | `browsing`                   | renderBrowsingList               |
+| `detail`           | `position`          | —                         | `detail`                     | loadTiles, render                |
+| `detail`           | `tileLoaded`        | —                         | `detail`                     | requery (background update)      |
+| any (post-welcome) | `langChanged`       | —                         | `downloading`                | storeLang, loadData, render      |
+| any                | `tileLoadStarted`   | —                         | (unchanged)                  | (tracks tile ID in loadingTiles) |
+| any                | `swUpdateAvailable` | no banner yet             | (unchanged)                  | showAppUpdateBanner              |
+| any                | `gpsError`          | not in `locating`         | (unchanged)                  | (ignored)                        |
+
+Events not listed for a given phase (e.g. `showMore` during `detail`, `selectArticle` during `downloading`) are no-ops — the transition returns the current state with no effects.
 
 ## Key Design Decisions
 
@@ -201,14 +203,14 @@ Separating the transition logic from side effects yields several benefits:
 
 ## Dispatch Loop
 
-The runtime in `main.ts` is minimal:
+The runtime in `main.ts` is minimal. The following is a simplified sketch — the actual implementation includes error handling and guard logic:
 
 ```typescript
 function dispatch(event: Event): void {
   const { next, effects } = transition(appState, event);
   appState = next;
   for (const effect of effects) {
-    executeEffect(effect);
+    executeEffect(effect); // may re-enter dispatch (e.g. requery)
   }
 }
 ```

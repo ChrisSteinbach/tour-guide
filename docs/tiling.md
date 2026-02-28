@@ -25,24 +25,24 @@ Geohash precision levels jump 32x between levels (32 → 1,024 → 32,768 cells)
 
 ### Why not S2 cells
 
-S2 cells provide near-uniform area coverage and are theoretically optimal. However, computing S2 cell IDs from lat/lon requires implementing the S2 projection (~500+ lines of code), and the project's zero-dependency constraint makes this a poor fit for the app runtime. The non-uniform area of lat/lon cells at high latitudes is not a practical concern: virtually no Wikipedia articles exist above 70° where the distortion becomes significant, and the buffer zone (section 2) handles any boundary effects.
+S2 cells provide near-uniform area coverage and are theoretically optimal. However, computing S2 cell IDs from lat/lon requires implementing the S2 projection (a non-trivial amount of code), and the project's zero-dependency constraint makes this a poor fit for the app runtime. The non-uniform area of lat/lon cells at high latitudes is not a practical concern: virtually no Wikipedia articles exist above 70° where the distortion becomes significant, and the buffer zone (section 2) handles any boundary effects.
 
 ### Back-of-envelope math
 
 English Wikipedia has over a million geotagged articles (see [data-extraction.md](data-extraction.md) for current counts). With ~800 populated tiles:
 
-| Metric                                    | Value                                                         |
-| ----------------------------------------- | ------------------------------------------------------------- |
-| Average articles per tile                 | ~1,500                                                        |
-| Bytes per article (numeric)               | ~64 (12 vertex + 4 vertexTri + 24 triVerts + 24 triNeighbors) |
-| Bytes per article (title)                 | ~25 (JSON string in array)                                    |
-| **Total per article**                     | **~89 bytes**                                                 |
-| Average tile (1,500 articles)             | ~130 KB raw, **~65 KB gzipped**                               |
-| Dense tile (20,000 articles, e.g. London) | ~1.8 MB raw, **~900 KB gzipped**                              |
-| Sparse tile (100 articles)                | ~9 KB raw, **~4 KB gzipped**                                  |
-| Tile index manifest                       | ~70 KB raw, **~15 KB gzipped**                                |
+| Metric                                    | Value                                                                                                            |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Average articles per tile                 | ~1,500                                                                                                           |
+| Bytes per article (numeric)               | ~64 (12 vertex + 4 vertexTri + 24 triVerts + 24 triNeighbors; assumes T ≈ 2V, slightly higher in buffered tiles) |
+| Bytes per article (title)                 | ~25 (JSON string in array)                                                                                       |
+| **Total per article**                     | **~89 bytes**                                                                                                    |
+| Average tile (1,500 articles)             | ~130 KB raw, **~65 KB gzipped**                                                                                  |
+| Dense tile (20,000 articles, e.g. London) | ~1.8 MB raw, **~900 KB gzipped**                                                                                 |
+| Sparse tile (100 articles)                | ~9 KB raw, **~4 KB gzipped**                                                                                     |
+| Tile index manifest                       | ~70 KB raw, **~15 KB gzipped**                                                                                   |
 
-Loading times (index + one tile, including 2x RTT). Bandwidth estimates are conservative approximations; actual performance varies by carrier, congestion, and device:
+Estimated loading times (index + one tile, including 2x RTT). These are rough order-of-magnitude estimates assuming idealized throughput; actual performance varies significantly by carrier, congestion, signal strength, and device:
 
 | Scenario                 | 4G (~10 Mbps) | 3G (~1 Mbps) |
 | ------------------------ | ------------- | ------------ |
@@ -52,7 +52,7 @@ Loading times (index + one tile, including 2x RTT). Bandwidth estimates are cons
 
 The 3G dense-tile case exceeds 5 seconds, but dense areas (central London, Manhattan) have near-universal 4G/5G/wifi coverage. The realistic worst case — a user on 3G in a moderately dense area (~3,000 articles, ~300 KB gzipped) — loads in ~3 seconds.
 
-**Result: first useful result in <5 seconds for all realistic mobile scenarios.**
+**Estimated result: first useful result in <5 seconds for most realistic mobile scenarios.**
 
 ## 2. Per-Tile Triangulation
 
@@ -189,7 +189,7 @@ function findNearestTiled(
 }
 ```
 
-Each per-tile query takes O(sqrt(N_tile)) steps. With N_tile ≈ 1,500 instead of N = 1,200,000, this is ~39 steps vs ~1,095 steps — a 28x speedup per query. Even querying 4 tiles in parallel stays well under a millisecond.
+Each per-tile walk takes O(sqrt(N_tile)) steps. With N_tile ≈ 1,500 instead of N = 1,200,000, this is ~39 steps vs ~1,095 steps — a 28x speedup per walk. A cross-tile query runs up to 4 walks plus a merge-sort of candidates, but even so, the total stays well under a millisecond.
 
 ### Edge proximity detection
 
