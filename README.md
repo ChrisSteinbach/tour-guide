@@ -31,7 +31,7 @@ npm install
 npm run dev
 ```
 
-The dev server starts at `https://localhost:5173/` with a self-signed
+The dev server defaults to `https://localhost:5173/` with a self-signed
 certificate (HTTPS is required for the Geolocation API). The server binds
 `0.0.0.0`, so you can test on other devices on your network using
 `https://<your-ip>:5173/`. Use the "Or try with demo data" option for quick

@@ -97,9 +97,10 @@ npm run extract -- --lang=ja
 To add a fourth language (e.g. German `de`):
 
 1. Add the language code to the `SUPPORTED_LANGS` array in `src/lang.ts`.
-2. Run extraction: `npm run extract -- --lang=de`
-3. Run the pipeline: `npm run pipeline -- --lang=de`
-4. Add the language to the CI matrix in `.github/workflows/pipeline.yml` so it's included in monthly rebuilds.
+2. Add canary landmarks for the new language in `src/pipeline/canary.ts` (the `LANDMARKS` record). Without these, extraction will succeed but data integrity won't be validated.
+3. Run extraction: `npm run extract -- --lang=de`
+4. Run the pipeline: `npm run pipeline -- --lang=de`
+5. Add the language to the CI matrix in `.github/workflows/pipeline.yml` so it's included in monthly rebuilds.
 
 No special parsing is needed — the SQL dump format is identical across all Wikipedia languages. CJK titles (Japanese, Chinese, Korean) are handled transparently via UTF-8.
 
