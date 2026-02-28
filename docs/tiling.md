@@ -40,7 +40,7 @@ English Wikipedia has over a million geotagged articles (see [data-extraction.md
 | Average tile (1,500 articles)             | ~130 KB raw, **~65 KB gzipped**                                                                                  |
 | Dense tile (20,000 articles, e.g. London) | ~1.8 MB raw, **~900 KB gzipped**                                                                                 |
 | Sparse tile (100 articles)                | ~9 KB raw, **~4 KB gzipped**                                                                                     |
-| Tile index manifest                       | ~70 KB raw, **~15 KB gzipped**                                                                                   |
+| Tile index manifest                       | ~90 KB raw, **~20 KB gzipped**                                                                                   |
 
 Estimated loading times (index + one tile, including 2x RTT). These are rough order-of-magnitude estimates assuming idealized throughput; actual performance varies significantly by carrier, congestion, signal strength, and device:
 
@@ -143,7 +143,7 @@ A JSON manifest that the app fetches first. It lists every tile with enough meta
 
 Content hashes drive cache invalidation. When the app already has a tile cached in IDB, it compares the cached hash against the index. Changed hash → refetch tile. Unchanged → skip.
 
-**Manifest size**: ~800 tiles x ~90 bytes JSON ≈ 72 KB raw. Gzipped: **~15 KB**. Well under the 100 KB target.
+**Manifest size**: ~800 tiles x ~110 bytes JSON ≈ 90 KB raw. Gzipped: **~20 KB**. Well under the 100 KB target.
 
 ## 4. Boundary Handling
 
@@ -211,7 +211,7 @@ The loading sequence:
 
 fetch tile index (parallel with GPS) → GPS ready → fetch primary tile → query → show results
 
-The tile index fetch is small (~15 KB gzipped) and completes well before GPS warmup (~1-3 seconds). So the effective latency is: **GPS warmup + tile fetch + deserialize**. Since tile fetch is 0.2-0.9s and deserialize is <50ms, the total is dominated by GPS warmup.
+The tile index fetch is small (~20 KB gzipped) and completes well before GPS warmup (~1-3 seconds). So the effective latency is: **GPS warmup + tile fetch + deserialize**. Since tile fetch is 0.2-0.9s and deserialize is <50ms, the total is dominated by GPS warmup.
 
 For the **demo data** path ("Use demo data" button), the app loads a hardcoded tile for the demo location (Paris / Eiffel Tower → tile row 27, col 36).
 
@@ -242,7 +242,7 @@ Why tiling matters — comparison with a hypothetical monolithic approach:
 
 | Aspect                      | Monolithic (hypothetical) | Tiled (current)                       |
 | --------------------------- | ------------------------- | ------------------------------------- |
-| First load                  | ~120 MB monolith          | ~15 KB index + ~75 KB tile            |
+| First load                  | ~120 MB monolith          | ~20 KB index + ~75 KB tile            |
 | Time to first result        | 10-100s on mobile         | **<5s on mobile**                     |
 | IDB cache hit               | ~1ms                      | ~1ms (per tile)                       |
 | Query speed (1.2M articles) | O(√1.2M) ≈ 1,095 steps    | O(√1,500) ≈ 39 steps                  |
