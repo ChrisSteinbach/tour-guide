@@ -17,7 +17,7 @@ The primary UI state is the `Phase` discriminated union. Each phase corresponds 
 | Phase             | Description                                           | Carries                                                        |
 | ----------------- | ----------------------------------------------------- | -------------------------------------------------------------- |
 | `welcome`         | Landing screen with language picker and start buttons | —                                                              |
-| `downloading`     | Fetching tile index from CDN                          | `progress` (0–1)                                               |
+| `downloading`     | Fetching tile index from CDN                          | `progress` (-1 = not started, 0–1)                             |
 | `locating`        | Waiting for GPS fix                                   | —                                                              |
 | `loadingTiles`    | Tile index ready, loading first nearby tile           | —                                                              |
 | `error`           | GPS failed (denied, timeout, unavailable)             | `error: LocationError`                                         |
@@ -107,11 +107,11 @@ The `requery` effect is notable: it re-enters the dispatch loop synchronously by
                   ▼           ▼           ▼
            ┌─────────┐ ┌──────────┐ ┌────────────┐
            │browsing │ │ locating │ │downloading │◄──── langChanged
-           └─────────┘ └────┬─────┘ └─────┬──────┘     (from any
-                 ▲          │              │             post-welcome
-                 │          │              │             phase)
-                 │    ┌─────┴─────┐  ┌─────┴──────┐
-                 │    ▼           ▼  ▼            ▼
+           └─────────┘ └────┬─────┘ └──┬──┬──────┘     (from any
+                 ▲          │           │  │             post-welcome
+                 │          │           │  │useMockData  phase)
+                 │    ┌─────┴─────┐  ┌─┘  │(query=tiled)
+                 │    ▼           ▼  ▼    ▼
                  │ ┌─────┐ ┌──────────────┐ ┌────────────────┐
                  │ │error│ │ loadingTiles │ │dataUnavailable │
                  │ └──┬──┘ └──────┬───────┘ └────────────────┘
@@ -152,6 +152,7 @@ The `start` event branches based on two conditions — whether tile data is read
 | `locating`         | `position`          | tiles available           | `browsing`                   | loadTiles, requery               |
 | `locating`         | `gpsError`          | —                         | `error`                      | render                           |
 | `loadingTiles`     | `tileLoaded`        | has position              | `browsing`                   | requery                          |
+| `error`            | `useMockData`       | query=none                | `downloading`                | stopGps, render                  |
 | `error`            | `useMockData`       | query=tiled               | `browsing`                   | stopGps, loadTiles, requery      |
 | `browsing`         | `position`          | moved ≥15m, not paused    | `browsing`                   | loadTiles, requery               |
 | `browsing`         | `position`          | moved <15m or paused      | `browsing`                   | (loadTiles only)                 |
@@ -163,7 +164,7 @@ The `start` event branches based on two conditions — whether tile data is read
 | `browsing`         | `queryResult`       | same articles             | `browsing`                   | updateDistances                  |
 | `detail`           | `back`              | —                         | `browsing`                   | renderBrowsingList               |
 | `detail`           | `position`          | —                         | `detail`                     | loadTiles, render                |
-| `detail`           | `tileLoaded`        | —                         | `detail`                     | requery (background update)      |
+| `detail`           | `tileLoaded`        | —                         | `detail`                     | (tile data stored, no requery)   |
 | any (post-welcome) | `langChanged`       | —                         | `downloading`                | storeLang, loadData, render      |
 | any                | `tileLoadStarted`   | —                         | (unchanged)                  | (tracks tile ID in loadingTiles) |
 | any                | `swUpdateAvailable` | no banner yet             | (unchanged)                  | showAppUpdateBanner              |

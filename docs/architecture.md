@@ -59,7 +59,7 @@ Float32 vertices give sub-meter precision on Earth. On deserialization, Uint32 i
 
 ### Startup
 
-1. Register service worker (auto-update: new versions install silently without prompting)
+1. Register service worker (auto-update: new versions install automatically; the app shows a "Reload" banner via the `showAppUpdateBanner` effect)
 2. Load triangulation for stored language (default: English)
 3. Show welcome screen with language selector and "Find nearby" / "Use demo data" buttons
 4. On start: begin GPS watch, render article list
@@ -106,7 +106,7 @@ Distance uses chord length (`2 * asin(||v - q|| / 2)`, clamped for numerical saf
 
 ### PWA Manifest & Service Worker (`vite.config.ts`)
 
-The VitePWA plugin generates a web app manifest (`name: "WikiRadar"`, `display: "standalone"`, `theme_color: "#1a73e8"`). Icon assets: `icon.svg`, `icon-192.png`, `icon-512.png`.
+The VitePWA plugin generates a web app manifest (`name: "WikiRadar"`, `display: "standalone"`, `theme_color: "#1a73e8"`). Icon assets: `icon.svg`, `icon-192.png`, `icon-512.png`, `apple-touch-icon.png`.
 
 - Static assets (JS, CSS, HTML, SVG) are precached by Workbox
 - `.bin` and `.json` data files use `NetworkOnly` — deliberately excluded from SW cache so that freshness checks always hit the server (the app manages its own IDB cache)
@@ -141,6 +141,14 @@ Key design decisions:
 - **Service worker scope** — The SW caches static assets and Wikipedia API responses only. Tile data bypasses the SW cache (managed via IDB instead).
 
 ## CI/CD
+
+### CI (`ci.yml`)
+
+Runs on every push to `main` and on pull requests. Three parallel jobs:
+
+1. **lint** — Prettier check (`npm run format`) then ESLint (`npm run lint:eslint`)
+2. **type-check** — `tsc --noEmit`
+3. **test** — `npm run test:coverage` (vitest with coverage). Coverage artifacts are uploaded to GitHub Actions with 30-day retention.
 
 ### Data Pipeline (`pipeline.yml`)
 
@@ -229,8 +237,6 @@ Two formats sharing the same logical structure:
 
 ## Key Files
 
-> **Note:** This list is manually maintained and may not reflect recent file additions or renames. Use your IDE or `find src -name '*.ts'` for the definitive file inventory.
-
 ```
 src/pipeline/
   extract-dump.ts      Extraction entry point (SQL dumps → NDJSON)
@@ -267,6 +273,9 @@ src/app/
 
 src/lang.ts            Supported languages (en, sv, ja)
 src/tiles.ts           Tile types, grid constants, tile ID computation
+
+src/app/CLAUDE.md      Module-specific dev instructions (browser verification workflow)
+src/pipeline/CLAUDE.md Module-specific dev instructions (extraction and pipeline commands)
 
 .github/workflows/
   ci.yml               Three parallel jobs: lint (Prettier check then ESLint), type-check (tsc --noEmit), test (vitest + coverage)
