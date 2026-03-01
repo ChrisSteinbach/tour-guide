@@ -30,7 +30,7 @@ Husky runs lint-staged on every commit, auto-fixing ESLint and Prettier issues o
 
 ## Architecture
 
-Three modules under `src/`, plus shared root-level files:
+Three directories under `src/`, plus two shared files:
 
 - **`src/geometry/`** — Spherical math primitives (coordinate conversion, great-circle distance, Delaunay triangulation).
 - **`src/pipeline/`** — Offline build: extracts Wikipedia coordinates, computes triangulation, outputs static tiles. Run via `tsx`.
