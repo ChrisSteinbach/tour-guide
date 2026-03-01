@@ -1,6 +1,6 @@
 // Offline build pipeline
 // Reads pre-extracted NDJSON articles, builds tiled Delaunay triangulation
-// Run with: npm run pipeline [--limit=N] [--bounds=south,north,west,east]
+// Run with: npm run pipeline [--limit=N] [--bounds=west,south,east,north]
 
 import { createReadStream, writeFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
@@ -266,7 +266,7 @@ async function main() {
   if (Number.isFinite(limit)) console.log(`  --limit=${limit}`);
   if (bounds)
     console.log(
-      `  --bounds=${bounds.south},${bounds.north},${bounds.west},${bounds.east}`,
+      `  --bounds=${bounds.west},${bounds.south},${bounds.east},${bounds.north}`,
     );
 
   const inputPath = resolve(`data/articles-${lang}.json`);

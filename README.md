@@ -95,9 +95,8 @@ npm run extract -- --lang=en
 # Reuse previously downloaded dumps
 npm run extract -- --lang=sv --skip-download
 
-# Geographic subset (south,north,west,east — latitude range first, then longitude range;
-# not the WGS84 west,south,east,north convention)
-npm run extract -- --lang=en --bounds=49.44,50.19,5.73,6.53
+# Geographic subset (west,south,east,north — standard WGS84 bounding box order)
+npm run extract -- --lang=en --bounds=5.73,49.44,6.53,50.19
 ```
 
 Output format (one JSON object per line in `data/articles-{lang}.json`):
@@ -115,7 +114,7 @@ binary files:
 ```bash
 npm run pipeline -- --lang=en
 npm run pipeline -- --lang=en --limit=10000        # quick local test
-npm run pipeline -- --lang=en --bounds=49.44,50.19,5.73,6.53
+npm run pipeline -- --lang=en --bounds=5.73,49.44,6.53,50.19
 ```
 
 Output: `data/tiles/{lang}/` containing `index.json` and per-tile `.bin` files.

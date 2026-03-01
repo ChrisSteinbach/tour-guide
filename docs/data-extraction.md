@@ -53,9 +53,8 @@ npm run extract -- --lang=en
 # Skip download (reuse existing dumps)
 npm run extract -- --lang=sv --skip-download
 
-# Geographic subset (south,north,west,east — latitude range first, then longitude range,
-# matching the row-then-column order used by the tiling grid; not the WGS84 west,south,east,north convention)
-npm run extract -- --lang=en --bounds=49.44,50.19,5.73,6.53
+# Geographic subset (west,south,east,north — standard WGS84 bounding box order)
+npm run extract -- --lang=en --bounds=5.73,49.44,6.53,50.19
 ```
 
 ### Output

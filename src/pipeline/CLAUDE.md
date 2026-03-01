@@ -14,7 +14,7 @@ npm run extract -- --lang=en
 npm run extract -- --lang=sv --skip-download
 
 # Geographic subset
-npm run extract -- --lang=en --bounds=49.44,50.19,5.73,6.53
+npm run extract -- --lang=en --bounds=5.73,49.44,6.53,50.19
 
 # Inspect output
 head -3 data/articles-en.json
@@ -37,7 +37,7 @@ npm run pipeline -- --lang=en
 
 # Limit articles or restrict to a bounding box (for quick local testing)
 npm run pipeline -- --lang=en --limit=10000
-npm run pipeline -- --lang=en --bounds=49.44,50.19,5.73,6.53
+npm run pipeline -- --lang=en --bounds=5.73,49.44,6.53,50.19
 ```
 
 Input: `data/articles-{lang}.json` (NDJSON from extraction step)

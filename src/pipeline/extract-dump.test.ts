@@ -80,8 +80,8 @@ describe("isInBounds", () => {
 // ---------- Unit: parseBounds ----------
 
 describe("parseBounds", () => {
-  it("parses valid south,north,west,east string", () => {
-    expect(parseBounds("49.44,50.19,5.73,6.53")).toEqual({
+  it("parses valid west,south,east,north string", () => {
+    expect(parseBounds("5.73,49.44,6.53,50.19")).toEqual({
       south: 49.44,
       north: 50.19,
       west: 5.73,

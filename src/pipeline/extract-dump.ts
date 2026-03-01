@@ -253,9 +253,9 @@ export async function extractDump(opts: ExtractDumpOptions): Promise<{
 export function parseBounds(str: string): Bounds {
   const parts = str.split(",").map(Number);
   if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) {
-    throw new Error(`Invalid bounds: ${str} (expected: south,north,west,east)`);
+    throw new Error(`Invalid bounds: ${str} (expected: west,south,east,north)`);
   }
-  const [south, north, west, east] = parts;
+  const [west, south, east, north] = parts;
   return { south, north, west, east };
 }
 
