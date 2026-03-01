@@ -65,7 +65,7 @@ bd sync               # Sync with git
 
 ## Branching & Deployment
 
-Direct pushes to `main` are blocked — all changes go through feature branches and pull requests.
+**ALWAYS create a feature branch before making any changes.** Direct pushes to `main` are blocked — all changes go through feature branches and pull requests.
 
 - **Deploy** is manual only (`workflow_dispatch`), not triggered by merges to main.
 - **Data pipeline** (`pipeline.yml`) regenerates tiles monthly or on demand, then triggers deploy.
