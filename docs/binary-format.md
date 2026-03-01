@@ -25,13 +25,16 @@ Notation: **V** = vertex count, **T** = triangle count. All multi-byte integers 
 
 ## Header (24 bytes)
 
-| Offset | Size | Type   | Field          | Description                                                                                             |
-| ------ | ---- | ------ | -------------- | ------------------------------------------------------------------------------------------------------- |
-| 0      | 4    | Uint32 | vertexCount    | Number of vertices (V)                                                                                  |
-| 4      | 4    | Uint32 | triangleCount  | Number of triangles (T)                                                                                 |
-| 8      | 4    | Uint32 | articlesOffset | Byte offset where the articles JSON begins                                                              |
-| 12     | 4    | Uint32 | articlesLength | Byte length of the articles JSON (unpadded)                                                             |
-| 16     | 8    | -      | reserved       | Zero-filled, reserved for future use. A format version field will be placed here if the layout changes. |
+| Offset | Size | Type   | Field          | Description                                      |
+| ------ | ---- | ------ | -------------- | ------------------------------------------------ |
+| 0      | 4    | bytes  | magic          | Magic bytes `0x57 0x4B 0x52 0x44` (ASCII "WKRD") |
+| 4      | 4    | Uint32 | version        | Format version (currently `1`)                   |
+| 8      | 4    | Uint32 | vertexCount    | Number of vertices (V)                           |
+| 12     | 4    | Uint32 | triangleCount  | Number of triangles (T)                          |
+| 16     | 4    | Uint32 | articlesOffset | Byte offset where the articles JSON begins       |
+| 20     | 4    | Uint32 | articlesLength | Byte length of the articles JSON (unpadded)      |
+
+The deserializer validates magic bytes and version before reading any data. Unrecognized magic bytes or unsupported versions cause an immediate `BinaryFormatError`, preventing silent misinterpretation of incompatible formats.
 
 ## Numeric Sections
 
