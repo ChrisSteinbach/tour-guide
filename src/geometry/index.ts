@@ -155,7 +155,6 @@ export {
   deserialize,
   serializeBinary,
   deserializeBinary,
-  BinaryFormatError,
 } from "./serialization";
 export type {
   TriangulationFile,

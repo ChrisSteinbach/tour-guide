@@ -146,12 +146,11 @@ export function deserialize(data: TriangulationFile): {
 // ---------- Binary format ----------
 //
 // Header (24 bytes):
-//   [0..3]   magic            "WKRD" (0x57 0x4B 0x52 0x44)
-//   [4..7]   version          uint32 (currently 1)
-//   [8..11]  vertexCount      uint32
-//   [12..15] triangleCount    uint32
-//   [16..19] articlesOffset   uint32
-//   [20..23] articlesLength   uint32
+//   [0..3]   vertexCount      uint32
+//   [4..7]   triangleCount    uint32
+//   [8..11]  articlesOffset   uint32
+//   [12..15] articlesLength   uint32
+//   [16..23] reserved         (zero-filled)
 //
 // Numeric data (4-byte aligned, typed array views):
 //   vertexPoints      Float32[V * 3]
@@ -163,16 +162,6 @@ export function deserialize(data: TriangulationFile): {
 //   UTF-8 JSON of string[] (titles)
 
 const HEADER_SIZE = 24;
-const MAGIC = new Uint8Array([0x57, 0x4b, 0x52, 0x44]); // "WKRD"
-const FORMAT_VERSION = 1;
-
-/** Error thrown when binary tile data is corrupt or unrecognized. */
-export class BinaryFormatError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "BinaryFormatError";
-  }
-}
 
 /**
  * Serialize a TriangulationFile to a compact binary ArrayBuffer.
@@ -206,12 +195,11 @@ export function serializeBinary(data: TriangulationFile): ArrayBuffer {
   const view = new DataView(buf);
 
   // Write header
-  new Uint8Array(buf, 0, 4).set(MAGIC);
-  view.setUint32(4, FORMAT_VERSION, true);
-  view.setUint32(8, V, true);
-  view.setUint32(12, T, true);
-  view.setUint32(16, articlesOffset, true);
-  view.setUint32(20, articlesBytes.byteLength, true);
+  view.setUint32(0, V, true);
+  view.setUint32(4, T, true);
+  view.setUint32(8, articlesOffset, true);
+  view.setUint32(12, articlesBytes.byteLength, true);
+  // [16..23] reserved, already zero
 
   // Write vertex points as Float32
   const vertexPointsArr = new Float32Array(buf, HEADER_SIZE, V * 3);
@@ -267,40 +255,18 @@ export function deserializeBinary(buf: ArrayBuffer): {
   articles: ArticleMeta[];
 } {
   if (buf.byteLength < HEADER_SIZE) {
-    throw new BinaryFormatError(
+    throw new Error(
       `Binary triangulation too small: ${buf.byteLength} bytes (need at least ${HEADER_SIZE})`,
     );
   }
 
-  // Validate magic bytes
-  const magic = new Uint8Array(buf, 0, 4);
-  if (
-    magic[0] !== MAGIC[0] ||
-    magic[1] !== MAGIC[1] ||
-    magic[2] !== MAGIC[2] ||
-    magic[3] !== MAGIC[3]
-  ) {
-    throw new BinaryFormatError(
-      `Invalid magic bytes: expected "WKRD", got "${String.fromCharCode(magic[0], magic[1], magic[2], magic[3])}"`,
-    );
-  }
-
   const view = new DataView(buf);
+  const V = view.getUint32(0, true);
+  const T = view.getUint32(4, true);
+  const articlesOffset = view.getUint32(8, true);
+  const articlesLength = view.getUint32(12, true);
 
-  // Validate version
-  const version = view.getUint32(4, true);
-  if (version !== FORMAT_VERSION) {
-    throw new BinaryFormatError(
-      `Unsupported format version: ${version} (expected ${FORMAT_VERSION})`,
-    );
-  }
-
-  const V = view.getUint32(8, true);
-  const T = view.getUint32(12, true);
-  const articlesOffset = view.getUint32(16, true);
-  const articlesLength = view.getUint32(20, true);
-
-  // Bounds-check V/T counts against buffer size
+  // Validate sizes
   const vertexPointsSize = V * 3 * 4;
   const vertexTrianglesSize = V * 4;
   const triangleVerticesSize = T * 3 * 4;
@@ -312,20 +278,13 @@ export function deserializeBinary(buf: ArrayBuffer): {
     triangleVerticesSize +
     triangleNeighborsSize;
 
-  if (expectedNumericEnd > buf.byteLength) {
-    throw new BinaryFormatError(
-      `Buffer too small for V=${V}, T=${T}: need ${expectedNumericEnd} bytes, got ${buf.byteLength}`,
-    );
-  }
   if (articlesOffset < expectedNumericEnd) {
-    throw new BinaryFormatError(
+    throw new Error(
       `Invalid binary: articles offset ${articlesOffset} overlaps numeric data ending at ${expectedNumericEnd}`,
     );
   }
   if (articlesOffset + articlesLength > buf.byteLength) {
-    throw new BinaryFormatError(
-      `Invalid binary: articles section extends beyond buffer`,
-    );
+    throw new Error(`Invalid binary: articles section extends beyond buffer`);
   }
 
   // Read vertex points: Float32 → Float64
@@ -344,18 +303,11 @@ export function deserializeBinary(buf: ArrayBuffer): {
   const triangleNeighbors = new Uint32Array(buf, offset, T * 3);
 
   // Parse articles JSON
-  let parsed: (string | [string, string])[];
-  try {
-    const decoder = new TextDecoder();
-    const articlesJson = decoder.decode(
-      new Uint8Array(buf, articlesOffset, articlesLength),
-    );
-    parsed = JSON.parse(articlesJson) as (string | [string, string])[];
-  } catch {
-    throw new BinaryFormatError(
-      `Failed to parse articles JSON: corrupt or truncated data`,
-    );
-  }
+  const decoder = new TextDecoder();
+  const articlesJson = decoder.decode(
+    new Uint8Array(buf, articlesOffset, articlesLength),
+  );
+  const parsed = JSON.parse(articlesJson) as (string | [string, string])[];
   const articles = parsed.map((entry) => ({
     title: Array.isArray(entry) ? entry[0] : entry,
   }));

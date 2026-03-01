@@ -8,7 +8,6 @@ import {
   deserialize,
   serializeBinary,
   deserializeBinary,
-  BinaryFormatError,
 } from "./index";
 import type { Point3D, SphericalDelaunay, ArticleMeta } from "./index";
 
@@ -226,17 +225,10 @@ describe("binary serialization", () => {
     buf = serializeBinary(data);
   });
 
-  it("header contains magic bytes and version", () => {
-    const magic = new Uint8Array(buf, 0, 4);
-    expect(String.fromCharCode(...magic)).toBe("WKRD");
-    const view = new DataView(buf);
-    expect(view.getUint32(4, true)).toBe(1); // FORMAT_VERSION
-  });
-
   it("header counts match input", () => {
     const view = new DataView(buf);
-    expect(view.getUint32(8, true)).toBe(data.vertexCount);
-    expect(view.getUint32(12, true)).toBe(data.triangleCount);
+    expect(view.getUint32(0, true)).toBe(data.vertexCount);
+    expect(view.getUint32(4, true)).toBe(data.triangleCount);
   });
 
   it("round-trips vertex positions within Float32 tolerance", () => {
@@ -271,90 +263,16 @@ describe("binary serialization", () => {
 
   it("rejects articles section extending beyond buffer", () => {
     const badBuf = new ArrayBuffer(24);
-    const bytes = new Uint8Array(badBuf);
-    bytes.set([0x57, 0x4b, 0x52, 0x44]); // magic "WKRD"
     const view = new DataView(badBuf);
-    view.setUint32(4, 1, true); // version=1
-    view.setUint32(8, 0, true); // V=0
-    view.setUint32(12, 0, true); // T=0
-    view.setUint32(16, 24, true); // articlesOffset=24
-    view.setUint32(20, 100, true); // articlesLength=100 — extends beyond
+    view.setUint32(0, 0, true); // V=0
+    view.setUint32(4, 0, true); // T=0
+    view.setUint32(8, 24, true); // articlesOffset=24
+    view.setUint32(12, 100, true); // articlesLength=100 — extends beyond
     expect(() => deserializeBinary(badBuf)).toThrow(/extends beyond/);
   });
 
   it("binary is smaller than JSON", () => {
     const jsonSize = JSON.stringify(data).length;
     expect(buf.byteLength).toBeLessThan(jsonSize);
-  });
-
-  it("rejects wrong magic bytes", () => {
-    const badBuf = new ArrayBuffer(24);
-    const view = new DataView(badBuf);
-    view.setUint32(0, 0x00000000, true); // not "WKRD"
-    view.setUint32(4, 1, true);
-    expect(() => deserializeBinary(badBuf)).toThrow(/magic bytes/i);
-  });
-
-  it("rejects unsupported format version", () => {
-    const badBuf = new ArrayBuffer(24);
-    new Uint8Array(badBuf, 0, 4).set([0x57, 0x4b, 0x52, 0x44]);
-    const view = new DataView(badBuf);
-    view.setUint32(4, 99, true); // version=99
-    expect(() => deserializeBinary(badBuf)).toThrow(/version/i);
-  });
-
-  it("rejects V/T counts that exceed buffer capacity", () => {
-    const badBuf = new ArrayBuffer(24);
-    new Uint8Array(badBuf, 0, 4).set([0x57, 0x4b, 0x52, 0x44]);
-    const view = new DataView(badBuf);
-    view.setUint32(4, 1, true); // version=1
-    view.setUint32(8, 0xffffffff, true); // V=huge
-    view.setUint32(12, 0, true); // T=0
-    expect(() => deserializeBinary(badBuf)).toThrow(/too small for V=/i);
-  });
-
-  it("rejects garbage T count that exceeds buffer", () => {
-    const badBuf = new ArrayBuffer(24);
-    new Uint8Array(badBuf, 0, 4).set([0x57, 0x4b, 0x52, 0x44]);
-    const view = new DataView(badBuf);
-    view.setUint32(4, 1, true); // version=1
-    view.setUint32(8, 0, true); // V=0
-    view.setUint32(12, 0xffffffff, true); // T=huge
-    expect(() => deserializeBinary(badBuf)).toThrow(/too small for V=/i);
-  });
-
-  it("rejects malformed articles JSON", () => {
-    // Build a minimal valid buffer with corrupt articles section
-    const articlesBytes = new TextEncoder().encode("{not valid json[");
-    const articlesOffset = 24; // HEADER_SIZE, V=0 T=0 so no numeric data
-    const totalSize =
-      articlesOffset + Math.ceil(articlesBytes.byteLength / 4) * 4;
-    const badBuf = new ArrayBuffer(totalSize);
-    new Uint8Array(badBuf, 0, 4).set([0x57, 0x4b, 0x52, 0x44]);
-    const view = new DataView(badBuf);
-    view.setUint32(4, 1, true); // version=1
-    view.setUint32(8, 0, true); // V=0
-    view.setUint32(12, 0, true); // T=0
-    view.setUint32(16, articlesOffset, true);
-    view.setUint32(20, articlesBytes.byteLength, true);
-    new Uint8Array(badBuf, articlesOffset, articlesBytes.byteLength).set(
-      articlesBytes,
-    );
-    expect(() => deserializeBinary(badBuf)).toThrow(/articles JSON/i);
-  });
-
-  it("throws BinaryFormatError for all validation failures", () => {
-    // Too small
-    expect(() => deserializeBinary(new ArrayBuffer(8))).toThrow(
-      BinaryFormatError,
-    );
-    // Wrong magic
-    const badMagic = new ArrayBuffer(24);
-    expect(() => deserializeBinary(badMagic)).toThrow(BinaryFormatError);
-    // Wrong version
-    const badVer = new ArrayBuffer(24);
-    new Uint8Array(badVer, 0, 4).set([0x57, 0x4b, 0x52, 0x44]);
-    new DataView(badVer).setUint32(4, 99, true);
-    expect(() => deserializeBinary(badVer)).toThrow(BinaryFormatError);
   });
 });
