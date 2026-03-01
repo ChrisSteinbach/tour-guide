@@ -63,6 +63,15 @@ bd close <id>         # Complete work (alias for bd update --status done)
 bd sync               # Sync with git
 ```
 
+## Branching & Deployment
+
+Direct pushes to `main` are blocked — all changes go through feature branches and pull requests.
+
+- **Deploy** is manual only (`workflow_dispatch`), not triggered by merges to main.
+- **Data pipeline** (`pipeline.yml`) regenerates tiles monthly or on demand, then triggers deploy.
+- **Code-only changes**: merge PR to main, then manually trigger deploy.
+- **Format changes** (binary serialization, tile layout): run the data pipeline first so tiles are regenerated, then it auto-triggers deploy.
+
 ## Session Completion
 
 When ending a work session, ALL steps below are mandatory. Work is NOT complete until `git push` succeeds.
@@ -72,10 +81,9 @@ When ending a work session, ALL steps below are mandatory. Work is NOT complete 
 3. **Update issue status** — Close finished work, update in-progress items
 4. **Push to remote:**
    ```bash
-   git pull --rebase
+   git push -u origin HEAD  # Push feature branch
    bd sync
-   git push
-   git status  # MUST show "up to date with origin"
+   gh pr create              # Open PR to main
    ```
 5. **Clean up** — Clear stashes, prune remote branches
 6. **Verify** — All changes committed AND pushed
