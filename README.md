@@ -177,7 +177,7 @@ src/
 | Swedish (sv)  | ~250K    |
 | Japanese (ja) | ~180K    |
 
-Counts are approximate and update monthly via the automated pipeline.
+Counts are approximate point-in-time estimates (as of early 2025).
 
 ## Browser support
 
