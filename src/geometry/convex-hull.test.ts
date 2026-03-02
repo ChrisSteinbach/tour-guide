@@ -87,6 +87,32 @@ function validateHull(hull: ConvexHull, allOnHull = true) {
   }
 }
 
+// ---------- Shared helpers ----------
+
+/** Generate n random unit-sphere points with a seeded PRNG */
+function randomSpherePoints(n: number, seed: number): Point3D[] {
+  let state = seed | 0;
+  function rand(): number {
+    state = (Math.imul(state, 1664525) + 1013904223) | 0;
+    return (state >>> 0) / 0x100000000;
+  }
+
+  const points: Point3D[] = [];
+  for (let i = 0; i < n; i++) {
+    // Marsaglia method for uniform sphere sampling
+    let x: number, y: number, s: number;
+    do {
+      x = 2 * rand() - 1;
+      y = 2 * rand() - 1;
+      s = x * x + y * y;
+    } while (s >= 1 || s === 0);
+    const z = 1 - 2 * s;
+    const r = 2 * Math.sqrt(1 - s);
+    points.push([x * r, y * r, z]);
+  }
+  return points;
+}
+
 // ---------- Test cases ----------
 
 describe("orient3D", () => {
@@ -229,32 +255,8 @@ describe("convexHull", () => {
   });
 
   describe("BFS optimization", () => {
-    /** Generate n random unit-sphere points with a seeded PRNG */
-    function generateRandomSpherePoints(n: number, seed: number): Point3D[] {
-      let state = seed | 0;
-      function rand(): number {
-        state = (Math.imul(state, 1664525) + 1013904223) | 0;
-        return (state >>> 0) / 0x100000000;
-      }
-
-      const points: Point3D[] = [];
-      for (let i = 0; i < n; i++) {
-        // Marsaglia method for uniform sphere sampling
-        let x: number, y: number, s: number;
-        do {
-          x = 2 * rand() - 1;
-          y = 2 * rand() - 1;
-          s = x * x + y * y;
-        } while (s >= 1 || s === 0);
-        const z = 1 - 2 * s;
-        const r = 2 * Math.sqrt(1 - s);
-        points.push([x * r, y * r, z]);
-      }
-      return points;
-    }
-
     it("handles 1,000 random sphere points with full validation", () => {
-      const points = generateRandomSpherePoints(1000, 42);
+      const points = randomSpherePoints(1000, 42);
       const hull = convexHull(points);
       const nV = new Set(hull.faces.flatMap((f) => f.vertices)).size;
       expect(hull.faces.length).toBe(2 * nV - 4);
@@ -262,7 +264,7 @@ describe("convexHull", () => {
     });
 
     it("handles 10,000 random sphere points (F = 2V - 4)", () => {
-      const points = generateRandomSpherePoints(10000, 123);
+      const points = randomSpherePoints(10000, 123);
       const t0 = performance.now();
       const hull = convexHull(points);
       const elapsed = performance.now() - t0;
@@ -328,29 +330,6 @@ describe("convexHull", () => {
   });
 
   describe("near-degenerate inputs", () => {
-    /** Generate n random unit-sphere points with a seeded PRNG */
-    function randomSpherePoints(n: number, seed: number): Point3D[] {
-      let state = seed | 0;
-      function rand(): number {
-        state = (Math.imul(state, 1664525) + 1013904223) | 0;
-        return (state >>> 0) / 0x100000000;
-      }
-
-      const points: Point3D[] = [];
-      for (let i = 0; i < n; i++) {
-        let x: number, y: number, s: number;
-        do {
-          x = 2 * rand() - 1;
-          y = 2 * rand() - 1;
-          s = x * x + y * y;
-        } while (s >= 1 || s === 0);
-        const z = 1 - 2 * s;
-        const r = 2 * Math.sqrt(1 - s);
-        points.push([x * r, y * r, z]);
-      }
-      return points;
-    }
-
     it("great circle: equator points + poles (maximally coplanar with origin)", () => {
       // 100 points on the equator are all coplanar through the origin,
       // plus two poles. This is the worst case for orient3D: every
