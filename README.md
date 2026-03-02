@@ -65,28 +65,29 @@ npm run pipeline -- --lang=en --limit=10000
 
 ## Commands
 
-| Command                 | Description                                       |
-| ----------------------- | ------------------------------------------------- |
-| `npm run dev`           | Start Vite dev server (HTTPS, binds 0.0.0.0)      |
-| `npm run build`         | Production build to `dist/app/`                   |
-| `npm run preview`       | Preview production build locally                  |
-| `npm test`              | Lint + tests                                      |
-| `npm run test:watch`    | Tests in watch mode                               |
-| `npm run test:coverage` | Tests with coverage report                        |
-| `npm run lint`          | Type-check + ESLint + Prettier                    |
-| `npm run lint:fix`      | Auto-fix ESLint + Prettier issues                 |
-| `npm run lint:eslint`   | ESLint only (no type-check)                       |
-| `npm run format`        | Prettier check only                               |
-| `npm run format:fix`    | Prettier auto-fix only                            |
-| `npm run extract`       | Extract geotagged articles from Wikipedia dumps   |
-| `npm run pipeline`      | Build tiled triangulation from extracted articles |
+| Command                 | Description                                                           |
+| ----------------------- | --------------------------------------------------------------------- |
+| `npm run dev`           | Start Vite dev server (HTTPS, binds 0.0.0.0)                          |
+| `npm run build`         | Production build to `dist/app/`                                       |
+| `npm run preview`       | Preview production build locally                                      |
+| `npm test`              | Lint + tests                                                          |
+| `npm run test:watch`    | Tests in watch mode                                                   |
+| `npm run test:coverage` | Tests with coverage report                                            |
+| `npm run lint`          | Type-check + ESLint + Prettier                                        |
+| `npm run lint:fix`      | Auto-fix ESLint + Prettier issues                                     |
+| `npm run lint:eslint`   | ESLint only (no type-check)                                           |
+| `npm run format`        | Prettier check only                                                   |
+| `npm run format:fix`    | Prettier auto-fix only                                                |
+| `npm run extract`       | Extract geotagged articles from Wikipedia dumps (requires ~6 GB heap) |
+| `npm run pipeline`      | Build tiled triangulation from extracted articles                     |
 
 ## Data pipeline
 
 ### Extraction
 
 Downloads Wikipedia `page` and `geo_tags` SQL dumps and joins them to produce
-geotagged articles as NDJSON:
+geotagged articles as NDJSON. Requires ~6 GB heap for the in-memory page map;
+see [`docs/data-extraction.md`](docs/data-extraction.md) for memory details.
 
 ```bash
 # Full extraction for a language
