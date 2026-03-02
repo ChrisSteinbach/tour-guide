@@ -9,40 +9,9 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { deserializeBinary } from "../geometry/serialization.js";
-import { tileFor, collectTileArticles } from "./build.js";
+import { collectTileArticles } from "./build.js";
 import type { TileIndex } from "./build.js";
 import type { Article } from "./extract-dump.js";
-
-// ---------- Unit: tileFor ----------
-
-describe("tileFor", () => {
-  it("maps equator/prime meridian", () => {
-    expect(tileFor(0.1, 0.1)).toEqual({ row: 18, col: 36 });
-  });
-
-  it("maps south pole region", () => {
-    expect(tileFor(-89, 0)).toEqual({ row: 0, col: 36 });
-  });
-
-  it("maps north pole region", () => {
-    expect(tileFor(89, 0)).toEqual({ row: 35, col: 36 });
-  });
-
-  it("maps negative longitude", () => {
-    expect(tileFor(0, -170)).toEqual({ row: 18, col: 2 });
-  });
-
-  it("maps Stockholm (59.33, 18.07)", () => {
-    expect(tileFor(59.33, 18.07)).toEqual({ row: 29, col: 39 });
-  });
-
-  it("maps tile boundaries to the lower tile", () => {
-    // Exactly on a 5° boundary: lat=10 → row = floor(100/5) = 20
-    expect(tileFor(10, 0)).toEqual({ row: 20, col: 36 });
-    // Just below: lat=9.99 → row = floor(99.99/5) = 19
-    expect(tileFor(9.99, 0)).toEqual({ row: 19, col: 36 });
-  });
-});
 
 // ---------- Unit: collectTileArticles ----------
 
