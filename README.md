@@ -129,6 +129,16 @@ sv, ja). Tile archives are published to a `data-latest` GitHub Release.
 Deployment ([`deploy.yml`](.github/workflows/deploy.yml)) downloads these
 archives and deploys the app to GitHub Pages on every push to main.
 
+## Deployment
+
+The app deploys to GitHub Pages via the `deploy.yml` workflow (manual trigger).
+
+**Base path configuration:** Vite's `base` option in `vite.config.ts` controls the
+URL prefix for all asset and tile fetches (via `import.meta.env.BASE_URL`). If you
+fork this repo and deploy to a different GitHub Pages path, update `base` in
+`vite.config.ts` to match your deployment path (e.g., `base: "/my-fork/"`).
+Mismatched paths will cause tile loading to silently fail.
+
 ## Architecture
 
 ```
