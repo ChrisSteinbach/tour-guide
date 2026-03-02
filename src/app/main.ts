@@ -1,5 +1,4 @@
 import "./style.css";
-import type { NearbyArticle } from "./types";
 import { mockPosition } from "./mock-data";
 import { renderNearbyList, updateNearbyDistances } from "./render";
 import {
@@ -9,7 +8,7 @@ import {
   renderDataUnavailable,
   renderWelcome,
 } from "./status";
-import { watchLocation, type StopFn } from "./location";
+import { watchLocation } from "./location";
 import { fetchArticleSummary } from "./wiki-api";
 import {
   renderDetailLoading,
@@ -30,11 +29,9 @@ import {
   getNearby,
   getNextTier,
   type AppState,
-  type Effect,
   type Event,
 } from "./state-machine";
-
-const LANG_STORAGE_KEY = "tour-guide-lang";
+import { createEffectExecutor, LANG_STORAGE_KEY } from "./effect-executor";
 
 const app =
   document.getElementById("app") ??
@@ -55,10 +52,6 @@ let appState: AppState = {
   updateBanner: null,
 };
 
-// Operational handles (not part of state machine)
-let stopWatcher: StopFn | null = null;
-let loadController = new AbortController();
-
 // ── Dispatch ─────────────────────────────────────────────────
 
 function dispatch(event: Event): void {
@@ -71,72 +64,33 @@ function dispatch(event: Event): void {
 
 // ── Effect executor ──────────────────────────────────────────
 
-function executeEffect(effect: Effect): void {
-  switch (effect.type) {
-    case "render":
-      renderPhase();
-      break;
-    case "renderBrowsingList":
-      renderBrowsingListDOM();
-      break;
-    case "updateDistances":
-      if (appState.phase.phase === "browsing")
-        updateNearbyDistances(app, appState.phase.articles);
-      break;
-    case "startGps":
-      stopWatcher = watchLocation({
-        onPosition: (pos) => dispatch({ type: "position", pos }),
-        onError: (error) => dispatch({ type: "gpsError", error }),
-      });
-      break;
-    case "stopGps":
-      if (stopWatcher) {
-        stopWatcher();
-        stopWatcher = null;
-      }
-      break;
-    case "storeLang":
-      localStorage.setItem(LANG_STORAGE_KEY, effect.lang);
-      break;
-    case "storeStarted":
-      sessionStorage.setItem("tour-guide-started", "1");
-      break;
-    case "loadData":
-      loadController.abort();
-      loadController = new AbortController();
-      loadLanguageData(effect.lang, loadController.signal);
-      break;
-    case "loadTiles":
-      void loadTilesForPosition(
-        effect.lang,
-        appState.loadGeneration,
-        loadController.signal,
-      );
-      break;
-    case "pushHistory":
-      history.pushState({ view: "detail" }, "");
-      break;
-    case "fetchSummary":
-      void fetchAndRenderSummary(effect.article);
-      break;
-    case "showAppUpdateBanner":
-      renderAppUpdateBanner();
-      break;
-    case "requery": {
-      const articles = getNearby(appState.query, effect.pos, effect.count);
-      dispatch({
-        type: "queryResult",
-        articles,
-        queryPos: effect.pos,
-        count: effect.count,
-      });
-      break;
-    }
-    case "log":
-      console.log(effect.message);
-      break;
-  }
-}
+const goBack = () => history.back();
+
+const executeEffect = createEffectExecutor({
+  getState: () => appState,
+  dispatch: (event) => dispatch(event),
+  watchLocation,
+  setItem: (k, v) => localStorage.setItem(k, v),
+  setSessionItem: (k, v) => sessionStorage.setItem(k, v),
+  pushState: (data, title) => history.pushState(data, title),
+  loadTileIndex: (lang, signal) =>
+    loadTileIndex(import.meta.env.BASE_URL, lang, signal),
+  loadTile: (lang, entry, signal) =>
+    loadTile(import.meta.env.BASE_URL, lang, entry, signal),
+  tilesForPosition,
+  getTileEntry,
+  fetchArticleSummary,
+  getNearby,
+  render: renderPhase,
+  renderBrowsingList: renderBrowsingListDOM,
+  updateDistances: (articles) => updateNearbyDistances(app, articles),
+  renderDetailLoading: (article) => renderDetailLoading(app, article, goBack),
+  renderDetailReady: (article, summary) =>
+    renderDetailReady(app, article, summary, goBack),
+  renderDetailError: (article, msg, retry, lang) =>
+    renderDetailError(app, article, msg, goBack, retry, lang),
+  renderAppUpdateBanner,
+});
 
 // ── Helpers ──────────────────────────────────────────────────
 
@@ -194,33 +148,6 @@ function renderPhase(): void {
   }
 }
 
-const goBack = () => history.back();
-
-async function fetchAndRenderSummary(article: NearbyArticle): Promise<void> {
-  renderDetailLoading(app, article, goBack);
-  try {
-    const summary = await fetchArticleSummary(
-      article.title,
-      appState.currentLang,
-    );
-    if (appState.phase.phase !== "detail" || appState.phase.article !== article)
-      return;
-    renderDetailReady(app, article, summary, goBack);
-  } catch (err) {
-    if (appState.phase.phase !== "detail" || appState.phase.article !== article)
-      return;
-    const message = err instanceof Error ? err.message : "Unknown error";
-    renderDetailError(
-      app,
-      article,
-      message,
-      goBack,
-      () => void fetchAndRenderSummary(article),
-      appState.currentLang,
-    );
-  }
-}
-
 function renderAppUpdateBanner(): void {
   if (document.getElementById("app-update-banner")) return;
   const banner = document.createElement("div");
@@ -252,68 +179,6 @@ function listenForSwUpdate(): void {
     if (!initialController) return;
     dispatch({ type: "swUpdateAvailable" });
   });
-}
-
-// ── Data loading ─────────────────────────────────────────────
-
-async function loadTilesForPosition(
-  lang: Lang,
-  gen: number,
-  signal: AbortSignal,
-): Promise<void> {
-  if (gen !== appState.loadGeneration) return;
-  if (appState.query.mode !== "tiled" || !appState.position) return;
-
-  const { tileMap, tiles } = appState.query;
-  const { primary, adjacent } = tilesForPosition(
-    tileMap,
-    appState.position.lat,
-    appState.position.lon,
-  );
-
-  const allTiles = [primary, ...adjacent];
-  for (const id of allTiles) {
-    if (signal.aborted) return;
-    if (tiles.has(id) || appState.loadingTiles.has(id)) continue;
-    const entry = getTileEntry(tileMap, id);
-    if (!entry) continue;
-
-    const isPrimary = id === primary;
-    dispatch({ type: "tileLoadStarted", id });
-
-    const loadOne = loadTile(import.meta.env.BASE_URL, lang, entry, signal)
-      .then((tileQuery) => {
-        if (gen !== appState.loadGeneration) return;
-        dispatch({ type: "tileLoaded", id, tileQuery, gen });
-      })
-      .catch((err) => {
-        if (signal.aborted) return;
-
-        console.error(`Failed to load tile ${id}:`, err);
-      });
-
-    if (isPrimary) {
-      await loadOne;
-    }
-  }
-}
-
-function loadLanguageData(lang: Lang, signal: AbortSignal): void {
-  const gen = appState.loadGeneration;
-  const baseUrl = import.meta.env.BASE_URL;
-
-  loadTileIndex(baseUrl, lang, signal)
-    .then((index) => {
-      if (gen !== appState.loadGeneration) return;
-      dispatch({ type: "tileIndexLoaded", index, lang, gen });
-    })
-    .catch((err) => {
-      if (signal.aborted) return;
-      if (gen !== appState.loadGeneration) return;
-
-      console.warn("[tiles] Tile index failed:", err);
-      dispatch({ type: "tileIndexLoaded", index: null, lang, gen });
-    });
 }
 
 // ── Popstate handler ─────────────────────────────────────────
