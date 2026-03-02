@@ -1,0 +1,245 @@
+// Effect executor — extracted from main.ts for testability.
+// All I/O boundaries are injected via EffectDeps; the factory
+// encapsulates operational state (stopWatcher, loadController).
+
+import type { NearbyArticle, UserPosition } from "./types";
+import type { LocationCallbacks, StopFn } from "./location";
+import type { ArticleSummary } from "./wiki-api";
+import type { NearestQuery } from "./query";
+import type { TileEntry, TileIndex } from "../tiles";
+import type { Lang } from "../lang";
+import type { AppState, Effect, Event, QueryState } from "./state-machine";
+
+export const LANG_STORAGE_KEY = "tour-guide-lang";
+
+export interface EffectDeps {
+  // Core
+  getState: () => AppState;
+  dispatch: (event: Event) => void;
+
+  // GPS
+  watchLocation: (callbacks: LocationCallbacks) => StopFn;
+
+  // Storage
+  setItem: (key: string, value: string) => void;
+  setSessionItem: (key: string, value: string) => void;
+
+  // Navigation
+  pushState: (data: unknown, title: string) => void;
+
+  // Data loading (baseUrl baked in by caller)
+  loadTileIndex: (lang: Lang, signal: AbortSignal) => Promise<TileIndex | null>;
+  loadTile: (
+    lang: Lang,
+    entry: TileEntry,
+    signal: AbortSignal,
+  ) => Promise<NearestQuery>;
+  tilesForPosition: (
+    index: Map<string, TileEntry>,
+    lat: number,
+    lon: number,
+  ) => { primary: string; adjacent: string[] };
+  getTileEntry: (
+    tileMap: Map<string, TileEntry>,
+    id: string,
+  ) => TileEntry | undefined;
+
+  // API
+  fetchArticleSummary: (title: string, lang: Lang) => Promise<ArticleSummary>;
+
+  // Query
+  getNearby: (
+    query: QueryState,
+    pos: UserPosition,
+    count: number,
+  ) => NearbyArticle[];
+
+  // Rendering (opaque — already tested in render.test.ts, detail.test.ts, etc.)
+  render: () => void;
+  renderBrowsingList: () => void;
+  updateDistances: (articles: NearbyArticle[]) => void;
+  renderDetailLoading: (article: NearbyArticle) => void;
+  renderDetailReady: (article: NearbyArticle, summary: ArticleSummary) => void;
+  renderDetailError: (
+    article: NearbyArticle,
+    message: string,
+    onRetry: () => void,
+    lang: Lang,
+  ) => void;
+  renderAppUpdateBanner: () => void;
+}
+
+export function createEffectExecutor(
+  deps: EffectDeps,
+): (effect: Effect) => void {
+  // Operational handles (not part of state machine)
+  let stopWatcher: StopFn | null = null;
+  let loadController = new AbortController();
+
+  function fetchAndRenderSummary(article: NearbyArticle): void {
+    deps.renderDetailLoading(article);
+    deps
+      .fetchArticleSummary(article.title, deps.getState().currentLang)
+      .then((summary) => {
+        const state = deps.getState();
+        if (state.phase.phase !== "detail" || state.phase.article !== article)
+          return;
+        deps.renderDetailReady(article, summary);
+      })
+      .catch((err: unknown) => {
+        const state = deps.getState();
+        if (state.phase.phase !== "detail" || state.phase.article !== article)
+          return;
+        const message = err instanceof Error ? err.message : "Unknown error";
+        deps.renderDetailError(
+          article,
+          message,
+          () => fetchAndRenderSummary(article),
+          state.currentLang,
+        );
+      });
+  }
+
+  function loadLanguageData(lang: Lang, signal: AbortSignal): void {
+    const gen = deps.getState().loadGeneration;
+    deps
+      .loadTileIndex(lang, signal)
+      .then((index) => {
+        if (gen !== deps.getState().loadGeneration) return;
+        deps.dispatch({ type: "tileIndexLoaded", index, lang, gen });
+      })
+      .catch((err: unknown) => {
+        if (signal.aborted) return;
+        if (gen !== deps.getState().loadGeneration) return;
+        console.warn("[tiles] Tile index failed:", err);
+        deps.dispatch({
+          type: "tileIndexLoaded",
+          index: null,
+          lang,
+          gen,
+        });
+      });
+  }
+
+  async function loadTilesForPosition(
+    lang: Lang,
+    gen: number,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const state = deps.getState();
+    if (gen !== state.loadGeneration) return;
+    if (state.query.mode !== "tiled" || !state.position) return;
+
+    const { tileMap } = state.query;
+    const { primary, adjacent } = deps.tilesForPosition(
+      tileMap,
+      state.position.lat,
+      state.position.lon,
+    );
+
+    const allTiles = [primary, ...adjacent];
+    for (const id of allTiles) {
+      if (signal.aborted) return;
+      const currentState = deps.getState();
+      if (
+        (currentState.query.mode === "tiled" &&
+          currentState.query.tiles.has(id)) ||
+        currentState.loadingTiles.has(id)
+      )
+        continue;
+      const entry = deps.getTileEntry(tileMap, id);
+      if (!entry) continue;
+
+      const isPrimary = id === primary;
+      deps.dispatch({ type: "tileLoadStarted", id });
+
+      const loadOne = deps
+        .loadTile(lang, entry, signal)
+        .then((tileQuery) => {
+          if (gen !== deps.getState().loadGeneration) return;
+          deps.dispatch({ type: "tileLoaded", id, tileQuery, gen });
+        })
+        .catch((err: unknown) => {
+          if (signal.aborted) return;
+          console.error(`Failed to load tile ${id}:`, err);
+        });
+
+      if (isPrimary) {
+        await loadOne;
+      }
+    }
+  }
+
+  return function executeEffect(effect: Effect): void {
+    switch (effect.type) {
+      case "render":
+        deps.render();
+        break;
+      case "renderBrowsingList":
+        deps.renderBrowsingList();
+        break;
+      case "updateDistances": {
+        const state = deps.getState();
+        if (state.phase.phase === "browsing")
+          deps.updateDistances(state.phase.articles);
+        break;
+      }
+      case "startGps":
+        stopWatcher = deps.watchLocation({
+          onPosition: (pos) => deps.dispatch({ type: "position", pos }),
+          onError: (error) => deps.dispatch({ type: "gpsError", error }),
+        });
+        break;
+      case "stopGps":
+        if (stopWatcher) {
+          stopWatcher();
+          stopWatcher = null;
+        }
+        break;
+      case "storeLang":
+        deps.setItem(LANG_STORAGE_KEY, effect.lang);
+        break;
+      case "storeStarted":
+        deps.setSessionItem("tour-guide-started", "1");
+        break;
+      case "loadData":
+        loadController.abort();
+        loadController = new AbortController();
+        loadLanguageData(effect.lang, loadController.signal);
+        break;
+      case "loadTiles":
+        void loadTilesForPosition(
+          effect.lang,
+          deps.getState().loadGeneration,
+          loadController.signal,
+        );
+        break;
+      case "pushHistory":
+        deps.pushState({ view: "detail" }, "");
+        break;
+      case "fetchSummary":
+        fetchAndRenderSummary(effect.article);
+        break;
+      case "showAppUpdateBanner":
+        deps.renderAppUpdateBanner();
+        break;
+      case "requery": {
+        const articles = deps.getNearby(
+          deps.getState().query,
+          effect.pos,
+          effect.count,
+        );
+        deps.dispatch({
+          type: "queryResult",
+          articles,
+          queryPos: effect.pos,
+          count: effect.count,
+        });
+        break;
+      }
+      case "log":
+        console.log(effect.message);
+        break;
+    }
+  };
+}
