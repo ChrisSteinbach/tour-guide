@@ -31,23 +31,23 @@ describe("summaryUrl", () => {
 });
 
 describe("fetchArticleSummary", () => {
-  let originalFetch: typeof globalThis.fetch;
-
   beforeEach(() => {
-    originalFetch = globalThis.fetch;
     clearCache();
   });
 
   afterEach(() => {
-    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
   });
 
   function mockFetch(response: { status: number; body?: unknown }) {
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: response.status >= 200 && response.status < 300,
-      status: response.status,
-      json: () => Promise.resolve(response.body),
-    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: response.status >= 200 && response.status < 300,
+        status: response.status,
+        json: () => Promise.resolve(response.body),
+      }),
+    );
   }
 
   const fullResponse = {
@@ -97,9 +97,10 @@ describe("fetchArticleSummary", () => {
   });
 
   it("throws on network failure", async () => {
-    globalThis.fetch = vi
-      .fn()
-      .mockRejectedValue(new TypeError("Failed to fetch"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new TypeError("Failed to fetch")),
+    );
 
     await expect(fetchArticleSummary("Anything")).rejects.toThrow(
       "Failed to fetch",
