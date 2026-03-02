@@ -57,16 +57,13 @@ describe("toCartesian", () => {
     expectClose(p[2], 0);
   });
 
-  it("produces unit-length vectors", () => {
-    const cases: LatLon[] = [
-      { lat: 45, lon: 45 },
-      { lat: -30, lon: 120 },
-      { lat: 89.99, lon: -179.99 },
-      { lat: 0, lon: 0 },
-    ];
-    for (const loc of cases) {
-      expectClose(pointLength(toCartesian(loc)), 1, 1e-14);
-    }
+  it.each([
+    { lat: 45, lon: 45, label: "mid-latitude NE (45, 45)" },
+    { lat: -30, lon: 120, label: "southern hemisphere (-30, 120)" },
+    { lat: 89.99, lon: -179.99, label: "near north pole (89.99, -179.99)" },
+    { lat: 0, lon: 0, label: "origin (0, 0)" },
+  ])("produces unit-length vector for $label", ({ lat, lon }) => {
+    expectClose(pointLength(toCartesian({ lat, lon })), 1, 1e-14);
   });
 });
 
@@ -254,30 +251,31 @@ describe("haversineDistance", () => {
     expectClose(haversineDistance(a, b), haversineDistance(b, a));
   });
 
-  it("agrees with sphericalDistance", () => {
-    const cases: [LatLon, LatLon][] = [
-      [
-        { lat: 0, lon: 0 },
-        { lat: 0, lon: 90 },
-      ],
-      [
-        { lat: 48.8566, lon: 2.3522 },
-        { lat: 40.7128, lon: -74.006 },
-      ],
-      [
-        { lat: 90, lon: 0 },
-        { lat: -90, lon: 0 },
-      ],
-      [
-        { lat: 1, lon: 1 },
-        { lat: 1.001, lon: 1.001 },
-      ], // very close points
-    ];
-    for (const [a, b] of cases) {
-      const d1 = sphericalDistance(toCartesian(a), toCartesian(b));
-      const d2 = haversineDistance(a, b);
-      expectClose(d1, d2, 1e-9);
-    }
+  it.each([
+    {
+      a: { lat: 0, lon: 0 },
+      b: { lat: 0, lon: 90 },
+      label: "equator quarter arc (0,0)->(0,90)",
+    },
+    {
+      a: { lat: 48.8566, lon: 2.3522 },
+      b: { lat: 40.7128, lon: -74.006 },
+      label: "Paris to New York",
+    },
+    {
+      a: { lat: 90, lon: 0 },
+      b: { lat: -90, lon: 0 },
+      label: "north pole to south pole",
+    },
+    {
+      a: { lat: 1, lon: 1 },
+      b: { lat: 1.001, lon: 1.001 },
+      label: "very close points (1,1)->(1.001,1.001)",
+    },
+  ])("agrees with sphericalDistance for $label", ({ a, b }) => {
+    const d1 = sphericalDistance(toCartesian(a), toCartesian(b));
+    const d2 = haversineDistance(a, b);
+    expectClose(d1, d2, 1e-9);
   });
 });
 
