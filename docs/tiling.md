@@ -25,7 +25,7 @@ Geohash precision levels jump 32x between levels (32 → 1,024 → 32,768 cells)
 
 ### Why not S2 cells
 
-S2 cells provide near-uniform area coverage and are theoretically optimal. However, computing S2 cell IDs from lat/lon requires implementing the S2 projection (a non-trivial amount of code), and the project's zero-dependency constraint makes this a poor fit for the app runtime. The non-uniform area of lat/lon cells at high latitudes is not a practical concern: virtually no Wikipedia articles exist above 70° where the distortion becomes significant, and the buffer zone (section 2) handles any boundary effects.
+S2 cells provide near-uniform area coverage and are theoretically optimal. However, a simple 5° lat/lon grid is sufficient for this use case — tile lookup is a single division, the code is trivial, and the non-uniform area at high latitudes is not a practical concern: virtually no Wikipedia articles exist above 70° where the distortion becomes significant, and the buffer zone (section 2) handles any boundary effects.
 
 ### Back-of-envelope math
 
