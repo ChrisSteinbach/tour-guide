@@ -17,7 +17,7 @@ npm run dev           # Start Vite dev server (binds 0.0.0.0 for phone testing)
 npm run build         # Production build → dist/app/
 npm run preview       # Preview production build locally
 npm run pipeline      # Run offline build pipeline (tsx src/pipeline/build.ts)
-npm run extract       # Extract geotagged articles from Wikipedia dumps → data/articles-{lang}.json
+npm run extract       # Extract geotagged articles from Wikipedia dumps → data/articles-{lang}.json (requires ~6 GB heap)
 ```
 
 Run a single test file: `npx vitest run src/geometry/index.test.ts`
