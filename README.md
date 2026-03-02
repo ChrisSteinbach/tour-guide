@@ -184,11 +184,14 @@ Requires a modern browser with IndexedDB, Service Workers, and the Geolocation A
 
 ## Documentation
 
-- [`docs/architecture.md`](docs/architecture.md) — End-to-end system design
-- [`docs/nearest-neighbor.md`](docs/nearest-neighbor.md) — Spherical nearest-neighbor theory
-- [`docs/binary-format.md`](docs/binary-format.md) — Binary tile serialization format
-- [`docs/tiling.md`](docs/tiling.md) — Geographic tiling strategy
-- [`docs/data-extraction.md`](docs/data-extraction.md) — Wikipedia dump extraction pipeline
+Recommended reading order:
+
+1. [`architecture.md`](docs/architecture.md) — End-to-end system design and data flow
+2. [`tiling.md`](docs/tiling.md) — Geographic tiling strategy
+3. [`binary-format.md`](docs/binary-format.md) — Binary tile serialization format
+4. [`nearest-neighbor.md`](docs/nearest-neighbor.md) — Spherical nearest-neighbor theory
+5. [`data-extraction.md`](docs/data-extraction.md) — Wikipedia dump extraction pipeline
+6. [`state-machine.md`](docs/state-machine.md) — App state machine and lifecycle
 
 ## Naming
 
