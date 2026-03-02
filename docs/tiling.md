@@ -31,16 +31,16 @@ S2 cells provide near-uniform area coverage and are theoretically optimal. Howev
 
 English Wikipedia has over a million geotagged articles (see [data-extraction.md](data-extraction.md) for current counts). With ~800 populated tiles:
 
-| Metric                                    | Value                                                                                                            |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Average articles per tile                 | ~1,500                                                                                                           |
-| Bytes per article (numeric)               | ~64 (12 vertex + 4 vertexTri + 24 triVerts + 24 triNeighbors; assumes T ≈ 2V, slightly higher in buffered tiles) |
-| Bytes per article (title)                 | ~25 (JSON string in array)                                                                                       |
-| **Total per article**                     | **~89 bytes**                                                                                                    |
-| Average tile (1,500 articles)             | ~130 KB raw, **~65 KB gzipped**                                                                                  |
-| Dense tile (20,000 articles, e.g. London) | ~1.8 MB raw, **~900 KB gzipped**                                                                                 |
-| Sparse tile (100 articles)                | ~9 KB raw, **~4 KB gzipped**                                                                                     |
-| Tile index manifest                       | ~90 KB raw, **~20 KB gzipped**                                                                                   |
+| Metric                                     | Value                                                                                                            |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| Average articles per tile                  | ~1,250 (before buffer overlap; ~1,500 with buffer — see section 2)                                               |
+| Bytes per article (numeric)                | ~64 (12 vertex + 4 vertexTri + 24 triVerts + 24 triNeighbors; assumes T ≈ 2V, slightly higher in buffered tiles) |
+| Bytes per article (title)                  | ~25 (JSON string in array)                                                                                       |
+| **Total per article**                      | **~89 bytes**                                                                                                    |
+| Average tile (~1,500 articles with buffer) | ~130 KB raw, **~65 KB gzipped**                                                                                  |
+| Dense tile (20,000 articles, e.g. London)  | ~1.8 MB raw, **~900 KB gzipped**                                                                                 |
+| Sparse tile (100 articles)                 | ~9 KB raw, **~4 KB gzipped**                                                                                     |
+| Tile index manifest                        | ~90 KB raw, **~20 KB gzipped**                                                                                   |
 
 Estimated loading times (index + one tile, including 2x RTT). These are rough order-of-magnitude estimates assuming idealized throughput; actual performance varies significantly by carrier, congestion, signal strength, and device:
 
