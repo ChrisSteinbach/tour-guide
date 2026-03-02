@@ -294,20 +294,15 @@ describe("updateLru", () => {
 // ---------- loadTileIndex abort vs network error ----------
 
 describe("loadTileIndex", () => {
-  let originalFetch: typeof globalThis.fetch;
-
-  beforeEach(() => {
-    originalFetch = globalThis.fetch;
-  });
-
   afterEach(() => {
-    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
   });
 
   it("propagates abort instead of falling back to null", async () => {
-    globalThis.fetch = vi
-      .fn()
-      .mockRejectedValue(new DOMException("aborted", "AbortError"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new DOMException("aborted", "AbortError")),
+    );
 
     const controller = new AbortController();
     controller.abort();
@@ -318,7 +313,10 @@ describe("loadTileIndex", () => {
   });
 
   it("returns null on network error (graceful fallback)", async () => {
-    globalThis.fetch = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new TypeError("fetch failed")),
+    );
 
     const result = await loadTileIndex("/base/", "en");
     expect(result).toBeNull();
