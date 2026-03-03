@@ -6,21 +6,15 @@ Notation: **V** = vertex count, **T** = triangle count. All multi-byte integers 
 
 ## Overview
 
-```
-+------------------+   byte 0
-|     Header       |   24 bytes
-+------------------+   byte 24
-|  Vertex Points   |   V * 3 * 4 bytes  (Float32)
-+------------------+
-| Vertex Triangles |   V * 4 bytes      (Uint32)
-+------------------+
-|Triangle Vertices |   T * 3 * 4 bytes  (Uint32)
-+------------------+
-|Triangle Neighbors|   T * 3 * 4 bytes  (Uint32)
-+------------------+   byte = articlesOffset
-|    Articles      |   articlesLength bytes (UTF-8 JSON)
-|   (+ padding)    |   padded to 4-byte boundary
-+------------------+
+```mermaid
+block-beta
+    columns 1
+    header["Header — 24 bytes (byte 0)"]
+    points["Vertex Points — V × 3 × 4 bytes, Float32 (byte 24)"]
+    vtri["Vertex Triangles — V × 4 bytes, Uint32"]
+    trivert["Triangle Vertices — T × 3 × 4 bytes, Uint32"]
+    trineigh["Triangle Neighbors — T × 3 × 4 bytes, Uint32"]
+    articles["Articles (+padding) — articlesLength bytes, UTF-8 JSON (byte = articlesOffset)"]
 ```
 
 ## Header (24 bytes)

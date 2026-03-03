@@ -4,21 +4,24 @@ WikiRadar is a Wikipedia-powered tour guide PWA. It uses spherical Delaunay tria
 
 ## End-to-End Data Flow
 
-```
-Wikipedia SQL Dumps (geo_tags, page)
-  ↓  extract-dump.ts: download, parse, join, deduplicate
-data/articles-{lang}.json  (NDJSON: title, lat, lon)
-  ↓  build.ts: per-tile toCartesian → convexHull → buildTriangulation → serializeBinary
-data/tiles/{lang}/index.json + {row}-{col}.bin  (per-tile triangulations)
-  ↓  pipeline.yml: compress → GitHub Release "data-latest"
-  ↓  deploy.yml: download → decompress → bundle into dist/app/tiles/
-GitHub Pages CDN
-  ↓  tile-loader.ts: fetch index → fetch tile → deserializeBinary → IDB cache
-FlatDelaunay (typed arrays in memory, per tile)
-  ↓  NearestQuery.findNearest(): triangle walk → greedy vertex walk → BFS k-nearest
-k nearest articles with distances
-  ↓  render.ts → detail.ts → wiki-api.ts
-User-facing PWA
+```mermaid
+flowchart TD
+    dumps["Wikipedia SQL Dumps (geo_tags, page)"]
+    ndjson["data/articles-#123;lang#125;.json (NDJSON: title, lat, lon)"]
+    tiles["data/tiles/#123;lang#125;/ index.json + #123;row#125;-#123;col#125;.bin"]
+    release["GitHub Release 'data-latest'"]
+    cdn["GitHub Pages CDN"]
+    flat["FlatDelaunay (typed arrays in memory, per tile)"]
+    results["k nearest articles with distances"]
+    pwa["User-facing PWA"]
+
+    dumps -- "extract-dump.ts: download, parse, join, deduplicate" --> ndjson
+    ndjson -- "build.ts: toCartesian → convexHull → buildTriangulation → serializeBinary" --> tiles
+    tiles -- "pipeline.yml: compress" --> release
+    release -- "deploy.yml: download → decompress → bundle into dist/app/tiles/" --> cdn
+    cdn -- "tile-loader.ts: fetch index → fetch tile → deserializeBinary → IDB cache" --> flat
+    flat -- "NearestQuery.findNearest(): triangle walk → greedy vertex walk → BFS k-nearest" --> results
+    results -- "render.ts → detail.ts → wiki-api.ts" --> pwa
 ```
 
 ## Phase 1: Extraction
