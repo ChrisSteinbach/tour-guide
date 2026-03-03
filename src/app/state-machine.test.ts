@@ -12,7 +12,7 @@ import {
 import type { NearbyArticle, UserPosition } from "./types";
 import type { LocationError } from "./location";
 import { NearestQuery, toFlatDelaunay } from "./query";
-import type { TileIndex } from "../tiles";
+import { GRID_DEG, type TileIndex, type TileEntry } from "../tiles";
 import { buildTileMap } from "./tile-loader";
 import { mockArticles, mockPosition } from "./mock-data";
 import {
@@ -51,32 +51,63 @@ const defaultBrowsingArticles: NearbyArticle[] = mockArticles.map((a, i) => ({
   distanceM: (i + 1) * 50,
 }));
 
-const sampleIndex: TileIndex = {
-  version: 1,
-  gridDeg: 5,
-  bufferDeg: 0.5,
-  generated: "2024-01-01",
-  tiles: [
-    {
-      id: "27-36",
-      row: 27,
-      col: 36,
-      south: 45,
-      north: 50,
-      west: 0,
-      east: 5,
-      articles: 100,
-      bytes: 1000,
-      hash: "abc",
-    },
-  ],
-};
+/** Build a default TileIndex from tile IDs (defaults to ["27-36"]). */
+function makeTileIndex(tileIds: string[] = ["27-36"]): TileIndex {
+  return {
+    version: 1,
+    gridDeg: GRID_DEG,
+    bufferDeg: 0.5,
+    generated: "2024-01-01",
+    tiles: tileIds.map((id) => {
+      const [rowStr, colStr] = id.split("-");
+      const row = parseInt(rowStr, 10);
+      const col = parseInt(colStr, 10);
+      return {
+        id,
+        row,
+        col,
+        south: row * GRID_DEG - 90,
+        north: row * GRID_DEG - 90 + GRID_DEG,
+        west: col * GRID_DEG - 180,
+        east: col * GRID_DEG - 180 + GRID_DEG,
+        articles: 100,
+        bytes: 1000,
+        hash: "abc",
+      } satisfies TileEntry;
+    }),
+  };
+}
+
+/** Build a tiled QueryState from tile IDs (defaults to ["27-36"]). */
+function makeTiledQuery(tileIds: string[] = ["27-36"]): QueryState {
+  const index = makeTileIndex(tileIds);
+  return {
+    mode: "tiled",
+    index,
+    tileMap: buildTileMap(index),
+    tiles: new Map(),
+  };
+}
+
+const sampleIndex = makeTileIndex();
 const sampleQuery: QueryState = {
   mode: "tiled",
   index: sampleIndex,
   tileMap: buildTileMap(sampleIndex),
   tiles: new Map([["27-36", stubNearestQuery]]),
 };
+
+/** Assert phase is "browsing" and return the narrowed type. */
+function expectBrowsing(state: AppState) {
+  expect(state.phase.phase).toBe("browsing");
+  return state.phase as Extract<Phase, { phase: "browsing" }>;
+}
+
+/** Assert phase is "detail" and return the narrowed type. */
+function expectDetail(state: AppState) {
+  expect(state.phase.phase).toBe("detail");
+  return state.phase as Extract<Phase, { phase: "detail" }>;
+}
 
 function browsingState(
   overrides: Partial<AppState> & {
@@ -282,32 +313,7 @@ describe("useMockData event", () => {
   });
 
   it("triggers loadTiles for tiled query", () => {
-    const index: TileIndex = {
-      version: 1,
-      gridDeg: 5,
-      bufferDeg: 0.5,
-      generated: "2024-01-01",
-      tiles: [
-        {
-          id: "27-36",
-          row: 27,
-          col: 36,
-          south: 45,
-          north: 50,
-          west: 0,
-          east: 5,
-          articles: 100,
-          bytes: 1000,
-          hash: "abc",
-        },
-      ],
-    };
-    const tiledQuery: QueryState = {
-      mode: "tiled",
-      index,
-      tileMap: buildTileMap(index),
-      tiles: new Map(),
-    };
+    const tiledQuery = makeTiledQuery();
     const state = makeState({ query: tiledQuery });
     const { effects } = transition(state, {
       type: "useMockData",
@@ -358,32 +364,7 @@ describe("position event", () => {
   });
 
   it("enters loadingTiles from locating when tiled query with no tiles", () => {
-    const index: TileIndex = {
-      version: 1,
-      gridDeg: 5,
-      bufferDeg: 0.5,
-      generated: "2024-01-01",
-      tiles: [
-        {
-          id: "27-36",
-          row: 27,
-          col: 36,
-          south: 45,
-          north: 50,
-          west: 0,
-          east: 5,
-          articles: 100,
-          bytes: 1000,
-          hash: "abc",
-        },
-      ],
-    };
-    const tiledQuery: QueryState = {
-      mode: "tiled",
-      index,
-      tileMap: buildTileMap(index),
-      tiles: new Map(),
-    };
+    const tiledQuery = makeTiledQuery();
     const state = makeState({
       phase: { phase: "locating" },
       query: tiledQuery,
@@ -493,10 +474,8 @@ describe("showMore event", () => {
   it("advances from 10 to 20 articles", () => {
     const state = browsingState({ nearbyCount: 10 });
     const { next, effects } = transition(state, { type: "showMore" });
-    expect(next.phase.phase).toBe("browsing");
-    if (next.phase.phase === "browsing") {
-      expect(next.phase.nearbyCount).toBe(20);
-    }
+    const browsing = expectBrowsing(next);
+    expect(browsing.nearbyCount).toBe(20);
     expect(effectTypes(effects)).toContain("requery");
   });
 
@@ -521,19 +500,17 @@ describe("togglePause event", () => {
   it("pauses when unpaused", () => {
     const state = browsingState({ paused: false });
     const { next, effects } = transition(state, { type: "togglePause" });
-    if (next.phase.phase === "browsing") {
-      expect(next.phase.paused).toBe(true);
-    }
+    const browsing = expectBrowsing(next);
+    expect(browsing.paused).toBe(true);
     expect(effectTypes(effects)).toContain("renderBrowsingList");
   });
 
   it("unpauses and requeries at current position", () => {
     const state = browsingState({ paused: true });
     const { next, effects } = transition(state, { type: "togglePause" });
-    if (next.phase.phase === "browsing") {
-      expect(next.phase.paused).toBe(false);
-      expect(next.phase.lastQueryPos).toBe(paris);
-    }
+    const browsing = expectBrowsing(next);
+    expect(browsing.paused).toBe(false);
+    expect(browsing.lastQueryPos).toBe(paris);
     expect(effectTypes(effects)).toContain("requery");
   });
 
@@ -550,33 +527,29 @@ describe("togglePause event", () => {
 describe("selectArticle event", () => {
   it("transitions from browsing to detail", () => {
     const state = browsingState();
-    const article = (state.phase as Extract<Phase, { phase: "browsing" }>)
-      .articles[0];
+    const article = expectBrowsing(state).articles[0];
     const { next, effects } = transition(state, {
       type: "selectArticle",
       article,
     });
-    expect(next.phase.phase).toBe("detail");
-    if (next.phase.phase === "detail") {
-      expect(next.phase.article).toBe(article);
-    }
+    const detail = expectDetail(next);
+    expect(detail.article).toBe(article);
     expect(effectTypes(effects)).toContain("pushHistory");
     expect(effectTypes(effects)).toContain("fetchSummary");
   });
 
   it("preserves browsing context in detail state", () => {
     const state = browsingState({ nearbyCount: 20, paused: true });
-    const browsing = state.phase as Extract<Phase, { phase: "browsing" }>;
+    const browsing = expectBrowsing(state);
     const { next } = transition(state, {
       type: "selectArticle",
       article: browsing.articles[0],
     });
-    if (next.phase.phase === "detail") {
-      expect(next.phase.articles).toBe(browsing.articles);
-      expect(next.phase.nearbyCount).toBe(20);
-      expect(next.phase.paused).toBe(true);
-      expect(next.phase.lastQueryPos).toBe(browsing.lastQueryPos);
-    }
+    const detail = expectDetail(next);
+    expect(detail.articles).toBe(browsing.articles);
+    expect(detail.nearbyCount).toBe(20);
+    expect(detail.paused).toBe(true);
+    expect(detail.lastQueryPos).toBe(browsing.lastQueryPos);
   });
 
   it("no-ops when not browsing", () => {
@@ -601,18 +574,16 @@ describe("selectArticle event", () => {
 describe("back event", () => {
   it("restores browsing state from detail", () => {
     const state = browsingState({ nearbyCount: 20, paused: true });
-    const browsing = state.phase as Extract<Phase, { phase: "browsing" }>;
+    const browsing = expectBrowsing(state);
     const { next: detail } = transition(state, {
       type: "selectArticle",
       article: browsing.articles[0],
     });
     const { next: restored, effects } = transition(detail, { type: "back" });
-    expect(restored.phase.phase).toBe("browsing");
-    if (restored.phase.phase === "browsing") {
-      expect(restored.phase.articles).toBe(browsing.articles);
-      expect(restored.phase.nearbyCount).toBe(20);
-      expect(restored.phase.paused).toBe(true);
-    }
+    const restoredBrowsing = expectBrowsing(restored);
+    expect(restoredBrowsing.articles).toBe(browsing.articles);
+    expect(restoredBrowsing.nearbyCount).toBe(20);
+    expect(restoredBrowsing.paused).toBe(true);
     expect(effectTypes(effects)).toContain("renderBrowsingList");
   });
 
@@ -737,26 +708,7 @@ describe("downloadProgress event", () => {
 // ── tileIndexLoaded event (tour-guide-8y4) ───────────────────
 
 describe("tileIndexLoaded event", () => {
-  const tileIndex: TileIndex = {
-    version: 1,
-    gridDeg: 5,
-    bufferDeg: 0.5,
-    generated: "2024-01-01",
-    tiles: [
-      {
-        id: "27-36",
-        row: 27,
-        col: 36,
-        south: 45,
-        north: 50,
-        west: 0,
-        east: 5,
-        articles: 100,
-        bytes: 1000,
-        hash: "abc",
-      },
-    ],
-  };
+  const tileIndex = makeTileIndex();
 
   it("sets tiled query state when index exists", () => {
     const state = makeState();
@@ -831,32 +783,7 @@ describe("tileIndexLoaded event", () => {
 
 describe("tileLoaded event", () => {
   it("enters browsing from loadingTiles when first tile arrives", () => {
-    const index: TileIndex = {
-      version: 1,
-      gridDeg: 5,
-      bufferDeg: 0.5,
-      generated: "2024-01-01",
-      tiles: [
-        {
-          id: "27-36",
-          row: 27,
-          col: 36,
-          south: 45,
-          north: 50,
-          west: 0,
-          east: 5,
-          articles: 100,
-          bytes: 1000,
-          hash: "abc",
-        },
-      ],
-    };
-    const tiledQuery: QueryState = {
-      mode: "tiled",
-      index,
-      tileMap: buildTileMap(index),
-      tiles: new Map(),
-    };
+    const tiledQuery = makeTiledQuery();
     const state = makeState({
       phase: { phase: "loadingTiles" },
       query: tiledQuery,
@@ -879,19 +806,7 @@ describe("tileLoaded event", () => {
   });
 
   it("ignores stale generation", () => {
-    const index: TileIndex = {
-      version: 1,
-      gridDeg: 5,
-      bufferDeg: 0.5,
-      generated: "2024-01-01",
-      tiles: [],
-    };
-    const tiledQuery: QueryState = {
-      mode: "tiled",
-      index,
-      tileMap: buildTileMap(index),
-      tiles: new Map(),
-    };
+    const tiledQuery = makeTiledQuery([]);
     const state = makeState({
       query: tiledQuery,
       loadGeneration: 2,
@@ -922,19 +837,17 @@ describe("queryResult event", () => {
       queryPos: paris,
       count: 10,
     });
-    expect(next.phase.phase).toBe("browsing");
-    if (next.phase.phase === "browsing") {
-      expect(next.phase.articles).toBe(newArticles);
-      expect(next.phase.nearbyCount).toBe(10);
-      expect(next.phase.lastQueryPos).toBe(paris);
-    }
+    const browsing = expectBrowsing(next);
+    expect(browsing.articles).toBe(newArticles);
+    expect(browsing.nearbyCount).toBe(10);
+    expect(browsing.lastQueryPos).toBe(paris);
     expect(effectTypes(effects)).toContain("renderBrowsingList");
     expect(effectTypes(effects)).not.toContain("updateDistances");
   });
 
   it("updates distances when article titles unchanged", () => {
     const state = browsingState();
-    const browsing = state.phase as Extract<Phase, { phase: "browsing" }>;
+    const browsing = expectBrowsing(state);
     const updatedArticles = browsing.articles.map((a) => ({
       ...a,
       distanceM: a.distanceM + 1,
@@ -945,10 +858,8 @@ describe("queryResult event", () => {
       queryPos: paris,
       count: 10,
     });
-    expect(next.phase.phase).toBe("browsing");
-    if (next.phase.phase === "browsing") {
-      expect(next.phase.articles).toBe(updatedArticles);
-    }
+    const nextBrowsing = expectBrowsing(next);
+    expect(nextBrowsing.articles).toBe(updatedArticles);
     expect(effectTypes(effects)).toContain("updateDistances");
     expect(effectTypes(effects)).not.toContain("renderBrowsingList");
   });
@@ -956,17 +867,16 @@ describe("queryResult event", () => {
   it("updates nearbyCount and lastQueryPos", () => {
     const state = browsingState({ nearbyCount: 10 });
     const newPos: UserPosition = { lat: 48.86, lon: 2.3 };
-    const browsing = state.phase as Extract<Phase, { phase: "browsing" }>;
+    const browsing = expectBrowsing(state);
     const { next } = transition(state, {
       type: "queryResult",
       articles: browsing.articles,
       queryPos: newPos,
       count: 20,
     });
-    if (next.phase.phase === "browsing") {
-      expect(next.phase.nearbyCount).toBe(20);
-      expect(next.phase.lastQueryPos).toBe(newPos);
-    }
+    const nextBrowsing = expectBrowsing(next);
+    expect(nextBrowsing.nearbyCount).toBe(20);
+    expect(nextBrowsing.lastQueryPos).toBe(newPos);
   });
 
   it("ignores when not in browsing phase", () => {
