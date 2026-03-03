@@ -106,16 +106,19 @@ stateDiagram-v2
     welcome --> locating : start (query, no position)
     welcome --> downloading : start (no query)
 
+    downloading --> browsing : tileIndexLoaded (has tiles)
     downloading --> loadingTiles : tileIndexLoaded (has position)
     downloading --> locating : tileIndexLoaded (no position)
     downloading --> dataUnavailable : tileIndexLoaded (null index)
+    downloading --> browsing : useMockData (query=tiled)
 
     locating --> loadingTiles : position (no tiles)
     locating --> browsing : position (tiles available)
     locating --> error : gpsError
 
     loadingTiles --> browsing : tileLoaded
-    error --> browsing : useMockData
+    error --> browsing : useMockData (query=tiled)
+    error --> downloading : useMockData (query=none)
 
     browsing --> detail : selectArticle
     detail --> browsing : back
