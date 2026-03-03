@@ -25,10 +25,13 @@ jobs:
         with:
           sparse-checkout: src/lang.ts
           sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - id: parse
         name: Read supported languages from src/lang.ts
         run: |
-          langs=$(sed -n '/SUPPORTED_LANGS = \[/,/\] as const/p' src/lang.ts | grep -oP '"[a-z]{2}"' | tr -d '"' | jq -R . | jq -sc .)
+          langs=$(npx --yes tsx -e "import { SUPPORTED_LANGS } from './src/lang.ts'; console.log(JSON.stringify(SUPPORTED_LANGS))")
           echo "langs=$langs" >> "$GITHUB_OUTPUT"
 
   build-data:
