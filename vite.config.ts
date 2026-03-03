@@ -98,6 +98,8 @@ export default defineConfig({
             handler: "NetworkOnly",
           },
           {
+            // Wikipedia REST API cache — serves stale while revalidating in
+            // background. Update docs/architecture.md if changing these values.
             urlPattern: /^https:\/\/\w+\.wikipedia\.org\/api\/rest_v1\//,
             handler: "StaleWhileRevalidate",
             options: {
