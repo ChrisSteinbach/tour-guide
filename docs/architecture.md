@@ -136,7 +136,7 @@ Key design decisions:
 
 ### Security & Privacy
 
-- **DOM rendering** — All user-visible text is rendered via `createElement`/`textContent`, not `innerHTML` (enforced by ESLint's `no-restricted-syntax` rule — any `innerHTML` assignment fails CI). Wikipedia API responses are not injected as raw HTML.
+- **DOM rendering** — All user-visible text is rendered via `createElement`/`textContent`, not raw HTML injection (enforced by ESLint's `no-restricted-syntax` rule — `innerHTML`, `outerHTML`, `insertAdjacentHTML`, and `document.write` all fail CI). Wikipedia API responses are not injected as raw HTML.
 - **GPS data** — Location coordinates are used only for on-device nearest-neighbor queries. No GPS data is transmitted to any server other than the browser's standard Geolocation API provider.
 - **Third-party requests** — The only external requests are to Wikipedia's REST API (for article summaries) and GitHub Pages (for tile data). No analytics, tracking, or third-party scripts.
 - **Service worker scope** — The SW caches static assets and Wikipedia API responses only. Tile data bypasses the SW cache (managed via IDB instead).

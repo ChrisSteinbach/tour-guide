@@ -30,6 +30,22 @@ export default tseslint.config(
           message:
             "Use textContent or createElement instead of innerHTML to prevent XSS.",
         },
+        {
+          selector: "AssignmentExpression[left.property.name='outerHTML']",
+          message:
+            "Use textContent or createElement instead of outerHTML to prevent XSS.",
+        },
+        {
+          selector: "CallExpression[callee.property.name='insertAdjacentHTML']",
+          message:
+            "Use textContent or createElement instead of insertAdjacentHTML to prevent XSS.",
+        },
+        {
+          selector:
+            "CallExpression[callee.property.name='write'][callee.object.name='document']",
+          message:
+            "Use textContent or createElement instead of document.write to prevent XSS.",
+        },
       ],
       "no-console": "warn",
       "no-param-reassign": "error",
