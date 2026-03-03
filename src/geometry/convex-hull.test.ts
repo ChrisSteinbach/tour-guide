@@ -71,11 +71,24 @@ function validateHull(hull: ConvexHull, allOnHull = true) {
     expect(vol).toBeLessThan(1e-6);
   }
 
-  // Convexity: no point is visible from any face (same tolerance as outward-orientation)
+  // Convexity: local convexity at every edge implies global convexity for a
+  // closed triangulated surface.  For each edge shared by faces f and g, the
+  // vertex of g opposite the shared edge must lie on or below f's plane.
+  // O(E) ≈ O(3V) orient3D calls instead of the naïve O(F·V) ≈ O(V²).
   for (let fi = 0; fi < nF; fi++) {
-    const [a, b, c] = faces[fi].vertices;
-    for (let pi = 0; pi < points.length; pi++) {
-      const vol = orient3D(points[a], points[b], points[c], points[pi]);
+    const f = faces[fi];
+    const [a, b, c] = f.vertices;
+    for (let e = 0; e < 3; e++) {
+      const ni = f.neighbor[e];
+      if (ni <= fi) continue; // check each edge pair once
+      const nf = faces[ni];
+      const edgeA = f.vertices[e];
+      const edgeB = f.vertices[(e + 1) % 3];
+      // The opposite vertex is the one in the neighbor not on the shared edge
+      let opposite = nf.vertices[0];
+      if (opposite === edgeA || opposite === edgeB) opposite = nf.vertices[1];
+      if (opposite === edgeA || opposite === edgeB) opposite = nf.vertices[2];
+      const vol = orient3D(points[a], points[b], points[c], points[opposite]);
       expect(vol).toBeLessThan(1e-6);
     }
   }
@@ -83,6 +96,7 @@ function validateHull(hull: ConvexHull, allOnHull = true) {
   // Euler's formula for convex polyhedra with triangular faces:
   // F = 2V - 4  (when all points are on the hull)
   if (allOnHull) {
+    expect(nV).toBe(points.length); // no input points dropped
     expect(nF).toBe(2 * nV - 4);
   }
 }
