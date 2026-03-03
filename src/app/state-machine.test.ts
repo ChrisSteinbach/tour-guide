@@ -42,20 +42,15 @@ const paris: UserPosition = { lat: 48.8584, lon: 2.2945 };
 const parisNearby: UserPosition = { lat: 48.8586, lon: 2.2948 }; // ~25m away
 const parisSame: UserPosition = { lat: 48.85841, lon: 2.29451 }; // ~1m away
 
-/** Build a minimal NearestQuery from a set of articles. */
-function buildQuery(
-  articles: { title: string; lat: number; lon: number }[],
-): NearestQuery {
-  const points = articles.map((a) => toCartesian(a));
-  const hull = convexHull(points);
-  const tri = buildTriangulation(hull);
-  const meta = articles.map((a) => ({ title: a.title }));
-  const data = serialize(tri, meta);
-  const fd = toFlatDelaunay(data);
-  return new NearestQuery(fd, meta);
-}
+/** Stub NearestQuery — satisfies the type without running real geometry. */
+const stubNearestQuery = {} as NearestQuery;
 
-const sampleNearestQuery = buildQuery(mockArticles);
+/** Pre-built articles for browsing state, no geometry required. */
+const defaultBrowsingArticles: NearbyArticle[] = mockArticles.map((a, i) => ({
+  ...a,
+  distanceM: (i + 1) * 50,
+}));
+
 const sampleIndex: TileIndex = {
   version: 1,
   gridDeg: 5,
@@ -80,7 +75,7 @@ const sampleQuery: QueryState = {
   mode: "tiled",
   index: sampleIndex,
   tileMap: buildTileMap(sampleIndex),
-  tiles: new Map([["27-36", sampleNearestQuery]]),
+  tiles: new Map([["27-36", stubNearestQuery]]),
 };
 
 function browsingState(
@@ -98,17 +93,12 @@ function browsingState(
     lastQueryPos,
     ...stateOverrides
   } = overrides;
-  const { results: defaultArticles } = sampleNearestQuery.findNearest(
-    paris.lat,
-    paris.lon,
-    10,
-  );
   return makeState({
     query: sampleQuery,
     position: paris,
     phase: {
       phase: "browsing",
-      articles: arts ?? defaultArticles,
+      articles: arts ?? defaultBrowsingArticles,
       nearbyCount: nearbyCount ?? 10,
       paused: paused ?? false,
       lastQueryPos: lastQueryPos ?? paris,
@@ -156,8 +146,28 @@ describe("REQUERY_DISTANCE_M", () => {
 // ── getNearby ────────────────────────────────────────────────
 
 describe("getNearby", () => {
+  /** Build a real NearestQuery for integration testing. */
+  function buildQuery(
+    articles: { title: string; lat: number; lon: number }[],
+  ): NearestQuery {
+    const points = articles.map((a) => toCartesian(a));
+    const hull = convexHull(points);
+    const tri = buildTriangulation(hull);
+    const meta = articles.map((a) => ({ title: a.title }));
+    const data = serialize(tri, meta);
+    const fd = toFlatDelaunay(data);
+    return new NearestQuery(fd, meta);
+  }
+
+  const realSampleQuery: QueryState = {
+    mode: "tiled",
+    index: sampleIndex,
+    tileMap: buildTileMap(sampleIndex),
+    tiles: new Map([["27-36", buildQuery(mockArticles)]]),
+  };
+
   it("returns articles sorted by distance from tiled query", () => {
-    const articles = getNearby(sampleQuery, paris, 5);
+    const articles = getNearby(realSampleQuery, paris, 5);
     expect(articles).toHaveLength(5);
     for (let i = 1; i < articles.length; i++) {
       expect(articles[i].distanceM).toBeGreaterThanOrEqual(
@@ -418,18 +428,13 @@ describe("position event", () => {
   });
 
   it("triggers render in detail phase", () => {
-    const { results: articles } = sampleNearestQuery.findNearest(
-      paris.lat,
-      paris.lon,
-      10,
-    );
     const state = makeState({
       query: sampleQuery,
       position: paris,
       phase: {
         phase: "detail",
-        article: articles[0],
-        articles,
+        article: defaultBrowsingArticles[0],
+        articles: defaultBrowsingArticles,
         nearbyCount: 10,
         paused: false,
         lastQueryPos: paris,
@@ -858,7 +863,7 @@ describe("tileLoaded event", () => {
       position: paris,
       loadingTiles: new Set(["27-36"]),
     });
-    const tileQuery = buildQuery(mockArticles.slice(0, 5));
+    const tileQuery = stubNearestQuery;
     const { next, effects } = transition(state, {
       type: "tileLoaded",
       id: "27-36",
@@ -891,7 +896,7 @@ describe("tileLoaded event", () => {
       query: tiledQuery,
       loadGeneration: 2,
     });
-    const tileQuery = buildQuery(mockArticles.slice(0, 5));
+    const tileQuery = stubNearestQuery;
     const { next, effects } = transition(state, {
       type: "tileLoaded",
       id: "27-36",
