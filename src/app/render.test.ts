@@ -110,18 +110,20 @@ describe("renderShowMoreButton", () => {
   });
 });
 
+// ── helpers ──────────────────────────────────────────────────
+
+function makeArticles(n: number): NearbyArticle[] {
+  return Array.from({ length: n }, (_, i) => ({
+    title: `Article ${i}`,
+    lat: 48 + i * 0.01,
+    lon: 2 + i * 0.01,
+    distanceM: (i + 1) * 100,
+  }));
+}
+
 // ── renderNearbyList ─────────────────────────────────────────
 
 describe("renderNearbyList", () => {
-  function makeArticles(n: number): NearbyArticle[] {
-    return Array.from({ length: n }, (_, i) => ({
-      title: `Article ${i}`,
-      lat: 48 + i * 0.01,
-      lon: 2 + i * 0.01,
-      distanceM: (i + 1) * 100,
-    }));
-  }
-
   it("renders correct number of list items", () => {
     const container = document.createElement("div");
     renderNearbyList(container, makeArticles(3), {
@@ -183,15 +185,15 @@ describe("renderNearbyList", () => {
 
   it("clears container before rendering", () => {
     const container = document.createElement("div");
-    container.appendChild(document.createElement("p"));
+    const stale = document.createElement("p");
+    stale.textContent = "stale";
+    container.appendChild(stale);
     renderNearbyList(container, makeArticles(1), {
       onSelectArticle: () => {},
       currentLang: "en",
       onLangChange: () => {},
     });
-    expect(container.querySelector("p:not(header p)")?.textContent).not.toBe(
-      "old content",
-    );
+    expect(stale.parentNode).toBeNull();
   });
 
   it("sets data-title on each list item", () => {
@@ -332,15 +334,6 @@ describe("renderNearbyList", () => {
 // ── reconciliation on re-render ──────────────────────────────
 
 describe("renderNearbyList reconciliation", () => {
-  function makeArticles(n: number): NearbyArticle[] {
-    return Array.from({ length: n }, (_, i) => ({
-      title: `Article ${i}`,
-      lat: 48 + i * 0.01,
-      lon: 2 + i * 0.01,
-      distanceM: (i + 1) * 100,
-    }));
-  }
-
   it("reuses DOM nodes for articles present in both renders", () => {
     vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     const container = document.createElement("div");
