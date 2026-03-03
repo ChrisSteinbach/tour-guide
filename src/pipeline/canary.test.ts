@@ -62,6 +62,18 @@ describe("validateCanary", () => {
     ]);
   });
 
+  it("passes with zero matches (caller must enforce coverage)", async () => {
+    const path = writeNdjson("no-match.json", [
+      { title: "Unrelated Article", lat: 10, lon: 20 },
+    ]);
+
+    const result = await validateCanary(path, "en");
+    expect(result.passed).toBe(true);
+    expect(result.matched).toBe(0);
+    expect(result.checked).toBe(3);
+    expect(result.missing).toHaveLength(3);
+  });
+
   it("validates Swedish landmarks", async () => {
     const path = writeNdjson("good-sv.json", [
       { title: "Eiffeltornet", lat: 48.858, lon: 2.294 },
