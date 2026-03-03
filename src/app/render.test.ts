@@ -124,26 +124,22 @@ describe("renderNearbyList", () => {
 
   it("renders correct number of list items", () => {
     const container = document.createElement("div");
-    renderNearbyList(
-      container,
-      makeArticles(3),
-      () => {},
-      "en",
-      () => {},
-    );
+    renderNearbyList(container, makeArticles(3), {
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
     const items = container.querySelectorAll(".nearby-item");
     expect(items).toHaveLength(3);
   });
 
   it("article items are keyboard-accessible", () => {
     const container = document.createElement("div");
-    renderNearbyList(
-      container,
-      makeArticles(1),
-      () => {},
-      "en",
-      () => {},
-    );
+    renderNearbyList(container, makeArticles(1), {
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
     const item = container.querySelector(".nearby-item") as HTMLElement;
     expect(item.getAttribute("role")).toBe("button");
     expect(item.tabIndex).toBe(0);
@@ -153,7 +149,11 @@ describe("renderNearbyList", () => {
     const articles = makeArticles(2);
     const onSelect = vi.fn();
     const container = document.createElement("div");
-    renderNearbyList(container, articles, onSelect, "en", () => {});
+    renderNearbyList(container, articles, {
+      onSelectArticle: onSelect,
+      currentLang: "en",
+      onLangChange: () => {},
+    });
     const items = container.querySelectorAll(".nearby-item");
     (items[1] as HTMLElement).click();
     expect(onSelect).toHaveBeenCalledWith(articles[1]);
@@ -161,40 +161,34 @@ describe("renderNearbyList", () => {
 
   it("includes show-more button when nextCount provided", () => {
     const container = document.createElement("div");
-    renderNearbyList(
-      container,
-      makeArticles(2),
-      () => {},
-      "en",
-      () => {},
-      () => {},
-      20,
-    );
+    renderNearbyList(container, makeArticles(2), {
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+      onShowMore: () => {},
+      nextCount: 20,
+    });
     expect(container.querySelector(".show-more")?.textContent).toBe("Show 20");
   });
 
   it("omits show-more button when nextCount is undefined", () => {
     const container = document.createElement("div");
-    renderNearbyList(
-      container,
-      makeArticles(2),
-      () => {},
-      "en",
-      () => {},
-    );
+    renderNearbyList(container, makeArticles(2), {
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
     expect(container.querySelector(".show-more")).toBeNull();
   });
 
   it("clears container before rendering", () => {
     const container = document.createElement("div");
     container.appendChild(document.createElement("p"));
-    renderNearbyList(
-      container,
-      makeArticles(1),
-      () => {},
-      "en",
-      () => {},
-    );
+    renderNearbyList(container, makeArticles(1), {
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
     expect(container.querySelector("p:not(header p)")?.textContent).not.toBe(
       "old content",
     );
@@ -202,13 +196,11 @@ describe("renderNearbyList", () => {
 
   it("sets data-title on each list item", () => {
     const container = document.createElement("div");
-    renderNearbyList(
-      container,
-      makeArticles(2),
-      () => {},
-      "en",
-      () => {},
-    );
+    renderNearbyList(container, makeArticles(2), {
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
     const items = container.querySelectorAll<HTMLElement>(".nearby-item");
     expect(items[0].dataset.title).toBe("Article 0");
     expect(items[1].dataset.title).toBe("Article 1");
@@ -216,14 +208,12 @@ describe("renderNearbyList", () => {
 
   it("restores scroll position on re-render", () => {
     const container = document.createElement("div");
-    const args = [
-      container,
-      makeArticles(3),
-      () => {},
-      "en",
-      () => {},
-    ] as const;
-    renderNearbyList(...args);
+    const opts = {
+      onSelectArticle: () => {},
+      currentLang: "en" as const,
+      onLangChange: () => {},
+    };
+    renderNearbyList(container, makeArticles(3), opts);
 
     Object.defineProperty(window, "scrollY", {
       value: 250,
@@ -233,7 +223,7 @@ describe("renderNearbyList", () => {
       .spyOn(window, "scrollTo")
       .mockImplementation(() => {});
 
-    renderNearbyList(...args);
+    renderNearbyList(container, makeArticles(3), opts);
     expect(scrollToSpy).toHaveBeenCalledWith(0, 250);
 
     scrollToSpy.mockRestore();
@@ -250,13 +240,11 @@ describe("renderNearbyList", () => {
       .spyOn(window, "scrollTo")
       .mockImplementation(() => {});
 
-    renderNearbyList(
-      container,
-      makeArticles(2),
-      () => {},
-      "en",
-      () => {},
-    );
+    renderNearbyList(container, makeArticles(2), {
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
     expect(scrollToSpy).not.toHaveBeenCalled();
 
     scrollToSpy.mockRestore();
@@ -267,14 +255,12 @@ describe("renderNearbyList", () => {
     vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     const container = document.createElement("div");
     document.body.appendChild(container);
-    const args = [
-      container,
-      makeArticles(2),
-      () => {},
-      "en",
-      () => {},
-    ] as const;
-    renderNearbyList(...args);
+    const opts = {
+      onSelectArticle: () => {},
+      currentLang: "en" as const,
+      onLangChange: () => {},
+    };
+    renderNearbyList(container, makeArticles(2), opts);
 
     const langSelect = container.querySelector<HTMLElement>(
       ".header-lang-select",
@@ -282,7 +268,7 @@ describe("renderNearbyList", () => {
     langSelect.focus();
     expect(document.activeElement).toBe(langSelect);
 
-    renderNearbyList(...args);
+    renderNearbyList(container, makeArticles(2), opts);
     const newLangSelect = container.querySelector<HTMLElement>(
       ".header-lang-select",
     )!;
@@ -296,20 +282,18 @@ describe("renderNearbyList", () => {
     vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     const container = document.createElement("div");
     document.body.appendChild(container);
-    const args = [
-      container,
-      makeArticles(3),
-      () => {},
-      "en",
-      () => {},
-    ] as const;
-    renderNearbyList(...args);
+    const opts = {
+      onSelectArticle: () => {},
+      currentLang: "en" as const,
+      onLangChange: () => {},
+    };
+    renderNearbyList(container, makeArticles(3), opts);
 
     const items = container.querySelectorAll<HTMLElement>(".nearby-item");
     items[1].focus();
     expect(document.activeElement).toBe(items[1]);
 
-    renderNearbyList(...args);
+    renderNearbyList(container, makeArticles(3), opts);
     const newItems = container.querySelectorAll<HTMLElement>(".nearby-item");
     expect(document.activeElement).toBe(newItems[1]);
 
@@ -321,33 +305,22 @@ describe("renderNearbyList", () => {
     vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     const container = document.createElement("div");
     document.body.appendChild(container);
-    renderNearbyList(
-      container,
-      makeArticles(2),
-      () => {},
-      "en",
-      () => {},
-      () => {},
-      20,
-      false,
-      () => {},
-    );
+    const opts = {
+      onSelectArticle: () => {},
+      currentLang: "en" as const,
+      onLangChange: () => {},
+      onShowMore: () => {},
+      nextCount: 20,
+      paused: false,
+      onTogglePause: () => {},
+    };
+    renderNearbyList(container, makeArticles(2), opts);
 
     const pauseBtn = container.querySelector<HTMLElement>(".pause-toggle")!;
     pauseBtn.focus();
     expect(document.activeElement).toBe(pauseBtn);
 
-    renderNearbyList(
-      container,
-      makeArticles(2),
-      () => {},
-      "en",
-      () => {},
-      () => {},
-      20,
-      false,
-      () => {},
-    );
+    renderNearbyList(container, makeArticles(2), opts);
     const newPauseBtn = container.querySelector<HTMLElement>(".pause-toggle")!;
     expect(document.activeElement).toBe(newPauseBtn);
 
@@ -371,25 +344,18 @@ describe("renderNearbyList reconciliation", () => {
   it("reuses DOM nodes for articles present in both renders", () => {
     vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     const container = document.createElement("div");
-    renderNearbyList(
-      container,
-      makeArticles(3),
-      () => {},
-      "en",
-      () => {},
-    );
+    const opts = {
+      onSelectArticle: () => {},
+      currentLang: "en" as const,
+      onLangChange: () => {},
+    };
+    renderNearbyList(container, makeArticles(3), opts);
 
     const originalItems = Array.from(
       container.querySelectorAll(".nearby-item"),
     );
 
-    renderNearbyList(
-      container,
-      makeArticles(3),
-      () => {},
-      "en",
-      () => {},
-    );
+    renderNearbyList(container, makeArticles(3), opts);
 
     const newItems = Array.from(container.querySelectorAll(".nearby-item"));
     expect(newItems[0]).toBe(originalItems[0]);
@@ -402,13 +368,12 @@ describe("renderNearbyList reconciliation", () => {
     vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     const container = document.createElement("div");
     const original = makeArticles(3);
-    renderNearbyList(
-      container,
-      original,
-      () => {},
-      "en",
-      () => {},
-    );
+    const opts = {
+      onSelectArticle: () => {},
+      currentLang: "en" as const,
+      onLangChange: () => {},
+    };
+    renderNearbyList(container, original, opts);
 
     const originalItems = Array.from(
       container.querySelectorAll(".nearby-item"),
@@ -419,13 +384,7 @@ describe("renderNearbyList reconciliation", () => {
       ...original.slice(1),
       { title: "Article 3", lat: 49, lon: 3, distanceM: 400 },
     ];
-    renderNearbyList(
-      container,
-      updated,
-      () => {},
-      "en",
-      () => {},
-    );
+    renderNearbyList(container, updated, opts);
 
     const newItems = Array.from(
       container.querySelectorAll<HTMLElement>(".nearby-item"),
@@ -440,25 +399,18 @@ describe("renderNearbyList reconciliation", () => {
   it("updates distance badges on reused nodes", () => {
     vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     const container = document.createElement("div");
-    renderNearbyList(
-      container,
-      makeArticles(2),
-      () => {},
-      "en",
-      () => {},
-    );
+    const opts = {
+      onSelectArticle: () => {},
+      currentLang: "en" as const,
+      onLangChange: () => {},
+    };
+    renderNearbyList(container, makeArticles(2), opts);
 
     const updated = makeArticles(2).map((a) => ({
       ...a,
       distanceM: a.distanceM + 500,
     }));
-    renderNearbyList(
-      container,
-      updated,
-      () => {},
-      "en",
-      () => {},
-    );
+    renderNearbyList(container, updated, opts);
 
     const badges = container.querySelectorAll(".nearby-distance");
     expect(badges[0].textContent).toBe("600 m");
@@ -476,13 +428,11 @@ describe("updateNearbyDistances", () => {
       { title: "B", lat: 1, lon: 1, distanceM: 200 },
     ];
     const container = document.createElement("div");
-    renderNearbyList(
-      container,
-      articles,
-      () => {},
-      "en",
-      () => {},
-    );
+    renderNearbyList(container, articles, {
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
 
     const titlesBefore = Array.from(
       container.querySelectorAll(".nearby-name"),

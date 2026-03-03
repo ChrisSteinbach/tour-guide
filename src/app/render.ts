@@ -202,18 +202,32 @@ function reconcileListItems(
   ul.replaceChildren(...newChildren);
 }
 
+export interface RenderNearbyListOptions {
+  onSelectArticle: (article: NearbyArticle) => void;
+  currentLang: Lang;
+  onLangChange: (lang: Lang) => void;
+  onShowMore?: () => void;
+  nextCount?: number;
+  paused?: boolean;
+  onTogglePause?: () => void;
+}
+
 /** Build and replace the contents of `container` with a nearby-articles list. */
 export function renderNearbyList(
   container: HTMLElement,
   articles: NearbyArticle[],
-  onSelectArticle: (article: NearbyArticle) => void,
-  currentLang: Lang,
-  onLangChange: (lang: Lang) => void,
-  onShowMore?: () => void,
-  nextCount?: number,
-  paused?: boolean,
-  onTogglePause?: () => void,
+  options: RenderNearbyListOptions,
 ): void {
+  const {
+    onSelectArticle,
+    currentLang,
+    onLangChange,
+    onShowMore,
+    nextCount,
+    paused,
+    onTogglePause,
+  } = options;
+
   const existingList =
     container.querySelector<HTMLUListElement>(".nearby-list");
 
