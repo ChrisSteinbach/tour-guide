@@ -98,29 +98,35 @@ The `requery` effect is notable: it re-enters the dispatch loop synchronously by
 
 ## Transition Diagram
 
-```
-                         ┌──────────┐
-                         │ welcome  │
-                         └────┬─────┘
-                              │ start
-                  ┌───────────┼───────────┐
-                  ▼           ▼           ▼
-           ┌─────────┐ ┌──────────┐ ┌────────────┐
-           │browsing │ │ locating │ │downloading │◄──── langChanged
-           └─────────┘ └────┬─────┘ └──┬──┬──────┘     (from any
-                 ▲          │           │  │             post-welcome
-                 │          │           │  │useMockData  phase)
-                 │    ┌─────┴─────┐  ┌─┘  │(query=tiled)
-                 │    ▼           ▼  ▼    ▼
-                 │ ┌─────┐ ┌──────────────┐ ┌────────────────┐
-                 │ │error│ │ loadingTiles │ │dataUnavailable │
-                 │ └──┬──┘ └──────┬───────┘ └────────────────┘
-                 │    │           │
-                 │    │useMockData│tileLoaded
-                 └────┴───────────┘
+```mermaid
+stateDiagram-v2
+    [*] --> welcome
 
-           browsing ◄──► detail
-              selectArticle / back
+    welcome --> browsing : start (query + position)
+    welcome --> locating : start (query, no position)
+    welcome --> downloading : start (no query)
+
+    downloading --> browsing : tileIndexLoaded (has tiles)
+    downloading --> loadingTiles : tileIndexLoaded (has position)
+    downloading --> locating : tileIndexLoaded (no position)
+    downloading --> dataUnavailable : tileIndexLoaded (null index)
+    downloading --> browsing : useMockData (query=tiled)
+
+    locating --> loadingTiles : position (no tiles)
+    locating --> browsing : position (tiles available)
+    locating --> error : gpsError
+
+    loadingTiles --> browsing : tileLoaded
+    error --> browsing : useMockData (query=tiled)
+    error --> downloading : useMockData (query=none)
+
+    browsing --> detail : selectArticle
+    detail --> browsing : back
+
+    note right of downloading
+        langChanged → downloading
+        from any post-welcome phase
+    end note
 ```
 
 ### Startup flow
