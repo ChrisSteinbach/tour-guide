@@ -27,6 +27,50 @@ const LANDMARKS: Record<Lang, Landmark[]> = {
     { title: "Statue of Liberty", lat: 40.6892, lon: -74.0445 },
     { title: "Sydney Opera House", lat: -33.8568, lon: 151.2153 },
   ],
+  de: [
+    { title: "Eiffelturm", lat: 48.8584, lon: 2.2945 },
+    { title: "Brandenburger Tor", lat: 52.5163, lon: 13.3777 },
+  ],
+  fr: [
+    { title: "Tour Eiffel", lat: 48.8584, lon: 2.2945 },
+    { title: "Arc de triomphe de l'Étoile", lat: 48.8738, lon: 2.295 },
+  ],
+  es: [
+    { title: "Torre Eiffel", lat: 48.8584, lon: 2.2945 },
+    { title: "Sagrada Familia", lat: 41.4036, lon: 2.1744 },
+  ],
+  it: [
+    { title: "Torre Eiffel", lat: 48.8584, lon: 2.2945 },
+    { title: "Colosseo", lat: 41.8902, lon: 12.4922 },
+  ],
+  ru: [
+    { title: "Эйфелева башня", lat: 48.8584, lon: 2.2945 },
+    { title: "Московский Кремль", lat: 55.752, lon: 37.6175 },
+  ],
+  zh: [
+    { title: "埃菲尔铁塔", lat: 48.8584, lon: 2.2945 },
+    { title: "故宫", lat: 39.9163, lon: 116.3972 },
+  ],
+  pt: [
+    { title: "Torre Eiffel", lat: 48.8584, lon: 2.2945 },
+    { title: "Cristo Redentor", lat: -22.9519, lon: -43.2105 },
+  ],
+  pl: [
+    { title: "Wieża Eiffla", lat: 48.8584, lon: 2.2945 },
+    { title: "Zamek Królewski w Warszawie", lat: 52.2479, lon: 21.0143 },
+  ],
+  nl: [
+    { title: "Eiffeltoren", lat: 48.8584, lon: 2.2945 },
+    { title: "Rijksmuseum", lat: 52.36, lon: 4.8852 },
+  ],
+  ko: [
+    { title: "에펠탑", lat: 48.8584, lon: 2.2945 },
+    { title: "경복궁", lat: 37.5796, lon: 126.977 },
+  ],
+  ar: [
+    { title: "برج إيفل", lat: 48.8584, lon: 2.2945 },
+    { title: "أهرامات الجيزة", lat: 29.9792, lon: 31.1342 },
+  ],
   sv: [
     { title: "Eiffeltornet", lat: 48.8584, lon: 2.2945 },
     { title: "Globen", lat: 59.2939, lon: 18.0834 },

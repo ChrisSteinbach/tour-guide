@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       langs:
-        description: 'Languages to process (JSON array, e.g. ["sv"])'
-        default: '["en", "sv", "ja"]'
+        description: 'Languages to process (JSON array, e.g. ["sv"]). Omit to process all supported languages.'
+        default: ""
         type: string
   schedule:
     # Monthly on the 1st at 03:00 UTC
@@ -16,13 +16,29 @@ permissions:
   actions: write
 
 jobs:
+  read-langs:
+    runs-on: ubuntu-latest
+    outputs:
+      langs: ${{ steps.parse.outputs.langs }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: src/lang.ts
+          sparse-checkout-cone-mode: false
+      - id: parse
+        name: Read supported languages from src/lang.ts
+        run: |
+          langs=$(sed -n '/SUPPORTED_LANGS = \[/,/\] as const/p' src/lang.ts | grep -oP '"[a-z]{2}"' | tr -d '"' | jq -R . | jq -sc .)
+          echo "langs=$langs" >> "$GITHUB_OUTPUT"
+
   build-data:
+    needs: read-langs
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
     strategy:
       matrix:
-        lang: ${{ fromJSON(inputs.langs || '["en", "sv", "ja"]') }}
+        lang: ${{ fromJSON(inputs.langs || needs.read-langs.outputs.langs) }}
       max-parallel: 3
 
     steps:
