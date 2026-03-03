@@ -108,15 +108,6 @@ export async function validateCanary(
   lang: Lang,
 ): Promise<CanaryResult> {
   const landmarks = LANDMARKS[lang];
-  if (!landmarks || landmarks.length === 0) {
-    return {
-      passed: true,
-      checked: 0,
-      matched: 0,
-      mismatches: [],
-      missing: [],
-    };
-  }
 
   const wantedTitles = new Set(landmarks.map((l) => l.title));
   const found = new Map<string, { lat: number; lon: number }>();
