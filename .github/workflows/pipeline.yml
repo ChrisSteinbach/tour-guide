@@ -105,6 +105,35 @@ jobs:
           # Overwrite only the languages that were rebuilt
           cp artifacts/*/tiles-*.tar.gz data/
 
+      - name: Check total tile size against GitHub Pages limit
+        run: |
+          echo "## Tile Size Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Language | Compressed | Uncompressed |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|----------|-----------|--------------|" >> "$GITHUB_STEP_SUMMARY"
+
+          total_uncompressed=0
+          for archive in data/tiles-*.tar.gz; do
+            lang=$(basename "$archive" | sed 's/^tiles-//;s/\.tar\.gz$//')
+            compressed=$(stat --format=%s "$archive")
+            uncompressed=$(gzip -l "$archive" | awk 'NR==2{print $2}')
+            total_uncompressed=$((total_uncompressed + uncompressed))
+            echo "| $lang | $(numfmt --to=iec "$compressed") | $(numfmt --to=iec "$uncompressed") |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Total uncompressed: $(numfmt --to=iec $total_uncompressed)**" >> "$GITHUB_STEP_SUMMARY"
+
+          warn_limit=838860800   # 800 MiB
+          hard_limit=996147200   # 950 MiB
+
+          if [ "$total_uncompressed" -gt "$hard_limit" ]; then
+            echo "::error::Total uncompressed tile size ($(numfmt --to=iec $total_uncompressed)) exceeds 950 MiB hard limit — too large for GitHub Pages"
+            exit 1
+          elif [ "$total_uncompressed" -gt "$warn_limit" ]; then
+            echo "::warning::Total uncompressed tile size ($(numfmt --to=iec $total_uncompressed)) exceeds 80% of GitHub Pages 1 GiB limit"
+          fi
+
       - name: Publish data release
         env:
           GH_TOKEN: ${{ github.token }}
