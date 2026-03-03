@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { deserializeBinary } from "../geometry/serialization.js";
-import { collectTileArticles } from "./build.js";
+import { collectTileArticles, buildArticleIndex } from "./build.js";
 import type { TileIndex } from "./build.js";
 import type { Article } from "./extract-dump.js";
 
@@ -27,21 +27,25 @@ describe("collectTileArticles", () => {
     { title: "outside", lat: 7, lon: 2 }, // 3° below south — outside buffer
     { title: "edge-exact", lat: 10, lon: 0 }, // on south-west corner
   ];
+  const index = buildArticleIndex(articles);
 
   it("separates native and buffer articles", () => {
-    const { native, all } = collectTileArticles(articles, row, col);
+    const { native, all } = collectTileArticles(index, row, col);
 
     expect(native.map((a) => a.title)).toEqual(["inside", "edge-exact"]);
-    expect(all.map((a) => a.title)).toEqual([
-      "inside",
-      "buffer-south",
-      "buffer-north",
-      "edge-exact",
-    ]);
+    expect(all.map((a) => a.title)).toEqual(
+      expect.arrayContaining([
+        "inside",
+        "buffer-south",
+        "buffer-north",
+        "edge-exact",
+      ]),
+    );
+    expect(all).toHaveLength(4);
   });
 
   it("excludes articles beyond buffer zone", () => {
-    const { all } = collectTileArticles(articles, row, col);
+    const { all } = collectTileArticles(index, row, col);
     expect(all.find((a) => a.title === "outside")).toBeUndefined();
   });
 
@@ -52,8 +56,12 @@ describe("collectTileArticles", () => {
       { title: "on-west", lat: 12, lon: 0 }, // native (>= west)
       { title: "on-east", lat: 12, lon: 5 }, // NOT native (>= east)
     ];
-    const { native } = collectTileArticles(edgeArticles, row, col);
-    expect(native.map((a) => a.title)).toEqual(["on-south", "on-west"]);
+    const edgeIndex = buildArticleIndex(edgeArticles);
+    const { native } = collectTileArticles(edgeIndex, row, col);
+    expect(native.map((a) => a.title)).toEqual(
+      expect.arrayContaining(["on-south", "on-west"]),
+    );
+    expect(native).toHaveLength(2);
   });
 });
 
