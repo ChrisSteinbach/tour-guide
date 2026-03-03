@@ -91,14 +91,35 @@ async function readArticles(
 // ---------- Tiling ----------
 
 const MIN_ARTICLES = 4;
+const TILE_ROWS = 180 / GRID_DEG;
+const TILE_COLS = 360 / GRID_DEG;
 
 // Re-export for build.test.ts
 export { tileFor } from "../tiles.js";
 export type { TileEntry, TileIndex } from "../tiles.js";
 
+/** Spatial index mapping tile IDs to their articles. */
+export type ArticleIndex = Map<string, Article[]>;
+
+/** Build a spatial index of articles keyed by tile ID. */
+export function buildArticleIndex(articles: Article[]): ArticleIndex {
+  const index: ArticleIndex = new Map();
+  for (const a of articles) {
+    const { row, col } = tileFor(a.lat, a.lon);
+    const id = tileId(row, col);
+    let bucket = index.get(id);
+    if (!bucket) {
+      bucket = [];
+      index.set(id, bucket);
+    }
+    bucket.push(a);
+  }
+  return index;
+}
+
 /** Collect articles for a tile: native articles + buffer zone from adjacent tiles. */
 export function collectTileArticles(
-  articles: Article[],
+  index: ArticleIndex,
   row: number,
   col: number,
 ): { native: Article[]; all: Article[] } {
@@ -117,11 +138,26 @@ export function collectTileArticles(
   const native: Article[] = [];
   const all: Article[] = [];
 
-  for (const a of articles) {
-    if (isInBounds(a.lat, a.lon, bufferedBounds)) {
-      all.push(a);
-      if (a.lat >= south && a.lat < north && a.lon >= west && a.lon < east) {
-        native.push(a);
+  for (let dr = -1; dr <= 1; dr++) {
+    const nr = row + dr;
+    if (nr < 0 || nr >= TILE_ROWS) continue;
+    for (let dc = -1; dc <= 1; dc++) {
+      const nc = col + dc;
+      if (nc < 0 || nc >= TILE_COLS) continue;
+      const bucket = index.get(tileId(nr, nc));
+      if (!bucket) continue;
+      for (const a of bucket) {
+        if (isInBounds(a.lat, a.lon, bufferedBounds)) {
+          all.push(a);
+          if (
+            a.lat >= south &&
+            a.lat < north &&
+            a.lon >= west &&
+            a.lon < east
+          ) {
+            native.push(a);
+          }
+        }
       }
     }
   }
@@ -163,13 +199,12 @@ async function buildTiled(articles: Article[], lang: Lang): Promise<void> {
 
   // Step 2: Assign articles to tiles
   console.log("\nStep 2: Assigning articles to tiles...");
+  const articleIndex = buildArticleIndex(articles);
   const tileMap = new Map<string, { row: number; col: number }>();
-  for (const a of articles) {
-    const { row, col } = tileFor(a.lat, a.lon);
-    const id = tileId(row, col);
-    if (!tileMap.has(id)) {
-      tileMap.set(id, { row, col });
-    }
+  for (const id of articleIndex.keys()) {
+    const bucket = articleIndex.get(id)!;
+    const { row, col } = tileFor(bucket[0].lat, bucket[0].lon);
+    tileMap.set(id, { row, col });
   }
   console.log(`  → ${tileMap.size} populated tiles`);
 
@@ -183,7 +218,7 @@ async function buildTiled(articles: Article[], lang: Lang): Promise<void> {
   let skipped = 0;
 
   for (const [id, { row, col }] of tileMap) {
-    const { native, all } = collectTileArticles(articles, row, col);
+    const { native, all } = collectTileArticles(articleIndex, row, col);
 
     if (all.length < MIN_ARTICLES) {
       skipped++;
