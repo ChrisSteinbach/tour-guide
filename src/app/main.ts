@@ -106,17 +106,15 @@ function getStoredLang(): Lang {
 
 function renderBrowsingListDOM(): void {
   if (appState.phase.phase !== "browsing") return;
-  renderNearbyList(
-    app,
-    appState.phase.articles,
-    (article) => dispatch({ type: "selectArticle", article }),
-    appState.currentLang,
-    (lang) => dispatch({ type: "langChanged", lang }),
-    () => dispatch({ type: "showMore" }),
-    getNextTier(appState.phase.nearbyCount),
-    appState.phase.paused,
-    () => dispatch({ type: "togglePause" }),
-  );
+  renderNearbyList(app, appState.phase.articles, {
+    onSelectArticle: (article) => dispatch({ type: "selectArticle", article }),
+    currentLang: appState.currentLang,
+    onLangChange: (lang) => dispatch({ type: "langChanged", lang }),
+    onShowMore: () => dispatch({ type: "showMore" }),
+    nextCount: getNextTier(appState.phase.nearbyCount),
+    paused: appState.phase.paused,
+    onTogglePause: () => dispatch({ type: "togglePause" }),
+  });
 }
 
 function renderPhase(): void {
