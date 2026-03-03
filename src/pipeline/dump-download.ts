@@ -10,12 +10,10 @@ import { Readable } from "node:stream";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import type { Lang } from "../lang.js";
 
-/** Map language codes to wiki prefixes. */
-const WIKI_PREFIX: Record<Lang, string> = {
-  en: "enwiki",
-  sv: "svwiki",
-  ja: "jawiki",
-};
+/** Derive wiki prefix from language code (e.g. "en" → "enwiki"). */
+function wikiPrefix(lang: Lang): string {
+  return `${lang}wiki`;
+}
 
 /** Dump tables we need. */
 export const DUMP_TABLES = ["geo_tags", "page"] as const;
@@ -23,7 +21,7 @@ export type DumpTable = (typeof DUMP_TABLES)[number];
 
 /** Build the URL for a dump file. */
 export function dumpUrl(lang: Lang, table: DumpTable): string {
-  const wiki = WIKI_PREFIX[lang];
+  const wiki = wikiPrefix(lang);
   return `https://dumps.wikimedia.org/${wiki}/latest/${wiki}-latest-${table}.sql.gz`;
 }
 
@@ -33,7 +31,7 @@ export function dumpPath(
   table: DumpTable,
   dir = "data/dumps",
 ): string {
-  const wiki = WIKI_PREFIX[lang];
+  const wiki = wikiPrefix(lang);
   return `${dir}/${wiki}-latest-${table}.sql.gz`;
 }
 

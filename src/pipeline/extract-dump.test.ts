@@ -314,10 +314,14 @@ describe("extractDump", () => {
   it("deduplicates by title", async () => {
     const dumpsDir = writeDumps(
       "dumps-dedup",
-      [{ id: 100, title: "Same_Place" }],
+      [
+        { id: 100, title: "Same_Place" },
+        { id: 200, title: "Eiffeltornet" },
+      ],
       [
         { pageId: 100, lat: 48.0, lon: 2.0 },
         { pageId: 100, lat: 49.0, lon: 3.0 },
+        { pageId: 200, lat: 48.8584, lon: 2.2945 },
       ],
     );
 
@@ -330,6 +334,7 @@ describe("extractDump", () => {
       outputPath,
     });
 
-    expect(result.articleCount).toBe(1);
+    // Same_Place deduped to 1, plus Eiffeltornet (canary landmark)
+    expect(result.articleCount).toBe(2);
   });
 });

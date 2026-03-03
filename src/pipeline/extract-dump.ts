@@ -237,6 +237,16 @@ export async function extractDump(opts: ExtractDumpOptions): Promise<{
     if (canary.missing.length > 0) {
       for (const m of canary.missing) console.error(`  ⚠ ${m}`);
     }
+    if (canary.matched === 0 && !bounds) {
+      throw new Error(
+        `Pipeline canary failed for ${lang}: 0/${canary.checked} landmarks matched — canary provides no coverage`,
+      );
+    }
+    if (canary.matched < canary.checked) {
+      console.error(
+        `  ⚠ Canary coverage degraded: only ${canary.matched}/${canary.checked} landmarks matched`,
+      );
+    }
     if (!canary.passed) {
       for (const f of canary.mismatches) console.error(`  ✗ ${f}`);
       throw new Error(

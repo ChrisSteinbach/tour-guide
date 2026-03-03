@@ -2,7 +2,6 @@ import { writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { validateCanary } from "./canary.js";
-import type { Lang } from "../lang.js";
 
 const testDir = join(tmpdir(), "canary-test-" + Date.now());
 
@@ -63,11 +62,16 @@ describe("validateCanary", () => {
     ]);
   });
 
-  it("skips validation for languages with no landmarks", async () => {
-    const path = writeNdjson("empty-lang.json", []);
-    const result = await validateCanary(path, "xx" as Lang);
+  it("passes with zero matches (caller must enforce coverage)", async () => {
+    const path = writeNdjson("no-match.json", [
+      { title: "Unrelated Article", lat: 10, lon: 20 },
+    ]);
+
+    const result = await validateCanary(path, "en");
     expect(result.passed).toBe(true);
-    expect(result.checked).toBe(0);
+    expect(result.matched).toBe(0);
+    expect(result.checked).toBe(3);
+    expect(result.missing).toHaveLength(3);
   });
 
   it("validates Swedish landmarks", async () => {

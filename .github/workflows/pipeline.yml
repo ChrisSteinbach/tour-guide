@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       langs:
-        description: 'Languages to process (JSON array, e.g. ["sv"])'
-        default: '["en", "sv", "ja"]'
+        description: 'Languages to process (JSON array, e.g. ["sv"]). Omit to process all supported languages.'
+        default: ""
         type: string
   schedule:
     # Monthly on the 1st at 03:00 UTC
@@ -16,13 +16,32 @@ permissions:
   actions: write
 
 jobs:
+  read-langs:
+    runs-on: ubuntu-latest
+    outputs:
+      langs: ${{ steps.parse.outputs.langs }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: src/lang.ts
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: parse
+        name: Read supported languages from src/lang.ts
+        run: |
+          langs=$(npx --yes tsx -e "import { SUPPORTED_LANGS } from './src/lang.ts'; console.log(JSON.stringify(SUPPORTED_LANGS))")
+          echo "langs=$langs" >> "$GITHUB_OUTPUT"
+
   build-data:
+    needs: read-langs
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
     strategy:
       matrix:
-        lang: ${{ fromJSON(inputs.langs || '["en", "sv", "ja"]') }}
+        lang: ${{ fromJSON(inputs.langs || needs.read-langs.outputs.langs) }}
       max-parallel: 3
 
     steps:
@@ -85,6 +104,35 @@ jobs:
         run: |
           # Overwrite only the languages that were rebuilt
           cp artifacts/*/tiles-*.tar.gz data/
+
+      - name: Check total tile size against GitHub Pages limit
+        run: |
+          echo "## Tile Size Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Language | Compressed | Uncompressed |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|----------|-----------|--------------|" >> "$GITHUB_STEP_SUMMARY"
+
+          total_uncompressed=0
+          for archive in data/tiles-*.tar.gz; do
+            lang=$(basename "$archive" | sed 's/^tiles-//;s/\.tar\.gz$//')
+            compressed=$(stat --format=%s "$archive")
+            uncompressed=$(gzip -l "$archive" | awk 'NR==2{print $2}')
+            total_uncompressed=$((total_uncompressed + uncompressed))
+            echo "| $lang | $(numfmt --to=iec "$compressed") | $(numfmt --to=iec "$uncompressed") |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Total uncompressed: $(numfmt --to=iec $total_uncompressed)**" >> "$GITHUB_STEP_SUMMARY"
+
+          warn_limit=838860800   # 800 MiB
+          hard_limit=996147200   # 950 MiB
+
+          if [ "$total_uncompressed" -gt "$hard_limit" ]; then
+            echo "::error::Total uncompressed tile size ($(numfmt --to=iec $total_uncompressed)) exceeds 950 MiB hard limit — too large for GitHub Pages"
+            exit 1
+          elif [ "$total_uncompressed" -gt "$warn_limit" ]; then
+            echo "::warning::Total uncompressed tile size ($(numfmt --to=iec $total_uncompressed)) exceeds 80% of GitHub Pages 1 GiB limit"
+          fi
 
       - name: Publish data release
         env:
