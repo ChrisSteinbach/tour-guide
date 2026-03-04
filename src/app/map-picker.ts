@@ -42,7 +42,7 @@ export function createMapPicker(
       confirmBtn = document.createElement("button");
       confirmBtn.className = "map-picker-confirm";
       confirmBtn.textContent = "Use this location";
-      container.parentElement?.appendChild(confirmBtn);
+      container.appendChild(confirmBtn);
     }
 
     confirmBtn.onclick = () => onPick(lat, lng);
