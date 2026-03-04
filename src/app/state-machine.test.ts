@@ -28,6 +28,7 @@ function makeState(overrides: Partial<AppState> = {}): AppState {
     phase: { phase: "welcome" },
     query: { mode: "none" },
     position: null,
+    positionSource: null,
     currentLang: "en",
     loadGeneration: 0,
     loadingTiles: new Set(),
@@ -116,6 +117,7 @@ function browsingState(
     nearbyCount?: number;
     paused?: boolean;
     lastQueryPos?: UserPosition;
+    positionSource?: "gps" | "picked" | null;
   } = {},
 ): AppState {
   const {
@@ -526,6 +528,67 @@ describe("togglePause event", () => {
   it("no-ops when not browsing", () => {
     const state = makeState();
     const { next, effects } = transition(state, { type: "togglePause" });
+    expect(next).toBe(state);
+    expect(effects).toEqual([]);
+  });
+});
+
+// ── positionSource tracking ───────────────────────────────────
+
+describe("positionSource tracking", () => {
+  it("pickPosition sets positionSource to picked", () => {
+    const state = makeState({ query: sampleQuery });
+    const { next } = transition(state, {
+      type: "pickPosition",
+      position: paris,
+    });
+    expect(next.positionSource).toBe("picked");
+  });
+
+  it("position event sets positionSource to gps", () => {
+    const state = makeState();
+    const { next } = transition(state, { type: "position", pos: paris });
+    expect(next.positionSource).toBe("gps");
+  });
+
+  it("positionSource defaults to null", () => {
+    const state = makeState();
+    expect(state.positionSource).toBeNull();
+  });
+});
+
+// ── useGps event ─────────────────────────────────────────────
+
+describe("useGps event", () => {
+  it("sets positionSource to gps and emits startGps from browsing", () => {
+    const state = browsingState({ positionSource: "picked" });
+    const { next, effects } = transition(state, { type: "useGps" });
+    expect(next.positionSource).toBe("gps");
+    expect(effectTypes(effects)).toContain("startGps");
+  });
+
+  it("works from detail phase", () => {
+    const state = makeState({
+      query: sampleQuery,
+      position: paris,
+      positionSource: "picked",
+      phase: {
+        phase: "detail",
+        article: defaultBrowsingArticles[0],
+        articles: defaultBrowsingArticles,
+        nearbyCount: 10,
+        paused: false,
+        lastQueryPos: paris,
+      },
+    });
+    const { next, effects } = transition(state, { type: "useGps" });
+    expect(next.positionSource).toBe("gps");
+    expect(effectTypes(effects)).toContain("startGps");
+  });
+
+  it("no-ops when not browsing or detail", () => {
+    const state = makeState({ phase: { phase: "locating" } });
+    const { next, effects } = transition(state, { type: "useGps" });
     expect(next).toBe(state);
     expect(effects).toEqual([]);
   });

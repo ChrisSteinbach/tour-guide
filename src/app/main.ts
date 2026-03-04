@@ -45,6 +45,7 @@ let appState: AppState = {
   phase: { phase: "welcome" },
   query: { mode: "none" },
   position: null,
+  positionSource: null,
   currentLang: getStoredLang(),
   loadGeneration: 0,
   loadingTiles: new Set(),
@@ -150,6 +151,7 @@ function showMapPicker(): void {
 
 function renderBrowsingListDOM(): void {
   if (appState.phase.phase !== "browsing") return;
+  const isGps = appState.positionSource !== "picked";
   renderNearbyList(app, appState.phase.articles, {
     onSelectArticle: (article) => dispatch({ type: "selectArticle", article }),
     currentLang: appState.currentLang,
@@ -157,7 +159,14 @@ function renderBrowsingListDOM(): void {
     onShowMore: () => dispatch({ type: "showMore" }),
     nextCount: getNextTier(appState.phase.nearbyCount),
     paused: appState.phase.paused,
-    onTogglePause: () => dispatch({ type: "togglePause" }),
+    ...(isGps
+      ? {
+          onTogglePause: () => dispatch({ type: "togglePause" }),
+          onPickLocation: showMapPicker,
+        }
+      : {
+          onUseGps: () => dispatch({ type: "useGps" }),
+        }),
   });
 }
 

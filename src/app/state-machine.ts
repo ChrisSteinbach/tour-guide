@@ -79,6 +79,7 @@ export interface AppState {
   phase: Phase;
   query: QueryState;
   position: UserPosition | null;
+  positionSource: "gps" | "picked" | null;
   currentLang: Lang;
   loadGeneration: number;
   loadingTiles: Set<string>;
@@ -109,6 +110,7 @@ export type Event =
   | { type: "back" }
   | { type: "showMore" }
   | { type: "togglePause" }
+  | { type: "useGps" }
   | {
       type: "queryResult";
       articles: NearbyArticle[];
@@ -297,6 +299,16 @@ export function transition(state: AppState, event: Event): TransitionResult {
           phase: { ...state.phase, paused: nowPaused },
         },
         effects: [{ type: "renderBrowsingList" }],
+      };
+    }
+
+    case "useGps": {
+      if (state.phase.phase !== "browsing" && state.phase.phase !== "detail") {
+        return { next: state, effects: [] };
+      }
+      return {
+        next: { ...state, positionSource: "gps" },
+        effects: [{ type: "startGps" }],
       };
     }
 
@@ -523,7 +535,11 @@ function handlePickPosition(
   event: { type: "pickPosition"; position: UserPosition },
 ): TransitionResult {
   const effects: Effect[] = [{ type: "stopGps" }];
-  const next: AppState = { ...state, position: event.position };
+  const next: AppState = {
+    ...state,
+    position: event.position,
+    positionSource: "picked",
+  };
 
   if (state.query.mode === "none") {
     return {
@@ -551,7 +567,11 @@ function handlePosition(
   state: AppState,
   event: { type: "position"; pos: UserPosition },
 ): TransitionResult {
-  const next: AppState = { ...state, position: event.pos };
+  const next: AppState = {
+    ...state,
+    position: event.pos,
+    positionSource: "gps",
+  };
   const effects: Effect[] = [];
 
   if (state.query.mode === "tiled") {

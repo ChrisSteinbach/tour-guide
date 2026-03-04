@@ -90,6 +90,26 @@ body {
   background: rgba(255, 255, 255, 0.25);
 }
 
+.position-toggle {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  opacity: 0.9;
+}
+
+.position-toggle:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.position-toggle:active {
+  background: rgba(255, 255, 255, 0.25);
+}
+
 .nearby-list {
   list-style: none;
   padding: 8px;

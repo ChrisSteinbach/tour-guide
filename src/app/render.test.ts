@@ -84,6 +84,46 @@ describe("renderNearbyHeader", () => {
     btn.click();
     expect(onTogglePause).toHaveBeenCalledOnce();
   });
+
+  it("renders pick-location button when onPickLocation provided", () => {
+    const onPickLocation = vi.fn();
+    const header = renderNearbyHeader(
+      3,
+      "en",
+      () => {},
+      false,
+      undefined,
+      onPickLocation,
+    );
+    const btn = header.querySelector(".position-toggle") as HTMLButtonElement;
+    expect(btn).not.toBeNull();
+    expect(btn.getAttribute("aria-label")).toBe("Pick location on map");
+    btn.click();
+    expect(onPickLocation).toHaveBeenCalledOnce();
+  });
+
+  it("renders use-GPS button when onUseGps provided", () => {
+    const onUseGps = vi.fn();
+    const header = renderNearbyHeader(
+      3,
+      "en",
+      () => {},
+      false,
+      undefined,
+      undefined,
+      onUseGps,
+    );
+    const btn = header.querySelector(".position-toggle") as HTMLButtonElement;
+    expect(btn).not.toBeNull();
+    expect(btn.getAttribute("aria-label")).toBe("Use GPS location");
+    btn.click();
+    expect(onUseGps).toHaveBeenCalledOnce();
+  });
+
+  it("omits position-toggle when neither callback provided", () => {
+    const header = renderNearbyHeader(3, "en", () => {}, false);
+    expect(header.querySelector(".position-toggle")).toBeNull();
+  });
 });
 
 // ── renderShowMoreButton ─────────────────────────────────────
@@ -298,6 +338,30 @@ describe("renderNearbyList", () => {
     renderNearbyList(container, makeArticles(3), opts);
     const newItems = container.querySelectorAll<HTMLElement>(".nearby-item");
     expect(document.activeElement).toBe(newItems[1]);
+
+    document.body.removeChild(container);
+    vi.restoreAllMocks();
+  });
+
+  it("restores focus to position-toggle button on re-render", () => {
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const opts = {
+      onSelectArticle: () => {},
+      currentLang: "en" as const,
+      onLangChange: () => {},
+      onPickLocation: () => {},
+    };
+    renderNearbyList(container, makeArticles(2), opts);
+
+    const posBtn = container.querySelector<HTMLElement>(".position-toggle")!;
+    posBtn.focus();
+    expect(document.activeElement).toBe(posBtn);
+
+    renderNearbyList(container, makeArticles(2), opts);
+    const newPosBtn = container.querySelector<HTMLElement>(".position-toggle")!;
+    expect(document.activeElement).toBe(newPosBtn);
 
     document.body.removeChild(container);
     vi.restoreAllMocks();

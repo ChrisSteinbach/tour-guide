@@ -1,17 +1,6 @@
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-// Fix Leaflet's broken default marker icon paths in bundlers
-import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
-import markerIcon from "leaflet/dist/images/marker-icon.png";
-import markerShadow from "leaflet/dist/images/marker-shadow.png";
-
-L.Icon.Default.mergeOptions({
-  iconUrl: markerIcon,
-  iconRetinaUrl: markerIcon2x,
-  shadowUrl: markerShadow,
-});
-
 export interface MapPickerHandle {
   destroy(): void;
 }
@@ -32,7 +21,7 @@ export function createMapPicker(
     maxZoom: 19,
   }).addTo(map);
 
-  let marker: L.Marker | null = null;
+  let marker: L.CircleMarker | null = null;
   let confirmBtn: HTMLButtonElement | null = null;
 
   map.on("click", (e: L.LeafletMouseEvent) => {
@@ -41,7 +30,12 @@ export function createMapPicker(
     if (marker) {
       marker.setLatLng([lat, lng]);
     } else {
-      marker = L.marker([lat, lng]).addTo(map);
+      marker = L.circleMarker([lat, lng], {
+        radius: 8,
+        color: "#1a73e8",
+        fillColor: "#1a73e8",
+        fillOpacity: 0.8,
+      }).addTo(map);
     }
 
     if (!confirmBtn) {

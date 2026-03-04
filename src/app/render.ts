@@ -8,6 +8,7 @@ import type { Lang } from "../lang";
 type FocusInfo =
   | { type: "langSelect" }
   | { type: "pauseToggle" }
+  | { type: "positionToggle" }
   | { type: "showMore" }
   | { type: "article"; title: string };
 
@@ -18,6 +19,8 @@ function captureFocus(container: HTMLElement): FocusInfo | null {
   if (active.classList.contains("header-lang-select"))
     return { type: "langSelect" };
   if (active.classList.contains("pause-toggle")) return { type: "pauseToggle" };
+  if (active.classList.contains("position-toggle"))
+    return { type: "positionToggle" };
   if (active.classList.contains("show-more")) return { type: "showMore" };
 
   const item = (active as HTMLElement).closest<HTMLElement>(".nearby-item");
@@ -37,6 +40,9 @@ function restoreFocus(container: HTMLElement, info: FocusInfo | null): void {
       break;
     case "pauseToggle":
       target = container.querySelector(".pause-toggle");
+      break;
+    case "positionToggle":
+      target = container.querySelector(".position-toggle");
       break;
     case "showMore":
       target = container.querySelector(".show-more");
@@ -69,6 +75,8 @@ export function renderNearbyHeader(
   onLangChange: (lang: Lang) => void,
   paused: boolean,
   onTogglePause?: () => void,
+  onPickLocation?: () => void,
+  onUseGps?: () => void,
 ): HTMLElement {
   const header = document.createElement("header");
   header.className = "app-header";
@@ -97,6 +105,24 @@ export function renderNearbyHeader(
     pauseBtn.textContent = paused ? "\u25B6" : "\u23F8";
     pauseBtn.addEventListener("click", onTogglePause);
     headerControls.appendChild(pauseBtn);
+  }
+
+  if (onPickLocation) {
+    const posBtn = document.createElement("button");
+    posBtn.className = "position-toggle";
+    posBtn.setAttribute("aria-label", "Pick location on map");
+    posBtn.textContent = "\uD83D\uDCCD"; // 📍
+    posBtn.addEventListener("click", onPickLocation);
+    headerControls.appendChild(posBtn);
+  }
+
+  if (onUseGps) {
+    const gpsBtn = document.createElement("button");
+    gpsBtn.className = "position-toggle";
+    gpsBtn.setAttribute("aria-label", "Use GPS location");
+    gpsBtn.textContent = "\uD83D\uDEF0\uFE0F"; // 🛰️
+    gpsBtn.addEventListener("click", onUseGps);
+    headerControls.appendChild(gpsBtn);
   }
 
   const langSelect = document.createElement("select");
@@ -210,6 +236,8 @@ export interface RenderNearbyListOptions {
   nextCount?: number;
   paused?: boolean;
   onTogglePause?: () => void;
+  onPickLocation?: () => void;
+  onUseGps?: () => void;
 }
 
 /** Build and replace the contents of `container` with a nearby-articles list. */
@@ -226,6 +254,8 @@ export function renderNearbyList(
     nextCount,
     paused,
     onTogglePause,
+    onPickLocation,
+    onUseGps,
   } = options;
 
   const existingList =
@@ -241,6 +271,8 @@ export function renderNearbyList(
       onLangChange,
       paused ?? false,
       onTogglePause,
+      onPickLocation,
+      onUseGps,
     );
 
     const list = document.createElement("ul");
@@ -267,6 +299,8 @@ export function renderNearbyList(
     onLangChange,
     paused ?? false,
     onTogglePause,
+    onPickLocation,
+    onUseGps,
   );
   if (oldHeader) {
     oldHeader.replaceWith(newHeader);
