@@ -68,8 +68,8 @@ const LANDMARKS: Record<Lang, Landmark[]> = {
     { title: "경복궁", lat: 37.5796, lon: 126.977 },
   ],
   ar: [
-    { title: "برج إيفل", lat: 48.8584, lon: 2.2945 },
-    { title: "أهرامات الجيزة", lat: 29.9792, lon: 31.1342 },
+    { title: "الجامع الأموي (دمشق)", lat: 33.5119, lon: 36.3067 },
+    { title: "هرم منقرع", lat: 29.9725, lon: 31.1283 },
   ],
   sv: [
     { title: "Eiffeltornet", lat: 48.8584, lon: 2.2945 },
