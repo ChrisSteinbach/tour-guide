@@ -12,54 +12,79 @@ import type { NearbyArticle } from "./types";
 
 describe("renderNearbyHeader", () => {
   it("renders article count in subtitle", () => {
-    const header = renderNearbyHeader(5, "en", () => {}, false);
+    const header = renderNearbyHeader({
+      articleCount: 5,
+      currentLang: "en",
+      onLangChange: () => {},
+      paused: false,
+    });
     const subtitle = header.querySelector("p");
     expect(subtitle?.textContent).toBe("5 nearby attractions");
   });
 
   it("uses singular when count is 1", () => {
-    const header = renderNearbyHeader(1, "en", () => {}, false);
+    const header = renderNearbyHeader({
+      articleCount: 1,
+      currentLang: "en",
+      onLangChange: () => {},
+      paused: false,
+    });
     const subtitle = header.querySelector("p");
     expect(subtitle?.textContent).toBe("1 nearby attraction");
   });
 
   it("shows paused in subtitle when paused", () => {
-    const header = renderNearbyHeader(3, "en", () => {}, true);
+    const header = renderNearbyHeader({
+      articleCount: 3,
+      currentLang: "en",
+      onLangChange: () => {},
+      paused: true,
+    });
     const subtitle = header.querySelector("p");
     expect(subtitle?.textContent).toContain("paused");
   });
 
   it("pause button label says Resume when paused", () => {
-    const header = renderNearbyHeader(
-      3,
-      "en",
-      () => {},
-      true,
-      () => {},
-    );
+    const header = renderNearbyHeader({
+      articleCount: 3,
+      currentLang: "en",
+      onLangChange: () => {},
+      paused: true,
+      onTogglePause: () => {},
+    });
     const btn = header.querySelector(".pause-toggle");
     expect(btn?.getAttribute("aria-label")).toBe("Resume updates");
   });
 
   it("pause button label says Pause when unpaused", () => {
-    const header = renderNearbyHeader(
-      3,
-      "en",
-      () => {},
-      false,
-      () => {},
-    );
+    const header = renderNearbyHeader({
+      articleCount: 3,
+      currentLang: "en",
+      onLangChange: () => {},
+      paused: false,
+      onTogglePause: () => {},
+    });
     const btn = header.querySelector(".pause-toggle");
     expect(btn?.getAttribute("aria-label")).toBe("Pause updates");
   });
 
   it("omits pause button when no onTogglePause callback", () => {
-    const header = renderNearbyHeader(3, "en", () => {}, false);
+    const header = renderNearbyHeader({
+      articleCount: 3,
+      currentLang: "en",
+      onLangChange: () => {},
+      paused: false,
+    });
     expect(header.querySelector(".pause-toggle")).toBeNull();
   });
 
   it("language selector reflects currentLang", () => {
-    const header = renderNearbyHeader(3, "sv", () => {}, false);
+    const header = renderNearbyHeader({
+      articleCount: 3,
+      currentLang: "sv",
+      onLangChange: () => {},
+      paused: false,
+    });
     const select = header.querySelector(
       ".header-lang-select",
     ) as HTMLSelectElement;
@@ -68,7 +93,12 @@ describe("renderNearbyHeader", () => {
 
   it("calls onLangChange when language is changed", () => {
     const onLangChange = vi.fn();
-    const header = renderNearbyHeader(3, "en", onLangChange, false);
+    const header = renderNearbyHeader({
+      articleCount: 3,
+      currentLang: "en",
+      onLangChange,
+      paused: false,
+    });
     const select = header.querySelector(
       ".header-lang-select",
     ) as HTMLSelectElement;
@@ -79,10 +109,59 @@ describe("renderNearbyHeader", () => {
 
   it("calls onTogglePause when pause button clicked", () => {
     const onTogglePause = vi.fn();
-    const header = renderNearbyHeader(3, "en", () => {}, false, onTogglePause);
+    const header = renderNearbyHeader({
+      articleCount: 3,
+      currentLang: "en",
+      onLangChange: () => {},
+      paused: false,
+      onTogglePause,
+    });
     const btn = header.querySelector(".pause-toggle") as HTMLButtonElement;
     btn.click();
     expect(onTogglePause).toHaveBeenCalledOnce();
+  });
+
+  it("renders pick-location button when onPickLocation provided", () => {
+    const onPickLocation = vi.fn();
+    const header = renderNearbyHeader({
+      articleCount: 3,
+      currentLang: "en",
+      onLangChange: () => {},
+      paused: false,
+      onPickLocation,
+    });
+    const btn = header.querySelector(".pick-location-btn") as HTMLButtonElement;
+    expect(btn).not.toBeNull();
+    expect(btn.getAttribute("aria-label")).toBe("Pick location on map");
+    btn.click();
+    expect(onPickLocation).toHaveBeenCalledOnce();
+  });
+
+  it("renders use-GPS button when onUseGps provided", () => {
+    const onUseGps = vi.fn();
+    const header = renderNearbyHeader({
+      articleCount: 3,
+      currentLang: "en",
+      onLangChange: () => {},
+      paused: false,
+      onUseGps,
+    });
+    const btn = header.querySelector(".use-gps-btn") as HTMLButtonElement;
+    expect(btn).not.toBeNull();
+    expect(btn.getAttribute("aria-label")).toBe("Use GPS location");
+    btn.click();
+    expect(onUseGps).toHaveBeenCalledOnce();
+  });
+
+  it("omits location buttons when neither callback provided", () => {
+    const header = renderNearbyHeader({
+      articleCount: 3,
+      currentLang: "en",
+      onLangChange: () => {},
+      paused: false,
+    });
+    expect(header.querySelector(".pick-location-btn")).toBeNull();
+    expect(header.querySelector(".use-gps-btn")).toBeNull();
   });
 });
 
@@ -298,6 +377,55 @@ describe("renderNearbyList", () => {
     renderNearbyList(container, makeArticles(3), opts);
     const newItems = container.querySelectorAll<HTMLElement>(".nearby-item");
     expect(document.activeElement).toBe(newItems[1]);
+
+    document.body.removeChild(container);
+    vi.restoreAllMocks();
+  });
+
+  it("restores focus to pick-location button on re-render", () => {
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const opts = {
+      onSelectArticle: () => {},
+      currentLang: "en" as const,
+      onLangChange: () => {},
+      onPickLocation: () => {},
+    };
+    renderNearbyList(container, makeArticles(2), opts);
+
+    const posBtn = container.querySelector<HTMLElement>(".pick-location-btn")!;
+    posBtn.focus();
+    expect(document.activeElement).toBe(posBtn);
+
+    renderNearbyList(container, makeArticles(2), opts);
+    const newPosBtn =
+      container.querySelector<HTMLElement>(".pick-location-btn")!;
+    expect(document.activeElement).toBe(newPosBtn);
+
+    document.body.removeChild(container);
+    vi.restoreAllMocks();
+  });
+
+  it("restores focus to use-gps button on re-render", () => {
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const opts = {
+      onSelectArticle: () => {},
+      currentLang: "en" as const,
+      onLangChange: () => {},
+      onUseGps: () => {},
+    };
+    renderNearbyList(container, makeArticles(2), opts);
+
+    const gpsBtn = container.querySelector<HTMLElement>(".use-gps-btn")!;
+    gpsBtn.focus();
+    expect(document.activeElement).toBe(gpsBtn);
+
+    renderNearbyList(container, makeArticles(2), opts);
+    const newGpsBtn = container.querySelector<HTMLElement>(".use-gps-btn")!;
+    expect(document.activeElement).toBe(newGpsBtn);
 
     document.body.removeChild(container);
     vi.restoreAllMocks();

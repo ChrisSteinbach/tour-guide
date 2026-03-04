@@ -27,21 +27,21 @@ describe("renderWelcome", () => {
     expect(onStart).toHaveBeenCalledOnce();
   });
 
-  it("calls onDemo when demo button is clicked", () => {
-    const onDemo = vi.fn();
+  it("calls onPickLocation when pick-location button is clicked", () => {
+    const onPickLocation = vi.fn();
     const container = document.createElement("div");
     renderWelcome(
       container,
       () => {},
-      onDemo,
+      onPickLocation,
       "en",
       () => {},
     );
     const btn = container.querySelector(
-      ".welcome-demo-link",
+      ".welcome-pick-link",
     ) as HTMLButtonElement;
     btn.click();
-    expect(onDemo).toHaveBeenCalledOnce();
+    expect(onPickLocation).toHaveBeenCalledOnce();
   });
 
   it("language selector reflects currentLang", () => {
@@ -194,6 +194,7 @@ describe("renderError", () => {
     renderError(container, error, () => {});
     const msg = container.querySelector(".status-message");
     expect(msg?.textContent).toContain("could not be determined");
+    expect(msg?.textContent).toContain("pick a location on the map");
   });
 
   it("displays user-friendly message for TIMEOUT", () => {
@@ -202,27 +203,28 @@ describe("renderError", () => {
     renderError(container, error, () => {});
     const msg = container.querySelector(".status-message");
     expect(msg?.textContent).toContain("timed out");
+    expect(msg?.textContent).toContain("pick a location on the map");
   });
 
-  it("calls onUseDemoData when demo data button is clicked", () => {
-    const onUseMock = vi.fn();
+  it("calls onPickLocation when pick-location button is clicked", () => {
+    const onPickLocation = vi.fn();
     const container = document.createElement("div");
     const error: LocationError = {
       code: "PERMISSION_DENIED",
       message: "denied",
     };
-    renderError(container, error, onUseMock);
+    renderError(container, error, onPickLocation);
     const btn = container.querySelector(".status-action") as HTMLButtonElement;
     btn.click();
-    expect(onUseMock).toHaveBeenCalledOnce();
+    expect(onPickLocation).toHaveBeenCalledOnce();
   });
 
-  it("demo data button has correct label", () => {
+  it("pick-location button has correct label", () => {
     const container = document.createElement("div");
     const error: LocationError = { code: "TIMEOUT", message: "timeout" };
     renderError(container, error, () => {});
     const btn = container.querySelector(".status-action") as HTMLButtonElement;
-    expect(btn.textContent).toBe("Use demo data");
+    expect(btn.textContent).toBe("Pick on map");
   });
 });
 

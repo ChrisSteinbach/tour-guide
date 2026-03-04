@@ -2,6 +2,7 @@ import type { UserPosition } from "./types";
 import type { LocationError } from "./location";
 import { SUPPORTED_LANGS, LANG_NAMES } from "../lang";
 import type { Lang } from "../lang";
+import { createAppHeader } from "./header";
 
 export type AppState =
   | { kind: "loading" }
@@ -15,11 +16,7 @@ function renderStatusScreen(
 ): void {
   container.textContent = "";
 
-  const header = document.createElement("header");
-  header.className = "app-header";
-  const h1 = document.createElement("h1");
-  h1.textContent = "WikiRadar";
-  header.appendChild(h1);
+  const header = createAppHeader();
 
   const screen = document.createElement("div");
   screen.className = "status-screen";
@@ -73,7 +70,7 @@ export function renderLoadingProgress(
 export function renderWelcome(
   container: HTMLElement,
   onStart: () => void,
-  onDemo: () => void,
+  onPickLocation: () => void,
   currentLang: Lang,
   onLangChange: (lang: Lang) => void,
 ): void {
@@ -101,9 +98,9 @@ export function renderWelcome(
   startBtn.addEventListener("click", onStart);
 
   const demoLink = document.createElement("button");
-  demoLink.className = "welcome-demo-link";
-  demoLink.textContent = "Or try with demo data";
-  demoLink.addEventListener("click", onDemo);
+  demoLink.className = "welcome-pick-link";
+  demoLink.textContent = "Or pick a location on the map";
+  demoLink.addEventListener("click", onPickLocation);
 
   renderStatusScreen(container, [tagline, langSelect, startBtn, demoLink]);
 }
@@ -139,24 +136,25 @@ export function renderDataUnavailable(
 export function renderError(
   container: HTMLElement,
   error: LocationError,
-  onUseDemoData: () => void,
+  onPickLocation: () => void,
 ): void {
   const msg = document.createElement("p");
   msg.className = "status-message";
 
   const messages: Record<LocationError["code"], string> = {
     PERMISSION_DENIED:
-      "Location access was denied. Please enable location permissions or use demo data.",
+      "Location access was denied. Please enable location permissions or pick a location on the map.",
     POSITION_UNAVAILABLE:
-      "Your location could not be determined. Please try again or use demo data.",
-    TIMEOUT: "Location request timed out. Please try again or use demo data.",
+      "Your location could not be determined. Please try again or pick a location on the map.",
+    TIMEOUT:
+      "Location request timed out. Please try again or pick a location on the map.",
   };
   msg.textContent = messages[error.code];
 
   const btn = document.createElement("button");
   btn.className = "status-action";
-  btn.textContent = "Use demo data";
-  btn.addEventListener("click", onUseDemoData);
+  btn.textContent = "Pick on map";
+  btn.addEventListener("click", onPickLocation);
 
   renderStatusScreen(container, [msg, btn]);
 }

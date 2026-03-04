@@ -98,6 +98,18 @@ export default defineConfig({
             handler: "NetworkOnly",
           },
           {
+            // OSM tile cache for the map picker
+            urlPattern: /^https:\/\/[abc]\.tile\.openstreetmap\.org\//,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "osm-tiles",
+              expiration: {
+                maxEntries: 500,
+                maxAgeSeconds: 30 * 24 * 60 * 60, // 30 days
+              },
+            },
+          },
+          {
             // Wikipedia REST API cache — serves stale while revalidating in
             // background. Update docs/architecture.md if changing these values.
             urlPattern: /^https:\/\/\w+\.wikipedia\.org\/api\/rest_v1\//,
