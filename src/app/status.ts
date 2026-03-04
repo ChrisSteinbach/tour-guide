@@ -2,6 +2,7 @@ import type { UserPosition } from "./types";
 import type { LocationError } from "./location";
 import { SUPPORTED_LANGS, LANG_NAMES } from "../lang";
 import type { Lang } from "../lang";
+import { createAppHeader } from "./header";
 
 export type AppState =
   | { kind: "loading" }
@@ -15,11 +16,7 @@ function renderStatusScreen(
 ): void {
   container.textContent = "";
 
-  const header = document.createElement("header");
-  header.className = "app-header";
-  const h1 = document.createElement("h1");
-  h1.textContent = "WikiRadar";
-  header.appendChild(h1);
+  const header = createAppHeader();
 
   const screen = document.createElement("div");
   screen.className = "status-screen";

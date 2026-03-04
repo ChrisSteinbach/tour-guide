@@ -2,6 +2,7 @@ import type { NearbyArticle } from "./types";
 import { formatDistance } from "./format";
 import { SUPPORTED_LANGS, LANG_NAMES } from "../lang";
 import type { Lang } from "../lang";
+import { createAppHeader } from "./header";
 
 // ── Focus capture / restore ──────────────────────────────────
 
@@ -70,15 +71,14 @@ export function renderNearbyHeader(
   paused: boolean,
   onTogglePause?: () => void,
 ): HTMLElement {
-  const header = document.createElement("header");
-  header.className = "app-header";
+  const header = createAppHeader();
+  const h1 = header.querySelector("h1")!;
+  h1.remove();
 
   const row = document.createElement("div");
   row.className = "app-header-row";
 
   const titleGroup = document.createElement("div");
-  const h1 = document.createElement("h1");
-  h1.textContent = "WikiRadar";
   const subtitle = document.createElement("p");
   const subtitleText = `${articleCount} nearby attraction${articleCount !== 1 ? "s" : ""}`;
   subtitle.textContent = paused ? `${subtitleText} · paused` : subtitleText;
