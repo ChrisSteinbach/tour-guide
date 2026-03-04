@@ -63,14 +63,20 @@ export function updateNearbyDistances(
   }
 }
 
+export interface RenderNearbyHeaderOptions {
+  articleCount: number;
+  currentLang: Lang;
+  onLangChange: (lang: Lang) => void;
+  paused: boolean;
+  onTogglePause?: () => void;
+}
+
 /** Render the header bar with title, pause button, and language selector. */
 export function renderNearbyHeader(
-  articleCount: number,
-  currentLang: Lang,
-  onLangChange: (lang: Lang) => void,
-  paused: boolean,
-  onTogglePause?: () => void,
+  options: RenderNearbyHeaderOptions,
 ): HTMLElement {
+  const { articleCount, currentLang, onLangChange, paused, onTogglePause } =
+    options;
   const header = createAppHeader();
   const h1 = header.querySelector("h1")!;
   h1.remove();
@@ -235,13 +241,13 @@ export function renderNearbyList(
     // First render: build from scratch
     container.textContent = "";
 
-    const header = renderNearbyHeader(
-      articles.length,
+    const header = renderNearbyHeader({
+      articleCount: articles.length,
       currentLang,
       onLangChange,
-      paused ?? false,
+      paused: paused ?? false,
       onTogglePause,
-    );
+    });
 
     const list = document.createElement("ul");
     list.className = "nearby-list";
@@ -261,13 +267,13 @@ export function renderNearbyList(
 
   // Replace header (cheap — ~5 nodes with fresh event listeners)
   const oldHeader = container.querySelector("header.app-header");
-  const newHeader = renderNearbyHeader(
-    articles.length,
+  const newHeader = renderNearbyHeader({
+    articleCount: articles.length,
     currentLang,
     onLangChange,
-    paused ?? false,
+    paused: paused ?? false,
     onTogglePause,
-  );
+  });
   if (oldHeader) {
     oldHeader.replaceWith(newHeader);
   }
