@@ -7,8 +7,7 @@ import type { NearestQuery } from "./query";
 import { findNearestTiled, buildTileMap } from "./tile-loader";
 import type { TileIndex, TileEntry } from "../tiles";
 import type { Lang } from "../lang";
-import { distanceMeters, distanceBetweenPositions } from "./format";
-import { mockArticles } from "./mock-data";
+import { distanceBetweenPositions } from "./format";
 
 // ── Constants ────────────────────────────────────────────────
 
@@ -45,9 +44,7 @@ export function getNearby(
     case "tiled":
       return findNearestTiled(queryState.tiles, pos.lat, pos.lon, count);
     case "none":
-      return mockArticles
-        .map((a) => ({ ...a, distanceM: distanceMeters(pos, a) }))
-        .sort((a, b) => a.distanceM - b.distanceM);
+      return [];
   }
 }
 
@@ -88,13 +85,14 @@ export interface AppState {
   downloadProgress: number;
   /** Which update banner (if any) is showing. App updates take priority. */
   updateBanner: null | "app";
+  hasGeolocation: boolean;
 }
 
 // ── Event (all inputs to the state machine) ──────────────────
 
 export type Event =
   | { type: "start"; hasGeolocation: boolean }
-  | { type: "useMockData"; mockPosition: UserPosition }
+  | { type: "pickPosition"; position: UserPosition }
   | { type: "position"; pos: UserPosition }
   | { type: "gpsError"; error: LocationError }
   | { type: "tileLoadStarted"; id: string }
@@ -197,40 +195,35 @@ export function transition(state: AppState, event: Event): TransitionResult {
     // ── Core lifecycle (tour-guide-fed) ──────────────────────
 
     case "start": {
+      const next: AppState = {
+        ...state,
+        hasGeolocation: event.hasGeolocation,
+      };
       const effects: Effect[] = [{ type: "storeStarted" }];
       if (event.hasGeolocation) effects.push({ type: "startGps" });
 
-      if (state.query.mode !== "none") {
-        if (state.position) {
-          const result = enterBrowsing(state);
+      if (next.query.mode !== "none") {
+        if (next.position) {
+          const result = enterBrowsing(next);
           return {
             next: result.next,
             effects: [...effects, ...result.effects],
           };
         }
         return {
-          next: { ...state, phase: { phase: "locating" } },
+          next: { ...next, phase: { phase: "locating" } },
           effects: [...effects, { type: "render" }],
         };
       }
 
       // No query yet — show download progress
-      const next: AppState = {
-        ...state,
-        phase: { phase: "downloading", progress: state.downloadProgress },
+      return {
+        next: {
+          ...next,
+          phase: { phase: "downloading", progress: next.downloadProgress },
+        },
+        effects: [...effects, { type: "render" }],
       };
-      if (!event.hasGeolocation) {
-        // No geolocation — use mock data immediately
-        const mockResult = handleUseMockData(next, {
-          type: "useMockData",
-          mockPosition: state.position ?? { lat: 0, lon: 0 },
-        });
-        return {
-          next: mockResult.next,
-          effects: [...effects, ...mockResult.effects],
-        };
-      }
-      return { next, effects: [...effects, { type: "render" }] };
     }
 
     case "tileLoadStarted": {
@@ -239,8 +232,8 @@ export function transition(state: AppState, event: Event): TransitionResult {
       return { next: { ...state, loadingTiles: nextTiles }, effects: [] };
     }
 
-    case "useMockData":
-      return handleUseMockData(state, event);
+    case "pickPosition":
+      return handlePickPosition(state, event);
 
     // ── GPS events (tour-guide-6ub) ──────────────────────────
 
@@ -453,6 +446,18 @@ export function transition(state: AppState, event: Event): TransitionResult {
             const browseResult = enterBrowsing(next);
             next = browseResult.next;
             effects.push(...browseResult.effects);
+          } else if (!next.hasGeolocation) {
+            next = {
+              ...next,
+              phase: {
+                phase: "error",
+                error: {
+                  code: "POSITION_UNAVAILABLE",
+                  message: "Geolocation not available",
+                },
+              },
+            };
+            effects.push({ type: "render" });
           } else {
             next = { ...next, phase: { phase: "locating" } };
             effects.push({ type: "render" });
@@ -513,12 +518,12 @@ export function transition(state: AppState, event: Event): TransitionResult {
 
 // ── Event handler helpers ────────────────────────────────────
 
-function handleUseMockData(
+function handlePickPosition(
   state: AppState,
-  event: { type: "useMockData"; mockPosition: UserPosition },
+  event: { type: "pickPosition"; position: UserPosition },
 ): TransitionResult {
   const effects: Effect[] = [{ type: "stopGps" }];
-  const next: AppState = { ...state, position: event.mockPosition };
+  const next: AppState = { ...state, position: event.position };
 
   if (state.query.mode === "none") {
     return {

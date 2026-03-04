@@ -1,6 +1,6 @@
 import "./style.css";
-import { mockPosition } from "./mock-data";
 import { renderNearbyList, updateNearbyDistances } from "./render";
+import type { MapPickerHandle } from "./map-picker";
 import {
   renderLoading,
   renderLoadingProgress,
@@ -50,6 +50,7 @@ let appState: AppState = {
   loadingTiles: new Set(),
   downloadProgress: -1,
   updateBanner: null,
+  hasGeolocation: true,
 };
 
 // ── Dispatch ─────────────────────────────────────────────────
@@ -102,6 +103,49 @@ function getStoredLang(): Lang {
   return DEFAULT_LANG;
 }
 
+// ── Map picker ──────────────────────────────────────────────
+
+let activeMapPicker: MapPickerHandle | null = null;
+
+function destroyMapPicker(): void {
+  if (activeMapPicker) {
+    activeMapPicker.destroy();
+    activeMapPicker = null;
+  }
+}
+
+function showMapPicker(): void {
+  destroyMapPicker();
+  app.textContent = "";
+
+  const header = document.createElement("header");
+  header.className = "app-header";
+  const h1 = document.createElement("h1");
+  h1.textContent = "WikiRadar";
+  header.appendChild(h1);
+
+  const instructions = document.createElement("p");
+  instructions.className = "map-picker-instructions";
+  instructions.textContent = "Tap the map to place a marker, then confirm.";
+
+  const mapContainer = document.createElement("div");
+  mapContainer.className = "map-picker-container";
+  const mapEl = document.createElement("div");
+  mapEl.className = "map-picker-map";
+  mapContainer.appendChild(mapEl);
+
+  app.append(header, instructions, mapContainer);
+
+  void import("./map-picker").then(({ createMapPicker }) => {
+    activeMapPicker = createMapPicker(mapEl, {
+      onPick: (lat, lon) => {
+        destroyMapPicker();
+        dispatch({ type: "pickPosition", position: { lat, lon } });
+      },
+    });
+  });
+}
+
 // ── DOM rendering ────────────────────────────────────────────
 
 function renderBrowsingListDOM(): void {
@@ -118,6 +162,7 @@ function renderBrowsingListDOM(): void {
 }
 
 function renderPhase(): void {
+  destroyMapPicker();
   switch (appState.phase.phase) {
     case "welcome":
       return;
@@ -136,9 +181,7 @@ function renderPhase(): void {
       );
       return;
     case "error":
-      renderError(app, appState.phase.error, () =>
-        dispatch({ type: "useMockData", mockPosition }),
-      );
+      renderError(app, appState.phase.error, showMapPicker);
       return;
     case "detail":
     case "browsing":
@@ -206,7 +249,7 @@ if (sessionStorage.getItem("tour-guide-started")) {
   renderWelcome(
     app,
     () => dispatch({ type: "start", hasGeolocation: !!navigator.geolocation }),
-    () => dispatch({ type: "useMockData", mockPosition }),
+    showMapPicker,
     appState.currentLang,
     (lang) => dispatch({ type: "langChanged", lang }),
   );

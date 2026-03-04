@@ -48,6 +48,7 @@ function browsingState(overrides: Partial<AppState> = {}): AppState {
     loadingTiles: new Set(),
     downloadProgress: -1,
     updateBanner: null,
+    hasGeolocation: true,
     ...overrides,
   };
 }
@@ -69,6 +70,7 @@ function detailState(overrides: Partial<AppState> = {}): AppState {
     loadingTiles: new Set(),
     downloadProgress: -1,
     updateBanner: null,
+    hasGeolocation: true,
     ...overrides,
   };
 }
