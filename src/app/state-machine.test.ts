@@ -14,7 +14,6 @@ import type { LocationError } from "./location";
 import { NearestQuery, toFlatDelaunay } from "./query";
 import { GRID_DEG, type TileIndex, type TileEntry } from "../tiles";
 import { buildTileMap } from "./tile-loader";
-import { mockArticles, mockPosition } from "./mock-data";
 import {
   toCartesian,
   convexHull,
@@ -29,11 +28,13 @@ function makeState(overrides: Partial<AppState> = {}): AppState {
     phase: { phase: "welcome" },
     query: { mode: "none" },
     position: null,
+    positionSource: null,
     currentLang: "en",
     loadGeneration: 0,
     loadingTiles: new Set(),
     downloadProgress: -1,
     updateBanner: null,
+    hasGeolocation: true,
     ...overrides,
   };
 }
@@ -46,10 +47,11 @@ const parisSame: UserPosition = { lat: 48.85841, lon: 2.29451 }; // ~1m away
 const stubNearestQuery = {} as NearestQuery;
 
 /** Pre-built articles for browsing state, no geometry required. */
-const defaultBrowsingArticles: NearbyArticle[] = mockArticles.map((a, i) => ({
-  ...a,
-  distanceM: (i + 1) * 50,
-}));
+const defaultBrowsingArticles: NearbyArticle[] = [
+  { title: "Eiffel Tower", lat: 48.8584, lon: 2.2945, distanceM: 50 },
+  { title: "Champ de Mars", lat: 48.856, lon: 2.2983, distanceM: 100 },
+  { title: "Palais de Chaillot", lat: 48.8627, lon: 2.2876, distanceM: 150 },
+];
 
 /** Build a default TileIndex from tile IDs (defaults to ["27-36"]). */
 function makeTileIndex(tileIds: string[] = ["27-36"]): TileIndex {
@@ -115,6 +117,7 @@ function browsingState(
     nearbyCount?: number;
     paused?: boolean;
     lastQueryPos?: UserPosition;
+    positionSource?: "gps" | "picked" | null;
   } = {},
 ): AppState {
   const {
@@ -177,6 +180,15 @@ describe("REQUERY_DISTANCE_M", () => {
 // ── getNearby ────────────────────────────────────────────────
 
 describe("getNearby", () => {
+  const testArticles = [
+    { title: "Eiffel Tower", lat: 48.8584, lon: 2.2945 },
+    { title: "Champ de Mars", lat: 48.856, lon: 2.2983 },
+    { title: "Palais de Chaillot", lat: 48.8627, lon: 2.2876 },
+    { title: "Pont d'Iéna", lat: 48.8608, lon: 2.2935 },
+    { title: "Musée du quai Branly", lat: 48.8611, lon: 2.2978 },
+    { title: "Les Invalides", lat: 48.8567, lon: 2.3125 },
+  ];
+
   /** Build a real NearestQuery for integration testing. */
   function buildQuery(
     articles: { title: string; lat: number; lon: number }[],
@@ -194,7 +206,7 @@ describe("getNearby", () => {
     mode: "tiled",
     index: sampleIndex,
     tileMap: buildTileMap(sampleIndex),
-    tiles: new Map([["27-36", buildQuery(mockArticles)]]),
+    tiles: new Map([["27-36", buildQuery(testArticles)]]),
   };
 
   it("returns articles sorted by distance from tiled query", () => {
@@ -207,15 +219,9 @@ describe("getNearby", () => {
     }
   });
 
-  it("falls back to mock articles when query mode is none", () => {
+  it("returns empty array when query mode is none", () => {
     const articles = getNearby({ mode: "none" }, paris, 10);
-    expect(articles.length).toBeGreaterThan(0);
-    expect(articles[0].title).toBeDefined();
-    for (let i = 1; i < articles.length; i++) {
-      expect(articles[i].distanceM).toBeGreaterThanOrEqual(
-        articles[i - 1].distanceM,
-      );
-    }
+    expect(articles).toEqual([]);
   });
 });
 
@@ -258,15 +264,18 @@ describe("start event", () => {
     expect(effectTypes(effects)).toContain("render");
   });
 
-  it("uses mock data when no geolocation and no query", () => {
+  it("enters downloading when no geolocation and no query", () => {
     const state = makeState();
-    const { effects } = transition(state, {
+    const { next, effects } = transition(state, {
       type: "start",
       hasGeolocation: false,
     });
+    expect(next.phase.phase).toBe("downloading");
+    expect(next.hasGeolocation).toBe(false);
     expect(effectTypes(effects)).toContain("storeStarted");
     expect(effectTypes(effects)).not.toContain("startGps");
-    expect(effectTypes(effects)).toContain("stopGps");
+    expect(effectTypes(effects)).toContain("render");
+    expect(effectTypes(effects)).not.toContain("stopGps");
   });
 });
 
@@ -285,17 +294,19 @@ describe("tileLoadStarted event", () => {
   });
 });
 
-// ── useMockData event (tour-guide-fed) ───────────────────────
+// ── pickPosition event (tour-guide-fed) ──────────────────────
 
-describe("useMockData event", () => {
-  it("enters browsing with mock position when query ready", () => {
+describe("pickPosition event", () => {
+  const pickedPos: UserPosition = { lat: 48.8584, lon: 2.2945 };
+
+  it("enters browsing with picked position when query ready", () => {
     const state = makeState({ query: sampleQuery });
     const { next, effects } = transition(state, {
-      type: "useMockData",
-      mockPosition,
+      type: "pickPosition",
+      position: pickedPos,
     });
     expect(next.phase.phase).toBe("browsing");
-    expect(next.position).toBe(mockPosition);
+    expect(next.position).toBe(pickedPos);
     expect(effectTypes(effects)).toContain("stopGps");
     expect(effectTypes(effects)).toContain("requery");
   });
@@ -303,11 +314,11 @@ describe("useMockData event", () => {
   it("enters downloading when no query", () => {
     const state = makeState();
     const { next, effects } = transition(state, {
-      type: "useMockData",
-      mockPosition,
+      type: "pickPosition",
+      position: pickedPos,
     });
     expect(next.phase.phase).toBe("downloading");
-    expect(next.position).toBe(mockPosition);
+    expect(next.position).toBe(pickedPos);
     expect(effectTypes(effects)).toContain("stopGps");
     expect(effectTypes(effects)).toContain("render");
   });
@@ -316,8 +327,8 @@ describe("useMockData event", () => {
     const tiledQuery = makeTiledQuery();
     const state = makeState({ query: tiledQuery });
     const { effects } = transition(state, {
-      type: "useMockData",
-      mockPosition,
+      type: "pickPosition",
+      position: pickedPos,
     });
     expect(effectTypes(effects)).toContain("loadTiles");
   });
@@ -517,6 +528,84 @@ describe("togglePause event", () => {
   it("no-ops when not browsing", () => {
     const state = makeState();
     const { next, effects } = transition(state, { type: "togglePause" });
+    expect(next).toBe(state);
+    expect(effects).toEqual([]);
+  });
+});
+
+// ── positionSource tracking ───────────────────────────────────
+
+describe("positionSource tracking", () => {
+  it("pickPosition sets positionSource to picked", () => {
+    const state = makeState({ query: sampleQuery });
+    const { next } = transition(state, {
+      type: "pickPosition",
+      position: paris,
+    });
+    expect(next.positionSource).toBe("picked");
+  });
+
+  it("position event sets positionSource to gps", () => {
+    const state = makeState();
+    const { next } = transition(state, { type: "position", pos: paris });
+    expect(next.positionSource).toBe("gps");
+  });
+
+  it("positionSource defaults to null", () => {
+    const state = makeState();
+    expect(state.positionSource).toBeNull();
+  });
+});
+
+// ── useGps event ─────────────────────────────────────────────
+
+describe("useGps event", () => {
+  it("sets positionSource to gps and emits startGps + renderBrowsingList from browsing", () => {
+    const state = browsingState({ positionSource: "picked" });
+    const { next, effects } = transition(state, { type: "useGps" });
+    expect(next.positionSource).toBe("gps");
+    expect(effectTypes(effects)).toContain("startGps");
+    expect(effectTypes(effects)).toContain("renderBrowsingList");
+  });
+
+  it("requeries immediately when position is already known", () => {
+    const state = browsingState({ positionSource: "picked" });
+    const { effects } = transition(state, { type: "useGps" });
+    expect(effectTypes(effects)).toContain("requery");
+  });
+
+  it("does not requery when no position is known", () => {
+    const state = browsingState({ positionSource: "picked" });
+    const noPos = { ...state, position: null };
+    const { effects } = transition(noPos, { type: "useGps" });
+    expect(effectTypes(effects)).not.toContain("requery");
+    expect(effectTypes(effects)).toContain("startGps");
+    expect(effectTypes(effects)).toContain("renderBrowsingList");
+  });
+
+  it("works from detail phase", () => {
+    const state = makeState({
+      query: sampleQuery,
+      position: paris,
+      positionSource: "picked",
+      phase: {
+        phase: "detail",
+        article: defaultBrowsingArticles[0],
+        articles: defaultBrowsingArticles,
+        nearbyCount: 10,
+        paused: false,
+        lastQueryPos: paris,
+      },
+    });
+    const { next, effects } = transition(state, { type: "useGps" });
+    expect(next.positionSource).toBe("gps");
+    expect(effectTypes(effects)).toContain("startGps");
+    expect(effectTypes(effects)).toContain("renderBrowsingList");
+  });
+
+  it("no-ops when not browsing or detail", () => {
+    const state = makeState({ phase: { phase: "locating" } });
+    const { next, effects } = transition(state, { type: "useGps" });
     expect(next).toBe(state);
     expect(effects).toEqual([]);
   });
@@ -777,6 +866,24 @@ describe("tileIndexLoaded event", () => {
     expect(next.phase.phase).toBe("loadingTiles");
     expect(effectTypes(effects)).toContain("render");
   });
+
+  it("enters error when downloading with no position and no geolocation", () => {
+    const state = makeState({
+      phase: { phase: "downloading", progress: 0 },
+      hasGeolocation: false,
+    });
+    const { next, effects } = transition(state, {
+      type: "tileIndexLoaded",
+      index: tileIndex,
+      lang: "en",
+      gen: 0,
+    });
+    expect(next.phase.phase).toBe("error");
+    if (next.phase.phase === "error") {
+      expect(next.phase.error.code).toBe("POSITION_UNAVAILABLE");
+    }
+    expect(effectTypes(effects)).toContain("render");
+  });
 });
 
 // ── tileLoaded event (tour-guide-8y4) ────────────────────────
@@ -892,5 +999,71 @@ describe("queryResult event", () => {
     });
     expect(next).toBe(state);
     expect(effects).toEqual([]);
+  });
+});
+
+// ── Map picker phase ──────────────────────────────────────────
+
+describe("showMapPicker event", () => {
+  it("transitions to mapPicker phase and pushes history", () => {
+    const browsingPhase: Phase = {
+      phase: "browsing",
+      articles: defaultBrowsingArticles,
+      nearbyCount: 10,
+      paused: false,
+      lastQueryPos: paris,
+    };
+    const state = makeState({ phase: browsingPhase });
+    const { next, effects } = transition(state, { type: "showMapPicker" });
+    expect(next.phase).toEqual({
+      phase: "mapPicker",
+      returnPhase: browsingPhase,
+    });
+    expect(effects).toContainEqual({ type: "pushHistory" });
+    expect(effects).toContainEqual({ type: "showMapPicker" });
+  });
+
+  it("stores current phase as returnPhase from error", () => {
+    const errorPhase: Phase = {
+      phase: "error",
+      error: { code: "POSITION_UNAVAILABLE", message: "No GPS" },
+    };
+    const state = makeState({ phase: errorPhase });
+    const { next } = transition(state, { type: "showMapPicker" });
+    expect(next.phase).toEqual({
+      phase: "mapPicker",
+      returnPhase: errorPhase,
+    });
+  });
+});
+
+describe("back from mapPicker", () => {
+  it("restores browsing phase and renders list", () => {
+    const browsingPhase: Phase = {
+      phase: "browsing",
+      articles: defaultBrowsingArticles,
+      nearbyCount: 10,
+      paused: false,
+      lastQueryPos: paris,
+    };
+    const state = makeState({
+      phase: { phase: "mapPicker", returnPhase: browsingPhase },
+    });
+    const { next, effects } = transition(state, { type: "back" });
+    expect(next.phase).toEqual(browsingPhase);
+    expect(effects).toContainEqual({ type: "renderBrowsingList" });
+  });
+
+  it("restores error phase and renders", () => {
+    const errorPhase: Phase = {
+      phase: "error",
+      error: { code: "POSITION_UNAVAILABLE", message: "No GPS" },
+    };
+    const state = makeState({
+      phase: { phase: "mapPicker", returnPhase: errorPhase },
+    });
+    const { next, effects } = transition(state, { type: "back" });
+    expect(next.phase).toEqual(errorPhase);
+    expect(effects).toContainEqual({ type: "render" });
   });
 });

@@ -67,6 +67,7 @@ export interface EffectDeps {
     lang: Lang,
   ) => void;
   renderAppUpdateBanner: () => void;
+  showMapPicker: () => void;
 }
 
 export function createEffectExecutor(
@@ -219,6 +220,9 @@ export function createEffectExecutor(
         break;
       case "fetchSummary":
         fetchAndRenderSummary(effect.article);
+        break;
+      case "showMapPicker":
+        deps.showMapPicker();
         break;
       case "showAppUpdateBanner":
         deps.renderAppUpdateBanner();

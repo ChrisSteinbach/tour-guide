@@ -43,11 +43,13 @@ function browsingState(overrides: Partial<AppState> = {}): AppState {
     },
     query: { mode: "none" },
     position: pos,
+    positionSource: null,
     currentLang: "en",
     loadGeneration: 1,
     loadingTiles: new Set(),
     downloadProgress: -1,
     updateBanner: null,
+    hasGeolocation: true,
     ...overrides,
   };
 }
@@ -64,11 +66,13 @@ function detailState(overrides: Partial<AppState> = {}): AppState {
     },
     query: { mode: "none" },
     position: pos,
+    positionSource: null,
     currentLang: "en",
     loadGeneration: 1,
     loadingTiles: new Set(),
     downloadProgress: -1,
     updateBanner: null,
+    hasGeolocation: true,
     ...overrides,
   };
 }
@@ -129,6 +133,7 @@ function makeDeps(overrides: Partial<EffectDeps> = {}): EffectDeps & {
     renderDetailReady: vi.fn(),
     renderDetailError: vi.fn(),
     renderAppUpdateBanner: vi.fn(),
+    showMapPicker: vi.fn(),
     ...overrides,
   };
   return deps as EffectDeps & { getState: Mock; dispatch: Mock };

@@ -1,6 +1,6 @@
 import "./style.css";
-import { mockPosition } from "./mock-data";
 import { renderNearbyList, updateNearbyDistances } from "./render";
+import type { MapPickerHandle } from "./map-picker";
 import {
   renderLoading,
   renderLoadingProgress,
@@ -45,11 +45,13 @@ let appState: AppState = {
   phase: { phase: "welcome" },
   query: { mode: "none" },
   position: null,
+  positionSource: null,
   currentLang: getStoredLang(),
   loadGeneration: 0,
   loadingTiles: new Set(),
   downloadProgress: -1,
   updateBanner: null,
+  hasGeolocation: true,
 };
 
 // ── Dispatch ─────────────────────────────────────────────────
@@ -90,6 +92,7 @@ const executeEffect = createEffectExecutor({
   renderDetailError: (article, msg, retry, lang) =>
     renderDetailError(app, article, msg, goBack, retry, lang),
   renderAppUpdateBanner,
+  showMapPicker,
 });
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -102,10 +105,66 @@ function getStoredLang(): Lang {
   return DEFAULT_LANG;
 }
 
+// ── Map picker ──────────────────────────────────────────────
+
+let activeMapPicker: MapPickerHandle | null = null;
+
+function destroyMapPicker(): void {
+  if (activeMapPicker) {
+    activeMapPicker.destroy();
+    activeMapPicker = null;
+  }
+}
+
+function showMapPicker(): void {
+  destroyMapPicker();
+  app.textContent = "";
+
+  const header = document.createElement("header");
+  header.className = "app-header";
+  const h1 = document.createElement("h1");
+  h1.textContent = "WikiRadar";
+  header.appendChild(h1);
+
+  const instructions = document.createElement("p");
+  instructions.className = "map-picker-instructions";
+  instructions.textContent = "Tap the map to place a marker, then confirm.";
+
+  const mapContainer = document.createElement("div");
+  mapContainer.className = "map-picker-container";
+  const mapEl = document.createElement("div");
+  mapEl.className = "map-picker-map";
+  mapContainer.appendChild(mapEl);
+
+  app.append(header, instructions, mapContainer);
+
+  void import("./map-picker")
+    .then(({ createMapPicker }) => {
+      activeMapPicker = createMapPicker(mapEl, {
+        onPick: (lat, lon) => {
+          destroyMapPicker();
+          dispatch({ type: "pickPosition", position: { lat, lon } });
+        },
+      });
+    })
+    .catch(() => {
+      mapContainer.textContent = "";
+      const msg = document.createElement("p");
+      msg.className = "status-message";
+      msg.textContent = "Failed to load the map. Check your connection.";
+      const retryBtn = document.createElement("button");
+      retryBtn.className = "status-action";
+      retryBtn.textContent = "Retry";
+      retryBtn.addEventListener("click", showMapPicker);
+      mapContainer.append(msg, retryBtn);
+    });
+}
+
 // ── DOM rendering ────────────────────────────────────────────
 
 function renderBrowsingListDOM(): void {
   if (appState.phase.phase !== "browsing") return;
+  const isGps = appState.positionSource !== "picked";
   renderNearbyList(app, appState.phase.articles, {
     onSelectArticle: (article) => dispatch({ type: "selectArticle", article }),
     currentLang: appState.currentLang,
@@ -113,13 +172,29 @@ function renderBrowsingListDOM(): void {
     onShowMore: () => dispatch({ type: "showMore" }),
     nextCount: getNextTier(appState.phase.nearbyCount),
     paused: appState.phase.paused,
-    onTogglePause: () => dispatch({ type: "togglePause" }),
+    ...(isGps
+      ? {
+          onTogglePause: () => dispatch({ type: "togglePause" }),
+          onPickLocation: () => dispatch({ type: "showMapPicker" }),
+        }
+      : {
+          onUseGps: () => dispatch({ type: "useGps" }),
+        }),
   });
 }
 
 function renderPhase(): void {
+  destroyMapPicker();
   switch (appState.phase.phase) {
     case "welcome":
+      renderWelcome(
+        app,
+        () =>
+          dispatch({ type: "start", hasGeolocation: !!navigator.geolocation }),
+        () => dispatch({ type: "showMapPicker" }),
+        appState.currentLang,
+        (lang) => dispatch({ type: "langChanged", lang }),
+      );
       return;
     case "downloading":
       renderLoadingProgress(app, appState.phase.progress);
@@ -137,11 +212,12 @@ function renderPhase(): void {
       return;
     case "error":
       renderError(app, appState.phase.error, () =>
-        dispatch({ type: "useMockData", mockPosition }),
+        dispatch({ type: "showMapPicker" }),
       );
       return;
     case "detail":
     case "browsing":
+    case "mapPicker":
       return;
   }
 }
@@ -206,7 +282,7 @@ if (sessionStorage.getItem("tour-guide-started")) {
   renderWelcome(
     app,
     () => dispatch({ type: "start", hasGeolocation: !!navigator.geolocation }),
-    () => dispatch({ type: "useMockData", mockPosition }),
+    () => dispatch({ type: "showMapPicker" }),
     appState.currentLang,
     (lang) => dispatch({ type: "langChanged", lang }),
   );
