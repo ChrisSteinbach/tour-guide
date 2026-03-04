@@ -137,14 +137,26 @@ function showMapPicker(): void {
 
   app.append(header, instructions, mapContainer);
 
-  void import("./map-picker").then(({ createMapPicker }) => {
-    activeMapPicker = createMapPicker(mapEl, {
-      onPick: (lat, lon) => {
-        destroyMapPicker();
-        dispatch({ type: "pickPosition", position: { lat, lon } });
-      },
+  void import("./map-picker")
+    .then(({ createMapPicker }) => {
+      activeMapPicker = createMapPicker(mapEl, {
+        onPick: (lat, lon) => {
+          destroyMapPicker();
+          dispatch({ type: "pickPosition", position: { lat, lon } });
+        },
+      });
+    })
+    .catch(() => {
+      mapContainer.textContent = "";
+      const msg = document.createElement("p");
+      msg.className = "status-message";
+      msg.textContent = "Failed to load the map. Check your connection.";
+      const retryBtn = document.createElement("button");
+      retryBtn.className = "status-action";
+      retryBtn.textContent = "Retry";
+      retryBtn.addEventListener("click", showMapPicker);
+      mapContainer.append(msg, retryBtn);
     });
-  });
 }
 
 // ── DOM rendering ────────────────────────────────────────────
