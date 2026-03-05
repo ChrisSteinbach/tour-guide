@@ -103,7 +103,7 @@ describe("createSummaryLoader", () => {
     expect(results).not.toContain("A");
   });
 
-  it("only eagerly fetches the first 10 items", async () => {
+  it("fetches all items in load(), not just the first 10", async () => {
     const titles = Array.from({ length: 15 }, (_, i) => `Article${i}`);
     const deps: SummaryLoaderDeps = {
       fetch: vi.fn(async (title) => makeSummary(title)),
@@ -112,15 +112,8 @@ describe("createSummaryLoader", () => {
     const loader = createSummaryLoader(deps);
 
     loader.load(titles, "en");
-    await vi.waitFor(() => expect(deps.onSummary).toHaveBeenCalledTimes(10));
-
-    // Give extra time to confirm no more fetches
-    await new Promise((r) => setTimeout(r, 10));
-    expect(deps.fetch).toHaveBeenCalledTimes(10);
-
-    // Items 11-15 are lazy — fetch them via request()
-    loader.request("Article10", "en");
-    await vi.waitFor(() => expect(deps.fetch).toHaveBeenCalledTimes(11));
+    await vi.waitFor(() => expect(deps.onSummary).toHaveBeenCalledTimes(15));
+    expect(deps.fetch).toHaveBeenCalledTimes(15);
   });
 
   it("request() returns cached summary immediately via callback", async () => {

@@ -10,7 +10,6 @@ export interface SummaryLoaderDeps {
 }
 
 const DEFAULT_CONCURRENCY = 3;
-const EAGER_COUNT = 10;
 
 export interface SummaryLoader {
   /** Start fetching summaries for articles. Cancels any previous batch. */
@@ -82,9 +81,7 @@ export function createSummaryLoader(
     pending.clear();
     activeLang = lang;
 
-    // Eagerly queue the first N, rest are lazy-loaded via request()
-    const eager = titles.slice(0, EAGER_COUNT);
-    for (const title of eager) {
+    for (const title of titles) {
       if (!pending.has(title)) {
         pending.add(title);
         queue.push(title);
