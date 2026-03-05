@@ -100,7 +100,7 @@ body {
 
 .nearby-item {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 12px;
   padding: 12px;
@@ -126,6 +126,34 @@ body {
 .nearby-name {
   font-weight: 500;
   font-size: 0.95rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nearby-thumb {
+  width: 0;
+  height: 40px;
+  overflow: hidden;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: width 0.2s ease;
+}
+
+.nearby-thumb-loaded {
+  width: 40px;
+}
+
+.nearby-thumb img {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  display: block;
+}
+
+.nearby-desc {
+  font-size: 0.8rem;
+  color: #666;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

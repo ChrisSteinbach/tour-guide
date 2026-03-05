@@ -5,8 +5,10 @@ import {
   renderShowMoreButton,
   renderNearbyList,
   updateNearbyDistances,
+  enrichArticleItem,
 } from "./render";
 import type { NearbyArticle } from "./types";
+import type { ArticleSummary } from "./wiki-api";
 
 // ── renderNearbyHeader ───────────────────────────────────────
 
@@ -573,5 +575,139 @@ describe("updateNearbyDistances", () => {
       container.querySelectorAll(".nearby-name"),
     ).map((el) => el.textContent);
     expect(titlesAfter).toEqual(titlesBefore);
+  });
+});
+
+// ── enrichArticleItem ─────────────────────────────────────────
+
+function makeSummary(overrides: Partial<ArticleSummary> = {}): ArticleSummary {
+  return {
+    title: "Article 0",
+    extract: "A place",
+    description: "A nice description",
+    thumbnailUrl: "https://example.com/thumb.jpg",
+    thumbnailWidth: 100,
+    thumbnailHeight: 100,
+    pageUrl: "https://en.wikipedia.org/wiki/Article_0",
+    ...overrides,
+  };
+}
+
+describe("enrichArticleItem", () => {
+  it("sets description text on matching item", () => {
+    const container = document.createElement("div");
+    renderNearbyList(container, makeArticles(2), {
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+
+    enrichArticleItem(container, "Article 0", makeSummary());
+    const desc = container.querySelector(
+      '.nearby-item[data-title="Article 0"] .nearby-desc',
+    );
+    expect(desc?.textContent).toBe("A nice description");
+  });
+
+  it("adds thumbnail image on matching item", () => {
+    const container = document.createElement("div");
+    renderNearbyList(container, makeArticles(1), {
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+
+    enrichArticleItem(container, "Article 0", makeSummary());
+    const thumb = container.querySelector(".nearby-thumb");
+    const img = thumb?.querySelector("img");
+    expect(img?.src).toBe("https://example.com/thumb.jpg");
+    expect(thumb?.classList.contains("nearby-thumb-loaded")).toBe(true);
+  });
+
+  it("does not add duplicate images on repeated calls", () => {
+    const container = document.createElement("div");
+    renderNearbyList(container, makeArticles(1), {
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+
+    const summary = makeSummary();
+    enrichArticleItem(container, "Article 0", summary);
+    enrichArticleItem(container, "Article 0", summary);
+    const imgs = container.querySelectorAll(".nearby-thumb img");
+    expect(imgs).toHaveLength(1);
+  });
+
+  it("handles missing thumbnail gracefully", () => {
+    const container = document.createElement("div");
+    renderNearbyList(container, makeArticles(1), {
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+
+    enrichArticleItem(
+      container,
+      "Article 0",
+      makeSummary({ thumbnailUrl: null }),
+    );
+    const img = container.querySelector(".nearby-thumb img");
+    expect(img).toBeNull();
+    expect(
+      container
+        .querySelector(".nearby-thumb")
+        ?.classList.contains("nearby-thumb-loaded"),
+    ).toBe(false);
+  });
+
+  it("handles empty description gracefully", () => {
+    const container = document.createElement("div");
+    renderNearbyList(container, makeArticles(1), {
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+
+    enrichArticleItem(container, "Article 0", makeSummary({ description: "" }));
+    const desc = container.querySelector(".nearby-desc");
+    expect(desc?.textContent).toBe("");
+  });
+
+  it("does nothing for non-matching title", () => {
+    const container = document.createElement("div");
+    renderNearbyList(container, makeArticles(1), {
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+
+    enrichArticleItem(container, "Nonexistent", makeSummary());
+    const desc = container.querySelector(".nearby-desc");
+    expect(desc?.textContent).toBe("");
+  });
+
+  it("preserves enrichment through list reconciliation", () => {
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    const container = document.createElement("div");
+    const opts = {
+      onSelectArticle: () => {},
+      currentLang: "en" as const,
+      onLangChange: () => {},
+    };
+    renderNearbyList(container, makeArticles(2), opts);
+
+    enrichArticleItem(container, "Article 0", makeSummary());
+
+    // Re-render with same articles (triggers reconciliation)
+    renderNearbyList(container, makeArticles(2), opts);
+
+    const desc = container.querySelector(
+      '.nearby-item[data-title="Article 0"] .nearby-desc',
+    );
+    expect(desc?.textContent).toBe("A nice description");
+    const img = container.querySelector(".nearby-thumb img");
+    expect(img).not.toBeNull();
+    vi.restoreAllMocks();
   });
 });
