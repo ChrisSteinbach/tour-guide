@@ -135,6 +135,7 @@ function destroyBrowseMap(): void {
   }
   const el = app.querySelector(".browse-map");
   el?.remove();
+  app.classList.remove("split-view");
 }
 
 function destroyMapPicker(): void {
@@ -239,6 +240,7 @@ function updateBrowseMap(
     mapEl = document.createElement("div");
     mapEl.className = "browse-map";
     app.appendChild(mapEl);
+    app.classList.add("split-view");
   }
 
   void import("./browse-map")
