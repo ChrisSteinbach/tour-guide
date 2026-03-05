@@ -477,3 +477,88 @@ body {
 .map-picker-confirm:active {
   background: #1557b0;
 }
+
+/* ── Desktop responsive layout ──────────────────────────────── */
+
+@media (min-width: 768px) {
+  .app-header {
+    padding-left: max(16px, calc((100% - 720px) / 2));
+    padding-right: max(16px, calc((100% - 720px) / 2));
+  }
+
+  .nearby-list {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  .status-screen {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  .detail-content {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  .show-more {
+    max-width: 720px;
+  }
+
+  .update-banner {
+    padding-left: max(16px, calc((100% - 720px) / 2));
+    padding-right: max(16px, calc((100% - 720px) / 2));
+  }
+}
+
+/* Browse map is hidden by default (mobile) */
+.browse-map {
+  display: none;
+}
+
+/* Split view: article list + map side by side */
+@media (min-width: 1024px) {
+  #app:has(.browse-map) {
+    display: grid;
+    grid-template-areas:
+      "header header"
+      "list   map"
+      "more   map";
+    grid-template-columns: 1fr 400px;
+    grid-template-rows: auto 1fr auto;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  #app:has(.browse-map) > .app-header {
+    grid-area: header;
+    position: static;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  #app:has(.browse-map) > .nearby-list {
+    grid-area: list;
+    max-width: none;
+    margin: 0;
+    overflow-y: auto;
+  }
+
+  #app:has(.browse-map) > .show-more {
+    grid-area: more;
+    max-width: none;
+    margin: 8px auto 16px;
+  }
+
+  #app:has(.browse-map) > .browse-map {
+    display: block;
+    grid-area: map;
+    min-height: 0;
+  }
+}
+
+@media (min-width: 1024px) {
+  .nearby-item:hover {
+    background: #f0f0f0;
+  }
+}

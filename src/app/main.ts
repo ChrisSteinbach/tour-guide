@@ -5,6 +5,8 @@ import {
   enrichArticleItem,
 } from "./render";
 import type { MapPickerHandle } from "./map-picker";
+import type { BrowseMapHandle } from "./browse-map";
+import type { NearbyArticle } from "./types";
 import {
   renderLoading,
   renderLoadingProgress,
@@ -119,6 +121,21 @@ function getStoredLang(): Lang {
 // ── Map picker ──────────────────────────────────────────────
 
 let activeMapPicker: MapPickerHandle | null = null;
+let activeBrowseMap: BrowseMapHandle | null = null;
+
+const desktopQuery = window.matchMedia("(min-width: 1024px)");
+desktopQuery.addEventListener("change", () => {
+  if (appState.phase.phase === "browsing") renderBrowsingListDOM();
+});
+
+function destroyBrowseMap(): void {
+  if (activeBrowseMap) {
+    activeBrowseMap.destroy();
+    activeBrowseMap = null;
+  }
+  const el = app.querySelector(".browse-map");
+  el?.remove();
+}
 
 function destroyMapPicker(): void {
   if (activeMapPicker) {
@@ -129,6 +146,7 @@ function destroyMapPicker(): void {
 
 function showMapPicker(): void {
   destroyMapPicker();
+  destroyBrowseMap();
   app.textContent = "";
 
   const header = document.createElement("header");
@@ -174,7 +192,7 @@ function showMapPicker(): void {
 // ── DOM rendering ────────────────────────────────────────────
 
 function renderBrowsingListDOM(): void {
-  if (appState.phase.phase !== "browsing") return;
+  if (appState.phase.phase !== "browsing" || !appState.position) return;
   const isGps = appState.positionSource !== "picked";
   renderNearbyList(app, appState.phase.articles, {
     onSelectArticle: (article) => dispatch({ type: "selectArticle", article }),
@@ -192,10 +210,53 @@ function renderBrowsingListDOM(): void {
           onUseGps: () => dispatch({ type: "useGps" }),
         }),
   });
+  updateBrowseMap(appState.position, appState.phase.articles);
+}
+
+function updateBrowseMap(
+  position: { lat: number; lon: number },
+  articles: NearbyArticle[],
+): void {
+  if (!desktopQuery.matches) {
+    destroyBrowseMap();
+    return;
+  }
+
+  // If the map handle exists but its container was removed (e.g. detail view
+  // cleared #app), discard the stale handle so we recreate it.
+  if (activeBrowseMap) {
+    const existing = app.querySelector(".browse-map");
+    if (existing && app.contains(existing)) {
+      activeBrowseMap.update(position, articles);
+      return;
+    }
+    activeBrowseMap = null;
+  }
+
+  // First render: create the map container
+  let mapEl = app.querySelector<HTMLElement>(".browse-map");
+  if (!mapEl) {
+    mapEl = document.createElement("div");
+    mapEl.className = "browse-map";
+    app.appendChild(mapEl);
+  }
+
+  void import("./browse-map")
+    .then(({ createBrowseMap }) => {
+      if (!mapEl || !app.contains(mapEl)) return;
+      activeBrowseMap = createBrowseMap(mapEl, position, articles, (article) =>
+        dispatch({ type: "selectArticle", article }),
+      );
+    })
+    .catch(() => {
+      // Map is a nice-to-have; browsing works without it
+      mapEl?.remove();
+    });
 }
 
 function renderPhase(): void {
   destroyMapPicker();
+  destroyBrowseMap();
   switch (appState.phase.phase) {
     case "welcome":
       renderWelcome(
