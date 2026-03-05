@@ -138,7 +138,8 @@ export type Effect =
   | { type: "showMapPicker" }
   | { type: "showAppUpdateBanner" }
   | { type: "log"; message: string }
-  | { type: "requery"; pos: UserPosition; count: number };
+  | { type: "requery"; pos: UserPosition; count: number }
+  | { type: "fetchListSummaries" };
 
 // ── Internal helpers ─────────────────────────────────────────
 
@@ -356,9 +357,9 @@ export function transition(state: AppState, event: Event): TransitionResult {
             lastQueryPos: event.queryPos,
           },
         },
-        effects: [
-          same ? { type: "updateDistances" } : { type: "renderBrowsingList" },
-        ],
+        effects: same
+          ? [{ type: "updateDistances" }]
+          : [{ type: "renderBrowsingList" }, { type: "fetchListSummaries" }],
       };
     }
 

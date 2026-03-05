@@ -4,6 +4,7 @@ import type { AppState, QueryState } from "./state-machine";
 import type { EffectDeps } from "./effect-executor";
 import type { TileEntry } from "../tiles";
 import { createEffectExecutor, LANG_STORAGE_KEY } from "./effect-executor";
+import type { SummaryLoader } from "./summary-loader";
 import { NearestQuery } from "./query";
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -126,6 +127,12 @@ function makeDeps(overrides: Partial<EffectDeps> = {}): EffectDeps & {
       pageUrl: "https://en.wikipedia.org/wiki/Stockholm",
     })),
     getNearby: vi.fn(() => [article]),
+    summaryLoader: {
+      load: vi.fn(),
+      request: vi.fn(),
+      get: vi.fn(),
+      cancel: vi.fn(),
+    } satisfies SummaryLoader,
     render: vi.fn(),
     renderBrowsingList: vi.fn(),
     updateDistances: vi.fn(),
@@ -518,6 +525,40 @@ describe("createEffectExecutor", () => {
 
     exec({ type: "pushHistory" });
     expect(deps.pushState).toHaveBeenCalledWith({ view: "detail" }, "");
+  });
+
+  it("fetchListSummaries calls summaryLoader.load with article titles", () => {
+    const summaryLoader: SummaryLoader = {
+      load: vi.fn(),
+      request: vi.fn(),
+      get: vi.fn(),
+      cancel: vi.fn(),
+    };
+    const deps = makeDeps({
+      getState: vi.fn(() => browsingState()),
+      summaryLoader,
+    });
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "fetchListSummaries" });
+    expect(summaryLoader.load).toHaveBeenCalledWith(["Stockholm"], "en");
+  });
+
+  it("fetchListSummaries is a no-op when not browsing", () => {
+    const summaryLoader: SummaryLoader = {
+      load: vi.fn(),
+      request: vi.fn(),
+      get: vi.fn(),
+      cancel: vi.fn(),
+    };
+    const deps = makeDeps({
+      getState: vi.fn(() => detailState()),
+      summaryLoader,
+    });
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "fetchListSummaries" });
+    expect(summaryLoader.load).not.toHaveBeenCalled();
   });
 
   it("updateDistances guards on browsing phase", () => {
