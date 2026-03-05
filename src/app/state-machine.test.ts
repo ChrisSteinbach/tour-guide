@@ -949,6 +949,7 @@ describe("queryResult event", () => {
     expect(browsing.nearbyCount).toBe(10);
     expect(browsing.lastQueryPos).toBe(paris);
     expect(effectTypes(effects)).toContain("renderBrowsingList");
+    expect(effectTypes(effects)).toContain("fetchListSummaries");
     expect(effectTypes(effects)).not.toContain("updateDistances");
   });
 
@@ -969,6 +970,7 @@ describe("queryResult event", () => {
     expect(nextBrowsing.articles).toBe(updatedArticles);
     expect(effectTypes(effects)).toContain("updateDistances");
     expect(effectTypes(effects)).not.toContain("renderBrowsingList");
+    expect(effectTypes(effects)).not.toContain("fetchListSummaries");
   });
 
   it("updates nearbyCount and lastQueryPos", () => {

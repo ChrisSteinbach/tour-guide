@@ -1,5 +1,9 @@
 import "./style.css";
-import { renderNearbyList, updateNearbyDistances } from "./render";
+import {
+  renderNearbyList,
+  updateNearbyDistances,
+  enrichArticleItem,
+} from "./render";
 import type { MapPickerHandle } from "./map-picker";
 import {
   renderLoading,
@@ -10,6 +14,7 @@ import {
 } from "./status";
 import { watchLocation } from "./location";
 import { fetchArticleSummary } from "./wiki-api";
+import { createSummaryLoader } from "./summary-loader";
 import {
   renderDetailLoading,
   renderDetailReady,
@@ -66,6 +71,11 @@ function dispatch(event: Event): void {
 
 // ── Effect executor ──────────────────────────────────────────
 
+const summaryLoader = createSummaryLoader({
+  fetch: fetchArticleSummary,
+  onSummary: (title, summary) => enrichArticleItem(app, title, summary),
+});
+
 const goBack = () => history.back();
 
 const executeEffect = createEffectExecutor({
@@ -82,6 +92,7 @@ const executeEffect = createEffectExecutor({
   tilesForPosition,
   getTileEntry,
   fetchArticleSummary,
+  summaryLoader,
   getNearby,
   render: renderPhase,
   renderBrowsingList: renderBrowsingListDOM,

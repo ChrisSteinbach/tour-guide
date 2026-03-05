@@ -1,4 +1,5 @@
 import type { NearbyArticle } from "./types";
+import type { ArticleSummary } from "./wiki-api";
 import { formatDistance } from "./format";
 import { SUPPORTED_LANGS, LANG_NAMES } from "../lang";
 import type { Lang } from "../lang";
@@ -195,20 +196,56 @@ function createArticleItem(
     }
   });
 
+  const thumb = document.createElement("div");
+  thumb.className = "nearby-thumb";
+
   const info = document.createElement("div");
   info.className = "nearby-info";
   const name = document.createElement("span");
   name.className = "nearby-name";
   name.textContent = article.title;
-  info.appendChild(name);
+  const desc = document.createElement("span");
+  desc.className = "nearby-desc";
+  info.append(name, desc);
 
   const badge = document.createElement("span");
   badge.className = "nearby-distance";
   badge.textContent = formatDistance(article.distanceM);
 
-  item.append(info, badge);
+  item.append(thumb, info, badge);
   li.appendChild(item);
   return li;
+}
+
+/** Enrich a list item with summary data (thumbnail + description). */
+export function enrichArticleItem(
+  container: HTMLElement,
+  title: string,
+  summary: ArticleSummary,
+): void {
+  const items = container.querySelectorAll<HTMLElement>(".nearby-item");
+  for (const item of items) {
+    if (item.dataset.title !== title) continue;
+
+    const desc = item.querySelector<HTMLElement>(".nearby-desc");
+    if (desc && summary.description) {
+      desc.textContent = summary.description;
+    }
+
+    const thumbContainer = item.querySelector<HTMLElement>(".nearby-thumb");
+    if (thumbContainer && summary.thumbnailUrl) {
+      if (!thumbContainer.querySelector("img")) {
+        const img = document.createElement("img");
+        img.src = summary.thumbnailUrl;
+        img.alt = "";
+        img.loading = "lazy";
+        thumbContainer.appendChild(img);
+        thumbContainer.classList.add("nearby-thumb-loaded");
+      }
+    }
+
+    break;
+  }
 }
 
 /**

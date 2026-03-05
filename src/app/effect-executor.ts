@@ -9,6 +9,7 @@ import type { NearestQuery } from "./query";
 import type { TileEntry, TileIndex } from "../tiles";
 import type { Lang } from "../lang";
 import type { AppState, Effect, Event, QueryState } from "./state-machine";
+import type { SummaryLoader } from "./summary-loader";
 
 export const LANG_STORAGE_KEY = "tour-guide-lang";
 
@@ -53,6 +54,9 @@ export interface EffectDeps {
     pos: UserPosition,
     count: number,
   ) => NearbyArticle[];
+
+  // Summary loader
+  summaryLoader: SummaryLoader;
 
   // Rendering (opaque — already tested in render.test.ts, detail.test.ts, etc.)
   render: () => void;
@@ -239,6 +243,16 @@ export function createEffectExecutor(
           queryPos: effect.pos,
           count: effect.count,
         });
+        break;
+      }
+      case "fetchListSummaries": {
+        const state = deps.getState();
+        if (state.phase.phase === "browsing") {
+          deps.summaryLoader.load(
+            state.phase.articles.map((a) => a.title),
+            state.currentLang,
+          );
+        }
         break;
       }
       case "log":
