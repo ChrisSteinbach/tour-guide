@@ -518,7 +518,7 @@ body {
 
 /* Split view: article list + map side by side */
 @media (min-width: 1024px) {
-  #app:has(.browse-map) {
+  #app.split-view {
     display: grid;
     grid-template-areas:
       "header header"
@@ -530,27 +530,27 @@ body {
     overflow: hidden;
   }
 
-  #app:has(.browse-map) > .app-header {
+  #app.split-view > .app-header {
     grid-area: header;
     position: static;
     padding-left: 16px;
     padding-right: 16px;
   }
 
-  #app:has(.browse-map) > .nearby-list {
+  #app.split-view > .nearby-list {
     grid-area: list;
     max-width: none;
     margin: 0;
     overflow-y: auto;
   }
 
-  #app:has(.browse-map) > .show-more {
+  #app.split-view > .show-more {
     grid-area: more;
     max-width: none;
     margin: 8px auto 16px;
   }
 
-  #app:has(.browse-map) > .browse-map {
+  #app.split-view > .browse-map {
     display: block;
     grid-area: map;
     min-height: 0;
