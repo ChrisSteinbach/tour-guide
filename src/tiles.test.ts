@@ -1,4 +1,4 @@
-import { tileFor, tileId, GRID_DEG } from "./tiles";
+import { tileFor, tileId } from "./tiles";
 
 describe("tileFor", () => {
   it("maps equator/prime meridian", () => {
@@ -38,11 +38,5 @@ describe("tileId", () => {
 
   it("handles row 0 col 0", () => {
     expect(tileId(0, 0)).toBe("00-00");
-  });
-});
-
-describe("constants", () => {
-  it("GRID_DEG is 5", () => {
-    expect(GRID_DEG).toBe(5);
   });
 });

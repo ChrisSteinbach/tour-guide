@@ -45,6 +45,8 @@ function bruteForceNearest(tri: SphericalDelaunay, query: Point3D): number {
 }
 
 // ---------- Fixtures ----------
+// Shared across tests for performance (triangulation is O(n log n)).
+// No test mutates these — if that changes, move to per-test setup.
 
 /** 6 axis-aligned points forming an octahedron */
 const OCTAHEDRON_POINTS: Point3D[] = [
@@ -76,7 +78,6 @@ describe("locateTriangle", () => {
     const tri = buildTri(OCTAHEDRON_POINTS);
 
     it("locates face centers", () => {
-      // Each triangle's centroid should be located in that triangle
       for (let ti = 0; ti < tri.triangles.length; ti++) {
         const t = tri.triangles[ti];
         const a = tri.vertices[t.vertices[0]].point;
@@ -88,14 +89,21 @@ describe("locateTriangle", () => {
           a[2] + b[2] + c[2],
         ]);
         const found = locateTriangle(tri, center);
-        expect(triangleContains(tri, found, center)).toBe(true);
+        expect(
+          triangleContains(tri, found, center),
+          `triangle ${ti} centroid not located correctly`,
+        ).toBe(true);
       }
     });
 
     it("locates vertices (on edge of multiple triangles)", () => {
-      for (const v of tri.vertices) {
+      for (let vi = 0; vi < tri.vertices.length; vi++) {
+        const v = tri.vertices[vi];
         const found = locateTriangle(tri, v.point);
-        expect(triangleContains(tri, found, v.point)).toBe(true);
+        expect(
+          triangleContains(tri, found, v.point),
+          `vertex ${vi} not located correctly`,
+        ).toBe(true);
       }
     });
 
@@ -112,19 +120,25 @@ describe("locateTriangle", () => {
           const b = tri.vertices[ib].point;
           const mid = normalize([a[0] + b[0], a[1] + b[1], a[2] + b[2]]);
           const found = locateTriangle(tri, mid);
-          expect(triangleContains(tri, found, mid)).toBe(true);
+          expect(
+            triangleContains(tri, found, mid),
+            `edge midpoint ${key} not located correctly`,
+          ).toBe(true);
         }
       }
     });
   });
 
-  describe("walk convergence", () => {
+  describe("walk finds correct triangle regardless of start position", () => {
     it("converges from every triangle on octahedron", () => {
       const tri = buildTri(OCTAHEDRON_POINTS);
       const query = normalize([1, 1, 1]);
       for (let start = 0; start < tri.triangles.length; start++) {
         const found = locateTriangle(tri, query, start);
-        expect(triangleContains(tri, found, query)).toBe(true);
+        expect(
+          triangleContains(tri, found, query),
+          `walk from triangle ${start} did not converge`,
+        ).toBe(true);
       }
     });
 
@@ -146,8 +160,7 @@ describe("findNearest", () => {
   describe("octahedron", () => {
     const tri = buildTri(OCTAHEDRON_POINTS);
 
-    it("finds nearest for axis-biased queries", () => {
-      // A point biased toward +x should return the +x vertex
+    it("returns +x vertex for query biased toward +x", () => {
       const query = normalize([3, 0.1, 0.1]);
       const nearest = findNearest(tri, query);
       const np = tri.vertices[nearest].point;
@@ -159,7 +172,7 @@ describe("findNearest", () => {
     it("finds nearest for exact vertex queries", () => {
       for (let vi = 0; vi < tri.vertices.length; vi++) {
         const nearest = findNearest(tri, tri.vertices[vi].point);
-        expect(nearest).toBe(vi);
+        expect(nearest, `vertex ${vi} not found as its own nearest`).toBe(vi);
       }
     });
   });
@@ -170,11 +183,10 @@ describe("findNearest", () => {
 
     it("finds the correct city for nearby queries", () => {
       for (let i = 0; i < WORLD_CITIES.length; i++) {
-        // Query slightly offset from each city
         const { lat, lon } = WORLD_CITIES[i];
         const query = toCartesian({ lat: lat + 0.01, lon: lon + 0.01 });
         const nearest = findNearest(tri, query);
-        expect(nearest).toBe(i);
+        expect(nearest, `city ${i} (${lat}, ${lon}) not found`).toBe(i);
       }
     });
   });
@@ -197,7 +209,10 @@ describe("findNearest", () => {
         const query = toCartesian({ lat, lon });
         const walkResult = findNearest(tri, query);
         const bruteResult = bruteForceNearest(tri, query);
-        expect(walkResult).toBe(bruteResult);
+        expect(
+          walkResult,
+          `query ${i} (${lat.toFixed(2)}, ${lon.toFixed(2)})`,
+        ).toBe(bruteResult);
       }
     });
 
@@ -230,7 +245,10 @@ describe("findNearest", () => {
         const query = toCartesian({ lat, lon });
         const walkResult = findNearest(tri, query);
         const bruteResult = bruteForceNearest(tri, query);
-        expect(walkResult).toBe(bruteResult);
+        expect(
+          walkResult,
+          `query ${i} (${lat.toFixed(2)}, ${lon.toFixed(2)})`,
+        ).toBe(bruteResult);
       }
     });
   });

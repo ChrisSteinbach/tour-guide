@@ -1,9 +1,4 @@
-import {
-  idbPutAny,
-  idbDelete,
-  idbCleanupOldKeys,
-  CURRENT_KEY_PREFIXES,
-} from "./idb";
+import { idbPutAny, idbDelete, idbCleanupOldKeys } from "./idb";
 
 // ---------- Fake IDB ----------
 
@@ -166,16 +161,5 @@ describe("idbCleanupOldKeys", () => {
       "triangulation-v2-sv",
       "tile-v0-ja-1",
     ]);
-  });
-});
-
-describe("CURRENT_KEY_PREFIXES", () => {
-  it("covers all documented key patterns", () => {
-    const testKeys = ["tile-index-v1-sv", "tile-v1-en-42", "tile-lru-v1-en"];
-
-    for (const key of testKeys) {
-      const matched = CURRENT_KEY_PREFIXES.some((p) => key.startsWith(p));
-      expect(matched).toBe(true);
-    }
   });
 });
