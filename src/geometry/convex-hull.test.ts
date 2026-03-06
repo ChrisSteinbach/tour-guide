@@ -14,24 +14,24 @@ function validateHull(hull: ConvexHull, allOnHull = true) {
   // All vertex indices in range
   for (let fi = 0; fi < nF; fi++) {
     for (const vi of faces[fi].vertices) {
-      expect(vi).toBeGreaterThanOrEqual(0);
-      expect(vi).toBeLessThan(points.length);
+      expect(vi, `face ${fi} vertex out of range`).toBeGreaterThanOrEqual(0);
+      expect(vi, `face ${fi} vertex out of range`).toBeLessThan(points.length);
     }
   }
 
   // No degenerate faces (3 distinct vertices)
   for (let fi = 0; fi < nF; fi++) {
     const [a, b, c] = faces[fi].vertices;
-    expect(a).not.toBe(b);
-    expect(b).not.toBe(c);
-    expect(a).not.toBe(c);
+    expect(a, `face ${fi} degenerate`).not.toBe(b);
+    expect(b, `face ${fi} degenerate`).not.toBe(c);
+    expect(a, `face ${fi} degenerate`).not.toBe(c);
   }
 
   // All neighbor indices in range
   for (let fi = 0; fi < nF; fi++) {
     for (const ni of faces[fi].neighbor) {
-      expect(ni).toBeGreaterThanOrEqual(0);
-      expect(ni).toBeLessThan(nF);
+      expect(ni, `face ${fi} neighbor out of range`).toBeGreaterThanOrEqual(0);
+      expect(ni, `face ${fi} neighbor out of range`).toBeLessThan(nF);
     }
   }
 
@@ -44,18 +44,22 @@ function validateHull(hull: ConvexHull, allOnHull = true) {
       const edgeA = f.vertices[e];
       const edgeB = f.vertices[(e + 1) % 3];
 
-      // Find the shared edge in the neighbor (should be edgeB → edgeA)
       const nf = faces[ni];
       let found = false;
       for (let ne = 0; ne < 3; ne++) {
         if (nf.vertices[ne] === edgeB && nf.vertices[(ne + 1) % 3] === edgeA) {
-          // Neighbor should point back to us
-          expect(nf.neighbor[ne]).toBe(fi);
+          expect(
+            nf.neighbor[ne],
+            `face ${fi} edge ${e}: neighbor ${ni} doesn't point back`,
+          ).toBe(fi);
           found = true;
           break;
         }
       }
-      expect(found).toBe(true);
+      expect(
+        found,
+        `face ${fi} edge ${e}: shared edge not found in neighbor ${ni}`,
+      ).toBe(true);
     }
   }
 
@@ -68,7 +72,7 @@ function validateHull(hull: ConvexHull, allOnHull = true) {
   for (let fi = 0; fi < nF; fi++) {
     const [a, b, c] = faces[fi].vertices;
     const vol = orient3D(points[a], points[b], points[c], origin);
-    expect(vol).toBeLessThan(1e-6);
+    expect(vol, `face ${fi} not outward-oriented`).toBeLessThan(1e-6);
   }
 
   // Convexity: local convexity at every edge implies global convexity for a
@@ -84,12 +88,14 @@ function validateHull(hull: ConvexHull, allOnHull = true) {
       const nf = faces[ni];
       const edgeA = f.vertices[e];
       const edgeB = f.vertices[(e + 1) % 3];
-      // The opposite vertex is the one in the neighbor not on the shared edge
       let opposite = nf.vertices[0];
       if (opposite === edgeA || opposite === edgeB) opposite = nf.vertices[1];
       if (opposite === edgeA || opposite === edgeB) opposite = nf.vertices[2];
       const vol = orient3D(points[a], points[b], points[c], points[opposite]);
-      expect(vol).toBeLessThan(1e-6);
+      expect(
+        vol,
+        `edge between faces ${fi} and ${ni} violates convexity`,
+      ).toBeLessThan(1e-6);
     }
   }
 

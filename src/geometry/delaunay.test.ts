@@ -13,24 +13,28 @@ function validateTriangulation(tri: SphericalDelaunay) {
   // All vertex indices in range
   for (let ti = 0; ti < nT; ti++) {
     for (const vi of triangles[ti].vertices) {
-      expect(vi).toBeGreaterThanOrEqual(0);
-      expect(vi).toBeLessThan(nV);
+      expect(vi, `triangle ${ti} vertex out of range`).toBeGreaterThanOrEqual(
+        0,
+      );
+      expect(vi, `triangle ${ti} vertex out of range`).toBeLessThan(nV);
     }
   }
 
   // No degenerate triangles (3 distinct vertices)
   for (let ti = 0; ti < nT; ti++) {
     const [a, b, c] = triangles[ti].vertices;
-    expect(a).not.toBe(b);
-    expect(b).not.toBe(c);
-    expect(a).not.toBe(c);
+    expect(a, `triangle ${ti} degenerate`).not.toBe(b);
+    expect(b, `triangle ${ti} degenerate`).not.toBe(c);
+    expect(a, `triangle ${ti} degenerate`).not.toBe(c);
   }
 
   // All neighbor indices in range
   for (let ti = 0; ti < nT; ti++) {
     for (const ni of triangles[ti].neighbor) {
-      expect(ni).toBeGreaterThanOrEqual(0);
-      expect(ni).toBeLessThan(nT);
+      expect(ni, `triangle ${ti} neighbor out of range`).toBeGreaterThanOrEqual(
+        0,
+      );
+      expect(ni, `triangle ${ti} neighbor out of range`).toBeLessThan(nT);
     }
   }
 
@@ -46,34 +50,46 @@ function validateTriangulation(tri: SphericalDelaunay) {
       let found = false;
       for (let ne = 0; ne < 3; ne++) {
         if (nt.vertices[ne] === edgeB && nt.vertices[(ne + 1) % 3] === edgeA) {
-          expect(nt.neighbor[ne]).toBe(ti);
+          expect(
+            nt.neighbor[ne],
+            `triangle ${ti} edge ${e}: neighbor ${ni} doesn't point back`,
+          ).toBe(ti);
           found = true;
           break;
         }
       }
-      expect(found).toBe(true);
+      expect(
+        found,
+        `triangle ${ti} edge ${e}: shared edge not found in neighbor ${ni}`,
+      ).toBe(true);
     }
   }
 
   // Every vertex's triangle field points to a triangle that includes that vertex
   for (let vi = 0; vi < nV; vi++) {
     const ti = vertices[vi].triangle;
-    if (ti === -1) continue; // point not on hull (interior)
-    expect(ti).toBeGreaterThanOrEqual(0);
-    expect(ti).toBeLessThan(nT);
+    if (ti === -1) continue;
+    expect(ti, `vertex ${vi} triangle out of range`).toBeGreaterThanOrEqual(0);
+    expect(ti, `vertex ${vi} triangle out of range`).toBeLessThan(nT);
     const verts = triangles[ti].vertices;
-    expect(verts).toContain(vi);
+    expect(verts, `vertex ${vi} not in its own triangle ${ti}`).toContain(vi);
   }
 
   // Circumcenters on unit sphere (length ≈ 1)
   for (let ti = 0; ti < nT; ti++) {
     const len = vecLength(triangles[ti].circumcenter!);
-    expect(len).toBeCloseTo(1, 10);
+    expect(len, `triangle ${ti} circumcenter not on unit sphere`).toBeCloseTo(
+      1,
+      10,
+    );
   }
 
   // Circumradii positive
   for (let ti = 0; ti < nT; ti++) {
-    expect(triangles[ti].circumradius!).toBeGreaterThan(0);
+    expect(
+      triangles[ti].circumradius!,
+      `triangle ${ti} circumradius not positive`,
+    ).toBeGreaterThan(0);
   }
 
   // Circumcenters equidistant from all 3 vertices (within tolerance)
@@ -91,9 +107,18 @@ function validateTriangulation(tri: SphericalDelaunay) {
       t.circumcenter!,
       vertices[t.vertices[2]].point,
     );
-    expect(da).toBeCloseTo(t.circumradius!, 10);
-    expect(db).toBeCloseTo(t.circumradius!, 10);
-    expect(dc).toBeCloseTo(t.circumradius!, 10);
+    expect(da, `triangle ${ti} circumcenter not equidistant`).toBeCloseTo(
+      t.circumradius!,
+      10,
+    );
+    expect(db, `triangle ${ti} circumcenter not equidistant`).toBeCloseTo(
+      t.circumradius!,
+      10,
+    );
+    expect(dc, `triangle ${ti} circumcenter not equidistant`).toBeCloseTo(
+      t.circumradius!,
+      10,
+    );
   }
 
   // Euler: F = 2V - 4 (count only vertices that appear in triangles)

@@ -8,6 +8,11 @@ import type { SummaryLoader } from "./summary-loader";
 import { NearestQuery } from "./query";
 
 // ── Helpers ──────────────────────────────────────────────────
+//
+// Effect executor is an orchestration layer — its purpose is to wire
+// ~20 I/O boundaries together. The large EffectDeps interface is
+// inherent to its role, not a testability smell. makeDeps() provides
+// inert defaults so each test only overrides the deps it exercises.
 
 const pos: UserPosition = { lat: 59.33, lon: 18.07 };
 
