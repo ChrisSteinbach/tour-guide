@@ -289,6 +289,7 @@ export function transition(state: AppState, event: Event): TransitionResult {
             },
           },
           effects: [
+            { type: "renderBrowsingList" },
             {
               type: "requery",
               pos: state.position,
@@ -416,7 +417,10 @@ export function transition(state: AppState, event: Event): TransitionResult {
             lastQueryPos,
           },
         },
-        effects: [{ type: "renderBrowsingList" }],
+        effects: [
+          { type: "renderBrowsingList" },
+          { type: "fetchListSummaries" },
+        ],
       };
     }
 

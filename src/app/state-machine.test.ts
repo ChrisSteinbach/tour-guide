@@ -522,6 +522,7 @@ describe("togglePause event", () => {
     const browsing = expectBrowsing(next);
     expect(browsing.paused).toBe(false);
     expect(browsing.lastQueryPos).toBe(paris);
+    expect(effectTypes(effects)).toContain("renderBrowsingList");
     expect(effectTypes(effects)).toContain("requery");
   });
 
@@ -674,6 +675,7 @@ describe("back event", () => {
     expect(restoredBrowsing.nearbyCount).toBe(20);
     expect(restoredBrowsing.paused).toBe(true);
     expect(effectTypes(effects)).toContain("renderBrowsingList");
+    expect(effectTypes(effects)).toContain("fetchListSummaries");
   });
 
   it("no-ops when not in detail", () => {
