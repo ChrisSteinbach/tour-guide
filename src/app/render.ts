@@ -145,7 +145,7 @@ export function renderNearbyHeader(
     pinBtn.className = `header-icon-btn pick-location-btn${positionSource === "picked" ? " mode-active" : " mode-inactive"}`;
     pinBtn.setAttribute("aria-label", "Pick location on map");
     pinBtn.setAttribute("aria-pressed", String(positionSource === "picked"));
-    pinBtn.textContent = "\uD83D\uDCCD"; // 📍
+    pinBtn.textContent = "\uD83D\uDDFA\uFE0F"; // 🗺️
     if (positionSource !== "picked") {
       pinBtn.addEventListener("click", onPickLocation);
     }
