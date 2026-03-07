@@ -202,14 +202,10 @@ function renderBrowsingListDOM(): void {
     onShowMore: () => dispatch({ type: "showMore" }),
     nextCount: getNextTier(appState.phase.nearbyCount),
     paused: appState.phase.paused,
-    ...(isGps
-      ? {
-          onTogglePause: () => dispatch({ type: "togglePause" }),
-          onPickLocation: () => dispatch({ type: "showMapPicker" }),
-        }
-      : {
-          onUseGps: () => dispatch({ type: "useGps" }),
-        }),
+    onTogglePause: isGps ? () => dispatch({ type: "togglePause" }) : undefined,
+    positionSource: appState.positionSource ?? "gps",
+    onUseGps: () => dispatch({ type: "useGps" }),
+    onPickLocation: () => dispatch({ type: "showMapPicker" }),
   });
   updateBrowseMap(appState.position, appState.phase.articles);
 }

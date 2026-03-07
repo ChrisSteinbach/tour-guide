@@ -81,6 +81,7 @@ export interface RenderNearbyHeaderOptions {
   onLangChange: (lang: Lang) => void;
   paused: boolean;
   onTogglePause?: () => void;
+  positionSource?: "gps" | "picked";
   onPickLocation?: () => void;
   onUseGps?: () => void;
 }
@@ -95,6 +96,7 @@ export function renderNearbyHeader(
     onLangChange,
     paused,
     onTogglePause,
+    positionSource,
     onPickLocation,
     onUseGps,
   } = options;
@@ -126,22 +128,30 @@ export function renderNearbyHeader(
     headerControls.appendChild(pauseBtn);
   }
 
-  if (onPickLocation) {
-    const posBtn = document.createElement("button");
-    posBtn.className = "header-icon-btn pick-location-btn";
-    posBtn.setAttribute("aria-label", "Pick location on map");
-    posBtn.textContent = "\uD83D\uDCCD"; // 📍
-    posBtn.addEventListener("click", onPickLocation);
-    headerControls.appendChild(posBtn);
-  }
+  if (positionSource && onUseGps && onPickLocation) {
+    const modeToggle = document.createElement("div");
+    modeToggle.className = "mode-toggle";
 
-  if (onUseGps) {
     const gpsBtn = document.createElement("button");
-    gpsBtn.className = "header-icon-btn use-gps-btn";
+    gpsBtn.className = `header-icon-btn use-gps-btn${positionSource === "gps" ? " mode-active" : " mode-inactive"}`;
     gpsBtn.setAttribute("aria-label", "Use GPS location");
+    gpsBtn.setAttribute("aria-pressed", String(positionSource === "gps"));
     gpsBtn.textContent = "\uD83D\uDEF0\uFE0F"; // 🛰️
-    gpsBtn.addEventListener("click", onUseGps);
-    headerControls.appendChild(gpsBtn);
+    if (positionSource !== "gps") {
+      gpsBtn.addEventListener("click", onUseGps);
+    }
+
+    const pinBtn = document.createElement("button");
+    pinBtn.className = `header-icon-btn pick-location-btn${positionSource === "picked" ? " mode-active" : " mode-inactive"}`;
+    pinBtn.setAttribute("aria-label", "Pick location on map");
+    pinBtn.setAttribute("aria-pressed", String(positionSource === "picked"));
+    pinBtn.textContent = "\uD83D\uDDFA\uFE0F"; // 🗺️
+    if (positionSource !== "picked") {
+      pinBtn.addEventListener("click", onPickLocation);
+    }
+
+    modeToggle.append(gpsBtn, pinBtn);
+    headerControls.appendChild(modeToggle);
   }
 
   const langSelect = document.createElement("select");
@@ -291,6 +301,7 @@ export interface RenderNearbyListOptions {
   nextCount?: number;
   paused?: boolean;
   onTogglePause?: () => void;
+  positionSource?: "gps" | "picked";
   onPickLocation?: () => void;
   onUseGps?: () => void;
 }
@@ -309,6 +320,7 @@ export function renderNearbyList(
     nextCount,
     paused,
     onTogglePause,
+    positionSource,
     onPickLocation,
     onUseGps,
   } = options;
@@ -326,6 +338,7 @@ export function renderNearbyList(
       onLangChange,
       paused: paused ?? false,
       onTogglePause,
+      positionSource,
       onPickLocation,
       onUseGps,
     });
@@ -354,6 +367,7 @@ export function renderNearbyList(
     onLangChange,
     paused: paused ?? false,
     onTogglePause,
+    positionSource,
     onPickLocation,
     onUseGps,
   });
