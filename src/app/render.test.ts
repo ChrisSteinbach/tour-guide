@@ -123,45 +123,62 @@ describe("renderNearbyHeader", () => {
     expect(onTogglePause).toHaveBeenCalledOnce();
   });
 
-  it("renders pick-location button when onPickLocation provided", () => {
+  it("renders dual-icon mode toggle with GPS active", () => {
     const onPickLocation = vi.fn();
-    const header = renderNearbyHeader({
-      articleCount: 3,
-      currentLang: "en",
-      onLangChange: () => {},
-      paused: false,
-      onPickLocation,
-    });
-    const btn = header.querySelector(".pick-location-btn") as HTMLButtonElement;
-    expect(btn).not.toBeNull();
-    expect(btn.getAttribute("aria-label")).toBe("Pick location on map");
-    btn.click();
-    expect(onPickLocation).toHaveBeenCalledOnce();
-  });
-
-  it("renders use-GPS button when onUseGps provided", () => {
     const onUseGps = vi.fn();
     const header = renderNearbyHeader({
       articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
       paused: false,
+      positionSource: "gps",
+      onPickLocation,
       onUseGps,
     });
-    const btn = header.querySelector(".use-gps-btn") as HTMLButtonElement;
-    expect(btn).not.toBeNull();
-    expect(btn.getAttribute("aria-label")).toBe("Use GPS location");
-    btn.click();
+    const gpsBtn = header.querySelector(".use-gps-btn") as HTMLButtonElement;
+    const pinBtn = header.querySelector(
+      ".pick-location-btn",
+    ) as HTMLButtonElement;
+    expect(gpsBtn).not.toBeNull();
+    expect(pinBtn).not.toBeNull();
+    expect(gpsBtn.classList.contains("mode-active")).toBe(true);
+    expect(pinBtn.classList.contains("mode-inactive")).toBe(true);
+    expect(gpsBtn.getAttribute("aria-pressed")).toBe("true");
+    expect(pinBtn.getAttribute("aria-pressed")).toBe("false");
+    pinBtn.click();
+    expect(onPickLocation).toHaveBeenCalledOnce();
+  });
+
+  it("renders dual-icon mode toggle with pin active", () => {
+    const onPickLocation = vi.fn();
+    const onUseGps = vi.fn();
+    const header = renderNearbyHeader({
+      articleCount: 3,
+      currentLang: "en",
+      onLangChange: () => {},
+      paused: false,
+      positionSource: "picked",
+      onPickLocation,
+      onUseGps,
+    });
+    const gpsBtn = header.querySelector(".use-gps-btn") as HTMLButtonElement;
+    const pinBtn = header.querySelector(
+      ".pick-location-btn",
+    ) as HTMLButtonElement;
+    expect(gpsBtn.classList.contains("mode-inactive")).toBe(true);
+    expect(pinBtn.classList.contains("mode-active")).toBe(true);
+    gpsBtn.click();
     expect(onUseGps).toHaveBeenCalledOnce();
   });
 
-  it("omits location buttons when neither callback provided", () => {
+  it("omits mode toggle when positionSource not provided", () => {
     const header = renderNearbyHeader({
       articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
       paused: false,
     });
+    expect(header.querySelector(".mode-toggle")).toBeNull();
     expect(header.querySelector(".pick-location-btn")).toBeNull();
     expect(header.querySelector(".use-gps-btn")).toBeNull();
   });
@@ -392,7 +409,9 @@ describe("renderNearbyList", () => {
       onSelectArticle: () => {},
       currentLang: "en" as const,
       onLangChange: () => {},
+      positionSource: "gps" as const,
       onPickLocation: () => {},
+      onUseGps: () => {},
     };
     renderNearbyList(container, makeArticles(2), opts);
 
@@ -417,6 +436,8 @@ describe("renderNearbyList", () => {
       onSelectArticle: () => {},
       currentLang: "en" as const,
       onLangChange: () => {},
+      positionSource: "picked" as const,
+      onPickLocation: () => {},
       onUseGps: () => {},
     };
     renderNearbyList(container, makeArticles(2), opts);
