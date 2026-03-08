@@ -77,22 +77,22 @@ The `loadGeneration` counter prevents stale async results from corrupting state.
 
 Effects are the machine's way of requesting side effects. The transition function never performs I/O — it returns a list of effects, and the executor in `main.ts` interprets them:
 
-| Effect                | What the executor does                                                |
-| --------------------- | --------------------------------------------------------------------- |
-| `render`              | Calls `renderPhase()` — full screen redraw based on current phase     |
-| `renderBrowsingList`  | Re-renders just the article list (preserves header state)             |
-| `updateDistances`     | Patches only distance badges in-place (no DOM rebuild)                |
-| `startGps`            | Calls `watchLocation()`, wires callbacks to dispatch                  |
-| `stopGps`             | Stops the GPS watcher                                                 |
-| `storeLang`           | Persists language to `localStorage`                                   |
-| `storeStarted`        | Marks session as started in `sessionStorage`                          |
-| `loadData`            | Aborts previous load, fetches tile index for the language             |
-| `loadTiles`           | Loads nearby tiles based on current GPS position                      |
-| `pushHistory`         | Pushes a history entry (enables browser back for detail→browsing)     |
-| `fetchSummary`        | Fetches Wikipedia article summary, renders detail view                |
-| `showAppUpdateBanner` | Appends the SW update banner to the DOM                               |
-| `log`                 | Logs a message to the console                                         |
-| `requery`             | Runs `getNearby()` synchronously and dispatches a `queryResult` event |
+| Effect                | What the executor does                                                  |
+| --------------------- | ----------------------------------------------------------------------- |
+| `render`              | Calls `renderPhase()` — full screen redraw based on current phase       |
+| `renderBrowsingList`  | Re-renders just the article list (preserves header state)               |
+| `updateDistances`     | Patches only distance badges in-place (no DOM rebuild)                  |
+| `startGps`            | Calls `watchLocation()`, wires callbacks to dispatch                    |
+| `stopGps`             | Stops the GPS watcher                                                   |
+| `storeLang`           | Persists language to `localStorage`                                     |
+| `storeStarted`        | Persists start timestamp to `localStorage` (checked with TTL on reload) |
+| `loadData`            | Aborts previous load, fetches tile index for the language               |
+| `loadTiles`           | Loads nearby tiles based on current GPS position                        |
+| `pushHistory`         | Pushes a history entry (enables browser back for detail→browsing)       |
+| `fetchSummary`        | Fetches Wikipedia article summary, renders detail view                  |
+| `showAppUpdateBanner` | Appends the SW update banner to the DOM                                 |
+| `log`                 | Logs a message to the console                                           |
+| `requery`             | Runs `getNearby()` synchronously and dispatches a `queryResult` event   |
 
 The `requery` effect is notable: it re-enters the dispatch loop synchronously by calling `getNearby()` and immediately dispatching a `queryResult` event. This keeps the nearest-neighbor computation outside the pure machine while avoiding an async round-trip.
 
@@ -231,7 +231,7 @@ On page load, `main.ts` runs:
 1. **Clean up IDB** — Remove orphaned keys from old schema versions.
 2. **Listen for SW updates** — Wire `controllerchange` to dispatch `swUpdateAvailable`.
 3. **Load language data** — `dispatch({ type: "langChanged", lang })` triggers tile index fetch.
-4. **Restore or welcome** — If `sessionStorage` has `tour-guide-started`, dispatch `start` immediately. Otherwise render the welcome screen with buttons that dispatch `start` or `useMockData`.
+4. **Restore or welcome** — If `localStorage` has a fresh `tour-guide-started` timestamp (within the 1-hour TTL), dispatch `start` immediately. Otherwise render the welcome screen with buttons that dispatch `start` or `useMockData`.
 
 ## See Also
 

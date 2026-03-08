@@ -39,7 +39,12 @@ import {
   type AppState,
   type Event,
 } from "./state-machine";
-import { createEffectExecutor, LANG_STORAGE_KEY } from "./effect-executor";
+import {
+  createEffectExecutor,
+  LANG_STORAGE_KEY,
+  STARTED_STORAGE_KEY,
+  STARTED_TTL_MS,
+} from "./effect-executor";
 
 const app =
   document.getElementById("app") ??
@@ -112,7 +117,6 @@ const executeEffect = createEffectExecutor({
   },
   storage: {
     setItem: (k, v) => localStorage.setItem(k, v),
-    setSessionItem: (k, v) => sessionStorage.setItem(k, v),
   },
 });
 
@@ -352,7 +356,8 @@ void idbOpen().then((db) => {
 listenForSwUpdate();
 dispatch({ type: "langChanged", lang: appState.currentLang });
 
-if (sessionStorage.getItem("tour-guide-started")) {
+const startedAt = Number(localStorage.getItem(STARTED_STORAGE_KEY));
+if (startedAt && Date.now() - startedAt < STARTED_TTL_MS) {
   dispatch({ type: "start", hasGeolocation: !!navigator.geolocation });
 } else {
   renderWelcome(

@@ -8,7 +8,11 @@ import type {
   StorageDeps,
 } from "./effect-executor";
 import type { TileEntry } from "../tiles";
-import { createEffectExecutor, LANG_STORAGE_KEY } from "./effect-executor";
+import {
+  createEffectExecutor,
+  LANG_STORAGE_KEY,
+  STARTED_STORAGE_KEY,
+} from "./effect-executor";
 import type { SummaryLoader } from "./summary-loader";
 import { NearestQuery } from "./query";
 
@@ -139,7 +143,6 @@ function makeData(overrides: Partial<DataDeps> = {}): DataDeps {
 function makeStorage(overrides: Partial<StorageDeps> = {}): StorageDeps {
   return {
     setItem: vi.fn(),
-    setSessionItem: vi.fn(),
     ...overrides,
   };
 }
@@ -540,15 +543,21 @@ describe("createEffectExecutor", () => {
     expect(deps.storage.setItem).toHaveBeenCalledWith(LANG_STORAGE_KEY, "sv");
   });
 
-  it("storeStarted writes session flag", () => {
+  it("storeStarted writes timestamp to localStorage", () => {
     const deps = makeDeps();
     const exec = createEffectExecutor(deps);
 
+    const before = Date.now();
     exec({ type: "storeStarted" });
-    expect(deps.storage.setSessionItem).toHaveBeenCalledWith(
-      "tour-guide-started",
-      "1",
+    const after = Date.now();
+
+    const call = (deps.storage.setItem as Mock).mock.calls.find(
+      (args: unknown[]) => args[0] === STARTED_STORAGE_KEY,
     );
+    expect(call).toBeDefined();
+    const storedTime = Number(call![1]);
+    expect(storedTime).toBeGreaterThanOrEqual(before);
+    expect(storedTime).toBeLessThanOrEqual(after);
   });
 
   it("requery dispatches queryResult", () => {

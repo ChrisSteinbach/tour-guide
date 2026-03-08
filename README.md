@@ -196,7 +196,7 @@ Recommended reading order:
 
 ## Naming
 
-The user-facing app is called **WikiRadar** (PWA manifest, UI, docs). The repository and npm package use the original working name **tour-guide** (repo URL, `package.json`, IDB database name, `sessionStorage` keys). Both names refer to the same project.
+The user-facing app is called **WikiRadar** (PWA manifest, UI, docs). The repository and npm package use the original working name **tour-guide** (repo URL, `package.json`, IDB database name, `localStorage` keys). Both names refer to the same project.
 
 ## License
 

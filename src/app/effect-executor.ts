@@ -12,6 +12,9 @@ import type { AppState, Effect, Event, QueryState } from "./state-machine";
 import type { SummaryLoader } from "./summary-loader";
 
 export const LANG_STORAGE_KEY = "tour-guide-lang";
+export const STARTED_STORAGE_KEY = "tour-guide-started";
+/** How long a stored "started" timestamp remains valid (1 hour). */
+export const STARTED_TTL_MS = 60 * 60 * 1000;
 
 export interface RenderDeps {
   render: () => void;
@@ -49,7 +52,6 @@ export interface DataDeps {
 
 export interface StorageDeps {
   setItem: (key: string, value: string) => void;
-  setSessionItem: (key: string, value: string) => void;
 }
 
 export interface EffectDeps {
@@ -198,7 +200,7 @@ export function createEffectExecutor(
         deps.storage.setItem(LANG_STORAGE_KEY, effect.lang);
         break;
       case "storeStarted":
-        deps.storage.setSessionItem("tour-guide-started", "1");
+        deps.storage.setItem(STARTED_STORAGE_KEY, String(Date.now()));
         break;
       case "loadData":
         loadController.abort();
