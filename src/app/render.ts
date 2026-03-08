@@ -182,11 +182,19 @@ export function renderNearbyHeader(
 
     const pinBtn = document.createElement("button");
     pinBtn.className = `header-icon-btn pick-location-btn${positionSource === "picked" ? " mode-active" : " mode-inactive"}`;
-    pinBtn.setAttribute("aria-label", "Pick location on map");
-    pinBtn.title = "Pick location on map";
+    const pinLabel =
+      positionSource === "picked"
+        ? "Pick a new location"
+        : "Pick location on map";
+    pinBtn.setAttribute("aria-label", pinLabel);
+    pinBtn.title = pinLabel;
     pinBtn.setAttribute("aria-pressed", String(positionSource === "picked"));
     pinBtn.textContent = "\uD83D\uDDFA\uFE0F"; // 🗺️
-    if (positionSource !== "picked") {
+    if (positionSource === "picked") {
+      pinBtn.addEventListener("click", () => {
+        if (confirm("Choose a different location?")) onPickLocation();
+      });
+    } else {
       pinBtn.addEventListener("click", onPickLocation);
     }
 
