@@ -35,6 +35,7 @@ function makeState(overrides: Partial<AppState> = {}): AppState {
     downloadProgress: -1,
     updateBanner: null,
     hasGeolocation: true,
+    gpsSignalLost: false,
     ...overrides,
   };
 }
@@ -419,6 +420,24 @@ describe("position event", () => {
     expect(effectTypes(effects)).not.toContain("requery");
   });
 
+  it("clears gpsSignalLost on successful position", () => {
+    const state = browsingState({
+      positionSource: "gps",
+    });
+    // First, simulate signal loss
+    const { next: lostState } = transition(state, {
+      type: "gpsError",
+      error: { code: "POSITION_UNAVAILABLE", message: "Lost" },
+    });
+    expect(lostState.gpsSignalLost).toBe(true);
+    // Then, signal recovers
+    const { next } = transition(lostState, {
+      type: "position",
+      pos: parisNearby,
+    });
+    expect(next.gpsSignalLost).toBe(false);
+  });
+
   it("triggers render in detail phase", () => {
     const state = makeState({
       query: sampleQuery,
@@ -458,8 +477,34 @@ describe("gpsError event", () => {
     expect(effectTypes(effects)).toContain("render");
   });
 
-  it("ignores error while browsing", () => {
-    const state = browsingState();
+  it("sets gpsSignalLost while browsing with GPS source", () => {
+    const state = browsingState({ positionSource: "gps" });
+    const { next, effects } = transition(state, {
+      type: "gpsError",
+      error,
+    });
+    expect(next.gpsSignalLost).toBe(true);
+    expect(next.phase.phase).toBe("browsing");
+    expect(effectTypes(effects)).toContain("render");
+  });
+
+  it("sets gpsSignalLost while in detail with GPS source", () => {
+    const state = browsingState({ positionSource: "gps" });
+    const { next: detailState } = transition(state, {
+      type: "selectArticle",
+      article: defaultBrowsingArticles[0],
+    });
+    const { next, effects } = transition(detailState, {
+      type: "gpsError",
+      error,
+    });
+    expect(next.gpsSignalLost).toBe(true);
+    expect(next.phase.phase).toBe("detail");
+    expect(effectTypes(effects)).toContain("render");
+  });
+
+  it("ignores error while browsing with picked source", () => {
+    const state = browsingState({ positionSource: "picked" });
     const { next, effects } = transition(state, {
       type: "gpsError",
       error,

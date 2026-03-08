@@ -88,6 +88,8 @@ export interface AppState {
   /** Which update banner (if any) is showing. App updates take priority. */
   updateBanner: null | "app";
   hasGeolocation: boolean;
+  /** True when GPS signal is lost mid-session (cleared on next position). */
+  gpsSignalLost: boolean;
 }
 
 // ── Event (all inputs to the state machine) ──────────────────
@@ -249,6 +251,15 @@ export function transition(state: AppState, event: Event): TransitionResult {
       if (state.phase.phase === "locating") {
         return {
           next: { ...state, phase: { phase: "error", error: event.error } },
+          effects: [{ type: "render" }],
+        };
+      }
+      if (
+        state.positionSource === "gps" &&
+        (state.phase.phase === "browsing" || state.phase.phase === "detail")
+      ) {
+        return {
+          next: { ...state, gpsSignalLost: true },
           effects: [{ type: "render" }],
         };
       }
@@ -604,6 +615,7 @@ function handlePosition(
     ...state,
     position: event.pos,
     positionSource: "gps",
+    gpsSignalLost: false,
   };
   const effects: Effect[] = [];
 

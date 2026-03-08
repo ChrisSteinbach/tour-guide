@@ -60,6 +60,7 @@ let appState: AppState = {
   downloadProgress: -1,
   updateBanner: null,
   hasGeolocation: true,
+  gpsSignalLost: false,
 };
 
 // ── Dispatch ─────────────────────────────────────────────────
@@ -214,6 +215,7 @@ function renderBrowsingListDOM(): void {
     positionSource: appState.positionSource ?? "gps",
     onUseGps: () => dispatch({ type: "useGps" }),
     onPickLocation: () => dispatch({ type: "showMapPicker" }),
+    gpsSignalLost: appState.gpsSignalLost,
   });
   updateBrowseMap(appState.position, appState.phase.articles);
 }

@@ -59,6 +59,7 @@ function browsingState(overrides: Partial<AppState> = {}): AppState {
     downloadProgress: -1,
     updateBanner: null,
     hasGeolocation: true,
+    gpsSignalLost: false,
     ...overrides,
   };
 }
@@ -82,6 +83,7 @@ function detailState(overrides: Partial<AppState> = {}): AppState {
     downloadProgress: -1,
     updateBanner: null,
     hasGeolocation: true,
+    gpsSignalLost: false,
     ...overrides,
   };
 }
