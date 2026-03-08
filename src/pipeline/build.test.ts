@@ -151,4 +151,59 @@ describe("tiled pipeline (e2e)", () => {
     const binFiles = readdirSync(tilesDir).filter((f) => f.endsWith(".bin"));
     expect(binFiles.length).toBe(index.tiles.length);
   });
+
+  it("produces different tile hashes when article coordinates change", () => {
+    // First run: build with original articles
+    const testDir1 = join(tmpdir(), "build-hash-test-" + Date.now());
+    const dataDir1 = join(testDir1, "data");
+    mkdirSync(dataDir1, { recursive: true });
+
+    const makeArticles = (latOffset: number) => {
+      const lines: string[] = [];
+      for (let i = 0; i < 10; i++) {
+        const lat = 52.0 + latOffset + (i % 5) * 0.2;
+        const lon = 2.0 + Math.floor(i / 5) * 0.2;
+        lines.push(JSON.stringify({ title: `Place_${i}`, lat, lon }));
+      }
+      return lines.join("\n");
+    };
+
+    writeFileSync(join(dataDir1, "articles-en.json"), makeArticles(0), "utf-8");
+
+    const tsxBin = join(process.cwd(), "node_modules", ".bin", "tsx");
+    const buildScript = join(process.cwd(), "src/pipeline/build.ts");
+
+    execFileSync(tsxBin, [buildScript], { cwd: testDir1, timeout: 30_000 });
+
+    const index1: TileIndex = JSON.parse(
+      readFileSync(join(dataDir1, "tiles", "en", "index.json"), "utf-8"),
+    );
+
+    // Second run: mutate article coordinates
+    const testDir2 = join(tmpdir(), "build-hash-test2-" + Date.now());
+    const dataDir2 = join(testDir2, "data");
+    mkdirSync(dataDir2, { recursive: true });
+
+    writeFileSync(
+      join(dataDir2, "articles-en.json"),
+      makeArticles(0.5), // shift all latitudes by 0.5°
+      "utf-8",
+    );
+
+    execFileSync(tsxBin, [buildScript], { cwd: testDir2, timeout: 30_000 });
+
+    const index2: TileIndex = JSON.parse(
+      readFileSync(join(dataDir2, "tiles", "en", "index.json"), "utf-8"),
+    );
+
+    // Same tile ID (both clusters in same tile), but hash must differ
+    expect(index1.tiles).toHaveLength(1);
+    expect(index2.tiles).toHaveLength(1);
+    expect(index1.tiles[0].id).toBe(index2.tiles[0].id);
+    expect(index1.tiles[0].hash).not.toBe(index2.tiles[0].hash);
+    expect(index1.hash).not.toBe(index2.hash);
+
+    rmSync(testDir1, { recursive: true, force: true });
+    rmSync(testDir2, { recursive: true, force: true });
+  });
 });

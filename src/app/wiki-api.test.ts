@@ -140,4 +140,19 @@ describe("fetchArticleSummary", () => {
       expect.stringContaining("sv.wikipedia.org"),
     );
   });
+
+  it("caches separately per language for the same title", async () => {
+    mockFetch({ status: 200, body: fullResponse });
+
+    await fetchArticleSummary("A", "en");
+    await fetchArticleSummary("A", "sv");
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("en.wikipedia.org"),
+    );
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("sv.wikipedia.org"),
+    );
+  });
 });
