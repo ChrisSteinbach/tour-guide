@@ -5,6 +5,43 @@ import { SUPPORTED_LANGS, LANG_NAMES } from "../lang";
 import type { Lang } from "../lang";
 import { createAppHeader } from "./header";
 
+// ── SVG icon helpers ─────────────────────────────────────────
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function createSvgRoot(): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("width", "18");
+  svg.setAttribute("height", "18");
+  svg.setAttribute("viewBox", "0 0 18 18");
+  svg.setAttribute("fill", "currentColor");
+  return svg;
+}
+
+function createPlayIcon(): SVGSVGElement {
+  const svg = createSvgRoot();
+  const polygon = document.createElementNS(SVG_NS, "polygon");
+  polygon.setAttribute("points", "4,2 16,9 4,16");
+  svg.appendChild(polygon);
+  return svg;
+}
+
+function createPauseIcon(): SVGSVGElement {
+  const svg = createSvgRoot();
+  const left = document.createElementNS(SVG_NS, "rect");
+  left.setAttribute("x", "3");
+  left.setAttribute("y", "2");
+  left.setAttribute("width", "4");
+  left.setAttribute("height", "14");
+  const right = document.createElementNS(SVG_NS, "rect");
+  right.setAttribute("x", "11");
+  right.setAttribute("y", "2");
+  right.setAttribute("width", "4");
+  right.setAttribute("height", "14");
+  svg.append(left, right);
+  return svg;
+}
+
 // ── Focus capture / restore ──────────────────────────────────
 
 type FocusInfo =
@@ -123,7 +160,7 @@ export function renderNearbyHeader(
       "aria-label",
       paused ? "Resume updates" : "Pause updates",
     );
-    pauseBtn.textContent = paused ? "\u25B6" : "\u23F8";
+    pauseBtn.appendChild(paused ? createPlayIcon() : createPauseIcon());
     pauseBtn.addEventListener("click", onTogglePause);
     headerControls.appendChild(pauseBtn);
   }
