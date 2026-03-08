@@ -3,6 +3,7 @@ data/
 node_modules/
 coverage/
 src/geometry/vendor/
+.beads/
 .claude/
 *.bin
 *.gz
