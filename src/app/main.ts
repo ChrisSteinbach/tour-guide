@@ -176,6 +176,7 @@ function showMapPicker(): void {
           destroyMapPicker();
           dispatch({ type: "pickPosition", position: { lat, lon } });
         },
+        center: appState.position ?? undefined,
       });
     })
     .catch(() => {
