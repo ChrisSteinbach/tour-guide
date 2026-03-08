@@ -153,11 +153,6 @@ describe("tiled pipeline (e2e)", () => {
   });
 
   it("produces different tile hashes when article coordinates change", () => {
-    // First run: build with original articles
-    const testDir1 = join(tmpdir(), "build-hash-test-" + Date.now());
-    const dataDir1 = join(testDir1, "data");
-    mkdirSync(dataDir1, { recursive: true });
-
     const makeArticles = (latOffset: number) => {
       const lines: string[] = [];
       for (let i = 0; i < 10; i++) {
@@ -168,35 +163,34 @@ describe("tiled pipeline (e2e)", () => {
       return lines.join("\n");
     };
 
-    writeFileSync(join(dataDir1, "articles-en.json"), makeArticles(0), "utf-8");
-
     const tsxBin = join(process.cwd(), "node_modules", ".bin", "tsx");
     const buildScript = join(process.cwd(), "src/pipeline/build.ts");
 
+    // First run: original coordinates
+    const testDir1 = join(tmpdir(), "build-hash-test1-" + Date.now());
+    const dataDir1 = join(testDir1, "data");
+    mkdirSync(dataDir1, { recursive: true });
+    writeFileSync(join(dataDir1, "articles-en.json"), makeArticles(0), "utf-8");
     execFileSync(tsxBin, [buildScript], { cwd: testDir1, timeout: 30_000 });
-
     const index1: TileIndex = JSON.parse(
       readFileSync(join(dataDir1, "tiles", "en", "index.json"), "utf-8"),
     );
 
-    // Second run: mutate article coordinates
+    // Second run: shifted coordinates
     const testDir2 = join(tmpdir(), "build-hash-test2-" + Date.now());
     const dataDir2 = join(testDir2, "data");
     mkdirSync(dataDir2, { recursive: true });
-
     writeFileSync(
       join(dataDir2, "articles-en.json"),
-      makeArticles(0.5), // shift all latitudes by 0.5°
+      makeArticles(0.5),
       "utf-8",
     );
-
     execFileSync(tsxBin, [buildScript], { cwd: testDir2, timeout: 30_000 });
-
     const index2: TileIndex = JSON.parse(
       readFileSync(join(dataDir2, "tiles", "en", "index.json"), "utf-8"),
     );
 
-    // Same tile ID (both clusters in same tile), but hash must differ
+    // Same tile (both clusters land in the same grid cell), different hash
     expect(index1.tiles).toHaveLength(1);
     expect(index2.tiles).toHaveLength(1);
     expect(index1.tiles[0].id).toBe(index2.tiles[0].id);

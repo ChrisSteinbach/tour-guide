@@ -291,7 +291,6 @@ describe("streamDump", () => {
   });
 
   it("rejects with an error on truncated gzip input", async () => {
-    // Create a valid gzip buffer, then truncate it mid-stream
     const sql = dumpSql(
       "geo_tags",
       ["gt_id", "gt_page_id", "gt_lat", "gt_lon"],
