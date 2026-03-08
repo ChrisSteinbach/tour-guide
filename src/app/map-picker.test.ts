@@ -64,13 +64,22 @@ describe("createMapPicker", () => {
     handle.destroy();
   });
 
-  it("initializes a Leaflet map on the container", async () => {
+  it("initializes a Leaflet map on the container with default view", async () => {
     const L = (await import("leaflet")).default;
     const handle = createMapPicker(container, { onPick: vi.fn() });
     expect(L.map).toHaveBeenCalledWith(container);
     expect(mockMap.setView).toHaveBeenCalledWith([30, 10], 3);
     expect(L.tileLayer).toHaveBeenCalled();
     expect(mockTileLayer.addTo).toHaveBeenCalledWith(mockMap);
+    handle.destroy();
+  });
+
+  it("centers on provided position at city zoom level", () => {
+    const handle = createMapPicker(container, {
+      onPick: vi.fn(),
+      center: { lat: 48.8, lon: 2.35 },
+    });
+    expect(mockMap.setView).toHaveBeenCalledWith([48.8, 2.35], 13);
     handle.destroy();
   });
 

@@ -7,13 +7,18 @@ export interface MapPickerHandle {
 
 interface MapPickerOptions {
   onPick: (lat: number, lon: number) => void;
+  center?: { lat: number; lon: number };
 }
 
 export function createMapPicker(
   container: HTMLElement,
-  { onPick }: MapPickerOptions,
+  { onPick, center }: MapPickerOptions,
 ): MapPickerHandle {
-  const map = L.map(container).setView([30, 10], 3);
+  const initialView: [number, number] = center
+    ? [center.lat, center.lon]
+    : [30, 10];
+  const initialZoom = center ? 13 : 3;
+  const map = L.map(container).setView(initialView, initialZoom);
 
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution:
