@@ -193,9 +193,25 @@ describe("buildTriangulation", () => {
     // a ConvexHull directly with unused points to exercise the remapping logic
     // in buildTriangulation.
 
+    /** Build a ConvexHull where only `usedIndices` appear in faces. */
+    function hullWithUnusedPoints(
+      points: Point3D[],
+      usedIndices: number[],
+    ): ConvexHull {
+      const realHull = convexHull(usedIndices.map((i) => points[i]));
+      const faces = realHull.faces.map((f) => ({
+        vertices: f.vertices.map((v) => usedIndices[v]) as [
+          number,
+          number,
+          number,
+        ],
+        neighbor: [...f.neighbor] as [number, number, number],
+      }));
+      return { points, faces };
+    }
+
     it("drops unused points and remaps indices correctly", () => {
-      // 7 input points: indices 0,1,2,4,5,6 form the octahedron hull;
-      // index 3 is unused (not referenced by any face).
+      // 7 input points; index 3 is unused
       const points: Point3D[] = [
         [1, 0, 0], // 0
         [-1, 0, 0], // 1
@@ -206,39 +222,13 @@ describe("buildTriangulation", () => {
         [0, 0, -1], // 6
       ];
 
-      // Build a real octahedron hull from the 6 used points
-      const hullPoints: Point3D[] = [
-        points[0],
-        points[1],
-        points[2],
-        points[4],
-        points[5],
-        points[6],
-      ];
-      const realHull = convexHull(hullPoints);
-
-      // Map real hull indices (0-5) back to the 7-point array (skipping index 3)
-      const indexMap = [0, 1, 2, 4, 5, 6];
-      const faces = realHull.faces.map((f) => ({
-        vertices: [
-          indexMap[f.vertices[0]],
-          indexMap[f.vertices[1]],
-          indexMap[f.vertices[2]],
-        ] as [number, number, number],
-        neighbor: [...f.neighbor] as [number, number, number],
-      }));
-
-      const hull: ConvexHull = { points, faces };
+      const hull = hullWithUnusedPoints(points, [0, 1, 2, 4, 5, 6]);
       const tri = buildTriangulation(hull);
 
-      // Only the 6 hull vertices should survive
       expect(tri.vertices.length).toBe(6);
       expect(tri.originalIndices.length).toBe(6);
-
-      // Unused point (index 3) should not appear in originalIndices
       expect(tri.originalIndices).not.toContain(3);
 
-      // All used input indices should be present
       for (const idx of [0, 1, 2, 4, 5, 6]) {
         expect(
           tri.originalIndices,
@@ -286,27 +276,7 @@ describe("buildTriangulation", () => {
         [0, 0, -1], // 7 — hull
       ];
 
-      const hullPoints: Point3D[] = [
-        points[0],
-        points[2],
-        points[4],
-        points[5],
-        points[6],
-        points[7],
-      ];
-      const realHull = convexHull(hullPoints);
-
-      const indexMap = [0, 2, 4, 5, 6, 7];
-      const faces = realHull.faces.map((f) => ({
-        vertices: [
-          indexMap[f.vertices[0]],
-          indexMap[f.vertices[1]],
-          indexMap[f.vertices[2]],
-        ] as [number, number, number],
-        neighbor: [...f.neighbor] as [number, number, number],
-      }));
-
-      const hull: ConvexHull = { points, faces };
+      const hull = hullWithUnusedPoints(points, [0, 2, 4, 5, 6, 7]);
       const tri = buildTriangulation(hull);
 
       expect(tri.vertices.length).toBe(6);
@@ -322,7 +292,7 @@ describe("buildTriangulation", () => {
     });
 
     it("remapped triangle vertices are valid indices into the new vertex array", () => {
-      // After remapping, all triangle vertex indices should be in [0, vertices.length)
+      // 7 input points; index 1 unused
       const points: Point3D[] = [
         [1, 0, 0], // 0
         [0, 0, 0], // 1 — unused
@@ -333,30 +303,9 @@ describe("buildTriangulation", () => {
         [0, 0, -1], // 6
       ];
 
-      const hullPoints: Point3D[] = [
-        points[0],
-        points[2],
-        points[3],
-        points[4],
-        points[5],
-        points[6],
-      ];
-      const realHull = convexHull(hullPoints);
-
-      const indexMap = [0, 2, 3, 4, 5, 6];
-      const faces = realHull.faces.map((f) => ({
-        vertices: [
-          indexMap[f.vertices[0]],
-          indexMap[f.vertices[1]],
-          indexMap[f.vertices[2]],
-        ] as [number, number, number],
-        neighbor: [...f.neighbor] as [number, number, number],
-      }));
-
-      const hull: ConvexHull = { points, faces };
+      const hull = hullWithUnusedPoints(points, [0, 2, 3, 4, 5, 6]);
       const tri = buildTriangulation(hull);
 
-      // All triangle vertex indices should be remapped to new compact range
       for (const t of tri.triangles) {
         for (const vi of t.vertices) {
           expect(vi).toBeGreaterThanOrEqual(0);
