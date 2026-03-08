@@ -171,8 +171,53 @@ describe("renderNearbyHeader", () => {
     ) as HTMLButtonElement;
     expect(gpsBtn.classList.contains("mode-inactive")).toBe(true);
     expect(pinBtn.classList.contains("mode-active")).toBe(true);
+    expect(pinBtn.getAttribute("title")).toBe("Pick a new location");
     gpsBtn.click();
     expect(onUseGps).toHaveBeenCalledOnce();
+  });
+
+  it("re-picks location with confirmation when pin is active", () => {
+    const onPickLocation = vi.fn();
+    const onUseGps = vi.fn();
+    globalThis.confirm = vi.fn(() => true);
+    const header = renderNearbyHeader({
+      articleCount: 3,
+      currentLang: "en",
+      onLangChange: () => {},
+      paused: false,
+      positionSource: "picked",
+      onPickLocation,
+      onUseGps,
+    });
+    const pinBtn = header.querySelector(
+      ".pick-location-btn",
+    ) as HTMLButtonElement;
+    pinBtn.click();
+    expect(globalThis.confirm).toHaveBeenCalledWith(
+      "Choose a different location?",
+    );
+    expect(onPickLocation).toHaveBeenCalledOnce();
+  });
+
+  it("does not re-pick location when confirmation is dismissed", () => {
+    const onPickLocation = vi.fn();
+    const onUseGps = vi.fn();
+    globalThis.confirm = vi.fn(() => false);
+    const header = renderNearbyHeader({
+      articleCount: 3,
+      currentLang: "en",
+      onLangChange: () => {},
+      paused: false,
+      positionSource: "picked",
+      onPickLocation,
+      onUseGps,
+    });
+    const pinBtn = header.querySelector(
+      ".pick-location-btn",
+    ) as HTMLButtonElement;
+    pinBtn.click();
+    expect(globalThis.confirm).toHaveBeenCalled();
+    expect(onPickLocation).not.toHaveBeenCalled();
   });
 
   it("omits mode toggle when positionSource not provided", () => {
