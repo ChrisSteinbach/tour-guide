@@ -1,6 +1,7 @@
 import { defineConfig, type Plugin } from "vite";
 import basicSsl from "@vitejs/plugin-basic-ssl";
 import { VitePWA } from "vite-plugin-pwa";
+import { APP_NAME } from "./src/app/config";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -63,8 +64,8 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       manifest: {
-        name: "WikiRadar",
-        short_name: "WikiRadar",
+        name: APP_NAME,
+        short_name: APP_NAME,
         description: "Discover Wikipedia articles about places near you",
         theme_color: "#1a73e8",
         background_color: "#f5f5f5",

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { APP_NAME } from "./config";
 import {
   renderWelcome,
   renderLoading,
@@ -73,7 +74,7 @@ describe("renderWelcome", () => {
     expect(onLangChange).toHaveBeenCalledWith("ja");
   });
 
-  it("renders the app header with WikiRadar title", () => {
+  it("renders the app header with app name", () => {
     const container = document.createElement("div");
     renderWelcome(
       container,
@@ -83,7 +84,7 @@ describe("renderWelcome", () => {
       () => {},
     );
     const h1 = container.querySelector("h1");
-    expect(h1?.textContent).toBe("WikiRadar");
+    expect(h1?.textContent).toBe(APP_NAME);
   });
 
   it("renders tagline text", () => {

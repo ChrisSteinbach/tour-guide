@@ -1,4 +1,5 @@
 import "./style.css";
+import { APP_NAME } from "./config";
 import {
   renderNearbyList,
   updateNearbyDistances,
@@ -153,7 +154,7 @@ function showMapPicker(): void {
   const header = document.createElement("header");
   header.className = "app-header";
   const h1 = document.createElement("h1");
-  h1.textContent = "WikiRadar";
+  h1.textContent = APP_NAME;
   header.appendChild(h1);
 
   const instructions = document.createElement("p");
