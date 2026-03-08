@@ -85,28 +85,34 @@ const executeEffect = createEffectExecutor({
   getState: () => appState,
   dispatch: (event) => dispatch(event),
   watchLocation,
-  setItem: (k, v) => localStorage.setItem(k, v),
-  setSessionItem: (k, v) => sessionStorage.setItem(k, v),
   pushState: (data, title) => history.pushState(data, title),
-  loadTileIndex: (lang, signal) =>
-    loadTileIndex(import.meta.env.BASE_URL, lang, signal),
-  loadTile: (lang, entry, signal) =>
-    loadTile(import.meta.env.BASE_URL, lang, entry, signal),
-  tilesForPosition,
-  getTileEntry,
   fetchArticleSummary,
-  summaryLoader,
   getNearby,
-  render: renderPhase,
-  renderBrowsingList: renderBrowsingListDOM,
-  updateDistances: (articles) => updateNearbyDistances(app, articles),
-  renderDetailLoading: (article) => renderDetailLoading(app, article, goBack),
-  renderDetailReady: (article, summary) =>
-    renderDetailReady(app, article, summary, goBack),
-  renderDetailError: (article, msg, retry, lang) =>
-    renderDetailError(app, article, msg, goBack, retry, lang),
-  renderAppUpdateBanner,
-  showMapPicker,
+  summaryLoader,
+  ui: {
+    render: renderPhase,
+    renderBrowsingList: renderBrowsingListDOM,
+    updateDistances: (articles) => updateNearbyDistances(app, articles),
+    renderDetailLoading: (article) => renderDetailLoading(app, article, goBack),
+    renderDetailReady: (article, summary) =>
+      renderDetailReady(app, article, summary, goBack),
+    renderDetailError: (article, msg, retry, lang) =>
+      renderDetailError(app, article, msg, goBack, retry, lang),
+    renderAppUpdateBanner,
+    showMapPicker,
+  },
+  data: {
+    loadTileIndex: (lang, signal) =>
+      loadTileIndex(import.meta.env.BASE_URL, lang, signal),
+    loadTile: (lang, entry, signal) =>
+      loadTile(import.meta.env.BASE_URL, lang, entry, signal),
+    tilesForPosition,
+    getTileEntry,
+  },
+  storage: {
+    setItem: (k, v) => localStorage.setItem(k, v),
+    setSessionItem: (k, v) => sessionStorage.setItem(k, v),
+  },
 });
 
 // ── Helpers ──────────────────────────────────────────────────

@@ -1,7 +1,12 @@
 import type { Mock } from "vitest";
 import type { NearbyArticle, UserPosition } from "./types";
 import type { AppState, QueryState } from "./state-machine";
-import type { EffectDeps } from "./effect-executor";
+import type {
+  EffectDeps,
+  RenderDeps,
+  DataDeps,
+  StorageDeps,
+} from "./effect-executor";
 import type { TileEntry } from "../tiles";
 import { createEffectExecutor, LANG_STORAGE_KEY } from "./effect-executor";
 import type { SummaryLoader } from "./summary-loader";
@@ -9,10 +14,8 @@ import { NearestQuery } from "./query";
 
 // ── Helpers ──────────────────────────────────────────────────
 //
-// Effect executor is an orchestration layer — its purpose is to wire
-// ~20 I/O boundaries together. The large EffectDeps interface is
-// inherent to its role, not a testability smell. makeDeps() provides
-// inert defaults so each test only overrides the deps it exercises.
+// makeDeps() provides inert defaults so each test only overrides
+// the dep group it exercises.
 
 const pos: UserPosition = { lat: 59.33, lon: 18.07 };
 
@@ -96,17 +99,22 @@ function tiledState(
   return browsingState({ query, ...overrides });
 }
 
-function makeDeps(overrides: Partial<EffectDeps> = {}): EffectDeps & {
-  getState: Mock;
-  dispatch: Mock;
-} {
-  const deps: EffectDeps = {
-    getState: vi.fn(() => browsingState()),
-    dispatch: vi.fn(),
-    watchLocation: vi.fn(() => vi.fn()),
-    setItem: vi.fn(),
-    setSessionItem: vi.fn(),
-    pushState: vi.fn(),
+function makeUi(overrides: Partial<RenderDeps> = {}): RenderDeps {
+  return {
+    render: vi.fn(),
+    renderBrowsingList: vi.fn(),
+    updateDistances: vi.fn(),
+    renderDetailLoading: vi.fn(),
+    renderDetailReady: vi.fn(),
+    renderDetailError: vi.fn(),
+    renderAppUpdateBanner: vi.fn(),
+    showMapPicker: vi.fn(),
+    ...overrides,
+  };
+}
+
+function makeData(overrides: Partial<DataDeps> = {}): DataDeps {
+  return {
     loadTileIndex: vi.fn(async () => null),
     loadTile: vi.fn(
       async () =>
@@ -122,6 +130,27 @@ function makeDeps(overrides: Partial<EffectDeps> = {}): EffectDeps & {
     ),
     tilesForPosition: vi.fn(() => ({ primary: "t1", adjacent: [] })),
     getTileEntry: vi.fn(),
+    ...overrides,
+  };
+}
+
+function makeStorage(overrides: Partial<StorageDeps> = {}): StorageDeps {
+  return {
+    setItem: vi.fn(),
+    setSessionItem: vi.fn(),
+    ...overrides,
+  };
+}
+
+function makeDeps(overrides: Partial<EffectDeps> = {}): EffectDeps & {
+  getState: Mock;
+  dispatch: Mock;
+} {
+  const deps: EffectDeps = {
+    getState: vi.fn(() => browsingState()),
+    dispatch: vi.fn(),
+    watchLocation: vi.fn(() => vi.fn()),
+    pushState: vi.fn(),
     fetchArticleSummary: vi.fn(async () => ({
       title: "Stockholm",
       extract: "Capital of Sweden",
@@ -138,14 +167,9 @@ function makeDeps(overrides: Partial<EffectDeps> = {}): EffectDeps & {
       get: vi.fn(),
       cancel: vi.fn(),
     } satisfies SummaryLoader,
-    render: vi.fn(),
-    renderBrowsingList: vi.fn(),
-    updateDistances: vi.fn(),
-    renderDetailLoading: vi.fn(),
-    renderDetailReady: vi.fn(),
-    renderDetailError: vi.fn(),
-    renderAppUpdateBanner: vi.fn(),
-    showMapPicker: vi.fn(),
+    ui: makeUi(),
+    data: makeData(),
+    storage: makeStorage(),
     ...overrides,
   };
   return deps as EffectDeps & { getState: Mock; dispatch: Mock };
@@ -166,7 +190,7 @@ describe("createEffectExecutor", () => {
     };
     const deps = makeDeps({
       getState: vi.fn(() => browsingState({ loadGeneration: 1 })),
-      loadTileIndex: vi.fn(async () => index),
+      data: makeData({ loadTileIndex: vi.fn(async () => index) }),
     });
     const exec = createEffectExecutor(deps);
 
@@ -187,9 +211,11 @@ describe("createEffectExecutor", () => {
     let signalFromFirst: AbortSignal | undefined;
     const deps = makeDeps({
       getState: vi.fn(() => browsingState({ loadGeneration: 1 })),
-      loadTileIndex: vi.fn(async (_lang, signal) => {
-        signalFromFirst ??= signal;
-        return null;
+      data: makeData({
+        loadTileIndex: vi.fn(async (_lang, signal) => {
+          signalFromFirst ??= signal;
+          return null;
+        }),
       }),
     });
     const exec = createEffectExecutor(deps);
@@ -207,15 +233,17 @@ describe("createEffectExecutor", () => {
         // After first loadTileIndex resolves, generation has advanced
         return browsingState({ loadGeneration: callCount > 0 ? 2 : 1 });
       }),
-      loadTileIndex: vi.fn(async () => {
-        callCount++;
-        return {
-          version: 1,
-          gridDeg: 5,
-          bufferDeg: 0.5,
-          generated: "",
-          tiles: [],
-        };
+      data: makeData({
+        loadTileIndex: vi.fn(async () => {
+          callCount++;
+          return {
+            version: 1,
+            gridDeg: 5,
+            bufferDeg: 0.5,
+            generated: "",
+            tiles: [],
+          };
+        }),
       }),
     });
     const exec = createEffectExecutor(deps);
@@ -223,7 +251,7 @@ describe("createEffectExecutor", () => {
     exec({ type: "loadData", lang: "en" });
     // Wait for the promise to settle
     await vi.waitFor(() => {
-      expect(deps.loadTileIndex).toHaveBeenCalled();
+      expect(deps.data.loadTileIndex).toHaveBeenCalled();
     });
     // Give the .then handler time to run
     await new Promise((r) => setTimeout(r, 0));
@@ -237,8 +265,10 @@ describe("createEffectExecutor", () => {
   it("loadData dispatches null index on fetch failure", async () => {
     const deps = makeDeps({
       getState: vi.fn(() => browsingState({ loadGeneration: 1 })),
-      loadTileIndex: vi.fn(async () => {
-        throw new Error("network error");
+      data: makeData({
+        loadTileIndex: vi.fn(async () => {
+          throw new Error("network error");
+        }),
       }),
     });
     const exec = createEffectExecutor(deps);
@@ -267,9 +297,11 @@ describe("createEffectExecutor", () => {
     );
     const deps = makeDeps({
       getState: vi.fn(() => tiledState(tileMap)),
-      tilesForPosition: vi.fn(() => ({ primary: "t1", adjacent: [] })),
-      getTileEntry: vi.fn((_map, id) => (id === "t1" ? entry : undefined)),
-      loadTile: vi.fn(async () => mockQuery),
+      data: makeData({
+        tilesForPosition: vi.fn(() => ({ primary: "t1", adjacent: [] })),
+        getTileEntry: vi.fn((_map, id) => (id === "t1" ? entry : undefined)),
+        loadTile: vi.fn(async () => mockQuery),
+      }),
     });
     const exec = createEffectExecutor(deps);
 
@@ -324,8 +356,10 @@ describe("createEffectExecutor", () => {
           loadingTiles: new Set(["t2"]),
         }),
       ),
-      tilesForPosition: vi.fn(() => ({ primary: "t1", adjacent: ["t2"] })),
-      getTileEntry: vi.fn((_map, id) => tileMap.get(id)),
+      data: makeData({
+        tilesForPosition: vi.fn(() => ({ primary: "t1", adjacent: ["t2"] })),
+        getTileEntry: vi.fn((_map, id) => tileMap.get(id)),
+      }),
     });
     const exec = createEffectExecutor(deps);
 
@@ -358,18 +392,20 @@ describe("createEffectExecutor", () => {
           loadGeneration: loadResolved ? 99 : 1,
         });
       }),
-      tilesForPosition: vi.fn(() => ({ primary: "t1", adjacent: [] })),
-      getTileEntry: vi.fn((_map, id) => (id === "t1" ? entry : undefined)),
-      loadTile: vi.fn(async () => {
-        loadResolved = true;
-        return mockQuery;
+      data: makeData({
+        tilesForPosition: vi.fn(() => ({ primary: "t1", adjacent: [] })),
+        getTileEntry: vi.fn((_map, id) => (id === "t1" ? entry : undefined)),
+        loadTile: vi.fn(async () => {
+          loadResolved = true;
+          return mockQuery;
+        }),
       }),
     });
     const exec = createEffectExecutor(deps);
 
     exec({ type: "loadTiles", lang: "en" });
     await vi.waitFor(() => {
-      expect(deps.loadTile).toHaveBeenCalled();
+      expect(deps.data.loadTile).toHaveBeenCalled();
     });
     await new Promise((r) => setTimeout(r, 0));
 
@@ -401,10 +437,10 @@ describe("createEffectExecutor", () => {
     const exec = createEffectExecutor(deps);
 
     exec({ type: "fetchSummary", article });
-    expect(deps.renderDetailLoading).toHaveBeenCalledWith(article);
+    expect(deps.ui.renderDetailLoading).toHaveBeenCalledWith(article);
 
     await vi.waitFor(() => {
-      expect(deps.renderDetailReady).toHaveBeenCalledWith(article, summary);
+      expect(deps.ui.renderDetailReady).toHaveBeenCalledWith(article, summary);
     });
   });
 
@@ -432,7 +468,7 @@ describe("createEffectExecutor", () => {
     });
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(deps.renderDetailReady).not.toHaveBeenCalled();
+    expect(deps.ui.renderDetailReady).not.toHaveBeenCalled();
   });
 
   it("fetchSummary provides working retry on error", async () => {
@@ -456,16 +492,16 @@ describe("createEffectExecutor", () => {
 
     exec({ type: "fetchSummary", article });
     await vi.waitFor(() => {
-      expect(deps.renderDetailError).toHaveBeenCalled();
+      expect(deps.ui.renderDetailError).toHaveBeenCalled();
     });
 
     // Extract and call the retry callback
-    const errorCall = (deps.renderDetailError as Mock).mock.calls[0];
+    const errorCall = (deps.ui.renderDetailError as Mock).mock.calls[0];
     const retryFn = errorCall[2]; // onRetry is the 3rd argument
     retryFn();
 
     await vi.waitFor(() => {
-      expect(deps.renderDetailReady).toHaveBeenCalledWith(article, summary);
+      expect(deps.ui.renderDetailReady).toHaveBeenCalledWith(article, summary);
     });
   });
 
@@ -496,7 +532,7 @@ describe("createEffectExecutor", () => {
     const exec = createEffectExecutor(deps);
 
     exec({ type: "storeLang", lang: "sv" });
-    expect(deps.setItem).toHaveBeenCalledWith(LANG_STORAGE_KEY, "sv");
+    expect(deps.storage.setItem).toHaveBeenCalledWith(LANG_STORAGE_KEY, "sv");
   });
 
   it("storeStarted writes session flag", () => {
@@ -504,7 +540,10 @@ describe("createEffectExecutor", () => {
     const exec = createEffectExecutor(deps);
 
     exec({ type: "storeStarted" });
-    expect(deps.setSessionItem).toHaveBeenCalledWith("tour-guide-started", "1");
+    expect(deps.storage.setSessionItem).toHaveBeenCalledWith(
+      "tour-guide-started",
+      "1",
+    );
   });
 
   it("requery dispatches queryResult", () => {
@@ -573,6 +612,6 @@ describe("createEffectExecutor", () => {
     const exec = createEffectExecutor(deps);
 
     exec({ type: "updateDistances" });
-    expect(deps.updateDistances).not.toHaveBeenCalled();
+    expect(deps.ui.updateDistances).not.toHaveBeenCalled();
   });
 });
