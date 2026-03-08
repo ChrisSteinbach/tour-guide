@@ -344,11 +344,7 @@ window.addEventListener("popstate", () => {
 // Clean up orphaned IDB keys from old schema versions
 void idbOpen().then((db) => {
   if (!db) return;
-  idbCleanupOldKeys(db)
-    .then((n) => {
-      if (n > 0) console.log(`[idb] Cleaned up ${n} orphaned key(s)`);
-    })
-    .catch(() => {});
+  idbCleanupOldKeys(db).catch(() => {});
 });
 
 listenForSwUpdate();

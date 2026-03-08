@@ -47,7 +47,6 @@ export default tseslint.config(
             "Use textContent or createElement instead of document.write to prevent XSS.",
         },
       ],
-      "no-console": "warn",
       "no-param-reassign": "error",
 
       // TypeScript-specific
@@ -63,27 +62,10 @@ export default tseslint.config(
     },
   },
 
-  // Pipeline files are CLI tools — console is their UI
-  {
-    files: ["src/pipeline/**/*.ts"],
-    rules: {
-      "no-console": "off",
-    },
-  },
-
-  // App entry point uses console for operational diagnostics
-  {
-    files: ["src/app/main.ts"],
-    rules: {
-      "no-console": "off",
-    },
-  },
-
   // Test file overrides
   {
     files: ["**/*.test.ts"],
     rules: {
-      "no-console": "off",
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-unsafe-assignment": "off",
       "@typescript-eslint/no-unsafe-member-access": "off",

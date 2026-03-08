@@ -108,10 +108,9 @@ export function createEffectExecutor(
         if (gen !== deps.getState().loadGeneration) return;
         deps.dispatch({ type: "tileIndexLoaded", index, lang, gen });
       })
-      .catch((err: unknown) => {
+      .catch(() => {
         if (signal.aborted) return;
         if (gen !== deps.getState().loadGeneration) return;
-        console.warn("[tiles] Tile index failed:", err);
         deps.dispatch({
           type: "tileIndexLoaded",
           index: null,
@@ -159,9 +158,8 @@ export function createEffectExecutor(
           if (gen !== deps.getState().loadGeneration) return;
           deps.dispatch({ type: "tileLoaded", id, tileQuery, gen });
         })
-        .catch((err: unknown) => {
-          if (signal.aborted) return;
-          console.error(`Failed to load tile ${id}:`, err);
+        .catch(() => {
+          // Tile load failures are non-fatal; the tile simply won't appear
         });
 
       if (isPrimary) {
@@ -250,9 +248,6 @@ export function createEffectExecutor(
         }
         break;
       }
-      case "log":
-        console.log(effect.message);
-        break;
     }
   };
 }
