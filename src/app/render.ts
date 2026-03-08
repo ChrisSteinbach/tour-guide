@@ -121,6 +121,7 @@ export interface RenderNearbyHeaderOptions {
   positionSource?: "gps" | "picked";
   onPickLocation?: () => void;
   onUseGps?: () => void;
+  gpsSignalLost?: boolean;
 }
 
 /** Render the header bar with title, pause button, and language selector. */
@@ -136,6 +137,7 @@ export function renderNearbyHeader(
     positionSource,
     onPickLocation,
     onUseGps,
+    gpsSignalLost,
   } = options;
   const header = createAppHeader();
   const h1 = header.querySelector("h1")!;
@@ -171,9 +173,15 @@ export function renderNearbyHeader(
     modeToggle.className = "mode-toggle";
 
     const gpsBtn = document.createElement("button");
-    gpsBtn.className = `header-icon-btn use-gps-btn${positionSource === "gps" ? " mode-active" : " mode-inactive"}`;
-    gpsBtn.setAttribute("aria-label", "Use GPS location");
-    gpsBtn.title = "Use GPS location";
+    const gpsClasses = ["header-icon-btn", "use-gps-btn"];
+    gpsClasses.push(positionSource === "gps" ? "mode-active" : "mode-inactive");
+    if (gpsSignalLost) gpsClasses.push("gps-signal-lost");
+    gpsBtn.className = gpsClasses.join(" ");
+    gpsBtn.setAttribute(
+      "aria-label",
+      gpsSignalLost ? "GPS signal lost" : "Use GPS location",
+    );
+    gpsBtn.title = gpsSignalLost ? "GPS signal lost" : "Use GPS location";
     gpsBtn.setAttribute("aria-pressed", String(positionSource === "gps"));
     gpsBtn.textContent = "\uD83D\uDEF0\uFE0F"; // 🛰️
     if (positionSource !== "gps") {
@@ -352,6 +360,7 @@ export interface RenderNearbyListOptions {
   positionSource?: "gps" | "picked";
   onPickLocation?: () => void;
   onUseGps?: () => void;
+  gpsSignalLost?: boolean;
 }
 
 /** Build and replace the contents of `container` with a nearby-articles list. */
@@ -371,6 +380,7 @@ export function renderNearbyList(
     positionSource,
     onPickLocation,
     onUseGps,
+    gpsSignalLost,
   } = options;
 
   const existingList =
@@ -389,6 +399,7 @@ export function renderNearbyList(
       positionSource,
       onPickLocation,
       onUseGps,
+      gpsSignalLost,
     });
 
     const list = document.createElement("ul");
@@ -418,6 +429,7 @@ export function renderNearbyList(
     positionSource,
     onPickLocation,
     onUseGps,
+    gpsSignalLost,
   });
   if (oldHeader) {
     oldHeader.replaceWith(newHeader);
