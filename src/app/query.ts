@@ -64,6 +64,11 @@ function dist(
   return 2 * Math.asin(chord < 2 ? chord / 2 : 1);
 }
 
+/**
+ * Locate the triangle containing query point (qx,qy,qz) via a triangle walk.
+ * Returns the triangle index, or -1 if the walk gets stuck in a cycle
+ * (caused by near-degenerate triangles from Float32 coordinate quantization).
+ */
 function flatLocate(
   fd: FlatDelaunay,
   qx: number,
@@ -74,7 +79,16 @@ function flatLocate(
   if (fd.vertexTriangles.length === 0) return 0;
   let cur = start ?? fd.vertexTriangles[0];
   const maxSteps = Math.max(fd.triangleVertices.length / 3, 100);
+  // Ring buffer for cycle detection — catches loops up to HISTORY_SIZE/2 long.
+  const HISTORY_SIZE = 16;
+  const history = new Int32Array(HISTORY_SIZE).fill(-1);
   for (let step = 0; step < maxSteps; step++) {
+    // Check if current triangle was visited recently (cycle detection)
+    for (let h = 0; h < HISTORY_SIZE; h++) {
+      if (history[h] === cur) return -1;
+    }
+    history[step % HISTORY_SIZE] = cur;
+
     const ti = cur * 3;
     let crossed = false;
     for (let e = 0; e < 3; e++) {
@@ -110,6 +124,26 @@ function flatNeighbors(fd: FlatDelaunay, vIdx: number): number[] {
   return neighbors;
 }
 
+/** Brute-force scan of all vertices — O(V) fallback when the walk fails. */
+function flatFindNearestBrute(
+  fd: FlatDelaunay,
+  qx: number,
+  qy: number,
+  qz: number,
+): number {
+  const V = fd.vertexTriangles.length;
+  let bestV = 0;
+  let bestD = dist(fd.vertexPoints, 0, qx, qy, qz);
+  for (let v = 1; v < V; v++) {
+    const d = dist(fd.vertexPoints, v * 3, qx, qy, qz);
+    if (d < bestD) {
+      bestD = d;
+      bestV = v;
+    }
+  }
+  return bestV;
+}
+
 function flatFindNearest(
   fd: FlatDelaunay,
   qx: number,
@@ -118,6 +152,10 @@ function flatFindNearest(
   startTri?: number,
 ): number {
   const tIdx = flatLocate(fd, qx, qy, qz, startTri);
+
+  // Walk got stuck in a degenerate cycle — fall back to brute force
+  if (tIdx < 0) return flatFindNearestBrute(fd, qx, qy, qz);
+
   const ti = tIdx * 3;
 
   let bestV = fd.triangleVertices[ti];
