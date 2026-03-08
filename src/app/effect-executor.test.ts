@@ -253,8 +253,8 @@ describe("createEffectExecutor", () => {
     await vi.waitFor(() => {
       expect(deps.data.loadTileIndex).toHaveBeenCalled();
     });
-    // Give the .then handler time to run
-    await new Promise((r) => setTimeout(r, 0));
+    // Flush the .then handler chained on loadTileIndex
+    await (deps.data.loadTileIndex as Mock).mock.results[0]?.value;
 
     // dispatch should NOT have been called because generation was stale
     expect(deps.dispatch).not.toHaveBeenCalledWith(
@@ -364,7 +364,8 @@ describe("createEffectExecutor", () => {
     const exec = createEffectExecutor(deps);
 
     exec({ type: "loadTiles", lang: "en" });
-    await new Promise((r) => setTimeout(r, 10));
+    // All tiles are skipped synchronously; flush async function completion
+    await Promise.resolve();
 
     // Neither tile should trigger tileLoadStarted
     expect(deps.dispatch).not.toHaveBeenCalledWith(
@@ -404,10 +405,11 @@ describe("createEffectExecutor", () => {
     const exec = createEffectExecutor(deps);
 
     exec({ type: "loadTiles", lang: "en" });
+    // Await loadTile's promise to flush its .then handler
     await vi.waitFor(() => {
       expect(deps.data.loadTile).toHaveBeenCalled();
     });
-    await new Promise((r) => setTimeout(r, 0));
+    await (deps.data.loadTile as Mock).mock.results[0]?.value;
 
     // tileLoadStarted fires before the await, but tileLoaded should NOT
     expect(deps.dispatch).toHaveBeenCalledWith(
@@ -463,10 +465,11 @@ describe("createEffectExecutor", () => {
     const exec = createEffectExecutor(deps);
 
     exec({ type: "fetchSummary", article });
+    // Await fetchArticleSummary's promise to flush its .then handler
     await vi.waitFor(() => {
       expect(deps.fetchArticleSummary).toHaveBeenCalled();
     });
-    await new Promise((r) => setTimeout(r, 0));
+    await (deps.fetchArticleSummary as Mock).mock.results[0]?.value;
 
     expect(deps.ui.renderDetailReady).not.toHaveBeenCalled();
   });

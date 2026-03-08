@@ -98,7 +98,7 @@ describe("renderWelcome", () => {
     );
     const msg = container.querySelector(".status-message");
     expect(msg).not.toBeNull();
-    expect(msg?.textContent?.length).toBeGreaterThan(0);
+    expect(msg?.textContent).toMatch(/discover/i);
   });
 });
 
@@ -110,7 +110,7 @@ describe("renderLoading", () => {
     renderLoading(container);
     const msg = container.querySelector(".status-message");
     expect(msg).not.toBeNull();
-    expect(msg?.textContent?.length).toBeGreaterThan(0);
+    expect(msg?.textContent).toMatch(/location/i);
   });
 
   it("displays custom message when provided", () => {
@@ -169,7 +169,7 @@ describe("renderLoadingProgress", () => {
     expect(container.querySelector(".loading-dot")).not.toBeNull();
     const msg = container.querySelector(".status-message");
     expect(msg).not.toBeNull();
-    expect(msg?.textContent?.length).toBeGreaterThan(0);
+    expect(msg?.textContent).toMatch(/article data/i);
   });
 });
 
@@ -187,7 +187,7 @@ describe("renderError", () => {
       renderError(container, { code, message: "" }, () => {});
       const msg = container.querySelector(".status-message");
       expect(msg).not.toBeNull();
-      expect(msg?.textContent?.length).toBeGreaterThan(0);
+      expect(msg?.textContent).toMatch(/denied|determined|timed out/i);
       return msg!.textContent;
     });
     expect(new Set(messages).size).toBe(codes.length);
@@ -212,7 +212,7 @@ describe("renderError", () => {
     renderError(container, error, () => {});
     const btn = container.querySelector(".status-action") as HTMLButtonElement;
     expect(btn).not.toBeNull();
-    expect(btn.textContent?.length).toBeGreaterThan(0);
+    expect(btn.textContent).toMatch(/map/i);
   });
 });
 
@@ -248,6 +248,6 @@ describe("renderDataUnavailable", () => {
     renderDataUnavailable(container, "en", () => {});
     const msg = container.querySelector(".status-message");
     expect(msg).not.toBeNull();
-    expect(msg?.textContent?.length).toBeGreaterThan(0);
+    expect(msg?.textContent).toMatch(/try a different language/i);
   });
 });

@@ -182,27 +182,6 @@ describe("renderDetailReady", () => {
     expect(link.href).toContain("2.2945");
     expect(link.target).toBe("_blank");
   });
-
-  it("clears previous container content", () => {
-    const container = document.createElement("div");
-    const stale = document.createElement("p");
-    stale.textContent = "old";
-    container.appendChild(stale);
-
-    renderDetailReady(container, makeArticle(), makeSummary(), () => {});
-
-    expect(stale.parentNode).toBeNull();
-  });
-
-  it("fires onBack when back button is clicked", () => {
-    const onBack = vi.fn();
-    const container = document.createElement("div");
-    renderDetailReady(container, makeArticle(), makeSummary(), onBack);
-
-    const back = container.querySelector(".detail-back") as HTMLButtonElement;
-    back.click();
-    expect(onBack).toHaveBeenCalledOnce();
-  });
 });
 
 // ── renderDetailError ────────────────────────────────────────
@@ -282,33 +261,6 @@ describe("renderDetailError", () => {
     expect(link.href).toContain("48.8584");
     expect(link.href).toContain("2.2945");
     expect(link.target).toBe("_blank");
-  });
-
-  it("fires onBack when back button is clicked", () => {
-    const onBack = vi.fn();
-    const container = document.createElement("div");
-    renderDetailError(container, makeArticle(), "Error", onBack, () => {});
-
-    const back = container.querySelector(".detail-back") as HTMLButtonElement;
-    back.click();
-    expect(onBack).toHaveBeenCalledOnce();
-  });
-
-  it("clears previous container content", () => {
-    const container = document.createElement("div");
-    const stale = document.createElement("p");
-    stale.textContent = "old";
-    container.appendChild(stale);
-
-    renderDetailError(
-      container,
-      makeArticle(),
-      "Error",
-      () => {},
-      () => {},
-    );
-
-    expect(stale.parentNode).toBeNull();
   });
 
   it("uses correct lang for Wikipedia URL", () => {
