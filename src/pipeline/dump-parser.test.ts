@@ -289,4 +289,25 @@ describe("streamDump", () => {
       }),
     ).rejects.toThrow("Schema for table 'geo_tags' not found");
   });
+
+  it("rejects with an error on truncated gzip input", async () => {
+    const sql = dumpSql(
+      "geo_tags",
+      ["gt_id", "gt_page_id", "gt_lat", "gt_lon"],
+      [[1, 100, 48.8584, 2.2945]],
+    );
+    const fullGzip = gzipSync(Buffer.from(sql, "utf8"));
+    const truncated = fullGzip.subarray(0, Math.floor(fullGzip.length / 2));
+
+    const path = join(testDir, "corrupted.sql.gz");
+    writeFileSync(path, truncated);
+
+    await expect(
+      collectRows({
+        filePath: path,
+        tableName: "geo_tags",
+        requiredColumns: ["gt_id"],
+      }),
+    ).rejects.toThrow();
+  });
 });

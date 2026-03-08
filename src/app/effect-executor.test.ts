@@ -321,6 +321,64 @@ describe("createEffectExecutor", () => {
     });
   });
 
+  it("loadTiles loads adjacent tiles concurrently without awaiting each one", async () => {
+    const entryP = makeTileEntry("tp");
+    const entryA1 = makeTileEntry("ta1", "h2");
+    const entryA2 = makeTileEntry("ta2", "h3");
+    const tileMap = new Map<string, TileEntry>([
+      ["tp", entryP],
+      ["ta1", entryA1],
+      ["ta2", entryA2],
+    ]);
+
+    // Track the order of loadTile calls and when they resolve
+    const loadOrder: string[] = [];
+    const resolvers: Array<() => void> = [];
+    const mockQuery = new NearestQuery(
+      {
+        vertexPoints: new Float64Array(),
+        vertexTriangles: new Uint32Array(),
+        triangleVertices: new Uint32Array(),
+        triangleNeighbors: new Uint32Array(),
+      },
+      [],
+    );
+
+    const deps = makeDeps({
+      getState: vi.fn(() => tiledState(tileMap)),
+      data: makeData({
+        tilesForPosition: vi.fn(() => ({
+          primary: "tp",
+          adjacent: ["ta1", "ta2"],
+        })),
+        getTileEntry: vi.fn((_map, id) => tileMap.get(id as string)),
+        loadTile: vi.fn((_lang, entry: TileEntry) => {
+          loadOrder.push(entry.id);
+          return new Promise<NearestQuery>((resolve) => {
+            resolvers.push(() => resolve(mockQuery));
+          });
+        }),
+      }),
+    });
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "loadTiles", lang: "en" });
+
+    // Primary tile must be loaded first and awaited before adjacent tiles start
+    expect(loadOrder).toEqual(["tp"]);
+
+    // Resolve primary tile — this unblocks adjacent tile loading
+    resolvers[0]();
+    await vi.waitFor(() => {
+      expect(loadOrder).toHaveLength(3);
+    });
+
+    // Both adjacent tiles were initiated before either resolved
+    expect(loadOrder).toEqual(["tp", "ta1", "ta2"]);
+    expect(resolvers).toHaveLength(3);
+    // Neither adjacent promise has been resolved yet, confirming concurrency
+  });
+
   it("loadTiles skips already-loaded and in-progress tiles", async () => {
     const entry1 = makeTileEntry("t1");
     const entry2 = makeTileEntry("t2", "h2");
