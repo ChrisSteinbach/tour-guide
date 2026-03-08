@@ -137,7 +137,6 @@ export type Effect =
   | { type: "fetchSummary"; article: NearbyArticle }
   | { type: "showMapPicker" }
   | { type: "showAppUpdateBanner" }
-  | { type: "log"; message: string }
   | { type: "requery"; pos: UserPosition; count: number }
   | { type: "fetchListSummaries" };
 
@@ -527,13 +526,7 @@ export function transition(state: AppState, event: Event): TransitionResult {
           ...state,
           phase: { phase: "dataUnavailable" },
         },
-        effects: [
-          {
-            type: "log",
-            message: `Tile index not available for ${event.lang}`,
-          },
-          { type: "render" },
-        ],
+        effects: [{ type: "render" }],
       };
     }
 

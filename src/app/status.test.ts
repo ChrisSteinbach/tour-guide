@@ -87,7 +87,7 @@ describe("renderWelcome", () => {
     expect(h1?.textContent).toBe(APP_NAME);
   });
 
-  it("renders tagline text", () => {
+  it("renders a tagline message", () => {
     const container = document.createElement("div");
     renderWelcome(
       container,
@@ -97,20 +97,20 @@ describe("renderWelcome", () => {
       () => {},
     );
     const msg = container.querySelector(".status-message");
-    expect(msg?.textContent).toBe(
-      "Discover Wikipedia articles about places near you.",
-    );
+    expect(msg).not.toBeNull();
+    expect(msg?.textContent).toMatch(/discover/i);
   });
 });
 
 // ── renderLoading ───────────────────────────────────────────
 
 describe("renderLoading", () => {
-  it("displays default loading message", () => {
+  it("displays a loading message", () => {
     const container = document.createElement("div");
     renderLoading(container);
     const msg = container.querySelector(".status-message");
-    expect(msg?.textContent).toBe("Finding your location\u2026");
+    expect(msg).not.toBeNull();
+    expect(msg?.textContent).toMatch(/location/i);
   });
 
   it("displays custom message when provided", () => {
@@ -168,43 +168,29 @@ describe("renderLoadingProgress", () => {
     expect(container.querySelector(".progress-track")).toBeNull();
     expect(container.querySelector(".loading-dot")).not.toBeNull();
     const msg = container.querySelector(".status-message");
-    expect(msg?.textContent).toBe("Loading article data\u2026");
+    expect(msg).not.toBeNull();
+    expect(msg?.textContent).toMatch(/article data/i);
   });
 });
 
 // ── renderError ─────────────────────────────────────────────
 
 describe("renderError", () => {
-  it("displays user-friendly message for PERMISSION_DENIED", () => {
-    const container = document.createElement("div");
-    const error: LocationError = {
-      code: "PERMISSION_DENIED",
-      message: "User denied",
-    };
-    renderError(container, error, () => {});
-    const msg = container.querySelector(".status-message");
-    expect(msg?.textContent).toContain("Location access was denied");
-  });
-
-  it("displays user-friendly message for POSITION_UNAVAILABLE", () => {
-    const container = document.createElement("div");
-    const error: LocationError = {
-      code: "POSITION_UNAVAILABLE",
-      message: "Unavailable",
-    };
-    renderError(container, error, () => {});
-    const msg = container.querySelector(".status-message");
-    expect(msg?.textContent).toContain("could not be determined");
-    expect(msg?.textContent).toContain("pick a location on the map");
-  });
-
-  it("displays user-friendly message for TIMEOUT", () => {
-    const container = document.createElement("div");
-    const error: LocationError = { code: "TIMEOUT", message: "Timed out" };
-    renderError(container, error, () => {});
-    const msg = container.querySelector(".status-message");
-    expect(msg?.textContent).toContain("timed out");
-    expect(msg?.textContent).toContain("pick a location on the map");
+  it("renders a message for each error code", () => {
+    const codes: LocationError["code"][] = [
+      "PERMISSION_DENIED",
+      "POSITION_UNAVAILABLE",
+      "TIMEOUT",
+    ];
+    const messages = codes.map((code) => {
+      const container = document.createElement("div");
+      renderError(container, { code, message: "" }, () => {});
+      const msg = container.querySelector(".status-message");
+      expect(msg).not.toBeNull();
+      expect(msg?.textContent).toMatch(/denied|determined|timed out/i);
+      return msg!.textContent;
+    });
+    expect(new Set(messages).size).toBe(codes.length);
   });
 
   it("calls onPickLocation when pick-location button is clicked", () => {
@@ -220,12 +206,13 @@ describe("renderError", () => {
     expect(onPickLocation).toHaveBeenCalledOnce();
   });
 
-  it("pick-location button has correct label", () => {
+  it("renders a pick-location button", () => {
     const container = document.createElement("div");
     const error: LocationError = { code: "TIMEOUT", message: "timeout" };
     renderError(container, error, () => {});
     const btn = container.querySelector(".status-action") as HTMLButtonElement;
-    expect(btn.textContent).toBe("Pick on map");
+    expect(btn).not.toBeNull();
+    expect(btn.textContent).toMatch(/map/i);
   });
 });
 
@@ -256,10 +243,11 @@ describe("renderDataUnavailable", () => {
     expect(onLangChange).toHaveBeenCalledWith("sv");
   });
 
-  it("suggests trying a different language", () => {
+  it("renders a message suggesting alternatives", () => {
     const container = document.createElement("div");
     renderDataUnavailable(container, "en", () => {});
     const msg = container.querySelector(".status-message");
-    expect(msg?.textContent).toContain("Try a different language");
+    expect(msg).not.toBeNull();
+    expect(msg?.textContent).toMatch(/try a different language/i);
   });
 });

@@ -38,15 +38,10 @@ async function touchLru(
   const { updated, evict } = updateLru(lru, tile);
 
   for (const id of evict) {
-    idbDelete(db, `tile-v1-${lang}-${id}`).catch((err) =>
-      console.warn(`[idb] Failed to evict tile ${id}:`, err),
-    );
-    console.log(`[tiles] Evicted tile ${id} from cache`);
+    idbDelete(db, `tile-v1-${lang}-${id}`).catch(() => undefined);
   }
 
-  idbPutAny(db, lruKey, updated).catch((err) =>
-    console.warn("[idb] LRU update failed:", err),
-  );
+  idbPutAny(db, lruKey, updated).catch(() => undefined);
 }
 
 // ---------- Tile query functions ----------
@@ -194,7 +189,6 @@ export async function loadTileIndex(
   try {
     const response = await fetch(url, { cache: "no-store", signal });
     if (response.status === 404) {
-      console.log("[tiles] No tile index found");
       return null;
     }
     if (!response.ok) {
@@ -202,13 +196,10 @@ export async function loadTileIndex(
     }
 
     const index = (await response.json()) as TileIndex;
-    console.log(`[tiles] Index loaded: ${index.tiles.length} tiles (${lang})`);
 
     // Cache for offline use
     if (db) {
-      idbPutAny(db, cacheKey, JSON.stringify(index)).catch((err) =>
-        console.warn("[idb] Tile index cache failed:", err),
-      );
+      idbPutAny(db, cacheKey, JSON.stringify(index)).catch(() => undefined);
     }
 
     return index;
@@ -219,11 +210,9 @@ export async function loadTileIndex(
     if (db) {
       const cached = await idbGetAny<string>(db, cacheKey);
       if (cached) {
-        console.log("[tiles] Using cached tile index (offline)");
         return JSON.parse(cached) as TileIndex;
       }
     }
-    console.warn("[tiles] Failed to load tile index:", err);
     return null;
   }
 }
@@ -246,7 +235,6 @@ export async function loadTile(
   if (db) {
     const cached = await idbGetAny<CachedTileData>(db, cacheKey);
     if (cached && cached.hash === entry.hash) {
-      console.log(`[tiles] Cache hit for tile ${entry.id}`);
       // Touch LRU (no eviction expected on a hit, but keeps order current)
       await touchLru(db, lang, entry.id);
       return new NearestQuery(
@@ -273,10 +261,6 @@ export async function loadTile(
   const buf = await response.arrayBuffer();
   const { fd, articles } = deserializeBinary(buf);
 
-  console.log(
-    `[tiles] Loaded tile ${entry.id}: ${articles.length} articles, ${(buf.byteLength / 1024).toFixed(0)} KB`,
-  );
-
   // Cache in IDB
   if (db) {
     const cacheData: CachedTileData = {
@@ -287,9 +271,7 @@ export async function loadTile(
       articles: articles.map((a) => a.title),
       hash: entry.hash,
     };
-    idbPutAny(db, cacheKey, cacheData).catch((err) =>
-      console.warn("[idb] Tile cache write failed:", err),
-    );
+    idbPutAny(db, cacheKey, cacheData).catch(() => undefined);
     await touchLru(db, lang, entry.id);
   }
 

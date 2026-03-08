@@ -827,7 +827,7 @@ describe("tileIndexLoaded event", () => {
     expect(effectTypes(effects)).toContain("loadTiles");
   });
 
-  it("enters dataUnavailable with log when index is null", () => {
+  it("enters dataUnavailable when index is null", () => {
     const state = makeState();
     const { next, effects } = transition(state, {
       type: "tileIndexLoaded",
@@ -837,7 +837,6 @@ describe("tileIndexLoaded event", () => {
     });
     expect(next.query.mode).toBe("none");
     expect(next.phase.phase).toBe("dataUnavailable");
-    expect(effectTypes(effects)).toContain("log");
     expect(effectTypes(effects)).toContain("render");
   });
 
