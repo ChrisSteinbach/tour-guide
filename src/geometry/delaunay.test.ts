@@ -1,5 +1,6 @@
 import { buildTriangulation } from "./delaunay";
 import type { SphericalDelaunay } from "./delaunay";
+import type { ConvexHull } from "./convex-hull";
 import { convexHull, sphericalDistance, toCartesian, vecLength } from "./index";
 import type { Point3D } from "./index";
 
@@ -182,6 +183,187 @@ describe("buildTriangulation", () => {
       const tri = buildTriangulation(hull);
       expect(tri.triangles.length).toBe(12);
       expect(tri.vertices.length).toBe(8);
+      validateTriangulation(tri);
+    });
+  });
+
+  describe("originalIndices remapping", () => {
+    // The convex hull's perturbPoints normalizes all points to the unit sphere,
+    // so we can't create interior points through convexHull(). Instead, we craft
+    // a ConvexHull directly with unused points to exercise the remapping logic
+    // in buildTriangulation.
+
+    it("drops unused points and remaps indices correctly", () => {
+      // 7 input points: indices 0,1,2,4,5,6 form the octahedron hull;
+      // index 3 is unused (not referenced by any face).
+      const points: Point3D[] = [
+        [1, 0, 0], // 0
+        [-1, 0, 0], // 1
+        [0, 1, 0], // 2
+        [0, 0.5, 0.5], // 3 — unused
+        [0, -1, 0], // 4
+        [0, 0, 1], // 5
+        [0, 0, -1], // 6
+      ];
+
+      // Build a real octahedron hull from the 6 used points
+      const hullPoints: Point3D[] = [
+        points[0],
+        points[1],
+        points[2],
+        points[4],
+        points[5],
+        points[6],
+      ];
+      const realHull = convexHull(hullPoints);
+
+      // Map real hull indices (0-5) back to the 7-point array (skipping index 3)
+      const indexMap = [0, 1, 2, 4, 5, 6];
+      const faces = realHull.faces.map((f) => ({
+        vertices: [
+          indexMap[f.vertices[0]],
+          indexMap[f.vertices[1]],
+          indexMap[f.vertices[2]],
+        ] as [number, number, number],
+        neighbor: [...f.neighbor] as [number, number, number],
+      }));
+
+      const hull: ConvexHull = { points, faces };
+      const tri = buildTriangulation(hull);
+
+      // Only the 6 hull vertices should survive
+      expect(tri.vertices.length).toBe(6);
+      expect(tri.originalIndices.length).toBe(6);
+
+      // Unused point (index 3) should not appear in originalIndices
+      expect(tri.originalIndices).not.toContain(3);
+
+      // All used input indices should be present
+      for (const idx of [0, 1, 2, 4, 5, 6]) {
+        expect(
+          tri.originalIndices,
+          `original index ${idx} should be in originalIndices`,
+        ).toContain(idx);
+      }
+
+      // Each vertex's point should match the original input point
+      for (let vi = 0; vi < tri.vertices.length; vi++) {
+        const origIdx = tri.originalIndices[vi];
+        const expected = points[origIdx];
+        const actual = tri.vertices[vi].point;
+        expect(actual[0]).toBeCloseTo(expected[0], 10);
+        expect(actual[1]).toBeCloseTo(expected[1], 10);
+        expect(actual[2]).toBeCloseTo(expected[2], 10);
+      }
+    });
+
+    it("maps to identity when all points are on the hull", () => {
+      const points: Point3D[] = [
+        [1, 0, 0],
+        [-1, 0, 0],
+        [0, 1, 0],
+        [0, -1, 0],
+        [0, 0, 1],
+        [0, 0, -1],
+      ];
+
+      const hull = convexHull(points);
+      const tri = buildTriangulation(hull);
+
+      expect(tri.originalIndices).toEqual([0, 1, 2, 3, 4, 5]);
+    });
+
+    it("handles multiple unused points with correct monotonic remapping", () => {
+      // 8 input points, indices 1 and 3 unused
+      const points: Point3D[] = [
+        [1, 0, 0], // 0 — hull
+        [0.5, 0.5, 0], // 1 — unused
+        [-1, 0, 0], // 2 — hull
+        [0, 0, 0.1], // 3 — unused
+        [0, 1, 0], // 4 — hull
+        [0, -1, 0], // 5 — hull
+        [0, 0, 1], // 6 — hull
+        [0, 0, -1], // 7 — hull
+      ];
+
+      const hullPoints: Point3D[] = [
+        points[0],
+        points[2],
+        points[4],
+        points[5],
+        points[6],
+        points[7],
+      ];
+      const realHull = convexHull(hullPoints);
+
+      const indexMap = [0, 2, 4, 5, 6, 7];
+      const faces = realHull.faces.map((f) => ({
+        vertices: [
+          indexMap[f.vertices[0]],
+          indexMap[f.vertices[1]],
+          indexMap[f.vertices[2]],
+        ] as [number, number, number],
+        neighbor: [...f.neighbor] as [number, number, number],
+      }));
+
+      const hull: ConvexHull = { points, faces };
+      const tri = buildTriangulation(hull);
+
+      expect(tri.vertices.length).toBe(6);
+      expect(tri.originalIndices).not.toContain(1);
+      expect(tri.originalIndices).not.toContain(3);
+
+      // Verify remapping is monotonically increasing (preserves input order)
+      for (let i = 1; i < tri.originalIndices.length; i++) {
+        expect(tri.originalIndices[i]).toBeGreaterThan(
+          tri.originalIndices[i - 1],
+        );
+      }
+    });
+
+    it("remapped triangle vertices are valid indices into the new vertex array", () => {
+      // After remapping, all triangle vertex indices should be in [0, vertices.length)
+      const points: Point3D[] = [
+        [1, 0, 0], // 0
+        [0, 0, 0], // 1 — unused
+        [-1, 0, 0], // 2
+        [0, 1, 0], // 3
+        [0, -1, 0], // 4
+        [0, 0, 1], // 5
+        [0, 0, -1], // 6
+      ];
+
+      const hullPoints: Point3D[] = [
+        points[0],
+        points[2],
+        points[3],
+        points[4],
+        points[5],
+        points[6],
+      ];
+      const realHull = convexHull(hullPoints);
+
+      const indexMap = [0, 2, 3, 4, 5, 6];
+      const faces = realHull.faces.map((f) => ({
+        vertices: [
+          indexMap[f.vertices[0]],
+          indexMap[f.vertices[1]],
+          indexMap[f.vertices[2]],
+        ] as [number, number, number],
+        neighbor: [...f.neighbor] as [number, number, number],
+      }));
+
+      const hull: ConvexHull = { points, faces };
+      const tri = buildTriangulation(hull);
+
+      // All triangle vertex indices should be remapped to new compact range
+      for (const t of tri.triangles) {
+        for (const vi of t.vertices) {
+          expect(vi).toBeGreaterThanOrEqual(0);
+          expect(vi).toBeLessThan(tri.vertices.length);
+        }
+      }
+
       validateTriangulation(tri);
     });
   });

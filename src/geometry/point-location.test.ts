@@ -6,7 +6,7 @@ import {
   convexHull,
   buildTriangulation,
 } from "./index";
-import { locateTriangle, findNearest } from "./point-location";
+import { locateTriangle, findNearest, vertexNeighbors } from "./point-location";
 import type { Point3D, SphericalDelaunay } from "./index";
 
 // ---------- Helpers ----------
@@ -150,6 +150,96 @@ describe("locateTriangle", () => {
       const distantStart = tri.vertices[tri.vertices.length - 1].triangle;
       const found = locateTriangle(tri, query, distantStart);
       expect(triangleContains(tri, found, query)).toBe(true);
+    });
+  });
+});
+
+// ---------- vertexNeighbors ----------
+
+describe("vertexNeighbors", () => {
+  describe("octahedron", () => {
+    const tri = buildTri(OCTAHEDRON_POINTS);
+
+    it("returns exactly 4 neighbors for each vertex", () => {
+      for (let vi = 0; vi < tri.vertices.length; vi++) {
+        const neighbors = vertexNeighbors(tri, vi);
+        expect(
+          neighbors.length,
+          `vertex ${vi} should have 4 neighbors in octahedron`,
+        ).toBe(4);
+      }
+    });
+
+    it("returns no duplicates", () => {
+      for (let vi = 0; vi < tri.vertices.length; vi++) {
+        const neighbors = vertexNeighbors(tri, vi);
+        expect(
+          new Set(neighbors).size,
+          `vertex ${vi} has duplicate neighbors`,
+        ).toBe(neighbors.length);
+      }
+    });
+
+    it("does not include the vertex itself", () => {
+      for (let vi = 0; vi < tri.vertices.length; vi++) {
+        const neighbors = vertexNeighbors(tri, vi);
+        expect(
+          neighbors,
+          `vertex ${vi} found in its own neighbors`,
+        ).not.toContain(vi);
+      }
+    });
+
+    it("does not connect antipodal vertices", () => {
+      // In an octahedron, +x (index 0) should NOT neighbor -x (index 1)
+      const neighbors = vertexNeighbors(tri, 0);
+      const neighborPoints = neighbors.map((n) => tri.vertices[n].point);
+      const hasAntipodal = neighborPoints.some(
+        (p) => p[0] < -0.5 && Math.abs(p[1]) < 0.1 && Math.abs(p[2]) < 0.1,
+      );
+      expect(hasAntipodal, "+x should not neighbor -x in octahedron").toBe(
+        false,
+      );
+    });
+  });
+
+  describe("world cities", () => {
+    const points = WORLD_CITIES.map(toCartesian);
+    const tri = buildTri(points);
+
+    it("neighbor relationship is symmetric", () => {
+      for (let vi = 0; vi < tri.vertices.length; vi++) {
+        const neighbors = vertexNeighbors(tri, vi);
+        for (const ni of neighbors) {
+          const reverseNeighbors = vertexNeighbors(tri, ni);
+          expect(
+            reverseNeighbors,
+            `vertex ${ni} should list ${vi} as neighbor (symmetry)`,
+          ).toContain(vi);
+        }
+      }
+    });
+
+    it("covers all edges from the triangulation", () => {
+      // Collect all edges from triangles
+      const triangleEdges = new Set<string>();
+      for (const t of tri.triangles) {
+        for (let e = 0; e < 3; e++) {
+          const a = t.vertices[e];
+          const b = t.vertices[(e + 1) % 3];
+          triangleEdges.add(`${Math.min(a, b)}-${Math.max(a, b)}`);
+        }
+      }
+
+      // Collect all edges from vertexNeighbors
+      const neighborEdges = new Set<string>();
+      for (let vi = 0; vi < tri.vertices.length; vi++) {
+        for (const ni of vertexNeighbors(tri, vi)) {
+          neighborEdges.add(`${Math.min(vi, ni)}-${Math.max(vi, ni)}`);
+        }
+      }
+
+      expect(neighborEdges).toEqual(triangleEdges);
     });
   });
 });
