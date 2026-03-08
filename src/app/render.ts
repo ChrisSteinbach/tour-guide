@@ -156,10 +156,11 @@ export function renderNearbyHeader(
   if (onTogglePause) {
     const pauseBtn = document.createElement("button");
     pauseBtn.className = "header-icon-btn pause-toggle";
-    pauseBtn.setAttribute(
-      "aria-label",
-      paused ? "Resume updates" : "Pause updates",
-    );
+    const pauseLabel = paused
+      ? "Resume location updates"
+      : "Pause location updates";
+    pauseBtn.setAttribute("aria-label", pauseLabel);
+    pauseBtn.title = pauseLabel;
     pauseBtn.appendChild(paused ? createPlayIcon() : createPauseIcon());
     pauseBtn.addEventListener("click", onTogglePause);
     headerControls.appendChild(pauseBtn);
@@ -172,6 +173,7 @@ export function renderNearbyHeader(
     const gpsBtn = document.createElement("button");
     gpsBtn.className = `header-icon-btn use-gps-btn${positionSource === "gps" ? " mode-active" : " mode-inactive"}`;
     gpsBtn.setAttribute("aria-label", "Use GPS location");
+    gpsBtn.title = "Use GPS location";
     gpsBtn.setAttribute("aria-pressed", String(positionSource === "gps"));
     gpsBtn.textContent = "\uD83D\uDEF0\uFE0F"; // 🛰️
     if (positionSource !== "gps") {
@@ -181,6 +183,7 @@ export function renderNearbyHeader(
     const pinBtn = document.createElement("button");
     pinBtn.className = `header-icon-btn pick-location-btn${positionSource === "picked" ? " mode-active" : " mode-inactive"}`;
     pinBtn.setAttribute("aria-label", "Pick location on map");
+    pinBtn.title = "Pick location on map";
     pinBtn.setAttribute("aria-pressed", String(positionSource === "picked"));
     pinBtn.textContent = "\uD83D\uDDFA\uFE0F"; // 🗺️
     if (positionSource !== "picked") {

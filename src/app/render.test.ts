@@ -55,7 +55,8 @@ describe("renderNearbyHeader", () => {
       onTogglePause: () => {},
     });
     const btn = header.querySelector(".pause-toggle");
-    expect(btn?.getAttribute("aria-label")).toBe("Resume updates");
+    expect(btn?.getAttribute("aria-label")).toBe("Resume location updates");
+    expect(btn?.getAttribute("title")).toBe("Resume location updates");
   });
 
   it("pause button label says Pause when unpaused", () => {
@@ -67,7 +68,8 @@ describe("renderNearbyHeader", () => {
       onTogglePause: () => {},
     });
     const btn = header.querySelector(".pause-toggle");
-    expect(btn?.getAttribute("aria-label")).toBe("Pause updates");
+    expect(btn?.getAttribute("aria-label")).toBe("Pause location updates");
+    expect(btn?.getAttribute("title")).toBe("Pause location updates");
   });
 
   it("omits pause button when no onTogglePause callback", () => {
@@ -144,7 +146,9 @@ describe("renderNearbyHeader", () => {
     expect(gpsBtn.classList.contains("mode-active")).toBe(true);
     expect(pinBtn.classList.contains("mode-inactive")).toBe(true);
     expect(gpsBtn.getAttribute("aria-pressed")).toBe("true");
+    expect(gpsBtn.getAttribute("title")).toBe("Use GPS location");
     expect(pinBtn.getAttribute("aria-pressed")).toBe("false");
+    expect(pinBtn.getAttribute("title")).toBe("Pick location on map");
     pinBtn.click();
     expect(onPickLocation).toHaveBeenCalledOnce();
   });
