@@ -95,6 +95,43 @@ describe("NearestQuery", () => {
   });
 });
 
+describe("NearestQuery (degenerate triangulation)", () => {
+  /**
+   * Regression test: near-duplicate vertices (from Float32 quantization of
+   * very close coordinates) can create degenerate triangles where the
+   * triangle walk loops forever. The fix detects cycles and falls back
+   * to brute-force search. Reproduces the Stockholm bug (tour-guide-mae).
+   */
+  it("finds nearest vertex when triangle walk hits a cycle", () => {
+    // Create a triangulation with near-duplicate vertices that will
+    // produce degenerate triangles after Float32 round-trip
+    const articles = [
+      { lat: 59.3208, lon: 18.0594, title: "Stockholm A" },
+      { lat: 59.3208, lon: 18.05941, title: "Stockholm B" }, // ~0.07m from A
+      { lat: 59.3209, lon: 18.0594, title: "Stockholm C" },
+      { lat: -59.0, lon: -160.0, title: "Antipode" },
+    ];
+
+    const points = articles.map((a) => toCartesian({ lat: a.lat, lon: a.lon }));
+    const hull = convexHull(points);
+    const tri = buildTriangulation(hull);
+    const metas = tri.originalIndices.map((i) => ({
+      title: articles[i].title,
+    }));
+    const data = serialize(tri, metas);
+
+    // Round-trip through Float32 binary to trigger near-duplicates
+    const bin = serializeBinary(data);
+    const { fd, articles: roundTripped } = deserializeBinary(bin);
+    const query = new NearestQuery(fd, roundTripped);
+
+    // Query from Stockholm — should find a nearby article, not diverge
+    const { results } = query.findNearest(59.3208, 18.0594);
+    expect(results[0].distanceM).toBeLessThan(100);
+    expect(results[0].title).toMatch(/^Stockholm/);
+  });
+});
+
 describe("NearestQuery (Float32 round-trip)", () => {
   /**
    * Regression test: the binary format stores vertex coordinates as Float32.
