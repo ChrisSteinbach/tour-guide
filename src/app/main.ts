@@ -2,6 +2,8 @@ import "./style.css";
 import { APP_NAME } from "./config";
 import {
   renderNearbyList,
+  renderNearbyHeader,
+  createArticleItemContent,
   updateNearbyDistances,
   enrichArticleItem,
 } from "./render";
@@ -39,6 +41,16 @@ import {
   type AppState,
   type Event,
 } from "./state-machine";
+import {
+  createVirtualList,
+  connectWindowScroll,
+  windowScrollState,
+  type VirtualList,
+} from "./virtual-scroll";
+import {
+  createEnrichScheduler,
+  type EnrichScheduler,
+} from "./enrich-scheduler";
 import {
   createEffectExecutor,
   LANG_STORAGE_KEY,
@@ -130,6 +142,30 @@ function getStoredLang(): Lang {
   return DEFAULT_LANG;
 }
 
+// ── Infinite scroll infrastructure ───────────────────────────
+
+interface InfiniteScrollHandle {
+  virtualList: VirtualList;
+  enrichScheduler: EnrichScheduler;
+  disconnectScroll: () => void;
+}
+
+let infiniteScrollHandle: InfiniteScrollHandle | null = null;
+
+/** Item height for virtual scroll (px). Matches .nearby-item padding + content. */
+const VIRTUAL_ITEM_HEIGHT = 72;
+const VIRTUAL_OVERSCAN = 5;
+const ENRICH_SETTLE_MS = 300;
+
+function teardownInfiniteScroll(): void {
+  if (infiniteScrollHandle) {
+    infiniteScrollHandle.disconnectScroll();
+    infiniteScrollHandle.virtualList.destroy();
+    infiniteScrollHandle.enrichScheduler.destroy();
+    infiniteScrollHandle = null;
+  }
+}
+
 // ── Map picker ──────────────────────────────────────────────
 
 let activeMapPicker: MapPickerHandle | null = null;
@@ -207,6 +243,17 @@ function showMapPicker(): void {
 
 function renderBrowsingListDOM(): void {
   if (appState.phase.phase !== "browsing" || !appState.position) return;
+
+  if (appState.phase.scrollMode === "infinite") {
+    renderInfiniteScrollDOM();
+  } else {
+    teardownInfiniteScroll();
+    renderTierListDOM();
+  }
+}
+
+function renderTierListDOM(): void {
+  if (appState.phase.phase !== "browsing" || !appState.position) return;
   const isGps = appState.positionSource !== "picked";
   renderNearbyList(app, appState.phase.articles, {
     onSelectArticle: (article) => dispatch({ type: "selectArticle", article }),
@@ -222,6 +269,143 @@ function renderBrowsingListDOM(): void {
     gpsSignalLost: appState.gpsSignalLost,
   });
   updateBrowseMap(appState.position, appState.phase.articles);
+}
+
+/**
+ * Create a getScrollState function that reads from a scrollable container
+ * element (for desktop split-view where window scroll is disabled).
+ */
+function containerScrollState(
+  scrollEl: HTMLElement,
+  listEl: HTMLElement,
+): () => { scrollTop: number; viewportHeight: number } {
+  return () => ({
+    scrollTop: Math.max(0, scrollEl.scrollTop - listEl.offsetTop),
+    viewportHeight: scrollEl.clientHeight,
+  });
+}
+
+/**
+ * Connect a VirtualList to a scrollable container's scroll events.
+ * Returns a cleanup function.
+ */
+function connectContainerScroll(
+  scrollEl: HTMLElement,
+  list: { refresh(): void },
+): () => void {
+  let rafId = 0;
+  const onScroll = () => {
+    if (rafId) return;
+    rafId = requestAnimationFrame(() => {
+      rafId = 0;
+      list.refresh();
+    });
+  };
+  scrollEl.addEventListener("scroll", onScroll, { passive: true });
+  return () => {
+    scrollEl.removeEventListener("scroll", onScroll);
+    if (rafId) cancelAnimationFrame(rafId);
+  };
+}
+
+function renderInfiniteScrollDOM(): void {
+  if (appState.phase.phase !== "browsing" || !appState.position) return;
+
+  // If the DOM was destroyed (e.g., by detail view clearing #app), discard stale handle
+  if (infiniteScrollHandle && !app.querySelector(".virtual-scroll-container")) {
+    teardownInfiniteScroll();
+  }
+
+  const { articles, paused } = appState.phase;
+  const isGps = appState.positionSource !== "picked";
+  const onSelect = (article: NearbyArticle) =>
+    dispatch({ type: "selectArticle", article });
+
+  const headerOpts = {
+    articleCount: articles.length,
+    currentLang: appState.currentLang,
+    onLangChange: (lang: Lang) => dispatch({ type: "langChanged", lang }),
+    paused,
+    onTogglePause: isGps ? () => dispatch({ type: "togglePause" }) : undefined,
+    positionSource: appState.positionSource ?? "gps",
+    onPickLocation: () => dispatch({ type: "showMapPicker" }),
+    onUseGps: () => dispatch({ type: "useGps" }),
+    gpsSignalLost: appState.gpsSignalLost,
+  };
+
+  if (!infiniteScrollHandle) {
+    // First render: build the infinite scroll infrastructure
+    destroyBrowseMap();
+    app.textContent = "";
+    app.appendChild(renderNearbyHeader(headerOpts));
+
+    const listContainer = document.createElement("div");
+    listContainer.className = "virtual-scroll-container";
+    app.appendChild(listContainer);
+
+    // On desktop, show the browse map and use container scroll.
+    // On mobile, use window scroll (no split-view).
+    const isDesktop = desktopQuery.matches;
+    if (isDesktop && appState.position) {
+      updateBrowseMap(appState.position, articles.slice(0, 50));
+    }
+
+    const enrichScheduler = createEnrichScheduler({
+      settleMs: ENRICH_SETTLE_MS,
+      getTitle: (i) => {
+        if (appState.phase.phase !== "browsing") return null;
+        return appState.phase.articles[i]?.title ?? null;
+      },
+      enrich: (title) => summaryLoader.request(title, appState.currentLang),
+      cancel: () => summaryLoader.cancel(),
+    });
+
+    // Choose scroll source: container (desktop split-view) or window (mobile)
+    const getScrollState =
+      isDesktop && app.classList.contains("split-view")
+        ? containerScrollState(listContainer, listContainer)
+        : windowScrollState(listContainer);
+
+    const virtualList = createVirtualList({
+      container: listContainer,
+      itemHeight: VIRTUAL_ITEM_HEIGHT,
+      overscan: VIRTUAL_OVERSCAN,
+      getScrollState,
+      onRangeChange: enrichScheduler.onRangeChange,
+    });
+
+    virtualList.update(articles.length, (i) => {
+      const article = articles[i];
+      if (!article) return null;
+      return createArticleItemContent(article, onSelect);
+    });
+
+    const disconnectScroll =
+      isDesktop && app.classList.contains("split-view")
+        ? connectContainerScroll(listContainer, virtualList)
+        : connectWindowScroll(virtualList);
+    infiniteScrollHandle = { virtualList, enrichScheduler, disconnectScroll };
+  } else {
+    // Update existing virtual list with new articles
+    const { virtualList, enrichScheduler } = infiniteScrollHandle;
+
+    // Update header
+    const oldHeader = app.querySelector("header.app-header");
+    const newHeader = renderNearbyHeader(headerOpts);
+    if (oldHeader) {
+      oldHeader.replaceWith(newHeader);
+    }
+
+    // Reset enrichment state for new article set
+    enrichScheduler.reset();
+
+    // Update virtual list
+    virtualList.update(articles.length, (i) => {
+      const article = articles[i];
+      if (!article) return null;
+      return createArticleItemContent(article, onSelect);
+    });
+  }
 }
 
 function updateBrowseMap(
@@ -267,6 +451,7 @@ function updateBrowseMap(
 }
 
 function renderPhase(): void {
+  teardownInfiniteScroll();
   destroyMapPicker();
   destroyBrowseMap();
   switch (appState.phase.phase) {

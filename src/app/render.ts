@@ -243,12 +243,11 @@ export function renderShowMoreButton(
   return btn;
 }
 
-/** Create a single article list item element. */
-function createArticleItem(
+/** Create the inner content of an article list item (the .nearby-item div). */
+export function createArticleItemContent(
   article: NearbyArticle,
   onSelectArticle: (article: NearbyArticle) => void,
-): HTMLLIElement {
-  const li = document.createElement("li");
+): HTMLDivElement {
   const item = document.createElement("div");
   item.className = "nearby-item";
   item.setAttribute("role", "button");
@@ -279,7 +278,16 @@ function createArticleItem(
   badge.textContent = formatDistance(article.distanceM);
 
   item.append(thumb, info, badge);
-  li.appendChild(item);
+  return item;
+}
+
+/** Create a single article list item element. */
+function createArticleItem(
+  article: NearbyArticle,
+  onSelectArticle: (article: NearbyArticle) => void,
+): HTMLLIElement {
+  const li = document.createElement("li");
+  li.appendChild(createArticleItemContent(article, onSelectArticle));
   return li;
 }
 

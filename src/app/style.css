@@ -140,6 +140,22 @@ body {
   gap: 4px;
 }
 
+.nearby-list.virtual-scroll {
+  display: block;
+  position: relative;
+  overflow: visible;
+  padding: 0;
+}
+
+.nearby-list.virtual-scroll > li {
+  padding: 2px 8px;
+  box-sizing: border-box;
+}
+
+.virtual-scroll-container {
+  position: relative;
+}
+
 .nearby-item {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -580,6 +596,13 @@ body {
   }
 
   #app.split-view > .nearby-list {
+    grid-area: list;
+    max-width: none;
+    margin: 0;
+    overflow-y: auto;
+  }
+
+  #app.split-view > .virtual-scroll-container {
     grid-area: list;
     max-width: none;
     margin: 0;
