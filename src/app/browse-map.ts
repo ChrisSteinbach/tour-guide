@@ -53,8 +53,8 @@ export function createBrowseMap(
 
   const userMarker = L.circleMarker([position.lat, position.lon], {
     radius: 8,
-    color: "#1a73e8",
-    fillColor: "#1a73e8",
+    color: "#e84033",
+    fillColor: "#e84033",
     fillOpacity: 0.8,
   }).addTo(map);
 
