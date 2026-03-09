@@ -2,6 +2,9 @@ import "./style.css";
 import { APP_NAME } from "./config";
 import {
   renderNearbyList,
+  renderNearbyHeader,
+  createArticleItemContent,
+  applyEnrichment,
   updateNearbyDistances,
   enrichArticleItem,
 } from "./render";
@@ -35,10 +38,22 @@ import type { Lang } from "../lang";
 import {
   transition,
   getNearby,
-  getNextTier,
+  DEFAULT_VIEWPORT_FILL,
   type AppState,
   type Event,
 } from "./state-machine";
+import {
+  createVirtualList,
+  connectScroll,
+  windowScrollState,
+  containerScrollState,
+  type VirtualList,
+  type VisibleRange,
+} from "./virtual-scroll";
+import {
+  createEnrichScheduler,
+  type EnrichScheduler,
+} from "./enrich-scheduler";
 import {
   createEffectExecutor,
   LANG_STORAGE_KEY,
@@ -54,6 +69,15 @@ const app =
 
 // ── State ────────────────────────────────────────────────────
 
+/** Item height for virtual scroll (px). Matches .nearby-item (64px) + gap (4px). */
+const VIRTUAL_ITEM_HEIGHT = 68;
+
+/** Compute how many articles fill the viewport, plus a few extra for scroll trigger. */
+const viewportFillCount = Math.max(
+  DEFAULT_VIEWPORT_FILL,
+  Math.ceil(window.innerHeight / VIRTUAL_ITEM_HEIGHT) + 3,
+);
+
 let appState: AppState = {
   phase: { phase: "welcome" },
   query: { mode: "none" },
@@ -66,6 +90,7 @@ let appState: AppState = {
   updateBanner: null,
   hasGeolocation: true,
   gpsSignalLost: false,
+  viewportFillCount,
 };
 
 // ── Dispatch ─────────────────────────────────────────────────
@@ -106,6 +131,11 @@ const executeEffect = createEffectExecutor({
       renderDetailError(app, article, msg, goBack, retry, lang),
     renderAppUpdateBanner,
     showMapPicker,
+    scrollToTop: () => {
+      window.scrollTo(0, 0);
+      // Also reset container scroll in desktop split-view
+      app.querySelector<HTMLElement>(".nearby-list")?.scrollTo(0, 0);
+    },
   },
   data: {
     loadTileIndex: (lang, signal) =>
@@ -128,6 +158,33 @@ function getStoredLang(): Lang {
     return stored as Lang;
   }
   return DEFAULT_LANG;
+}
+
+// ── Infinite scroll infrastructure ───────────────────────────
+
+interface InfiniteScrollHandle {
+  virtualList: VirtualList;
+  enrichScheduler: EnrichScheduler;
+  disconnectScroll: () => void;
+  /** Cancel any pending debounced map-marker sync. */
+  cancelMapSync: () => void;
+}
+
+let infiniteScrollHandle: InfiniteScrollHandle | null = null;
+
+const VIRTUAL_OVERSCAN = 5;
+const ENRICH_SETTLE_MS = 300;
+/** Debounce for syncing browse map markers with viewport-visible articles. */
+const MAP_SYNC_SETTLE_MS = 150;
+
+function teardownInfiniteScroll(): void {
+  if (infiniteScrollHandle) {
+    infiniteScrollHandle.disconnectScroll();
+    infiniteScrollHandle.virtualList.destroy();
+    infiniteScrollHandle.enrichScheduler.destroy();
+    infiniteScrollHandle.cancelMapSync();
+    infiniteScrollHandle = null;
+  }
 }
 
 // ── Map picker ──────────────────────────────────────────────
@@ -207,14 +264,66 @@ function showMapPicker(): void {
 
 function renderBrowsingListDOM(): void {
   if (appState.phase.phase !== "browsing" || !appState.position) return;
+
+  if (appState.phase.scrollMode === "infinite") {
+    renderInfiniteScrollDOM();
+  } else {
+    teardownInfiniteScroll();
+    renderViewportListDOM();
+  }
+}
+
+/** Dead zone for scroll-pause detection (px). */
+const SCROLL_PAUSE_THRESHOLD = VIRTUAL_ITEM_HEIGHT * 2;
+
+let scrollPauseCleanup: (() => void) | null = null;
+
+function setupScrollPauseListener(): void {
+  teardownScrollPauseListener();
+  const cleanups: (() => void)[] = [];
+
+  // Window scroll (mobile / non-split-view)
+  const windowHandler = () => {
+    if (window.scrollY > SCROLL_PAUSE_THRESHOLD) {
+      teardownScrollPauseListener();
+      dispatch({ type: "scrollPause" });
+    }
+  };
+  window.addEventListener("scroll", windowHandler, { passive: true });
+  cleanups.push(() => window.removeEventListener("scroll", windowHandler));
+
+  // Container scroll (desktop split-view: list scrolls inside grid cell)
+  const listEl = app.querySelector<HTMLElement>(".nearby-list");
+  if (listEl && listEl.scrollHeight > listEl.clientHeight) {
+    const containerHandler = () => {
+      if (listEl.scrollTop > SCROLL_PAUSE_THRESHOLD) {
+        teardownScrollPauseListener();
+        dispatch({ type: "scrollPause" });
+      }
+    };
+    listEl.addEventListener("scroll", containerHandler, { passive: true });
+    cleanups.push(() => listEl.removeEventListener("scroll", containerHandler));
+  }
+
+  scrollPauseCleanup = () => cleanups.forEach((fn) => fn());
+}
+
+function teardownScrollPauseListener(): void {
+  if (scrollPauseCleanup) {
+    scrollPauseCleanup();
+    scrollPauseCleanup = null;
+  }
+}
+
+function renderViewportListDOM(): void {
+  if (appState.phase.phase !== "browsing" || !appState.position) return;
   const isGps = appState.positionSource !== "picked";
   renderNearbyList(app, appState.phase.articles, {
     onSelectArticle: (article) => dispatch({ type: "selectArticle", article }),
     currentLang: appState.currentLang,
     onLangChange: (lang) => dispatch({ type: "langChanged", lang }),
-    onShowMore: () => dispatch({ type: "showMore" }),
-    nextCount: getNextTier(appState.phase.nearbyCount),
     paused: appState.phase.paused,
+    pauseReason: appState.phase.pauseReason,
     onTogglePause: isGps ? () => dispatch({ type: "togglePause" }) : undefined,
     positionSource: appState.positionSource ?? "gps",
     onUseGps: () => dispatch({ type: "useGps" }),
@@ -222,6 +331,152 @@ function renderBrowsingListDOM(): void {
     gpsSignalLost: appState.gpsSignalLost,
   });
   updateBrowseMap(appState.position, appState.phase.articles);
+  // Listen for user scroll to auto-pause GPS and transition to infinite scroll
+  if (isGps && !appState.phase.paused) {
+    setupScrollPauseListener();
+  }
+}
+
+function renderInfiniteScrollDOM(): void {
+  if (appState.phase.phase !== "browsing" || !appState.position) return;
+  teardownScrollPauseListener();
+
+  // If the DOM was destroyed (e.g., by detail view clearing #app), discard stale handle
+  if (infiniteScrollHandle && !app.querySelector(".virtual-scroll-container")) {
+    teardownInfiniteScroll();
+  }
+
+  const { articles, paused, pauseReason } = appState.phase;
+  const isGps = appState.positionSource !== "picked";
+  const onSelect = (article: NearbyArticle) =>
+    dispatch({ type: "selectArticle", article });
+
+  const headerOpts = {
+    articleCount: articles.length,
+    currentLang: appState.currentLang,
+    onLangChange: (lang: Lang) => dispatch({ type: "langChanged", lang }),
+    paused,
+    pauseReason,
+    onTogglePause: isGps ? () => dispatch({ type: "togglePause" }) : undefined,
+    positionSource: appState.positionSource ?? "gps",
+    onPickLocation: () => dispatch({ type: "showMapPicker" }),
+    onUseGps: () => dispatch({ type: "useGps" }),
+    gpsSignalLost: appState.gpsSignalLost,
+  };
+
+  if (!infiniteScrollHandle) {
+    // First render: build the infinite scroll infrastructure
+    destroyBrowseMap();
+    app.textContent = "";
+    app.appendChild(renderNearbyHeader(headerOpts));
+
+    const listContainer = document.createElement("div");
+    listContainer.className = "virtual-scroll-container";
+    app.appendChild(listContainer);
+
+    // On desktop, show the browse map and use container scroll.
+    // On mobile, use window scroll (no split-view).
+    const isDesktop = desktopQuery.matches;
+    if (isDesktop && appState.position) {
+      // Initial map creation — markers will sync once virtual list reports first visible range.
+      updateBrowseMap(appState.position, []);
+    }
+
+    let mapSyncTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const enrichScheduler = createEnrichScheduler({
+      settleMs: ENRICH_SETTLE_MS,
+      getTitle: (i) => {
+        if (appState.phase.phase !== "browsing") return null;
+        return appState.phase.articles[i]?.title ?? null;
+      },
+      enrich: (title) => summaryLoader.request(title, appState.currentLang),
+      cancel: () => summaryLoader.cancel(),
+    });
+
+    // Choose scroll source: container (desktop split-view) or window (mobile)
+    const getScrollState = isDesktop
+      ? containerScrollState(listContainer, listContainer)
+      : windowScrollState(listContainer);
+
+    const syncMapMarkers = (range: VisibleRange) => {
+      if (!appState.position || appState.phase.phase !== "browsing") return;
+      if (!desktopQuery.matches) return;
+      if (mapSyncTimer !== null) clearTimeout(mapSyncTimer);
+      mapSyncTimer = setTimeout(() => {
+        mapSyncTimer = null;
+        if (appState.phase.phase !== "browsing" || !appState.position) return;
+        const visible = appState.phase.articles.slice(range.start, range.end);
+        updateBrowseMap(appState.position, visible);
+      }, MAP_SYNC_SETTLE_MS);
+    };
+
+    const virtualList = createVirtualList({
+      container: listContainer,
+      itemHeight: VIRTUAL_ITEM_HEIGHT,
+      overscan: VIRTUAL_OVERSCAN,
+      getScrollState,
+      onRangeChange: (range) => {
+        enrichScheduler.onRangeChange(range);
+        syncMapMarkers(range);
+      },
+    });
+
+    const renderVirtualItem = (i: number) => {
+      if (appState.phase.phase !== "browsing") return null;
+      const article = appState.phase.articles[i];
+      if (!article) return null;
+      const el = createArticleItemContent(article, onSelect);
+      const cached = summaryLoader.get(article.title);
+      if (cached) applyEnrichment(el, cached);
+      return el;
+    };
+
+    virtualList.update(articles.length, renderVirtualItem);
+
+    const disconnectScroll = isDesktop
+      ? connectScroll(virtualList, listContainer)
+      : connectScroll(virtualList);
+    const cancelMapSync = () => {
+      if (mapSyncTimer !== null) {
+        clearTimeout(mapSyncTimer);
+        mapSyncTimer = null;
+      }
+    };
+    infiniteScrollHandle = {
+      virtualList,
+      enrichScheduler,
+      disconnectScroll,
+      cancelMapSync,
+    };
+  } else {
+    // Update existing virtual list with new articles
+    const { virtualList } = infiniteScrollHandle;
+
+    // Update header
+    const oldHeader = app.querySelector("header.app-header");
+    const newHeader = renderNearbyHeader(headerOpts);
+    if (oldHeader) {
+      oldHeader.replaceWith(newHeader);
+    }
+
+    // Update virtual list
+    virtualList.update(articles.length, (i) => {
+      const article = articles[i];
+      if (!article) return null;
+      const el = createArticleItemContent(article, onSelect);
+      const cached = summaryLoader.get(article.title);
+      if (cached) applyEnrichment(el, cached);
+      return el;
+    });
+
+    // Sync browse map markers with current viewport after article list changes
+    if (desktopQuery.matches && appState.position) {
+      const range = virtualList.visibleRange();
+      const visible = articles.slice(range.start, range.end);
+      updateBrowseMap(appState.position, visible);
+    }
+  }
 }
 
 function updateBrowseMap(
@@ -267,6 +522,8 @@ function updateBrowseMap(
 }
 
 function renderPhase(): void {
+  teardownInfiniteScroll();
+  teardownScrollPauseListener();
   destroyMapPicker();
   destroyBrowseMap();
   switch (appState.phase.phase) {

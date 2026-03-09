@@ -132,12 +132,46 @@ body {
   }
 }
 
+/* Blinking play button when auto-paused by scroll.
+   3 iterations × 1.5s ≈ 4.5s, then stops at full opacity.
+   Re-adding the class (e.g. on new GPS data) restarts the animation. */
+.scroll-pause-blink {
+  animation: scroll-pause-blink 1.5s ease-in-out 3;
+}
+
+@keyframes scroll-pause-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
 .nearby-list {
   list-style: none;
   padding: 8px;
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.nearby-list.virtual-scroll {
+  display: block;
+  position: relative;
+  overflow: visible;
+  padding: 0;
+}
+
+.nearby-list.virtual-scroll > li {
+  padding: 2px 8px;
+  box-sizing: border-box;
+}
+
+.virtual-scroll-container {
+  position: relative;
+  padding: 6px 0;
 }
 
 .nearby-item {
@@ -584,6 +618,18 @@ body {
     max-width: none;
     margin: 0;
     overflow-y: auto;
+  }
+
+  #app.split-view > .virtual-scroll-container {
+    grid-area: list;
+    max-width: none;
+    margin: 0;
+    overflow-y: auto;
+  }
+
+  #app.split-view > .virtual-scroll-container .nearby-list {
+    max-width: none;
+    margin: 0;
   }
 
   #app.split-view > .show-more {
