@@ -69,7 +69,7 @@ describe("EnrichScheduler", () => {
     expect(enriched).toEqual(["Article 0", "Article 2"]);
   });
 
-  it("calls cancel when range changes during active enrichment", () => {
+  it("does not cancel in-flight enrichment when range changes", () => {
     const cancelCalls: number[] = [];
     let callCount = 0;
     const scheduler = createEnrichScheduler({
@@ -83,6 +83,23 @@ describe("EnrichScheduler", () => {
     vi.advanceTimersByTime(200); // settles, enriches 0-2
 
     scheduler.onRangeChange({ start: 10, end: 13 }); // scroll away
+    expect(cancelCalls).toEqual([]); // in-flight requests should complete
+  });
+
+  it("calls cancel on reset", () => {
+    const cancelCalls: number[] = [];
+    let callCount = 0;
+    const scheduler = createEnrichScheduler({
+      settleMs: 200,
+      getTitle: (i) => `Article ${i}`,
+      enrich: () => {},
+      cancel: () => cancelCalls.push(++callCount),
+    });
+
+    scheduler.onRangeChange({ start: 0, end: 3 });
+    vi.advanceTimersByTime(200);
+
+    scheduler.reset();
     expect(cancelCalls).toEqual([1]);
   });
 

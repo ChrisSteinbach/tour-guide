@@ -31,7 +31,6 @@ export function createEnrichScheduler(
 
   let timer: ReturnType<typeof setTimeout> | null = null;
   let enrichedSet = new Set<string>();
-  let hasEnrichedAny = false;
   let destroyed = false;
 
   function clearTimer(): void {
@@ -44,12 +43,6 @@ export function createEnrichScheduler(
   function onRangeChange(range: VisibleRange): void {
     if (destroyed) return;
 
-    // Cancel previous enrichment if we had already settled
-    if (hasEnrichedAny) {
-      cancel?.();
-      hasEnrichedAny = false;
-    }
-
     clearTimer();
 
     timer = setTimeout(() => {
@@ -61,7 +54,6 @@ export function createEnrichScheduler(
           enrich(title);
         }
       }
-      hasEnrichedAny = true;
     }, settleMs);
   }
 
@@ -70,8 +62,8 @@ export function createEnrichScheduler(
 
     reset() {
       clearTimer();
+      cancel?.();
       enrichedSet = new Set();
-      hasEnrichedAny = false;
     },
 
     destroy() {
