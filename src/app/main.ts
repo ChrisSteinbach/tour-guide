@@ -47,6 +47,7 @@ import {
   connectWindowScroll,
   windowScrollState,
   type VirtualList,
+  type VisibleRange,
 } from "./virtual-scroll";
 import {
   createEnrichScheduler,
@@ -149,6 +150,8 @@ interface InfiniteScrollHandle {
   virtualList: VirtualList;
   enrichScheduler: EnrichScheduler;
   disconnectScroll: () => void;
+  /** Cancel any pending debounced map-marker sync. */
+  cancelMapSync: () => void;
 }
 
 let infiniteScrollHandle: InfiniteScrollHandle | null = null;
@@ -157,12 +160,15 @@ let infiniteScrollHandle: InfiniteScrollHandle | null = null;
 const VIRTUAL_ITEM_HEIGHT = 72;
 const VIRTUAL_OVERSCAN = 5;
 const ENRICH_SETTLE_MS = 300;
+/** Debounce for syncing browse map markers with viewport-visible articles. */
+const MAP_SYNC_SETTLE_MS = 150;
 
 function teardownInfiniteScroll(): void {
   if (infiniteScrollHandle) {
     infiniteScrollHandle.disconnectScroll();
     infiniteScrollHandle.virtualList.destroy();
     infiniteScrollHandle.enrichScheduler.destroy();
+    infiniteScrollHandle.cancelMapSync();
     infiniteScrollHandle = null;
   }
 }
@@ -348,8 +354,11 @@ function renderInfiniteScrollDOM(): void {
     // On mobile, use window scroll (no split-view).
     const isDesktop = desktopQuery.matches;
     if (isDesktop && appState.position) {
-      updateBrowseMap(appState.position, articles.slice(0, 50));
+      // Initial map creation — markers will sync once virtual list reports first visible range.
+      updateBrowseMap(appState.position, []);
     }
+
+    let mapSyncTimer: ReturnType<typeof setTimeout> | null = null;
 
     const enrichScheduler = createEnrichScheduler({
       settleMs: ENRICH_SETTLE_MS,
@@ -367,12 +376,27 @@ function renderInfiniteScrollDOM(): void {
         ? containerScrollState(listContainer, listContainer)
         : windowScrollState(listContainer);
 
+    const syncMapMarkers = (range: VisibleRange) => {
+      if (!appState.position || appState.phase.phase !== "browsing") return;
+      if (!desktopQuery.matches) return;
+      if (mapSyncTimer !== null) clearTimeout(mapSyncTimer);
+      mapSyncTimer = setTimeout(() => {
+        mapSyncTimer = null;
+        if (appState.phase.phase !== "browsing" || !appState.position) return;
+        const visible = appState.phase.articles.slice(range.start, range.end);
+        updateBrowseMap(appState.position, visible);
+      }, MAP_SYNC_SETTLE_MS);
+    };
+
     const virtualList = createVirtualList({
       container: listContainer,
       itemHeight: VIRTUAL_ITEM_HEIGHT,
       overscan: VIRTUAL_OVERSCAN,
       getScrollState,
-      onRangeChange: enrichScheduler.onRangeChange,
+      onRangeChange: (range) => {
+        enrichScheduler.onRangeChange(range);
+        syncMapMarkers(range);
+      },
     });
 
     const renderVirtualItem = (i: number) => {
@@ -390,7 +414,18 @@ function renderInfiniteScrollDOM(): void {
       isDesktop && app.classList.contains("split-view")
         ? connectContainerScroll(listContainer, virtualList)
         : connectWindowScroll(virtualList);
-    infiniteScrollHandle = { virtualList, enrichScheduler, disconnectScroll };
+    const cancelMapSync = () => {
+      if (mapSyncTimer !== null) {
+        clearTimeout(mapSyncTimer);
+        mapSyncTimer = null;
+      }
+    };
+    infiniteScrollHandle = {
+      virtualList,
+      enrichScheduler,
+      disconnectScroll,
+      cancelMapSync,
+    };
   } else {
     // Update existing virtual list with new articles
     const { virtualList } = infiniteScrollHandle;
@@ -411,6 +446,13 @@ function renderInfiniteScrollDOM(): void {
       if (cached) applyEnrichment(el, cached);
       return el;
     });
+
+    // Sync browse map markers with current viewport after article list changes
+    if (desktopQuery.matches && appState.position) {
+      const range = virtualList.visibleRange();
+      const visible = articles.slice(range.start, range.end);
+      updateBrowseMap(appState.position, visible);
+    }
   }
 }
 
