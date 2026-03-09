@@ -214,6 +214,72 @@ describe("createSummaryLoader", () => {
     expect(loader.get("A")).toBeUndefined();
   });
 
+  it("request() reprioritizes pending items to the front of the queue", async () => {
+    const fetchOrder: string[] = [];
+    const gates = new Map<
+      string,
+      ReturnType<typeof deferred<ArticleSummary>>
+    >();
+    for (const t of ["A", "B", "C", "D", "E"]) gates.set(t, deferred());
+
+    const deps: SummaryLoaderDeps = {
+      fetch: vi.fn((title) => {
+        fetchOrder.push(title);
+        return gates.get(title)!.promise;
+      }),
+      onSummary: vi.fn(),
+    };
+    // Concurrency 1 so queue order is deterministic
+    const loader = createSummaryLoader(deps, 1);
+
+    // load() queues A,B,C,D,E — A starts fetching immediately
+    loader.load(["A", "B", "C", "D", "E"], "en");
+    await vi.waitFor(() => expect(fetchOrder).toEqual(["A"]));
+
+    // Simulate viewport settling on D and E (skipping B, C)
+    loader.request("D", "en");
+    loader.request("E", "en");
+
+    // Resolve A — next fetch should be D (reprioritized), not B
+    gates.get("A")!.resolve(makeSummary("A"));
+    await vi.waitFor(() => expect(fetchOrder).toHaveLength(2));
+    expect(fetchOrder[1]).toBe("E");
+
+    // Resolve D — next should be E
+    gates.get("E")!.resolve(makeSummary("E"));
+    await vi.waitFor(() => expect(fetchOrder).toHaveLength(3));
+    expect(fetchOrder[2]).toBe("D");
+  });
+
+  it("request() for a new item puts it at the front of the queue", async () => {
+    const fetchOrder: string[] = [];
+    const gates = new Map<
+      string,
+      ReturnType<typeof deferred<ArticleSummary>>
+    >();
+    for (const t of ["A", "B", "X"]) gates.set(t, deferred());
+
+    const deps: SummaryLoaderDeps = {
+      fetch: vi.fn((title) => {
+        fetchOrder.push(title);
+        return gates.get(title)!.promise;
+      }),
+      onSummary: vi.fn(),
+    };
+    const loader = createSummaryLoader(deps, 1);
+
+    loader.load(["A", "B"], "en");
+    await vi.waitFor(() => expect(fetchOrder).toEqual(["A"]));
+
+    // Request a brand-new item not in the original batch
+    loader.request("X", "en");
+
+    // Resolve A — X should be fetched before B
+    gates.get("A")!.resolve(makeSummary("A"));
+    await vi.waitFor(() => expect(fetchOrder).toHaveLength(2));
+    expect(fetchOrder[1]).toBe("X");
+  });
+
   it("does not serve cached summary from a different language", async () => {
     const results: string[] = [];
     const deps: SummaryLoaderDeps = {
