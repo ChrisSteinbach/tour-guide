@@ -97,13 +97,22 @@ export function createSummaryLoader(
       deps.onSummary(title, cache.get(key)!);
       return;
     }
-    if (pending.has(title)) return;
     activeLang = lang;
+    if (pending.has(title)) {
+      // Already queued (e.g. from load()) — move to front so viewport items
+      // are fetched before off-screen items still waiting in the queue.
+      const idx = queue.indexOf(title);
+      if (idx > 0) {
+        queue.splice(idx, 1);
+        queue.unshift(title);
+      }
+      return;
+    }
     if (!controller || controller.signal.aborted) {
       controller = new AbortController();
     }
     pending.add(title);
-    queue.push(title);
+    queue.unshift(title);
     drain();
   }
 
