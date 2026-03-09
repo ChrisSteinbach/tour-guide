@@ -2,7 +2,6 @@
 
 import {
   renderNearbyHeader,
-  renderShowMoreButton,
   renderNearbyList,
   updateNearbyDistances,
   enrichArticleItem,
@@ -46,17 +45,62 @@ describe("renderNearbyHeader", () => {
     expect(subtitle?.textContent).toContain("paused");
   });
 
-  it("pause button label says Resume when paused", () => {
+  it("pause button label says Resume when manually paused", () => {
     const header = renderNearbyHeader({
       articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
       paused: true,
+      pauseReason: "manual",
       onTogglePause: () => {},
     });
     const btn = header.querySelector(".pause-toggle");
     expect(btn?.getAttribute("aria-label")).toBe("Resume location updates");
     expect(btn?.getAttribute("title")).toBe("Resume location updates");
+  });
+
+  it("pause button label says paused by scroll when scroll-paused", () => {
+    const header = renderNearbyHeader({
+      articleCount: 3,
+      currentLang: "en",
+      onLangChange: () => {},
+      paused: true,
+      pauseReason: "scroll",
+      onTogglePause: () => {},
+    });
+    const btn = header.querySelector(".pause-toggle");
+    expect(btn?.getAttribute("aria-label")).toBe(
+      "Resume updates (paused by scroll)",
+    );
+    expect(btn?.getAttribute("title")).toBe(
+      "Resume updates (paused by scroll)",
+    );
+  });
+
+  it("adds blink class when scroll-paused", () => {
+    const header = renderNearbyHeader({
+      articleCount: 3,
+      currentLang: "en",
+      onLangChange: () => {},
+      paused: true,
+      pauseReason: "scroll",
+      onTogglePause: () => {},
+    });
+    const btn = header.querySelector(".pause-toggle");
+    expect(btn?.classList.contains("scroll-pause-blink")).toBe(true);
+  });
+
+  it("does not add blink class when manually paused", () => {
+    const header = renderNearbyHeader({
+      articleCount: 3,
+      currentLang: "en",
+      onLangChange: () => {},
+      paused: true,
+      pauseReason: "manual",
+      onTogglePause: () => {},
+    });
+    const btn = header.querySelector(".pause-toggle");
+    expect(btn?.classList.contains("scroll-pause-blink")).toBe(false);
   });
 
   it("pause button label says Pause when unpaused", () => {
@@ -233,30 +277,6 @@ describe("renderNearbyHeader", () => {
   });
 });
 
-// ── renderShowMoreButton ─────────────────────────────────────
-
-describe("renderShowMoreButton", () => {
-  it("shows correct count in button text", () => {
-    const btn = renderShowMoreButton(20, () => {});
-    expect(btn?.textContent).toBe("Show 20");
-  });
-
-  it("returns null when nextCount is undefined", () => {
-    expect(renderShowMoreButton(undefined, () => {})).toBeNull();
-  });
-
-  it("returns null when no onShowMore callback", () => {
-    expect(renderShowMoreButton(20)).toBeNull();
-  });
-
-  it("calls onShowMore when clicked", () => {
-    const onShowMore = vi.fn();
-    const btn = renderShowMoreButton(20, onShowMore) as HTMLButtonElement;
-    btn.click();
-    expect(onShowMore).toHaveBeenCalledOnce();
-  });
-});
-
 // ── helpers ──────────────────────────────────────────────────
 
 function makeArticles(n: number): NearbyArticle[] {
@@ -306,28 +326,6 @@ describe("renderNearbyList", () => {
     const items = container.querySelectorAll(".nearby-item");
     (items[1] as HTMLElement).click();
     expect(onSelect).toHaveBeenCalledWith(articles[1]);
-  });
-
-  it("includes show-more button when nextCount provided", () => {
-    const container = document.createElement("div");
-    renderNearbyList(container, makeArticles(2), {
-      onSelectArticle: () => {},
-      currentLang: "en",
-      onLangChange: () => {},
-      onShowMore: () => {},
-      nextCount: 20,
-    });
-    expect(container.querySelector(".show-more")?.textContent).toBe("Show 20");
-  });
-
-  it("omits show-more button when nextCount is undefined", () => {
-    const container = document.createElement("div");
-    renderNearbyList(container, makeArticles(2), {
-      onSelectArticle: () => {},
-      currentLang: "en",
-      onLangChange: () => {},
-    });
-    expect(container.querySelector(".show-more")).toBeNull();
   });
 
   it("clears container before rendering", () => {
@@ -511,8 +509,6 @@ describe("renderNearbyList", () => {
       onSelectArticle: () => {},
       currentLang: "en" as const,
       onLangChange: () => {},
-      onShowMore: () => {},
-      nextCount: 20,
       paused: false,
       onTogglePause: () => {},
     };

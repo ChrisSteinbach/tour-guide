@@ -1,9 +1,10 @@
 import {
   transition,
   getNearby,
-  getNextTier,
-  NEARBY_TIERS,
+  computeScrollMode,
   REQUERY_DISTANCE_M,
+  INFINITE_SCROLL_MAX,
+  DEFAULT_VIEWPORT_FILL,
   type AppState,
   type QueryState,
   type Phase,
@@ -36,6 +37,7 @@ function makeState(overrides: Partial<AppState> = {}): AppState {
     updateBanner: null,
     hasGeolocation: true,
     gpsSignalLost: false,
+    viewportFillCount: DEFAULT_VIEWPORT_FILL,
     ...overrides,
   };
 }
@@ -117,15 +119,19 @@ function browsingState(
     articles?: NearbyArticle[];
     nearbyCount?: number;
     paused?: boolean;
+    pauseReason?: "manual" | "scroll" | null;
     lastQueryPos?: UserPosition;
     positionSource?: "gps" | "picked" | null;
+    scrollMode?: "infinite" | "viewport";
   } = {},
 ): AppState {
   const {
     articles: arts,
     nearbyCount,
     paused,
+    pauseReason,
     lastQueryPos,
+    scrollMode,
     ...stateOverrides
   } = overrides;
   return makeState({
@@ -134,9 +140,11 @@ function browsingState(
     phase: {
       phase: "browsing",
       articles: arts ?? defaultBrowsingArticles,
-      nearbyCount: nearbyCount ?? 10,
+      nearbyCount: nearbyCount ?? DEFAULT_VIEWPORT_FILL,
       paused: paused ?? false,
+      pauseReason: pauseReason ?? null,
       lastQueryPos: lastQueryPos ?? paris,
+      scrollMode: scrollMode ?? "viewport",
     },
     ...stateOverrides,
   });
@@ -146,29 +154,11 @@ function effectTypes(effects: Effect[]): string[] {
   return effects.map((e) => e.type);
 }
 
-// ── getNextTier ──────────────────────────────────────────────
+// ── DEFAULT_VIEWPORT_FILL ────────────────────────────────────
 
-describe("getNextTier", () => {
-  it("returns the next tier for each valid count", () => {
-    expect(getNextTier(10)).toBe(20);
-    expect(getNextTier(20)).toBe(50);
-    expect(getNextTier(50)).toBe(100);
-  });
-
-  it("returns undefined for the last tier", () => {
-    expect(getNextTier(100)).toBeUndefined();
-  });
-
-  it("returns undefined for a count not in the tier list", () => {
-    expect(getNextTier(7)).toBeUndefined();
-  });
-});
-
-describe("NEARBY_TIERS", () => {
-  it("is sorted ascending", () => {
-    for (let i = 1; i < NEARBY_TIERS.length; i++) {
-      expect(NEARBY_TIERS[i]).toBeGreaterThan(NEARBY_TIERS[i - 1]);
-    }
+describe("DEFAULT_VIEWPORT_FILL", () => {
+  it("is a positive number", () => {
+    expect(DEFAULT_VIEWPORT_FILL).toBeGreaterThan(0);
   });
 });
 
@@ -446,9 +436,11 @@ describe("position event", () => {
         phase: "detail",
         article: defaultBrowsingArticles[0],
         articles: defaultBrowsingArticles,
-        nearbyCount: 10,
+        nearbyCount: DEFAULT_VIEWPORT_FILL,
         paused: false,
+        pauseReason: null,
         lastQueryPos: paris,
+        scrollMode: "viewport",
       },
     });
     const { effects } = transition(state, {
@@ -524,27 +516,42 @@ describe("gpsError event", () => {
   });
 });
 
-// ── showMore event (tour-guide-bli) ──────────────────────────
+// ── scrollPause event (tour-guide-54z) ──────────────────────
 
-describe("showMore event", () => {
-  it("advances from 10 to 20 articles", () => {
-    const state = browsingState({ nearbyCount: 10 });
-    const { next, effects } = transition(state, { type: "showMore" });
+describe("scrollPause event", () => {
+  it("auto-pauses and switches to infinite scroll mode", () => {
+    const state = browsingState({ paused: false, scrollMode: "viewport" });
+    const { next, effects } = transition(state, { type: "scrollPause" });
     const browsing = expectBrowsing(next);
-    expect(browsing.nearbyCount).toBe(20);
+    expect(browsing.paused).toBe(true);
+    expect(browsing.pauseReason).toBe("scroll");
+    expect(browsing.scrollMode).toBe("infinite");
     expect(effectTypes(effects)).toContain("requery");
+    const requery = effects.find((e) => e.type === "requery");
+    expect(requery).toMatchObject({ count: INFINITE_SCROLL_MAX });
   });
 
-  it("no-ops at max tier", () => {
-    const state = browsingState({ nearbyCount: 100 });
-    const { next, effects } = transition(state, { type: "showMore" });
+  it("no-ops when already paused", () => {
+    const state = browsingState({
+      paused: true,
+      pauseReason: "manual",
+      scrollMode: "infinite",
+    });
+    const { next, effects } = transition(state, { type: "scrollPause" });
+    expect(next).toBe(state);
+    expect(effects).toEqual([]);
+  });
+
+  it("no-ops when already in infinite scroll mode", () => {
+    const state = browsingState({ scrollMode: "infinite" });
+    const { next, effects } = transition(state, { type: "scrollPause" });
     expect(next).toBe(state);
     expect(effects).toEqual([]);
   });
 
   it("no-ops when not browsing", () => {
     const state = makeState();
-    const { next, effects } = transition(state, { type: "showMore" });
+    const { next, effects } = transition(state, { type: "scrollPause" });
     expect(next).toBe(state);
     expect(effects).toEqual([]);
   });
@@ -553,22 +560,58 @@ describe("showMore event", () => {
 // ── togglePause event (tour-guide-bli) ───────────────────────
 
 describe("togglePause event", () => {
-  it("pauses when unpaused", () => {
-    const state = browsingState({ paused: false });
+  it("pauses and switches to infinite scroll mode with manual reason", () => {
+    const state = browsingState({ paused: false, scrollMode: "viewport" });
     const { next, effects } = transition(state, { type: "togglePause" });
     const browsing = expectBrowsing(next);
     expect(browsing.paused).toBe(true);
-    expect(effectTypes(effects)).toContain("renderBrowsingList");
+    expect(browsing.pauseReason).toBe("manual");
+    expect(browsing.scrollMode).toBe("infinite");
+    expect(effectTypes(effects)).toContain("requery");
   });
 
-  it("unpauses and requeries at current position", () => {
-    const state = browsingState({ paused: true });
+  it("unpauses and switches to viewport mode with scrollToTop and requery", () => {
+    const state = browsingState({
+      paused: true,
+      pauseReason: "manual",
+      scrollMode: "infinite",
+      nearbyCount: 20,
+    });
     const { next, effects } = transition(state, { type: "togglePause" });
     const browsing = expectBrowsing(next);
     expect(browsing.paused).toBe(false);
+    expect(browsing.pauseReason).toBeNull();
+    expect(browsing.scrollMode).toBe("viewport");
     expect(browsing.lastQueryPos).toBe(paris);
-    expect(effectTypes(effects)).toContain("renderBrowsingList");
+    expect(effectTypes(effects)).toContain("scrollToTop");
     expect(effectTypes(effects)).toContain("requery");
+    const requery = effects.find((e) => e.type === "requery");
+    expect(requery).toMatchObject({ count: 20 });
+  });
+
+  it("preserves nearbyCount through infinite mode round-trip", () => {
+    const state = browsingState({
+      nearbyCount: 20,
+      scrollMode: "viewport",
+    });
+    // Pause → infinite
+    const { next: paused } = transition(state, { type: "togglePause" });
+    expect(expectBrowsing(paused).nearbyCount).toBe(20);
+    // Unpause → viewport
+    const { next: resumed } = transition(paused, { type: "togglePause" });
+    expect(expectBrowsing(resumed).nearbyCount).toBe(20);
+  });
+
+  it("clears scroll pauseReason on resume", () => {
+    const state = browsingState({
+      paused: true,
+      pauseReason: "scroll",
+      scrollMode: "infinite",
+    });
+    const { next } = transition(state, { type: "togglePause" });
+    const browsing = expectBrowsing(next);
+    expect(browsing.paused).toBe(false);
+    expect(browsing.pauseReason).toBeNull();
   });
 
   it("no-ops when not browsing", () => {
@@ -606,17 +649,16 @@ describe("positionSource tracking", () => {
 // ── useGps event ─────────────────────────────────────────────
 
 describe("useGps event", () => {
-  it("sets positionSource to gps and emits startGps + renderBrowsingList from browsing", () => {
-    const state = browsingState({ positionSource: "picked" });
+  it("sets positionSource to gps and switches to viewport mode from browsing", () => {
+    const state = browsingState({
+      positionSource: "picked",
+      scrollMode: "infinite",
+    });
     const { next, effects } = transition(state, { type: "useGps" });
     expect(next.positionSource).toBe("gps");
+    const browsing = expectBrowsing(next);
+    expect(browsing.scrollMode).toBe("viewport");
     expect(effectTypes(effects)).toContain("startGps");
-    expect(effectTypes(effects)).toContain("renderBrowsingList");
-  });
-
-  it("requeries immediately when position is already known", () => {
-    const state = browsingState({ positionSource: "picked" });
-    const { effects } = transition(state, { type: "useGps" });
     expect(effectTypes(effects)).toContain("requery");
   });
 
@@ -638,15 +680,18 @@ describe("useGps event", () => {
         phase: "detail",
         article: defaultBrowsingArticles[0],
         articles: defaultBrowsingArticles,
-        nearbyCount: 10,
+        nearbyCount: DEFAULT_VIEWPORT_FILL,
         paused: false,
+        pauseReason: null,
         lastQueryPos: paris,
+        scrollMode: "infinite",
       },
     });
     const { next, effects } = transition(state, { type: "useGps" });
     expect(next.positionSource).toBe("gps");
     expect(effectTypes(effects)).toContain("startGps");
-    expect(effectTypes(effects)).toContain("renderBrowsingList");
+    // Detail phase: no requery (forceRequery only works from browsing)
+    expect(effectTypes(effects)).not.toContain("requery");
   });
 
   it("no-ops when not browsing or detail", () => {
@@ -988,11 +1033,11 @@ describe("queryResult event", () => {
       type: "queryResult",
       articles: newArticles,
       queryPos: paris,
-      count: 10,
+      count: DEFAULT_VIEWPORT_FILL,
     });
     const browsing = expectBrowsing(next);
     expect(browsing.articles).toBe(newArticles);
-    expect(browsing.nearbyCount).toBe(10);
+    expect(browsing.nearbyCount).toBe(DEFAULT_VIEWPORT_FILL);
     expect(browsing.lastQueryPos).toBe(paris);
     expect(effectTypes(effects)).toContain("renderBrowsingList");
     expect(effectTypes(effects)).toContain("fetchListSummaries");
@@ -1010,7 +1055,7 @@ describe("queryResult event", () => {
       type: "queryResult",
       articles: updatedArticles,
       queryPos: paris,
-      count: 10,
+      count: DEFAULT_VIEWPORT_FILL,
     });
     const nextBrowsing = expectBrowsing(next);
     expect(nextBrowsing.articles).toBe(updatedArticles);
@@ -1020,7 +1065,7 @@ describe("queryResult event", () => {
   });
 
   it("updates nearbyCount and lastQueryPos", () => {
-    const state = browsingState({ nearbyCount: 10 });
+    const state = browsingState({ nearbyCount: DEFAULT_VIEWPORT_FILL });
     const newPos: UserPosition = { lat: 48.86, lon: 2.3 };
     const browsing = expectBrowsing(state);
     const { next } = transition(state, {
@@ -1057,9 +1102,11 @@ describe("showMapPicker event", () => {
     const browsingPhase: Phase = {
       phase: "browsing",
       articles: defaultBrowsingArticles,
-      nearbyCount: 10,
+      nearbyCount: DEFAULT_VIEWPORT_FILL,
       paused: false,
+      pauseReason: null,
       lastQueryPos: paris,
+      scrollMode: "viewport",
     };
     const state = makeState({ phase: browsingPhase });
     const { next, effects } = transition(state, { type: "showMapPicker" });
@@ -1090,9 +1137,11 @@ describe("back from mapPicker", () => {
     const browsingPhase: Phase = {
       phase: "browsing",
       articles: defaultBrowsingArticles,
-      nearbyCount: 10,
+      nearbyCount: DEFAULT_VIEWPORT_FILL,
       paused: false,
+      pauseReason: null,
       lastQueryPos: paris,
+      scrollMode: "viewport",
     };
     const state = makeState({
       phase: { phase: "mapPicker", returnPhase: browsingPhase },
@@ -1113,5 +1162,135 @@ describe("back from mapPicker", () => {
     const { next, effects } = transition(state, { type: "back" });
     expect(next.phase).toEqual(errorPhase);
     expect(effects).toContainEqual({ type: "render" });
+  });
+});
+
+// ── computeScrollMode ─────────────────────────────────────────
+
+describe("computeScrollMode", () => {
+  it("returns infinite for picked position", () => {
+    expect(computeScrollMode("picked", false)).toBe("infinite");
+    expect(computeScrollMode("picked", true)).toBe("infinite");
+  });
+
+  it("returns infinite for GPS when paused", () => {
+    expect(computeScrollMode("gps", true)).toBe("infinite");
+  });
+
+  it("returns viewport for GPS when not paused", () => {
+    expect(computeScrollMode("gps", false)).toBe("viewport");
+  });
+
+  it("returns viewport for null position source", () => {
+    expect(computeScrollMode(null, false)).toBe("viewport");
+  });
+});
+
+// ── Scroll mode transitions (tour-guide-ove) ─────────────────
+
+describe("scroll mode transitions", () => {
+  it("pickPosition enters infinite scroll mode", () => {
+    const state = makeState({ query: sampleQuery });
+    const { next } = transition(state, {
+      type: "pickPosition",
+      position: paris,
+    });
+    const browsing = expectBrowsing(next);
+    expect(browsing.scrollMode).toBe("infinite");
+  });
+
+  it("pickPosition requeries with INFINITE_SCROLL_MAX", () => {
+    const state = makeState({ query: sampleQuery });
+    const { effects } = transition(state, {
+      type: "pickPosition",
+      position: paris,
+    });
+    const requery = effects.find((e) => e.type === "requery");
+    expect(requery).toMatchObject({ count: INFINITE_SCROLL_MAX });
+  });
+
+  it("GPS position enters viewport mode", () => {
+    const state = makeState({
+      phase: { phase: "locating" },
+      query: sampleQuery,
+    });
+    const { next } = transition(state, { type: "position", pos: paris });
+    const browsing = expectBrowsing(next);
+    expect(browsing.scrollMode).toBe("viewport");
+  });
+
+  it("scrollMode preserved through selectArticle → back round-trip", () => {
+    const state = browsingState({ scrollMode: "infinite" });
+    const article = expectBrowsing(state).articles[0];
+    const { next: detail } = transition(state, {
+      type: "selectArticle",
+      article,
+    });
+    expect(expectDetail(detail).scrollMode).toBe("infinite");
+    const { next: restored } = transition(detail, { type: "back" });
+    expect(expectBrowsing(restored).scrollMode).toBe("infinite");
+  });
+
+  it("queryResult preserves nearbyCount in infinite mode", () => {
+    const state = browsingState({
+      scrollMode: "infinite",
+      nearbyCount: 50,
+    });
+    const newArticles: NearbyArticle[] = [
+      { title: "New Place", lat: 48.86, lon: 2.35, distanceM: 100 },
+    ];
+    const { next } = transition(state, {
+      type: "queryResult",
+      articles: newArticles,
+      queryPos: paris,
+      count: INFINITE_SCROLL_MAX,
+    });
+    // nearbyCount should stay at 50 (the tier value), not INFINITE_SCROLL_MAX
+    expect(expectBrowsing(next).nearbyCount).toBe(50);
+  });
+
+  it("queryResult skips fetchListSummaries in infinite mode", () => {
+    const state = browsingState({ scrollMode: "infinite" });
+    const newArticles: NearbyArticle[] = [
+      { title: "New Place", lat: 48.86, lon: 2.35, distanceM: 100 },
+    ];
+    const { effects } = transition(state, {
+      type: "queryResult",
+      articles: newArticles,
+      queryPos: paris,
+      count: INFINITE_SCROLL_MAX,
+    });
+    expect(effectTypes(effects)).toContain("renderBrowsingList");
+    expect(effectTypes(effects)).not.toContain("fetchListSummaries");
+  });
+
+  it("forceRequery uses INFINITE_SCROLL_MAX in infinite mode", () => {
+    const state = browsingState({
+      scrollMode: "infinite",
+      nearbyCount: 20,
+      lastQueryPos: paris,
+    });
+    // Move far enough to trigger requery
+    const { effects } = transition(state, {
+      type: "position",
+      pos: parisNearby,
+    });
+    const requery = effects.find((e) => e.type === "requery");
+    expect(requery).toBeDefined();
+    expect(requery).toMatchObject({ count: INFINITE_SCROLL_MAX });
+  });
+
+  it("useGps from infinite switches to viewport and requeries", () => {
+    const state = browsingState({
+      positionSource: "picked",
+      scrollMode: "infinite",
+      nearbyCount: 20,
+    });
+    const { next, effects } = transition(state, { type: "useGps" });
+    expect(next.positionSource).toBe("gps");
+    const browsing = expectBrowsing(next);
+    expect(browsing.scrollMode).toBe("viewport");
+    const requery = effects.find((e) => e.type === "requery");
+    expect(requery).toMatchObject({ count: 20 });
   });
 });

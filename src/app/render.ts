@@ -49,7 +49,6 @@ type FocusInfo =
   | { type: "pauseToggle" }
   | { type: "pickLocation" }
   | { type: "useGps" }
-  | { type: "showMore" }
   | { type: "article"; title: string };
 
 function captureFocus(container: HTMLElement): FocusInfo | null {
@@ -62,7 +61,6 @@ function captureFocus(container: HTMLElement): FocusInfo | null {
   if (active.classList.contains("pick-location-btn"))
     return { type: "pickLocation" };
   if (active.classList.contains("use-gps-btn")) return { type: "useGps" };
-  if (active.classList.contains("show-more")) return { type: "showMore" };
 
   const item = (active as HTMLElement).closest<HTMLElement>(".nearby-item");
   if (item?.dataset.title)
@@ -87,9 +85,6 @@ function restoreFocus(container: HTMLElement, info: FocusInfo | null): void {
       break;
     case "useGps":
       target = container.querySelector(".use-gps-btn");
-      break;
-    case "showMore":
-      target = container.querySelector(".show-more");
       break;
     case "article":
       target =
@@ -117,6 +112,7 @@ export interface RenderNearbyHeaderOptions {
   currentLang: Lang;
   onLangChange: (lang: Lang) => void;
   paused: boolean;
+  pauseReason?: "manual" | "scroll" | null;
   onTogglePause?: () => void;
   positionSource?: "gps" | "picked";
   onPickLocation?: () => void;
@@ -133,6 +129,7 @@ export function renderNearbyHeader(
     currentLang,
     onLangChange,
     paused,
+    pauseReason,
     onTogglePause,
     positionSource,
     onPickLocation,
@@ -157,9 +154,15 @@ export function renderNearbyHeader(
 
   if (onTogglePause) {
     const pauseBtn = document.createElement("button");
-    pauseBtn.className = "header-icon-btn pause-toggle";
+    let btnClass = "header-icon-btn pause-toggle";
+    if (paused && pauseReason === "scroll") {
+      btnClass += " scroll-pause-blink";
+    }
+    pauseBtn.className = btnClass;
     const pauseLabel = paused
-      ? "Resume location updates"
+      ? pauseReason === "scroll"
+        ? "Resume updates (paused by scroll)"
+        : "Resume location updates"
       : "Pause location updates";
     pauseBtn.setAttribute("aria-label", pauseLabel);
     pauseBtn.title = pauseLabel;
@@ -230,25 +233,11 @@ export function renderNearbyHeader(
   return header;
 }
 
-/** Render a "Show N" button, or null if there's no next tier. */
-export function renderShowMoreButton(
-  nextCount: number | undefined,
-  onShowMore?: () => void,
-): HTMLElement | null {
-  if (!onShowMore || nextCount === undefined) return null;
-  const btn = document.createElement("button");
-  btn.className = "show-more";
-  btn.textContent = `Show ${nextCount}`;
-  btn.addEventListener("click", onShowMore);
-  return btn;
-}
-
-/** Create a single article list item element. */
-function createArticleItem(
+/** Create the inner content of an article list item (the .nearby-item div). */
+export function createArticleItemContent(
   article: NearbyArticle,
   onSelectArticle: (article: NearbyArticle) => void,
-): HTMLLIElement {
-  const li = document.createElement("li");
+): HTMLDivElement {
   const item = document.createElement("div");
   item.className = "nearby-item";
   item.setAttribute("role", "button");
@@ -279,8 +268,40 @@ function createArticleItem(
   badge.textContent = formatDistance(article.distanceM);
 
   item.append(thumb, info, badge);
-  li.appendChild(item);
+  return item;
+}
+
+/** Create a single article list item element. */
+function createArticleItem(
+  article: NearbyArticle,
+  onSelectArticle: (article: NearbyArticle) => void,
+): HTMLLIElement {
+  const li = document.createElement("li");
+  li.appendChild(createArticleItemContent(article, onSelectArticle));
   return li;
+}
+
+/** Apply summary data (thumbnail + description) to a single .nearby-item element. */
+export function applyEnrichment(
+  item: HTMLElement,
+  summary: ArticleSummary,
+): void {
+  const desc = item.querySelector<HTMLElement>(".nearby-desc");
+  if (desc && summary.description) {
+    desc.textContent = summary.description;
+  }
+
+  const thumbContainer = item.querySelector<HTMLElement>(".nearby-thumb");
+  if (thumbContainer && summary.thumbnailUrl) {
+    if (!thumbContainer.querySelector("img")) {
+      const img = document.createElement("img");
+      img.src = summary.thumbnailUrl;
+      img.alt = "";
+      img.loading = "lazy";
+      thumbContainer.appendChild(img);
+      thumbContainer.classList.add("nearby-thumb-loaded");
+    }
+  }
 }
 
 /** Enrich a list item with summary data (thumbnail + description). */
@@ -292,24 +313,7 @@ export function enrichArticleItem(
   const items = container.querySelectorAll<HTMLElement>(".nearby-item");
   for (const item of items) {
     if (item.dataset.title !== title) continue;
-
-    const desc = item.querySelector<HTMLElement>(".nearby-desc");
-    if (desc && summary.description) {
-      desc.textContent = summary.description;
-    }
-
-    const thumbContainer = item.querySelector<HTMLElement>(".nearby-thumb");
-    if (thumbContainer && summary.thumbnailUrl) {
-      if (!thumbContainer.querySelector("img")) {
-        const img = document.createElement("img");
-        img.src = summary.thumbnailUrl;
-        img.alt = "";
-        img.loading = "lazy";
-        thumbContainer.appendChild(img);
-        thumbContainer.classList.add("nearby-thumb-loaded");
-      }
-    }
-
+    applyEnrichment(item, summary);
     break;
   }
 }
@@ -353,9 +357,8 @@ export interface RenderNearbyListOptions {
   onSelectArticle: (article: NearbyArticle) => void;
   currentLang: Lang;
   onLangChange: (lang: Lang) => void;
-  onShowMore?: () => void;
-  nextCount?: number;
   paused?: boolean;
+  pauseReason?: "manual" | "scroll" | null;
   onTogglePause?: () => void;
   positionSource?: "gps" | "picked";
   onPickLocation?: () => void;
@@ -373,15 +376,27 @@ export function renderNearbyList(
     onSelectArticle,
     currentLang,
     onLangChange,
-    onShowMore,
-    nextCount,
     paused,
+    pauseReason,
     onTogglePause,
     positionSource,
     onPickLocation,
     onUseGps,
     gpsSignalLost,
   } = options;
+
+  const headerOpts = {
+    articleCount: articles.length,
+    currentLang,
+    onLangChange,
+    paused: paused ?? false,
+    pauseReason,
+    onTogglePause,
+    positionSource,
+    onPickLocation,
+    onUseGps,
+    gpsSignalLost,
+  };
 
   const existingList =
     container.querySelector<HTMLUListElement>(".nearby-list");
@@ -390,17 +405,7 @@ export function renderNearbyList(
     // First render: build from scratch
     container.textContent = "";
 
-    const header = renderNearbyHeader({
-      articleCount: articles.length,
-      currentLang,
-      onLangChange,
-      paused: paused ?? false,
-      onTogglePause,
-      positionSource,
-      onPickLocation,
-      onUseGps,
-      gpsSignalLost,
-    });
+    const header = renderNearbyHeader(headerOpts);
 
     const list = document.createElement("ul");
     list.className = "nearby-list";
@@ -409,8 +414,6 @@ export function renderNearbyList(
     }
 
     container.append(header, list);
-    const showMoreBtn = renderShowMoreButton(nextCount, onShowMore);
-    if (showMoreBtn) container.appendChild(showMoreBtn);
     return;
   }
 
@@ -420,34 +423,13 @@ export function renderNearbyList(
 
   // Replace header (cheap — ~5 nodes with fresh event listeners)
   const oldHeader = container.querySelector("header.app-header");
-  const newHeader = renderNearbyHeader({
-    articleCount: articles.length,
-    currentLang,
-    onLangChange,
-    paused: paused ?? false,
-    onTogglePause,
-    positionSource,
-    onPickLocation,
-    onUseGps,
-    gpsSignalLost,
-  });
+  const newHeader = renderNearbyHeader(headerOpts);
   if (oldHeader) {
     oldHeader.replaceWith(newHeader);
   }
 
   // Reconcile article list items by title key
   reconcileListItems(existingList, articles, onSelectArticle);
-
-  // Update show-more button
-  const oldShowMore = container.querySelector(".show-more");
-  const newShowMore = renderShowMoreButton(nextCount, onShowMore);
-  if (oldShowMore && newShowMore) {
-    oldShowMore.replaceWith(newShowMore);
-  } else if (oldShowMore) {
-    oldShowMore.remove();
-  } else if (newShowMore) {
-    container.appendChild(newShowMore);
-  }
 
   window.scrollTo(0, savedScrollY);
   restoreFocus(container, savedFocus);

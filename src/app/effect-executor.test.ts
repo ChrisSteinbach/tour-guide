@@ -50,9 +50,11 @@ function browsingState(overrides: Partial<AppState> = {}): AppState {
     phase: {
       phase: "browsing",
       articles: [article],
-      nearbyCount: 10,
+      nearbyCount: 15,
       paused: false,
+      pauseReason: null,
       lastQueryPos: pos,
+      scrollMode: "viewport",
     },
     query: { mode: "none" },
     position: pos,
@@ -64,6 +66,7 @@ function browsingState(overrides: Partial<AppState> = {}): AppState {
     updateBanner: null,
     hasGeolocation: true,
     gpsSignalLost: false,
+    viewportFillCount: 15,
     ...overrides,
   };
 }
@@ -74,9 +77,11 @@ function detailState(overrides: Partial<AppState> = {}): AppState {
       phase: "detail",
       article,
       articles: [article],
-      nearbyCount: 10,
+      nearbyCount: 15,
       paused: false,
+      pauseReason: null,
       lastQueryPos: pos,
+      scrollMode: "viewport",
     },
     query: { mode: "none" },
     position: pos,
@@ -88,6 +93,7 @@ function detailState(overrides: Partial<AppState> = {}): AppState {
     updateBanner: null,
     hasGeolocation: true,
     gpsSignalLost: false,
+    viewportFillCount: 15,
     ...overrides,
   };
 }
@@ -115,6 +121,7 @@ function makeUi(overrides: Partial<RenderDeps> = {}): RenderDeps {
     renderDetailError: vi.fn(),
     renderAppUpdateBanner: vi.fn(),
     showMapPicker: vi.fn(),
+    scrollToTop: vi.fn(),
     ...overrides,
   };
 }
