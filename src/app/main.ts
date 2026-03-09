@@ -4,6 +4,7 @@ import {
   renderNearbyList,
   renderNearbyHeader,
   createArticleItemContent,
+  applyEnrichment,
   updateNearbyDistances,
   enrichArticleItem,
 } from "./render";
@@ -374,11 +375,16 @@ function renderInfiniteScrollDOM(): void {
       onRangeChange: enrichScheduler.onRangeChange,
     });
 
-    virtualList.update(articles.length, (i) => {
+    const renderVirtualItem = (i: number) => {
       const article = articles[i];
       if (!article) return null;
-      return createArticleItemContent(article, onSelect);
-    });
+      const el = createArticleItemContent(article, onSelect);
+      const cached = summaryLoader.get(article.title);
+      if (cached) applyEnrichment(el, cached);
+      return el;
+    };
+
+    virtualList.update(articles.length, renderVirtualItem);
 
     const disconnectScroll =
       isDesktop && app.classList.contains("split-view")
@@ -403,7 +409,10 @@ function renderInfiniteScrollDOM(): void {
     virtualList.update(articles.length, (i) => {
       const article = articles[i];
       if (!article) return null;
-      return createArticleItemContent(article, onSelect);
+      const el = createArticleItemContent(article, onSelect);
+      const cached = summaryLoader.get(article.title);
+      if (cached) applyEnrichment(el, cached);
+      return el;
     });
   }
 }

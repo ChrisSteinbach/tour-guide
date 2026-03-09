@@ -291,6 +291,29 @@ function createArticleItem(
   return li;
 }
 
+/** Apply summary data (thumbnail + description) to a single .nearby-item element. */
+export function applyEnrichment(
+  item: HTMLElement,
+  summary: ArticleSummary,
+): void {
+  const desc = item.querySelector<HTMLElement>(".nearby-desc");
+  if (desc && summary.description) {
+    desc.textContent = summary.description;
+  }
+
+  const thumbContainer = item.querySelector<HTMLElement>(".nearby-thumb");
+  if (thumbContainer && summary.thumbnailUrl) {
+    if (!thumbContainer.querySelector("img")) {
+      const img = document.createElement("img");
+      img.src = summary.thumbnailUrl;
+      img.alt = "";
+      img.loading = "lazy";
+      thumbContainer.appendChild(img);
+      thumbContainer.classList.add("nearby-thumb-loaded");
+    }
+  }
+}
+
 /** Enrich a list item with summary data (thumbnail + description). */
 export function enrichArticleItem(
   container: HTMLElement,
@@ -300,24 +323,7 @@ export function enrichArticleItem(
   const items = container.querySelectorAll<HTMLElement>(".nearby-item");
   for (const item of items) {
     if (item.dataset.title !== title) continue;
-
-    const desc = item.querySelector<HTMLElement>(".nearby-desc");
-    if (desc && summary.description) {
-      desc.textContent = summary.description;
-    }
-
-    const thumbContainer = item.querySelector<HTMLElement>(".nearby-thumb");
-    if (thumbContainer && summary.thumbnailUrl) {
-      if (!thumbContainer.querySelector("img")) {
-        const img = document.createElement("img");
-        img.src = summary.thumbnailUrl;
-        img.alt = "";
-        img.loading = "lazy";
-        thumbContainer.appendChild(img);
-        thumbContainer.classList.add("nearby-thumb-loaded");
-      }
-    }
-
+    applyEnrichment(item, summary);
     break;
   }
 }
