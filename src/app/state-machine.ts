@@ -11,16 +11,22 @@ import { distanceBetweenPositions } from "./format";
 
 // ── Constants ────────────────────────────────────────────────
 
-export const NEARBY_TIERS = [10, 20, 50, 100];
 export const REQUERY_DISTANCE_M = 15;
+/** Count used for requery in infinite scroll mode (effectively "all articles"). */
+export const INFINITE_SCROLL_MAX = 10_000;
+/** Default viewport fill count when actual viewport size is unknown. */
+export const DEFAULT_VIEWPORT_FILL = 15;
 
 // ── Helpers ──────────────────────────────────────────────────
 
-export function getNextTier(nearbyCount: number): number | undefined {
-  const idx = NEARBY_TIERS.indexOf(nearbyCount);
-  return idx >= 0 && idx < NEARBY_TIERS.length - 1
-    ? NEARBY_TIERS[idx + 1]
-    : undefined;
+/** Position is "stable" when picked or when GPS is paused. */
+export function computeScrollMode(
+  positionSource: "gps" | "picked" | null,
+  paused: boolean,
+): "infinite" | "viewport" {
+  if (positionSource === "picked") return "infinite";
+  if (paused) return "infinite";
+  return "viewport";
 }
 
 // ── Query state (discriminated union — all query state is visible) ──
@@ -62,7 +68,10 @@ export type Phase =
       articles: NearbyArticle[];
       nearbyCount: number;
       paused: boolean;
+      /** Why the view is paused: 'manual' (user clicked pause), 'scroll' (auto-paused by scrolling), or null (not paused). */
+      pauseReason: "manual" | "scroll" | null;
       lastQueryPos: UserPosition;
+      scrollMode: "infinite" | "viewport";
     }
   | {
       phase: "detail";
@@ -70,7 +79,9 @@ export type Phase =
       articles: NearbyArticle[];
       nearbyCount: number;
       paused: boolean;
+      pauseReason: "manual" | "scroll" | null;
       lastQueryPos: UserPosition;
+      scrollMode: "infinite" | "viewport";
     }
   | { phase: "mapPicker"; returnPhase: Phase };
 
@@ -90,6 +101,8 @@ export interface AppState {
   hasGeolocation: boolean;
   /** True when GPS signal is lost mid-session (cleared on next position). */
   gpsSignalLost: boolean;
+  /** How many articles to show in the initial viewport-filling view. */
+  viewportFillCount: number;
 }
 
 // ── Event (all inputs to the state machine) ──────────────────
@@ -111,7 +124,7 @@ export type Event =
   | { type: "langChanged"; lang: Lang }
   | { type: "selectArticle"; article: NearbyArticle }
   | { type: "back" }
-  | { type: "showMore" }
+  | { type: "scrollPause" }
   | { type: "togglePause" }
   | { type: "useGps" }
   | { type: "showMapPicker" }
@@ -140,7 +153,8 @@ export type Effect =
   | { type: "showMapPicker" }
   | { type: "showAppUpdateBanner" }
   | { type: "requery"; pos: UserPosition; count: number }
-  | { type: "fetchListSummaries" };
+  | { type: "fetchListSummaries" }
+  | { type: "scrollToTop" };
 
 // ── Internal helpers ─────────────────────────────────────────
 
@@ -155,10 +169,12 @@ function enterBrowsing(state: AppState): TransitionResult {
       effects: [{ type: "render" }],
     };
   }
+  const scrollMode = computeScrollMode(state.positionSource, false);
   const count =
     state.phase.phase === "browsing"
       ? state.phase.nearbyCount
-      : NEARBY_TIERS[0];
+      : state.viewportFillCount;
+  const requeryCount = scrollMode === "infinite" ? INFINITE_SCROLL_MAX : count;
   const prevArticles =
     state.phase.phase === "browsing" ? state.phase.articles : [];
   return {
@@ -169,10 +185,12 @@ function enterBrowsing(state: AppState): TransitionResult {
         articles: prevArticles,
         nearbyCount: count,
         paused: false,
+        pauseReason: null,
         lastQueryPos: state.position,
+        scrollMode,
       },
     },
-    effects: [{ type: "requery", pos: state.position, count }],
+    effects: [{ type: "requery", pos: state.position, count: requeryCount }],
   };
 }
 
@@ -181,6 +199,10 @@ function forceRequery(state: AppState): TransitionResult {
   if (state.phase.phase !== "browsing" || !state.position) {
     return { next: state, effects: [] };
   }
+  const count =
+    state.phase.scrollMode === "infinite"
+      ? INFINITE_SCROLL_MAX
+      : state.phase.nearbyCount;
   return {
     next: {
       ...state,
@@ -189,9 +211,7 @@ function forceRequery(state: AppState): TransitionResult {
         lastQueryPos: state.position,
       },
     },
-    effects: [
-      { type: "requery", pos: state.position, count: state.phase.nearbyCount },
-    ],
+    effects: [{ type: "requery", pos: state.position, count }],
   };
 }
 
@@ -268,18 +288,30 @@ export function transition(state: AppState, event: Event): TransitionResult {
 
     // ── Browsing actions (tour-guide-bli) ────────────────────
 
-    case "showMore": {
+    case "scrollPause": {
       if (state.phase.phase !== "browsing" || !state.position) {
         return { next: state, effects: [] };
       }
-      const nextTier = getNextTier(state.phase.nearbyCount);
-      if (nextTier === undefined) return { next: state, effects: [] };
+      if (state.phase.paused || state.phase.scrollMode === "infinite") {
+        return { next: state, effects: [] };
+      }
       return {
         next: {
           ...state,
-          phase: { ...state.phase, nearbyCount: nextTier },
+          phase: {
+            ...state.phase,
+            paused: true,
+            pauseReason: "scroll",
+            scrollMode: "infinite",
+          },
         },
-        effects: [{ type: "requery", pos: state.position, count: nextTier }],
+        effects: [
+          {
+            type: "requery",
+            pos: state.position,
+            count: INFINITE_SCROLL_MAX,
+          },
+        ],
       };
     }
 
@@ -288,18 +320,22 @@ export function transition(state: AppState, event: Event): TransitionResult {
         return { next: state, effects: [] };
       }
       const nowPaused = !state.phase.paused;
+      const newScrollMode = computeScrollMode(state.positionSource, nowPaused);
       if (!nowPaused && state.position) {
+        // Unpausing → switch to viewport mode, requery, scroll to top
         return {
           next: {
             ...state,
             phase: {
               ...state.phase,
               paused: false,
+              pauseReason: null,
+              scrollMode: newScrollMode,
               lastQueryPos: state.position,
             },
           },
           effects: [
-            { type: "renderBrowsingList" },
+            { type: "scrollToTop" },
             {
               type: "requery",
               pos: state.position,
@@ -308,10 +344,36 @@ export function transition(state: AppState, event: Event): TransitionResult {
           ],
         };
       }
+      if (nowPaused && state.position) {
+        // Pausing → switch to infinite scroll, requery with large count
+        return {
+          next: {
+            ...state,
+            phase: {
+              ...state.phase,
+              paused: true,
+              pauseReason: "manual",
+              scrollMode: newScrollMode,
+            },
+          },
+          effects: [
+            {
+              type: "requery",
+              pos: state.position,
+              count: INFINITE_SCROLL_MAX,
+            },
+          ],
+        };
+      }
       return {
         next: {
           ...state,
-          phase: { ...state.phase, paused: nowPaused },
+          phase: {
+            ...state.phase,
+            paused: nowPaused,
+            pauseReason: nowPaused ? "manual" : null,
+            scrollMode: newScrollMode,
+          },
         },
         effects: [{ type: "renderBrowsingList" }],
       };
@@ -331,11 +393,17 @@ export function transition(state: AppState, event: Event): TransitionResult {
       if (state.phase.phase !== "browsing" && state.phase.phase !== "detail") {
         return { next: state, effects: [] };
       }
-      const next: AppState = { ...state, positionSource: "gps" };
-      const effects: Effect[] = [
-        { type: "startGps" },
-        { type: "renderBrowsingList" },
-      ];
+      // Switch to GPS → viewport mode (GPS + not paused = viewport)
+      const updatedPhase =
+        state.phase.phase === "browsing" || state.phase.phase === "detail"
+          ? { ...state.phase, scrollMode: "viewport" as const }
+          : state.phase;
+      const next: AppState = {
+        ...state,
+        positionSource: "gps",
+        phase: updatedPhase,
+      };
+      const effects: Effect[] = [{ type: "startGps" }];
       // If we already have a GPS position, requery immediately so the
       // list updates without waiting for the next 15 m GPS movement.
       if (state.position) {
@@ -345,6 +413,7 @@ export function transition(state: AppState, event: Event): TransitionResult {
           effects: [...effects, ...rq.effects],
         };
       }
+      effects.push({ type: "renderBrowsingList" });
       return { next, effects };
     }
 
@@ -358,19 +427,24 @@ export function transition(state: AppState, event: Event): TransitionResult {
       const same =
         event.articles.length === p.articles.length &&
         event.articles.every((a, i) => a.title === p.articles[i].title);
+      // In infinite mode, preserve viewport-based nearbyCount for mode transitions
+      const nearbyCount =
+        p.scrollMode === "infinite" ? p.nearbyCount : event.count;
       return {
         next: {
           ...state,
           phase: {
             ...p,
             articles: event.articles,
-            nearbyCount: event.count,
+            nearbyCount,
             lastQueryPos: event.queryPos,
           },
         },
         effects: same
           ? [{ type: "updateDistances" }]
-          : [{ type: "renderBrowsingList" }, { type: "fetchListSummaries" }],
+          : p.scrollMode === "infinite"
+            ? [{ type: "renderBrowsingList" }]
+            : [{ type: "renderBrowsingList" }, { type: "fetchListSummaries" }],
       };
     }
 
@@ -380,7 +454,14 @@ export function transition(state: AppState, event: Event): TransitionResult {
       if (state.phase.phase !== "browsing") {
         return { next: state, effects: [] };
       }
-      const { articles, nearbyCount, paused, lastQueryPos } = state.phase;
+      const {
+        articles,
+        nearbyCount,
+        paused,
+        pauseReason,
+        lastQueryPos,
+        scrollMode,
+      } = state.phase;
       return {
         next: {
           ...state,
@@ -390,7 +471,9 @@ export function transition(state: AppState, event: Event): TransitionResult {
             articles,
             nearbyCount,
             paused,
+            pauseReason,
             lastQueryPos,
+            scrollMode,
           },
         },
         effects: [
@@ -415,7 +498,14 @@ export function transition(state: AppState, event: Event): TransitionResult {
       if (state.phase.phase !== "detail") {
         return { next: state, effects: [] };
       }
-      const { articles, nearbyCount, paused, lastQueryPos } = state.phase;
+      const {
+        articles,
+        nearbyCount,
+        paused,
+        pauseReason: detailPauseReason,
+        lastQueryPos,
+        scrollMode: detailScrollMode,
+      } = state.phase;
       return {
         next: {
           ...state,
@@ -424,7 +514,9 @@ export function transition(state: AppState, event: Event): TransitionResult {
             articles,
             nearbyCount,
             paused,
+            pauseReason: detailPauseReason,
             lastQueryPos,
+            scrollMode: detailScrollMode,
           },
         },
         effects: [
@@ -641,6 +733,13 @@ function handlePosition(
 
     case "browsing": {
       if (state.phase.paused) {
+        // When auto-paused by scroll, re-render header to restart blink
+        if (state.phase.pauseReason === "scroll") {
+          return {
+            next,
+            effects: [...effects, { type: "renderBrowsingList" }],
+          };
+        }
         return { next, effects };
       }
       const distance = distanceBetweenPositions(
