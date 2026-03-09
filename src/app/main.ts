@@ -393,7 +393,7 @@ function renderInfiniteScrollDOM(): void {
     infiniteScrollHandle = { virtualList, enrichScheduler, disconnectScroll };
   } else {
     // Update existing virtual list with new articles
-    const { virtualList, enrichScheduler } = infiniteScrollHandle;
+    const { virtualList } = infiniteScrollHandle;
 
     // Update header
     const oldHeader = app.querySelector("header.app-header");
@@ -401,9 +401,6 @@ function renderInfiniteScrollDOM(): void {
     if (oldHeader) {
       oldHeader.replaceWith(newHeader);
     }
-
-    // Reset enrichment state for new article set
-    enrichScheduler.reset();
 
     // Update virtual list
     virtualList.update(articles.length, (i) => {
