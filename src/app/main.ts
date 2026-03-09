@@ -48,7 +48,6 @@ import {
   windowScrollState,
   containerScrollState,
   type VirtualList,
-  type VisibleRange,
 } from "./virtual-scroll";
 import {
   createEnrichScheduler,
@@ -60,6 +59,9 @@ import {
   STARTED_STORAGE_KEY,
   STARTED_TTL_MS,
 } from "./effect-executor";
+import { createScrollPauseDetector } from "./scroll-pause-detector";
+import type { ScrollPauseDetector } from "./scroll-pause-detector";
+import { createDebouncedMapSync } from "./debounced-map-sync";
 
 const app =
   document.getElementById("app") ??
@@ -276,42 +278,25 @@ function renderBrowsingListDOM(): void {
 /** Dead zone for scroll-pause detection (px). */
 const SCROLL_PAUSE_THRESHOLD = VIRTUAL_ITEM_HEIGHT * 2;
 
-let scrollPauseCleanup: (() => void) | null = null;
+let scrollPauseDetector: ScrollPauseDetector | null = null;
 
 function setupScrollPauseListener(): void {
   teardownScrollPauseListener();
-  const cleanups: (() => void)[] = [];
-
-  // Window scroll (mobile / non-split-view)
-  const windowHandler = () => {
-    if (window.scrollY > SCROLL_PAUSE_THRESHOLD) {
-      teardownScrollPauseListener();
-      dispatch({ type: "scrollPause" });
-    }
-  };
-  window.addEventListener("scroll", windowHandler, { passive: true });
-  cleanups.push(() => window.removeEventListener("scroll", windowHandler));
-
-  // Container scroll (desktop split-view: list scrolls inside grid cell)
   const listEl = app.querySelector<HTMLElement>(".nearby-list");
-  if (listEl && listEl.scrollHeight > listEl.clientHeight) {
-    const containerHandler = () => {
-      if (listEl.scrollTop > SCROLL_PAUSE_THRESHOLD) {
-        teardownScrollPauseListener();
-        dispatch({ type: "scrollPause" });
-      }
-    };
-    listEl.addEventListener("scroll", containerHandler, { passive: true });
-    cleanups.push(() => listEl.removeEventListener("scroll", containerHandler));
-  }
-
-  scrollPauseCleanup = () => cleanups.forEach((fn) => fn());
+  scrollPauseDetector = createScrollPauseDetector({
+    threshold: SCROLL_PAUSE_THRESHOLD,
+    onPause: () => {
+      scrollPauseDetector = null;
+      dispatch({ type: "scrollPause" });
+    },
+    container: listEl ?? undefined,
+  });
 }
 
 function teardownScrollPauseListener(): void {
-  if (scrollPauseCleanup) {
-    scrollPauseCleanup();
-    scrollPauseCleanup = null;
+  if (scrollPauseDetector) {
+    scrollPauseDetector.destroy();
+    scrollPauseDetector = null;
   }
 }
 
@@ -382,7 +367,20 @@ function renderInfiniteScrollDOM(): void {
       updateBrowseMap(appState.position, []);
     }
 
-    let mapSyncTimer: ReturnType<typeof setTimeout> | null = null;
+    const mapSync = createDebouncedMapSync({
+      settleMs: MAP_SYNC_SETTLE_MS,
+      getVisibleArticles: (range) => {
+        if (appState.phase.phase !== "browsing" || !appState.position)
+          return null;
+        if (!desktopQuery.matches) return null;
+        return appState.phase.articles.slice(range.start, range.end);
+      },
+      syncMarkers: (articles) => {
+        if (appState.position) {
+          updateBrowseMap(appState.position, articles as NearbyArticle[]);
+        }
+      },
+    });
 
     const enrichScheduler = createEnrichScheduler({
       settleMs: ENRICH_SETTLE_MS,
@@ -399,18 +397,6 @@ function renderInfiniteScrollDOM(): void {
       ? containerScrollState(listContainer, listContainer)
       : windowScrollState(listContainer);
 
-    const syncMapMarkers = (range: VisibleRange) => {
-      if (!appState.position || appState.phase.phase !== "browsing") return;
-      if (!desktopQuery.matches) return;
-      if (mapSyncTimer !== null) clearTimeout(mapSyncTimer);
-      mapSyncTimer = setTimeout(() => {
-        mapSyncTimer = null;
-        if (appState.phase.phase !== "browsing" || !appState.position) return;
-        const visible = appState.phase.articles.slice(range.start, range.end);
-        updateBrowseMap(appState.position, visible);
-      }, MAP_SYNC_SETTLE_MS);
-    };
-
     const virtualList = createVirtualList({
       container: listContainer,
       itemHeight: VIRTUAL_ITEM_HEIGHT,
@@ -418,7 +404,7 @@ function renderInfiniteScrollDOM(): void {
       getScrollState,
       onRangeChange: (range) => {
         enrichScheduler.onRangeChange(range);
-        syncMapMarkers(range);
+        mapSync.sync(range);
       },
     });
 
@@ -437,17 +423,11 @@ function renderInfiniteScrollDOM(): void {
     const disconnectScroll = isDesktop
       ? connectScroll(virtualList, listContainer)
       : connectScroll(virtualList);
-    const cancelMapSync = () => {
-      if (mapSyncTimer !== null) {
-        clearTimeout(mapSyncTimer);
-        mapSyncTimer = null;
-      }
-    };
     infiniteScrollHandle = {
       virtualList,
       enrichScheduler,
       disconnectScroll,
-      cancelMapSync,
+      cancelMapSync: () => mapSync.cancel(),
     };
   } else {
     // Update existing virtual list with new articles
