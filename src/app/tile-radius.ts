@@ -9,11 +9,10 @@ import type { ArticleProvider, FetchResult } from "./article-window";
 const MAX_ROW = Math.floor(180 / GRID_DEG) - 1; // 35
 const MAX_COL = Math.floor(360 / GRID_DEG) - 1; // 71
 
-/** Wrap column index for longitude (0–71). */
+/** Wrap column index for longitude (0–MAX_COL), handling arbitrary offsets. */
 function wrapCol(col: number): number {
-  if (col < 0) return MAX_COL + 1 + col;
-  if (col > MAX_COL) return col - MAX_COL - 1;
-  return col;
+  const period = MAX_COL + 1;
+  return ((col % period) + period) % period;
 }
 
 /**
