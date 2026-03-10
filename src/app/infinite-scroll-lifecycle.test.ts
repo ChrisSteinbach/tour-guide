@@ -298,4 +298,52 @@ describe("InfiniteScrollLifecycle", () => {
       expect(enriched).toEqual([]);
     });
   });
+
+  describe("onNearEnd", () => {
+    it("fires when scroll range nears total count", () => {
+      let called = 0;
+      const lifecycle = createInfiniteScrollLifecycle(
+        makeDeps({
+          onNearEnd: () => called++,
+          nearEndThreshold: 5,
+        }),
+      );
+
+      // With totalCount=3 and threshold=5, the initial render (range.end >= 3-5=-2)
+      // should trigger immediately since any visible range meets the condition.
+      lifecycle.init(3);
+      expect(called).toBeGreaterThan(0);
+    });
+
+    it("does not fire when far from end", () => {
+      let called = 0;
+      const lifecycle = createInfiniteScrollLifecycle(
+        makeDeps({
+          onNearEnd: () => called++,
+          nearEndThreshold: 2,
+        }),
+      );
+
+      // With 1000 items, initial render only shows top items — well below threshold.
+      lifecycle.init(1000);
+      expect(called).toBe(0);
+    });
+
+    it("adjusts to updated total count", () => {
+      let called = 0;
+      const lifecycle = createInfiniteScrollLifecycle(
+        makeDeps({
+          onNearEnd: () => called++,
+          nearEndThreshold: 2,
+        }),
+      );
+
+      lifecycle.init(1000);
+      expect(called).toBe(0);
+
+      // Shrink to a small total so visible range meets threshold
+      lifecycle.update(3);
+      expect(called).toBeGreaterThan(0);
+    });
+  });
 });
