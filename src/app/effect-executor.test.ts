@@ -22,6 +22,15 @@ import { NearestQuery } from "./query";
 // the dep group it exercises.
 
 const pos: UserPosition = { lat: 59.33, lon: 18.07 };
+const stubNearestQuery = new NearestQuery(
+  {
+    vertexPoints: new Float64Array(0),
+    vertexTriangles: new Uint32Array(0),
+    triangleVertices: new Uint32Array(0),
+    triangleNeighbors: new Uint32Array(0),
+  },
+  [],
+);
 
 function makeTileEntry(id: string, hash = "h1"): TileEntry {
   return {
@@ -131,18 +140,7 @@ function makeUi(overrides: Partial<RenderDeps> = {}): RenderDeps {
 function makeData(overrides: Partial<DataDeps> = {}): DataDeps {
   return {
     loadTileIndex: vi.fn(async () => null),
-    loadTile: vi.fn(
-      async () =>
-        new NearestQuery(
-          {
-            vertexPoints: new Float64Array(),
-            vertexTriangles: new Uint32Array(),
-            triangleVertices: new Uint32Array(),
-            triangleNeighbors: new Uint32Array(),
-          },
-          [],
-        ),
-    ),
+    loadTile: vi.fn(async () => stubNearestQuery),
     tilesForPosition: vi.fn(() => ({ primary: "t1", adjacent: [] })),
     getTileEntry: vi.fn(),
     ...overrides,
@@ -300,21 +298,12 @@ describe("createEffectExecutor", () => {
   it("loadTiles dispatches tileLoadStarted then tileLoaded", async () => {
     const entry = makeTileEntry("t1");
     const tileMap = new Map([["t1", entry]]);
-    const mockQuery = new NearestQuery(
-      {
-        vertexPoints: new Float64Array(),
-        vertexTriangles: new Uint32Array(),
-        triangleVertices: new Uint32Array(),
-        triangleNeighbors: new Uint32Array(),
-      },
-      [],
-    );
     const deps = makeDeps({
       getState: vi.fn(() => tiledState(tileMap)),
       data: makeData({
         tilesForPosition: vi.fn(() => ({ primary: "t1", adjacent: [] })),
         getTileEntry: vi.fn((_map, id) => (id === "t1" ? entry : undefined)),
-        loadTile: vi.fn(async () => mockQuery),
+        loadTile: vi.fn(async () => stubNearestQuery),
       }),
     });
     const exec = createEffectExecutor(deps);
@@ -343,16 +332,6 @@ describe("createEffectExecutor", () => {
     // Track the order of loadTile calls and when they resolve
     const loadOrder: string[] = [];
     const resolvers: Array<() => void> = [];
-    const mockQuery = new NearestQuery(
-      {
-        vertexPoints: new Float64Array(),
-        vertexTriangles: new Uint32Array(),
-        triangleVertices: new Uint32Array(),
-        triangleNeighbors: new Uint32Array(),
-      },
-      [],
-    );
-
     const deps = makeDeps({
       getState: vi.fn(() => tiledState(tileMap)),
       data: makeData({
@@ -364,7 +343,7 @@ describe("createEffectExecutor", () => {
         loadTile: vi.fn((_lang, entry: TileEntry) => {
           loadOrder.push(entry.id);
           return new Promise<NearestQuery>((resolve) => {
-            resolvers.push(() => resolve(mockQuery));
+            resolvers.push(() => resolve(stubNearestQuery));
           });
         }),
       }),
@@ -395,20 +374,7 @@ describe("createEffectExecutor", () => {
       ["t1", entry1],
       ["t2", entry2],
     ]);
-    const existingTiles = new Map([
-      [
-        "t1",
-        new NearestQuery(
-          {
-            vertexPoints: new Float64Array(),
-            vertexTriangles: new Uint32Array(),
-            triangleVertices: new Uint32Array(),
-            triangleNeighbors: new Uint32Array(),
-          },
-          [],
-        ),
-      ],
-    ]);
+    const existingTiles = new Map([["t1", stubNearestQuery]]);
     const query: QueryState = {
       mode: "tiled",
       index: {
@@ -449,15 +415,6 @@ describe("createEffectExecutor", () => {
     const entry = makeTileEntry("t1");
     const tileMap = new Map([["t1", entry]]);
     let loadResolved = false;
-    const mockQuery = new NearestQuery(
-      {
-        vertexPoints: new Float64Array(),
-        vertexTriangles: new Uint32Array(),
-        triangleVertices: new Uint32Array(),
-        triangleNeighbors: new Uint32Array(),
-      },
-      [],
-    );
     const deps = makeDeps({
       getState: vi.fn(() => {
         // After loadTile resolves, generation has advanced
@@ -470,7 +427,7 @@ describe("createEffectExecutor", () => {
         getTileEntry: vi.fn((_map, id) => (id === "t1" ? entry : undefined)),
         loadTile: vi.fn(async () => {
           loadResolved = true;
-          return mockQuery;
+          return stubNearestQuery;
         }),
       }),
     });
@@ -634,6 +591,57 @@ describe("createEffectExecutor", () => {
     const exec = createEffectExecutor(deps);
 
     exec({ type: "requery", pos, count: 10 });
+    expect(deps.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "queryResult",
+        articles: [article],
+        queryPos: pos,
+        count: 10,
+      }),
+    );
+  });
+
+  it("requery in infinite scroll mode calls ensureArticleRange instead of getNearby", () => {
+    const ensureArticleRange = vi.fn();
+    const deps = makeDeps({
+      getState: vi.fn(() =>
+        browsingState({
+          phase: {
+            phase: "browsing",
+            articles: [article],
+            nearbyCount: 15,
+            paused: false,
+            pauseReason: null,
+            lastQueryPos: pos,
+            scrollMode: "infinite",
+            infiniteScrollLimit: 200,
+          },
+        }),
+      ),
+      ensureArticleRange,
+    });
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "requery", pos, count: 20 });
+
+    expect(ensureArticleRange).toHaveBeenCalledWith(pos, 20);
+    expect(deps.getNearby).not.toHaveBeenCalled();
+    expect(deps.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("requery in viewport scroll mode uses getNearby even when ensureArticleRange is provided", () => {
+    const ensureArticleRange = vi.fn();
+    const deps = makeDeps({
+      getState: vi.fn(() => browsingState()), // scrollMode defaults to "viewport"
+      getNearby: vi.fn(() => [article]),
+      ensureArticleRange,
+    });
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "requery", pos, count: 10 });
+
+    expect(ensureArticleRange).not.toHaveBeenCalled();
+    expect(deps.getNearby).toHaveBeenCalledWith({ mode: "none" }, pos, 10);
     expect(deps.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "queryResult",

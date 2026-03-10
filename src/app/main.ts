@@ -8,7 +8,7 @@ import {
   updateNearbyDistances,
   enrichArticleItem,
 } from "./render";
-import type { NearbyArticle } from "./types";
+import type { NearbyArticle, UserPosition } from "./types";
 import {
   renderLoading,
   renderLoadingProgress,
@@ -30,7 +30,15 @@ import {
   getTileEntry,
   loadTileIndex,
   loadTile,
+  findNearestTiled,
 } from "./tile-loader";
+import { tileFor } from "../tiles";
+import { tilesAtRing } from "./tile-radius";
+import { createArticleWindowFactory } from "./article-window-factory";
+import {
+  createArticleWindowLifecycle,
+  type ArticleWindowLifecycle,
+} from "./article-window-lifecycle";
 import { DEFAULT_LANG, SUPPORTED_LANGS } from "../lang";
 import type { Lang } from "../lang";
 import {
@@ -110,6 +118,7 @@ const executeEffect = createEffectExecutor({
   pushState: (data, title) => history.pushState(data, title),
   fetchArticleSummary,
   getNearby,
+  ensureArticleRange,
   summaryLoader,
   ui: {
     render: renderPhase,
@@ -155,6 +164,24 @@ function getStoredLang(): Lang {
   return DEFAULT_LANG;
 }
 
+// ── ArticleWindow lifecycle (wrapper functions; lifecycle initialized after infiniteScroll) ──
+
+// eslint-disable-next-line prefer-const -- initialized after infiniteScroll is declared
+let lifecycle: ArticleWindowLifecycle;
+
+function getArticleByIndex(i: number): NearbyArticle | undefined {
+  return lifecycle.getArticleByIndex(i);
+}
+
+function resetArticleWindow(): void {
+  lifecycle.resetArticleWindow();
+}
+
+/** Called by the effect executor when requery fires in infinite scroll mode. */
+function ensureArticleRange(_pos: UserPosition, count: number): void {
+  lifecycle.ensureArticleRange(_pos, count);
+}
+
 // ── Lifecycle managers ───────────────────────────────────────
 
 const desktopQuery = window.matchMedia("(min-width: 1024px)");
@@ -188,15 +215,19 @@ const infiniteScroll = createInfiniteScrollLifecycle({
   mapSyncSettleMs: 150,
   isDesktop: () => desktopQuery.matches,
   getTitle: (i) => {
-    if (appState.phase.phase !== "browsing") return null;
-    return appState.phase.articles[i]?.title ?? null;
+    return getArticleByIndex(i)?.title ?? null;
   },
   enrich: (title) => summaryLoader.request(title, appState.currentLang),
   cancelEnrich: () => summaryLoader.cancel(),
   getVisibleArticles: (range) => {
     if (appState.phase.phase !== "browsing" || !appState.position) return null;
     if (!desktopQuery.matches) return null;
-    return appState.phase.articles.slice(range.start, range.end);
+    const result: NearbyArticle[] = [];
+    for (let i = range.start; i < range.end; i++) {
+      const a = getArticleByIndex(i);
+      if (a) result.push(a);
+    }
+    return result;
   },
   syncMapMarkers: (articles) => {
     if (appState.position) {
@@ -205,7 +236,7 @@ const infiniteScroll = createInfiniteScrollLifecycle({
   },
   renderItem: (i) => {
     if (appState.phase.phase !== "browsing") return null;
-    const article = appState.phase.articles[i];
+    const article = getArticleByIndex(i);
     if (!article) return null;
     const onSelect = (a: NearbyArticle) =>
       dispatch({ type: "selectArticle", article: a });
@@ -220,10 +251,12 @@ const infiniteScroll = createInfiniteScrollLifecycle({
       h.className = "app-header";
       return h;
     }
-    const { articles, paused, pauseReason } = appState.phase;
+    const { paused, pauseReason } = appState.phase;
+    const articleCount =
+      lifecycle.currentWindow()?.totalKnown() || appState.phase.articles.length;
     const isGps = appState.positionSource !== "picked";
     return renderNearbyHeader({
-      articleCount: articles.length,
+      articleCount,
       currentLang: appState.currentLang,
       onLangChange: (lang: Lang) => dispatch({ type: "langChanged", lang }),
       paused,
@@ -243,7 +276,44 @@ const infiniteScroll = createInfiniteScrollLifecycle({
     }
   },
   destroyBrowseMap: () => browseMap.destroy(),
-  onNearEnd: () => dispatch({ type: "expandInfiniteScroll" }),
+  onNearEnd: () => {
+    const aw = lifecycle.currentWindow();
+    if (aw) {
+      const vl = infiniteScroll.virtualList();
+      if (!vl) return;
+      const range = vl.visibleRange();
+      void aw.ensureRange(range.start, range.end + 200).then(() => {
+        if (lifecycle.currentWindow() && infiniteScroll.isActive()) {
+          infiniteScroll.update(lifecycle.currentWindow()!.loadedCount());
+        }
+      });
+    } else {
+      dispatch({ type: "expandInfiniteScroll" });
+    }
+  },
+});
+
+// ── Initialize ArticleWindow lifecycle ────────────────────────
+
+lifecycle = createArticleWindowLifecycle({
+  getState: () => appState,
+  createArticleWindow: (opts) => {
+    const result = createArticleWindowFactory({
+      ...opts,
+      loadTile: (_basePath, lang, entry, signal) =>
+        loadTile(import.meta.env.BASE_URL, lang, entry, signal),
+      getTileEntry,
+      findNearestTiled,
+      tilesAtRing,
+      tileFor,
+    });
+    return result.articleWindow;
+  },
+  renderBrowsingList: renderBrowsingListDOM,
+  infiniteScroll: {
+    isActive: () => infiniteScroll.isActive(),
+    update: (count) => infiniteScroll.update(count),
+  },
 });
 
 // ── DOM rendering ────────────────────────────────────────────
@@ -254,6 +324,7 @@ function renderBrowsingListDOM(): void {
   if (appState.phase.scrollMode === "infinite") {
     renderInfiniteScrollDOM();
   } else {
+    resetArticleWindow();
     infiniteScroll.destroy();
     renderViewportListDOM();
   }
@@ -318,19 +389,24 @@ function renderInfiniteScrollDOM(): void {
     infiniteScroll.destroy();
   }
 
-  const { articles } = appState.phase;
+  const totalCount =
+    lifecycle.currentWindow()?.loadedCount() || appState.phase.articles.length;
 
   if (!infiniteScroll.isActive()) {
-    infiniteScroll.init(articles.length);
+    infiniteScroll.init(totalCount);
   } else {
-    infiniteScroll.update(articles.length);
+    infiniteScroll.update(totalCount);
 
     // Sync browse map markers with current viewport after article list changes
     if (desktopQuery.matches && appState.position) {
       const vl = infiniteScroll.virtualList();
       if (vl) {
         const range = vl.visibleRange();
-        const visible = articles.slice(range.start, range.end);
+        const visible: NearbyArticle[] = [];
+        for (let i = range.start; i < range.end; i++) {
+          const a = getArticleByIndex(i);
+          if (a) visible.push(a);
+        }
         browseMap.update(appState.position, visible);
       }
     }
@@ -338,6 +414,7 @@ function renderInfiniteScrollDOM(): void {
 }
 
 function renderPhase(): void {
+  resetArticleWindow();
   infiniteScroll.destroy();
   teardownScrollPauseListener();
   mapPicker.destroy();

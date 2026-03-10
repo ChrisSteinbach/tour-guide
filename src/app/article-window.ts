@@ -28,6 +28,8 @@ export interface ArticleWindow {
   ensureRange(start: number, end: number): Promise<void>;
   /** How many articles are known to exist (from the provider). */
   totalKnown(): number;
+  /** The exclusive end of the contiguous loaded range. */
+  loadedCount(): number;
   /** Clear all loaded data. */
   reset(): void;
 }
@@ -44,9 +46,8 @@ export function createArticleWindow(
   let loadedStart = 0;
   let loadedEnd = 0;
   let total = 0;
-  // Track in-flight fetches to deduplicate concurrent requests
+  // Serialization: concurrent ensureRange calls queue behind in-flight fetch
   let pendingFetch: Promise<void> | null = null;
-  let pendingKey = "";
 
   function evictIfNeeded(requestedStart: number, requestedEnd: number): void {
     if (articles.size <= windowSize) return;
@@ -79,7 +80,12 @@ export function createArticleWindow(
     },
 
     async ensureRange(start, end) {
-      // If everything is already loaded, nothing to do
+      // Serialize: wait for any in-flight fetch before proceeding
+      if (pendingFetch) {
+        await pendingFetch;
+      }
+
+      // Re-check after awaiting — previous fetch may have loaded our range
       if (articles.size > 0 && start >= loadedStart && end <= loadedEnd) {
         return;
       }
@@ -99,12 +105,6 @@ export function createArticleWindow(
         // Expanding backward (scrolling back to evicted data)
         fetchStart = start;
         fetchEnd = Math.min(end, loadedStart);
-      }
-
-      // Deduplicate identical concurrent requests
-      const key = `${fetchStart}:${fetchEnd}`;
-      if (pendingKey === key && pendingFetch) {
-        return pendingFetch;
       }
 
       const doFetch = async () => {
@@ -128,18 +128,20 @@ export function createArticleWindow(
         evictIfNeeded(start, end);
 
         pendingFetch = null;
-        pendingKey = "";
 
         onWindowChange?.(loadedStart, loadedEnd);
       };
 
       pendingFetch = doFetch();
-      pendingKey = key;
       return pendingFetch;
     },
 
     totalKnown() {
       return total;
+    },
+
+    loadedCount() {
+      return loadedEnd;
     },
 
     reset() {
@@ -148,7 +150,6 @@ export function createArticleWindow(
       loadedEnd = 0;
       total = 0;
       pendingFetch = null;
-      pendingKey = "";
     },
   };
 }
