@@ -333,7 +333,11 @@ export function transition(state: AppState, event: Event): TransitionResult {
       const nowPaused = !state.phase.paused;
       const newScrollMode = computeScrollMode(state.positionSource, nowPaused);
       if (!nowPaused && state.position) {
-        // Unpausing → switch to viewport mode, requery, scroll to top
+        // Unpausing → switch to viewport mode, requery, scroll to top.
+        // Always include renderBrowsingList so the DOM rebuilds from
+        // infinite-scroll back to viewport mode even when the article
+        // list hasn't changed (queryResult's "same" optimisation would
+        // otherwise skip the rebuild).
         return {
           next: {
             ...state,
@@ -352,6 +356,8 @@ export function transition(state: AppState, event: Event): TransitionResult {
               pos: state.position,
               count: state.phase.nearbyCount,
             },
+            { type: "renderBrowsingList" },
+            { type: "fetchListSummaries" },
           ],
         };
       }
