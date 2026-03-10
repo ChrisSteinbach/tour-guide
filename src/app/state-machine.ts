@@ -292,6 +292,8 @@ export function transition(state: AppState, event: Event): TransitionResult {
       if (state.phase.phase !== "browsing" || !state.position) {
         return { next: state, effects: [] };
       }
+      // Already paused → no-op. Infinite scroll → already paused by definition
+      // (computeScrollMode returns "infinite" only when paused or picked).
       if (state.phase.paused || state.phase.scrollMode === "infinite") {
         return { next: state, effects: [] };
       }

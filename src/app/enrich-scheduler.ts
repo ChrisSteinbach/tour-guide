@@ -30,6 +30,8 @@ export function createEnrichScheduler(
   const { settleMs, getTitle, enrich, cancel } = options;
 
   let timer: ReturnType<typeof setTimeout> | null = null;
+  // Tracks already-enriched titles to avoid duplicate requests.
+  // Cleared on reset() (position changes), so bounded by articles per position.
   let enrichedSet = new Set<string>();
   let destroyed = false;
 
