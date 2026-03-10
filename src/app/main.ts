@@ -43,17 +43,6 @@ import {
   type Event,
 } from "./state-machine";
 import {
-  createVirtualList,
-  connectScroll,
-  windowScrollState,
-  containerScrollState,
-  type VirtualList,
-} from "./virtual-scroll";
-import {
-  createEnrichScheduler,
-  type EnrichScheduler,
-} from "./enrich-scheduler";
-import {
   createEffectExecutor,
   LANG_STORAGE_KEY,
   STARTED_STORAGE_KEY,
@@ -61,7 +50,7 @@ import {
 } from "./effect-executor";
 import { createScrollPauseDetector } from "./scroll-pause-detector";
 import type { ScrollPauseDetector } from "./scroll-pause-detector";
-import { createDebouncedMapSync } from "./debounced-map-sync";
+import { createInfiniteScrollLifecycle } from "./infinite-scroll-lifecycle";
 
 const app =
   document.getElementById("app") ??
@@ -162,32 +151,72 @@ function getStoredLang(): Lang {
   return DEFAULT_LANG;
 }
 
-// ── Infinite scroll infrastructure ───────────────────────────
+// ── Infinite scroll lifecycle ─────────────────────────────────
 
-interface InfiniteScrollHandle {
-  virtualList: VirtualList;
-  enrichScheduler: EnrichScheduler;
-  disconnectScroll: () => void;
-  /** Cancel any pending debounced map-marker sync. */
-  cancelMapSync: () => void;
-}
-
-let infiniteScrollHandle: InfiniteScrollHandle | null = null;
-
-const VIRTUAL_OVERSCAN = 5;
-const ENRICH_SETTLE_MS = 300;
-/** Debounce for syncing browse map markers with viewport-visible articles. */
-const MAP_SYNC_SETTLE_MS = 150;
-
-function teardownInfiniteScroll(): void {
-  if (infiniteScrollHandle) {
-    infiniteScrollHandle.disconnectScroll();
-    infiniteScrollHandle.virtualList.destroy();
-    infiniteScrollHandle.enrichScheduler.destroy();
-    infiniteScrollHandle.cancelMapSync();
-    infiniteScrollHandle = null;
-  }
-}
+const infiniteScroll = createInfiniteScrollLifecycle({
+  container: app,
+  itemHeight: VIRTUAL_ITEM_HEIGHT,
+  overscan: 5,
+  enrichSettleMs: 300,
+  mapSyncSettleMs: 150,
+  isDesktop: () => desktopQuery.matches,
+  getTitle: (i) => {
+    if (appState.phase.phase !== "browsing") return null;
+    return appState.phase.articles[i]?.title ?? null;
+  },
+  enrich: (title) => summaryLoader.request(title, appState.currentLang),
+  cancelEnrich: () => summaryLoader.cancel(),
+  getVisibleArticles: (range) => {
+    if (appState.phase.phase !== "browsing" || !appState.position) return null;
+    if (!desktopQuery.matches) return null;
+    return appState.phase.articles.slice(range.start, range.end);
+  },
+  syncMapMarkers: (articles) => {
+    if (appState.position) {
+      updateBrowseMap(appState.position, articles as NearbyArticle[]);
+    }
+  },
+  renderItem: (i) => {
+    if (appState.phase.phase !== "browsing") return null;
+    const article = appState.phase.articles[i];
+    if (!article) return null;
+    const onSelect = (a: NearbyArticle) =>
+      dispatch({ type: "selectArticle", article: a });
+    const el = createArticleItemContent(article, onSelect);
+    const cached = summaryLoader.get(article.title);
+    if (cached) applyEnrichment(el, cached);
+    return el;
+  },
+  renderHeader: () => {
+    if (appState.phase.phase !== "browsing") {
+      const h = document.createElement("header");
+      h.className = "app-header";
+      return h;
+    }
+    const { articles, paused, pauseReason } = appState.phase;
+    const isGps = appState.positionSource !== "picked";
+    return renderNearbyHeader({
+      articleCount: articles.length,
+      currentLang: appState.currentLang,
+      onLangChange: (lang: Lang) => dispatch({ type: "langChanged", lang }),
+      paused,
+      pauseReason,
+      onTogglePause: isGps
+        ? () => dispatch({ type: "togglePause" })
+        : undefined,
+      positionSource: appState.positionSource ?? "gps",
+      onPickLocation: () => dispatch({ type: "showMapPicker" }),
+      onUseGps: () => dispatch({ type: "useGps" }),
+      gpsSignalLost: appState.gpsSignalLost,
+    });
+  },
+  initBrowseMap: () => {
+    if (appState.position) {
+      updateBrowseMap(appState.position, []);
+    }
+  },
+  destroyBrowseMap: () => destroyBrowseMap(),
+});
 
 // ── Map picker ──────────────────────────────────────────────
 
@@ -270,7 +299,7 @@ function renderBrowsingListDOM(): void {
   if (appState.phase.scrollMode === "infinite") {
     renderInfiniteScrollDOM();
   } else {
-    teardownInfiniteScroll();
+    infiniteScroll.destroy();
     renderViewportListDOM();
   }
 }
@@ -326,135 +355,29 @@ function renderInfiniteScrollDOM(): void {
   if (appState.phase.phase !== "browsing" || !appState.position) return;
   teardownScrollPauseListener();
 
-  // If the DOM was destroyed (e.g., by detail view clearing #app), discard stale handle
-  if (infiniteScrollHandle && !app.querySelector(".virtual-scroll-container")) {
-    teardownInfiniteScroll();
+  // If the DOM was destroyed (e.g., by detail view clearing #app), discard stale lifecycle
+  if (
+    infiniteScroll.isActive() &&
+    !app.querySelector(".virtual-scroll-container")
+  ) {
+    infiniteScroll.destroy();
   }
 
-  const { articles, paused, pauseReason } = appState.phase;
-  const isGps = appState.positionSource !== "picked";
-  const onSelect = (article: NearbyArticle) =>
-    dispatch({ type: "selectArticle", article });
+  const { articles } = appState.phase;
 
-  const headerOpts = {
-    articleCount: articles.length,
-    currentLang: appState.currentLang,
-    onLangChange: (lang: Lang) => dispatch({ type: "langChanged", lang }),
-    paused,
-    pauseReason,
-    onTogglePause: isGps ? () => dispatch({ type: "togglePause" }) : undefined,
-    positionSource: appState.positionSource ?? "gps",
-    onPickLocation: () => dispatch({ type: "showMapPicker" }),
-    onUseGps: () => dispatch({ type: "useGps" }),
-    gpsSignalLost: appState.gpsSignalLost,
-  };
-
-  if (!infiniteScrollHandle) {
-    // First render: build the infinite scroll infrastructure
-    destroyBrowseMap();
-    app.textContent = "";
-    app.appendChild(renderNearbyHeader(headerOpts));
-
-    const listContainer = document.createElement("div");
-    listContainer.className = "virtual-scroll-container";
-    app.appendChild(listContainer);
-
-    // On desktop, show the browse map and use container scroll.
-    // On mobile, use window scroll (no split-view).
-    const isDesktop = desktopQuery.matches;
-    if (isDesktop && appState.position) {
-      // Initial map creation — markers will sync once virtual list reports first visible range.
-      updateBrowseMap(appState.position, []);
-    }
-
-    const mapSync = createDebouncedMapSync({
-      settleMs: MAP_SYNC_SETTLE_MS,
-      getVisibleArticles: (range) => {
-        if (appState.phase.phase !== "browsing" || !appState.position)
-          return null;
-        if (!desktopQuery.matches) return null;
-        return appState.phase.articles.slice(range.start, range.end);
-      },
-      syncMarkers: (articles) => {
-        if (appState.position) {
-          updateBrowseMap(appState.position, articles as NearbyArticle[]);
-        }
-      },
-    });
-
-    const enrichScheduler = createEnrichScheduler({
-      settleMs: ENRICH_SETTLE_MS,
-      getTitle: (i) => {
-        if (appState.phase.phase !== "browsing") return null;
-        return appState.phase.articles[i]?.title ?? null;
-      },
-      enrich: (title) => summaryLoader.request(title, appState.currentLang),
-      cancel: () => summaryLoader.cancel(),
-    });
-
-    // Choose scroll source: container (desktop split-view) or window (mobile)
-    const getScrollState = isDesktop
-      ? containerScrollState(listContainer, listContainer)
-      : windowScrollState(listContainer);
-
-    const virtualList = createVirtualList({
-      container: listContainer,
-      itemHeight: VIRTUAL_ITEM_HEIGHT,
-      overscan: VIRTUAL_OVERSCAN,
-      getScrollState,
-      onRangeChange: (range) => {
-        enrichScheduler.onRangeChange(range);
-        mapSync.sync(range);
-      },
-    });
-
-    const renderVirtualItem = (i: number) => {
-      if (appState.phase.phase !== "browsing") return null;
-      const article = appState.phase.articles[i];
-      if (!article) return null;
-      const el = createArticleItemContent(article, onSelect);
-      const cached = summaryLoader.get(article.title);
-      if (cached) applyEnrichment(el, cached);
-      return el;
-    };
-
-    virtualList.update(articles.length, renderVirtualItem);
-
-    const disconnectScroll = isDesktop
-      ? connectScroll(virtualList, listContainer)
-      : connectScroll(virtualList);
-    infiniteScrollHandle = {
-      virtualList,
-      enrichScheduler,
-      disconnectScroll,
-      cancelMapSync: () => mapSync.cancel(),
-    };
+  if (!infiniteScroll.isActive()) {
+    infiniteScroll.init(articles.length);
   } else {
-    // Update existing virtual list with new articles
-    const { virtualList } = infiniteScrollHandle;
-
-    // Update header
-    const oldHeader = app.querySelector("header.app-header");
-    const newHeader = renderNearbyHeader(headerOpts);
-    if (oldHeader) {
-      oldHeader.replaceWith(newHeader);
-    }
-
-    // Update virtual list
-    virtualList.update(articles.length, (i) => {
-      const article = articles[i];
-      if (!article) return null;
-      const el = createArticleItemContent(article, onSelect);
-      const cached = summaryLoader.get(article.title);
-      if (cached) applyEnrichment(el, cached);
-      return el;
-    });
+    infiniteScroll.update(articles.length);
 
     // Sync browse map markers with current viewport after article list changes
     if (desktopQuery.matches && appState.position) {
-      const range = virtualList.visibleRange();
-      const visible = articles.slice(range.start, range.end);
-      updateBrowseMap(appState.position, visible);
+      const vl = infiniteScroll.virtualList();
+      if (vl) {
+        const range = vl.visibleRange();
+        const visible = articles.slice(range.start, range.end);
+        updateBrowseMap(appState.position, visible);
+      }
     }
   }
 }
@@ -502,7 +425,7 @@ function updateBrowseMap(
 }
 
 function renderPhase(): void {
-  teardownInfiniteScroll();
+  infiniteScroll.destroy();
   teardownScrollPauseListener();
   destroyMapPicker();
   destroyBrowseMap();
