@@ -9,6 +9,12 @@ import {
 import type { NearbyArticle } from "./types";
 import type { ArticleSummary } from "./wiki-api";
 
+afterEach(() => {
+  while (document.body.firstChild) {
+    document.body.firstChild.remove();
+  }
+});
+
 // ── renderNearbyHeader ───────────────────────────────────────
 
 describe("renderNearbyHeader", () => {
@@ -421,7 +427,6 @@ describe("renderNearbyList", () => {
     )!;
     expect(document.activeElement).toBe(newLangSelect);
 
-    document.body.removeChild(container);
     vi.restoreAllMocks();
   });
 
@@ -444,7 +449,6 @@ describe("renderNearbyList", () => {
     const newItems = container.querySelectorAll<HTMLElement>(".nearby-item");
     expect(document.activeElement).toBe(newItems[1]);
 
-    document.body.removeChild(container);
     vi.restoreAllMocks();
   });
 
@@ -471,7 +475,6 @@ describe("renderNearbyList", () => {
       container.querySelector<HTMLElement>(".pick-location-btn")!;
     expect(document.activeElement).toBe(newPosBtn);
 
-    document.body.removeChild(container);
     vi.restoreAllMocks();
   });
 
@@ -497,7 +500,6 @@ describe("renderNearbyList", () => {
     const newGpsBtn = container.querySelector<HTMLElement>(".use-gps-btn")!;
     expect(document.activeElement).toBe(newGpsBtn);
 
-    document.body.removeChild(container);
     vi.restoreAllMocks();
   });
 
@@ -522,7 +524,6 @@ describe("renderNearbyList", () => {
     const newPauseBtn = container.querySelector<HTMLElement>(".pause-toggle")!;
     expect(document.activeElement).toBe(newPauseBtn);
 
-    document.body.removeChild(container);
     vi.restoreAllMocks();
   });
 });
