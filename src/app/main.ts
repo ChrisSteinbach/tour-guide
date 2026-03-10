@@ -33,9 +33,9 @@ import {
   findNearestTiled,
 } from "./tile-loader";
 import { tileFor } from "../tiles";
-import { createArticleWindow, type ArticleWindow } from "./article-window";
-import { createTileRadiusProvider, tilesAtRing } from "./tile-radius";
-import type { NearestQuery } from "./query";
+import type { ArticleWindow } from "./article-window";
+import { tilesAtRing } from "./tile-radius";
+import { createArticleWindowFactory } from "./article-window-factory";
 import { DEFAULT_LANG, SUPPORTED_LANGS } from "../lang";
 import type { Lang } from "../lang";
 import {
@@ -193,72 +193,32 @@ function getOrCreateArticleWindow(): ArticleWindow {
     );
   }
 
-  const pos = state.position;
-  const { row, col } = tileFor(pos.lat, pos.lon);
-  const { tileMap } = state.query;
-  const lang = state.currentLang;
-
   articleWindowAbort = new AbortController();
-  const signal = articleWindowAbort.signal;
 
-  // Provider-owned tile storage (separate from state machine)
-  const providerTiles = new Map<string, NearestQuery>();
-
-  const radiusProvider = createTileRadiusProvider({
-    queryAllTiles: () => {
-      // Merge state machine tiles with provider-loaded tiles
-      const currentState = appState;
-      const allTiles = new Map<string, NearestQuery>();
-      if (currentState.query.mode === "tiled") {
-        for (const [id, query] of currentState.query.tiles) {
-          allTiles.set(id, query);
-        }
-      }
-      for (const [id, query] of providerTiles) {
-        allTiles.set(id, query);
-      }
-      return Promise.resolve(
-        findNearestTiled(allTiles, pos.lat, pos.lon, 99999),
-      );
+  const result = createArticleWindowFactory({
+    position: state.position,
+    tileMap: state.query.tileMap,
+    lang: state.currentLang,
+    signal: articleWindowAbort.signal,
+    getStateMachineTiles: () => {
+      const current = appState;
+      if (current.query.mode === "tiled") return current.query.tiles;
+      return new Map();
     },
-    loadRing: async (ring) => {
-      const ids = tilesAtRing(row, col, ring, tileMap);
-      if (ids.length === 0) return false;
-
-      for (const id of ids) {
-        if (signal.aborted) return false;
-        if (providerTiles.has(id)) continue;
-        // Also skip tiles already in state machine
-        if (appState.query.mode === "tiled" && appState.query.tiles.has(id))
-          continue;
-        const entry = getTileEntry(tileMap, id);
-        if (!entry) continue;
-        try {
-          const tileQuery = await loadTile(
-            import.meta.env.BASE_URL,
-            lang,
-            entry,
-            signal,
-          );
-          providerTiles.set(id, tileQuery);
-        } catch {
-          // Tile load failure is non-fatal
-        }
-      }
-      return true;
-    },
-    centerRow: row,
-    centerCol: col,
-  });
-
-  articleWindow = createArticleWindow(radiusProvider, {
-    windowSize: 1000,
+    loadTile: (_basePath, lang, entry, signal) =>
+      loadTile(import.meta.env.BASE_URL, lang, entry, signal),
+    getTileEntry,
+    findNearestTiled,
+    tilesAtRing,
+    tileFor,
     onWindowChange: () => {
       if (articleWindow && infiniteScroll.isActive()) {
         infiniteScroll.update(articleWindow.loadedCount());
       }
     },
   });
+
+  articleWindow = result.articleWindow;
 
   return articleWindow;
 }
