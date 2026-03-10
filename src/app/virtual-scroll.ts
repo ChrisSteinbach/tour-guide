@@ -106,7 +106,7 @@ export function createVirtualList(options: VirtualListOptions): VirtualList {
     list.replaceChildren(fragment);
   }
 
-  function doRefresh(): void {
+  function doRefresh(force = false): void {
     const { scrollTop, viewportHeight } = getScrollState();
     const range = computeVisibleRange({
       scrollTop,
@@ -120,7 +120,9 @@ export function createVirtualList(options: VirtualListOptions): VirtualList {
       range.start !== lastRange.start || range.end !== lastRange.end;
     lastRange = range;
 
-    renderRange(range);
+    if (changed || force) {
+      renderRange(range);
+    }
 
     if (changed && onRangeChange) {
       onRangeChange(range);
@@ -133,7 +135,7 @@ export function createVirtualList(options: VirtualListOptions): VirtualList {
       renderItem = renderer;
       const list = ensureList();
       list.style.height = `${count * itemHeight}px`;
-      doRefresh();
+      doRefresh(true);
     },
 
     refresh() {
