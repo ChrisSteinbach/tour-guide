@@ -146,6 +146,28 @@ describe("ArticleWindow", () => {
     expect(window.getArticle(0)?.title).toBe("Article 0");
   });
 
+  // ── loadedCount ────────────────────────────────────────────
+
+  it("reports loadedCount as 0 before any fetch", () => {
+    const window = createArticleWindow(fakeProvider([]), {
+      windowSize: 100,
+    });
+    expect(window.loadedCount()).toBe(0);
+  });
+
+  it("reports loadedCount matching the loaded range", async () => {
+    const articles = Array.from({ length: 20 }, (_, i) => makeArticle(i));
+    const window = createArticleWindow(fakeProvider(articles), {
+      windowSize: 100,
+    });
+
+    await window.ensureRange(0, 10);
+    expect(window.loadedCount()).toBe(10);
+
+    await window.ensureRange(5, 20);
+    expect(window.loadedCount()).toBe(20);
+  });
+
   // ── totalKnown ─────────────────────────────────────────────
 
   it("reports totalKnown as 0 before any fetch", () => {
@@ -178,6 +200,7 @@ describe("ArticleWindow", () => {
 
     expect(window.getArticle(0)).toBeUndefined();
     expect(window.totalKnown()).toBe(0);
+    expect(window.loadedCount()).toBe(0);
   });
 
   // ── Callback ───────────────────────────────────────────────

@@ -644,6 +644,57 @@ describe("createEffectExecutor", () => {
     );
   });
 
+  it("requery in infinite scroll mode calls ensureArticleRange instead of getNearby", () => {
+    const ensureArticleRange = vi.fn();
+    const deps = makeDeps({
+      getState: vi.fn(() =>
+        browsingState({
+          phase: {
+            phase: "browsing",
+            articles: [article],
+            nearbyCount: 15,
+            paused: false,
+            pauseReason: null,
+            lastQueryPos: pos,
+            scrollMode: "infinite",
+            infiniteScrollLimit: 200,
+          },
+        }),
+      ),
+      ensureArticleRange,
+    });
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "requery", pos, count: 20 });
+
+    expect(ensureArticleRange).toHaveBeenCalledWith(pos, 20);
+    expect(deps.getNearby).not.toHaveBeenCalled();
+    expect(deps.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("requery in viewport scroll mode uses getNearby even when ensureArticleRange is provided", () => {
+    const ensureArticleRange = vi.fn();
+    const deps = makeDeps({
+      getState: vi.fn(() => browsingState()), // scrollMode defaults to "viewport"
+      getNearby: vi.fn(() => [article]),
+      ensureArticleRange,
+    });
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "requery", pos, count: 10 });
+
+    expect(ensureArticleRange).not.toHaveBeenCalled();
+    expect(deps.getNearby).toHaveBeenCalledWith({ mode: "none" }, pos, 10);
+    expect(deps.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "queryResult",
+        articles: [article],
+        queryPos: pos,
+        count: 10,
+      }),
+    );
+  });
+
   it("pushHistory calls pushState", () => {
     const deps = makeDeps();
     const exec = createEffectExecutor(deps);
