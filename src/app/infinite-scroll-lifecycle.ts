@@ -64,6 +64,8 @@ export interface InfiniteScrollLifecycle {
   init(totalCount: number): void;
   /** Update with new data. Refreshes header and virtual list. */
   update(totalCount: number): void;
+  /** Update only the header (e.g. to restart blink animation) without rebuilding the list. */
+  updateHeader(): void;
   /** Tear down all sub-components and listeners. */
   destroy(): void;
   /** Whether the lifecycle has been initialized. */
@@ -161,16 +163,19 @@ export function createInfiniteScrollLifecycle(
       : connectScroll(virtualList);
   }
 
-  function update(totalCount: number): void {
-    if (!virtualList) return;
-    currentTotalCount = totalCount;
-
-    // Update header
+  function updateHeader(): void {
     const oldHeader = deps.container.querySelector("header.app-header");
     const newHeader = deps.renderHeader();
     if (oldHeader) {
       oldHeader.replaceWith(newHeader);
     }
+  }
+
+  function update(totalCount: number): void {
+    if (!virtualList) return;
+    currentTotalCount = totalCount;
+
+    updateHeader();
 
     // Update virtual list
     virtualList.update(totalCount, deps.renderItem);
@@ -179,6 +184,7 @@ export function createInfiniteScrollLifecycle(
   return {
     init,
     update,
+    updateHeader,
     destroy,
     isActive: () => virtualList !== null,
     virtualList: () => virtualList,

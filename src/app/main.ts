@@ -123,6 +123,7 @@ const executeEffect = createEffectExecutor({
   ui: {
     render: renderPhase,
     renderBrowsingList: renderBrowsingListDOM,
+    renderBrowsingHeader: renderBrowsingHeaderDOM,
     updateDistances: (articles) => updateNearbyDistances(app, articles),
     renderDetailLoading: (article) => renderDetailLoading(app, article, goBack),
     renderDetailReady: (article, summary) =>
@@ -317,6 +318,13 @@ lifecycle = createArticleWindowLifecycle({
 });
 
 // ── DOM rendering ────────────────────────────────────────────
+
+function renderBrowsingHeaderDOM(): void {
+  if (appState.phase.phase !== "browsing") return;
+  if (infiniteScroll.isActive()) {
+    infiniteScroll.updateHeader();
+  }
+}
 
 function renderBrowsingListDOM(): void {
   if (appState.phase.phase !== "browsing" || !appState.position) return;
