@@ -220,6 +220,14 @@ body {
   width: 40px;
 }
 
+.virtual-scroll .nearby-thumb {
+  transition: none;
+}
+
+.virtual-scroll .nearby-thumb-loaded {
+  width: 40px;
+}
+
 .nearby-thumb img {
   width: 40px;
   height: 40px;

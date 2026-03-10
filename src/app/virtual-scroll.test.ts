@@ -274,6 +274,42 @@ describe("createVirtualList", () => {
     expect(container.querySelector("ul")).toBeNull();
   });
 
+  it("preserves DOM nodes when refresh does not change the range", () => {
+    const list = createVirtualList({
+      container,
+      itemHeight: 50,
+      overscan: 0,
+      getScrollState: () => ({ scrollTop: 0, viewportHeight: 200 }),
+    });
+    list.update(100, makeItem);
+
+    const itemsBefore = container.querySelectorAll("li");
+    const firstNode = itemsBefore[0];
+
+    list.refresh(); // same scroll position — range unchanged
+
+    const itemsAfter = container.querySelectorAll("li");
+    expect(itemsAfter[0]).toBe(firstNode); // same DOM node, not rebuilt
+    list.destroy();
+  });
+
+  it("rebuilds DOM when update is called even if range is unchanged", () => {
+    const list = createVirtualList({
+      container,
+      itemHeight: 50,
+      overscan: 0,
+      getScrollState: () => ({ scrollTop: 0, viewportHeight: 200 }),
+    });
+    list.update(100, makeItem);
+
+    const firstNode = container.querySelectorAll("li")[0];
+
+    list.update(100, makeItem); // same range but forced rebuild
+
+    expect(container.querySelectorAll("li")[0]).not.toBe(firstNode);
+    list.destroy();
+  });
+
   it("renders placeholder li when renderItem returns null", () => {
     const list = createVirtualList({
       container,
