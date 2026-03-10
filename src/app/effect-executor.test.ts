@@ -14,7 +14,7 @@ import {
   STARTED_STORAGE_KEY,
 } from "./effect-executor";
 import type { SummaryLoader } from "./summary-loader";
-import type { NearestQuery } from "./query";
+import { NearestQuery } from "./query";
 
 // ── Helpers ──────────────────────────────────────────────────
 //
@@ -22,7 +22,15 @@ import type { NearestQuery } from "./query";
 // the dep group it exercises.
 
 const pos: UserPosition = { lat: 59.33, lon: 18.07 };
-const stubNearestQuery = {} as NearestQuery;
+const stubNearestQuery = new NearestQuery(
+  {
+    vertexPoints: new Float64Array(0),
+    vertexTriangles: new Uint32Array(0),
+    triangleVertices: new Uint32Array(0),
+    triangleNeighbors: new Uint32Array(0),
+  },
+  [],
+);
 
 function makeTileEntry(id: string, hash = "h1"): TileEntry {
   return {

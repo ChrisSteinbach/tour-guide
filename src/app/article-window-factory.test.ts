@@ -1,6 +1,6 @@
 import { createArticleWindowFactory } from "./article-window-factory";
 import type { ArticleWindowFactoryDeps } from "./article-window-factory";
-import type { NearestQuery } from "./query";
+import { NearestQuery } from "./query";
 import type { TileEntry } from "../tiles";
 import type { NearbyArticle } from "./types";
 
@@ -19,9 +19,15 @@ function makeEntry(id: string): TileEntry {
   };
 }
 
-/** Minimal stub that satisfies the NearestQuery class shape for test purposes. */
+/** Empty NearestQuery — valid instance with no articles. */
 function fakeQuery(): NearestQuery {
-  return { nearest: () => [] } as unknown as NearestQuery;
+  const empty = {
+    vertexPoints: new Float64Array(0),
+    vertexTriangles: new Uint32Array(0),
+    triangleVertices: new Uint32Array(0),
+    triangleNeighbors: new Uint32Array(0),
+  };
+  return new NearestQuery(empty, []);
 }
 
 function makeDeps(

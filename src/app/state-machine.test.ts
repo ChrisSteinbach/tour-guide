@@ -47,8 +47,16 @@ const paris: UserPosition = { lat: 48.8584, lon: 2.2945 };
 const parisNearby: UserPosition = { lat: 48.8586, lon: 2.2948 }; // ~25m away
 const parisSame: UserPosition = { lat: 48.85841, lon: 2.29451 }; // ~1m away
 
-/** Stub NearestQuery — satisfies the type without running real geometry. */
-const stubNearestQuery = {} as NearestQuery;
+/** Stub NearestQuery — valid instance with no articles. */
+const stubNearestQuery = new NearestQuery(
+  {
+    vertexPoints: new Float64Array(0),
+    vertexTriangles: new Uint32Array(0),
+    triangleVertices: new Uint32Array(0),
+    triangleNeighbors: new Uint32Array(0),
+  },
+  [],
+);
 
 /** Pre-built articles for browsing state, no geometry required. */
 const defaultBrowsingArticles: NearbyArticle[] = [
