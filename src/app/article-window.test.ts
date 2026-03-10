@@ -168,6 +168,18 @@ describe("ArticleWindow", () => {
     expect(window.loadedCount()).toBe(20);
   });
 
+  it("reports loadedCount as high-water mark even after eviction", async () => {
+    const articles = Array.from({ length: 200 }, (_, i) => makeArticle(i));
+    const window = createArticleWindow(fakeProvider(articles), {
+      windowSize: 50,
+    });
+
+    await window.ensureRange(0, 50);
+    await window.ensureRange(40, 80); // triggers eviction of early articles
+
+    expect(window.loadedCount()).toBe(80);
+  });
+
   // ── totalKnown ─────────────────────────────────────────────
 
   it("reports totalKnown as 0 before any fetch", () => {
