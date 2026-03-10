@@ -144,4 +144,31 @@ describe("createArticleWindowFactory", () => {
     // sm-tile should be skipped, only new-tile loaded
     expect(loadedIds).toEqual(["new-tile"]);
   });
+
+  it("continues loading remaining tiles after one tile fails to load", async () => {
+    const tileMap = new Map<string, TileEntry>([
+      ["t0", makeEntry("t0")],
+      ["t1", makeEntry("t1")],
+      ["t2", makeEntry("t2")],
+    ]);
+
+    const deps = makeDeps({
+      tileMap,
+      tilesAtRing: vi.fn((_row, _col, ring) =>
+        ring === 0 ? ["t0", "t1", "t2"] : [],
+      ),
+      getTileEntry: vi.fn((_map, id) => makeEntry(id)),
+      loadTile: vi.fn(async (_basePath, _lang, entry) => {
+        if (entry.id === "t1") throw new Error("network failure");
+        return fakeQuery();
+      }),
+    });
+
+    const { providerTiles, articleWindow } = createArticleWindowFactory(deps);
+    await articleWindow.ensureRange(0, 10);
+
+    expect(providerTiles.has("t0")).toBe(true);
+    expect(providerTiles.has("t1")).toBe(false);
+    expect(providerTiles.has("t2")).toBe(true);
+  });
 });
