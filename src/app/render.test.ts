@@ -404,128 +404,73 @@ describe("renderNearbyList", () => {
     Object.defineProperty(window, "scrollY", { value: 0, configurable: true });
   });
 
-  it("restores focus to language selector on re-render", () => {
-    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const opts = {
-      onSelectArticle: () => {},
-      currentLang: "en" as const,
-      onLangChange: () => {},
-    };
-    renderNearbyList(container, makeArticles(2), opts);
+  it.each([
+    {
+      name: "language selector",
+      selector: ".header-lang-select",
+      articleCount: 2,
+      extraOpts: {},
+    },
+    {
+      name: "article item (by title)",
+      selector: '.nearby-item[data-title="Article 1"]',
+      articleCount: 3,
+      extraOpts: {},
+    },
+    {
+      name: "pick-location button",
+      selector: ".pick-location-btn",
+      articleCount: 2,
+      extraOpts: {
+        positionSource: "gps" as const,
+        onPickLocation: () => {},
+        onUseGps: () => {},
+      },
+    },
+    {
+      name: "use-gps button",
+      selector: ".use-gps-btn",
+      articleCount: 2,
+      extraOpts: {
+        positionSource: "picked" as const,
+        onPickLocation: () => {},
+        onUseGps: () => {},
+      },
+    },
+    {
+      name: "pause button",
+      selector: ".pause-toggle",
+      articleCount: 2,
+      extraOpts: {
+        paused: false,
+        onTogglePause: () => {},
+      },
+    },
+  ])(
+    "restores focus to $name on re-render",
+    ({ selector, articleCount, extraOpts }) => {
+      vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      const opts = {
+        onSelectArticle: () => {},
+        currentLang: "en" as const,
+        onLangChange: () => {},
+        ...extraOpts,
+      };
+      renderNearbyList(container, makeArticles(articleCount), opts);
 
-    const langSelect = container.querySelector<HTMLElement>(
-      ".header-lang-select",
-    )!;
-    langSelect.focus();
-    expect(document.activeElement).toBe(langSelect);
+      const el = container.querySelector<HTMLElement>(selector)!;
+      el.focus();
+      expect(document.activeElement).toBe(el);
 
-    renderNearbyList(container, makeArticles(2), opts);
-    const newLangSelect = container.querySelector<HTMLElement>(
-      ".header-lang-select",
-    )!;
-    expect(document.activeElement).toBe(newLangSelect);
+      renderNearbyList(container, makeArticles(articleCount), opts);
+      const newEl = container.querySelector<HTMLElement>(selector)!;
+      expect(document.activeElement).toBe(newEl);
 
-    vi.restoreAllMocks();
-  });
-
-  it("restores focus to article item by title on re-render", () => {
-    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const opts = {
-      onSelectArticle: () => {},
-      currentLang: "en" as const,
-      onLangChange: () => {},
-    };
-    renderNearbyList(container, makeArticles(3), opts);
-
-    const items = container.querySelectorAll<HTMLElement>(".nearby-item");
-    items[1].focus();
-    expect(document.activeElement).toBe(items[1]);
-
-    renderNearbyList(container, makeArticles(3), opts);
-    const newItems = container.querySelectorAll<HTMLElement>(".nearby-item");
-    expect(document.activeElement).toBe(newItems[1]);
-
-    vi.restoreAllMocks();
-  });
-
-  it("restores focus to pick-location button on re-render", () => {
-    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const opts = {
-      onSelectArticle: () => {},
-      currentLang: "en" as const,
-      onLangChange: () => {},
-      positionSource: "gps" as const,
-      onPickLocation: () => {},
-      onUseGps: () => {},
-    };
-    renderNearbyList(container, makeArticles(2), opts);
-
-    const posBtn = container.querySelector<HTMLElement>(".pick-location-btn")!;
-    posBtn.focus();
-    expect(document.activeElement).toBe(posBtn);
-
-    renderNearbyList(container, makeArticles(2), opts);
-    const newPosBtn =
-      container.querySelector<HTMLElement>(".pick-location-btn")!;
-    expect(document.activeElement).toBe(newPosBtn);
-
-    vi.restoreAllMocks();
-  });
-
-  it("restores focus to use-gps button on re-render", () => {
-    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const opts = {
-      onSelectArticle: () => {},
-      currentLang: "en" as const,
-      onLangChange: () => {},
-      positionSource: "picked" as const,
-      onPickLocation: () => {},
-      onUseGps: () => {},
-    };
-    renderNearbyList(container, makeArticles(2), opts);
-
-    const gpsBtn = container.querySelector<HTMLElement>(".use-gps-btn")!;
-    gpsBtn.focus();
-    expect(document.activeElement).toBe(gpsBtn);
-
-    renderNearbyList(container, makeArticles(2), opts);
-    const newGpsBtn = container.querySelector<HTMLElement>(".use-gps-btn")!;
-    expect(document.activeElement).toBe(newGpsBtn);
-
-    vi.restoreAllMocks();
-  });
-
-  it("restores focus to pause button on re-render", () => {
-    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const opts = {
-      onSelectArticle: () => {},
-      currentLang: "en" as const,
-      onLangChange: () => {},
-      paused: false,
-      onTogglePause: () => {},
-    };
-    renderNearbyList(container, makeArticles(2), opts);
-
-    const pauseBtn = container.querySelector<HTMLElement>(".pause-toggle")!;
-    pauseBtn.focus();
-    expect(document.activeElement).toBe(pauseBtn);
-
-    renderNearbyList(container, makeArticles(2), opts);
-    const newPauseBtn = container.querySelector<HTMLElement>(".pause-toggle")!;
-    expect(document.activeElement).toBe(newPauseBtn);
-
-    vi.restoreAllMocks();
-  });
+      vi.restoreAllMocks();
+    },
+  );
 });
 
 // ── reconciliation on re-render ──────────────────────────────
