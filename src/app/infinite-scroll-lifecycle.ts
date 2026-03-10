@@ -53,6 +53,10 @@ export interface InfiniteScrollDeps {
   initBrowseMap: () => void;
   /** Destroy the browse map. */
   destroyBrowseMap: () => void;
+  /** Called when scroll nears the end of loaded articles. */
+  onNearEnd?: () => void;
+  /** How many items from the end to trigger onNearEnd (default 50). */
+  nearEndThreshold?: number;
 }
 
 export interface InfiniteScrollLifecycle {
@@ -75,6 +79,8 @@ export function createInfiniteScrollLifecycle(
   let enrichScheduler: EnrichScheduler | null = null;
   let disconnectScroll: (() => void) | null = null;
   let cancelMapSync: (() => void) | null = null;
+  let currentTotalCount = 0;
+  const nearEndThreshold = deps.nearEndThreshold ?? 50;
 
   function destroy(): void {
     if (disconnectScroll) {
@@ -128,6 +134,8 @@ export function createInfiniteScrollLifecycle(
       ? containerScrollState(listContainer, listContainer)
       : windowScrollState(listContainer);
 
+    currentTotalCount = totalCount;
+
     virtualList = createVirtualList({
       container: listContainer,
       itemHeight: deps.itemHeight,
@@ -136,6 +144,13 @@ export function createInfiniteScrollLifecycle(
       onRangeChange: (range) => {
         enrichScheduler!.onRangeChange(range);
         mapSync.sync(range);
+        if (
+          deps.onNearEnd &&
+          currentTotalCount > 0 &&
+          range.end >= currentTotalCount - nearEndThreshold
+        ) {
+          deps.onNearEnd();
+        }
       },
     });
 
@@ -148,6 +163,7 @@ export function createInfiniteScrollLifecycle(
 
   function update(totalCount: number): void {
     if (!virtualList) return;
+    currentTotalCount = totalCount;
 
     // Update header
     const oldHeader = deps.container.querySelector("header.app-header");

@@ -243,6 +243,7 @@ const infiniteScroll = createInfiniteScrollLifecycle({
     }
   },
   destroyBrowseMap: () => browseMap.destroy(),
+  onNearEnd: () => dispatch({ type: "expandInfiniteScroll" }),
 });
 
 // ── DOM rendering ────────────────────────────────────────────

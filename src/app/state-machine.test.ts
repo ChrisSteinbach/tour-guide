@@ -3,7 +3,8 @@ import {
   getNearby,
   computeScrollMode,
   REQUERY_DISTANCE_M,
-  INFINITE_SCROLL_MAX,
+  INFINITE_SCROLL_INITIAL,
+  INFINITE_SCROLL_STEP,
   DEFAULT_VIEWPORT_FILL,
   type AppState,
   type QueryState,
@@ -123,6 +124,7 @@ function browsingState(
     lastQueryPos?: UserPosition;
     positionSource?: "gps" | "picked" | null;
     scrollMode?: "infinite" | "viewport";
+    infiniteScrollLimit?: number;
   } = {},
 ): AppState {
   const {
@@ -132,6 +134,7 @@ function browsingState(
     pauseReason,
     lastQueryPos,
     scrollMode,
+    infiniteScrollLimit,
     ...stateOverrides
   } = overrides;
   return makeState({
@@ -145,6 +148,7 @@ function browsingState(
       pauseReason: pauseReason ?? null,
       lastQueryPos: lastQueryPos ?? paris,
       scrollMode: scrollMode ?? "viewport",
+      infiniteScrollLimit: infiniteScrollLimit ?? INFINITE_SCROLL_INITIAL,
     },
     ...stateOverrides,
   });
@@ -441,6 +445,7 @@ describe("position event", () => {
         pauseReason: null,
         lastQueryPos: paris,
         scrollMode: "viewport",
+        infiniteScrollLimit: INFINITE_SCROLL_INITIAL,
       },
     });
     const { effects } = transition(state, {
@@ -528,7 +533,7 @@ describe("scrollPause event", () => {
     expect(browsing.scrollMode).toBe("infinite");
     expect(effectTypes(effects)).toContain("requery");
     const requery = effects.find((e) => e.type === "requery");
-    expect(requery).toMatchObject({ count: INFINITE_SCROLL_MAX });
+    expect(requery).toMatchObject({ count: INFINITE_SCROLL_INITIAL });
   });
 
   it("no-ops when already paused", () => {
@@ -685,6 +690,7 @@ describe("useGps event", () => {
         pauseReason: null,
         lastQueryPos: paris,
         scrollMode: "infinite",
+        infiniteScrollLimit: INFINITE_SCROLL_INITIAL,
       },
     });
     const { next, effects } = transition(state, { type: "useGps" });
@@ -1107,6 +1113,7 @@ describe("showMapPicker event", () => {
       pauseReason: null,
       lastQueryPos: paris,
       scrollMode: "viewport",
+      infiniteScrollLimit: INFINITE_SCROLL_INITIAL,
     };
     const state = makeState({ phase: browsingPhase });
     const { next, effects } = transition(state, { type: "showMapPicker" });
@@ -1142,6 +1149,7 @@ describe("back from mapPicker", () => {
       pauseReason: null,
       lastQueryPos: paris,
       scrollMode: "viewport",
+      infiniteScrollLimit: INFINITE_SCROLL_INITIAL,
     };
     const state = makeState({
       phase: { phase: "mapPicker", returnPhase: browsingPhase },
@@ -1199,14 +1207,14 @@ describe("scroll mode transitions", () => {
     expect(browsing.scrollMode).toBe("infinite");
   });
 
-  it("pickPosition requeries with INFINITE_SCROLL_MAX", () => {
+  it("pickPosition requeries with INFINITE_SCROLL_INITIAL", () => {
     const state = makeState({ query: sampleQuery });
     const { effects } = transition(state, {
       type: "pickPosition",
       position: paris,
     });
     const requery = effects.find((e) => e.type === "requery");
-    expect(requery).toMatchObject({ count: INFINITE_SCROLL_MAX });
+    expect(requery).toMatchObject({ count: INFINITE_SCROLL_INITIAL });
   });
 
   it("GPS position enters viewport mode", () => {
@@ -1243,9 +1251,9 @@ describe("scroll mode transitions", () => {
       type: "queryResult",
       articles: newArticles,
       queryPos: paris,
-      count: INFINITE_SCROLL_MAX,
+      count: INFINITE_SCROLL_INITIAL,
     });
-    // nearbyCount should stay at 50 (the tier value), not INFINITE_SCROLL_MAX
+    // nearbyCount should stay at 50 (the tier value), not INFINITE_SCROLL_INITIAL
     expect(expectBrowsing(next).nearbyCount).toBe(50);
   });
 
@@ -1258,16 +1266,17 @@ describe("scroll mode transitions", () => {
       type: "queryResult",
       articles: newArticles,
       queryPos: paris,
-      count: INFINITE_SCROLL_MAX,
+      count: INFINITE_SCROLL_INITIAL,
     });
     expect(effectTypes(effects)).toContain("renderBrowsingList");
     expect(effectTypes(effects)).not.toContain("fetchListSummaries");
   });
 
-  it("forceRequery uses INFINITE_SCROLL_MAX in infinite mode", () => {
+  it("forceRequery uses infiniteScrollLimit in infinite mode", () => {
     const state = browsingState({
       scrollMode: "infinite",
       nearbyCount: 20,
+      infiniteScrollLimit: 600,
       lastQueryPos: paris,
     });
     // Move far enough to trigger requery
@@ -1277,7 +1286,7 @@ describe("scroll mode transitions", () => {
     });
     const requery = effects.find((e) => e.type === "requery");
     expect(requery).toBeDefined();
-    expect(requery).toMatchObject({ count: INFINITE_SCROLL_MAX });
+    expect(requery).toMatchObject({ count: 600 });
   });
 
   it("useGps from infinite switches to viewport and requeries", () => {
@@ -1292,5 +1301,59 @@ describe("scroll mode transitions", () => {
     expect(browsing.scrollMode).toBe("viewport");
     const requery = effects.find((e) => e.type === "requery");
     expect(requery).toMatchObject({ count: 20 });
+  });
+});
+
+// ── expandInfiniteScroll event ──────────────────────────────
+
+describe("expandInfiniteScroll event", () => {
+  it("expands limit by STEP and requeries", () => {
+    const state = browsingState({
+      scrollMode: "infinite",
+      infiniteScrollLimit: INFINITE_SCROLL_INITIAL,
+    });
+    const { next, effects } = transition(state, {
+      type: "expandInfiniteScroll",
+    });
+    const browsing = expectBrowsing(next);
+    expect(browsing.infiniteScrollLimit).toBe(
+      INFINITE_SCROLL_INITIAL + INFINITE_SCROLL_STEP,
+    );
+    const requery = effects.find((e) => e.type === "requery");
+    expect(requery).toMatchObject({
+      count: INFINITE_SCROLL_INITIAL + INFINITE_SCROLL_STEP,
+    });
+  });
+
+  it("no-ops in viewport mode", () => {
+    const state = browsingState({ scrollMode: "viewport" });
+    const { next, effects } = transition(state, {
+      type: "expandInfiniteScroll",
+    });
+    expect(next).toBe(state);
+    expect(effects).toEqual([]);
+  });
+
+  it("no-ops when not browsing", () => {
+    const state = makeState();
+    const { next, effects } = transition(state, {
+      type: "expandInfiniteScroll",
+    });
+    expect(next).toBe(state);
+    expect(effects).toEqual([]);
+  });
+
+  it("infiniteScrollLimit preserved through detail round-trip", () => {
+    const state = browsingState({
+      scrollMode: "infinite",
+      infiniteScrollLimit: 600,
+    });
+    const { next: detail } = transition(state, {
+      type: "selectArticle",
+      article: defaultBrowsingArticles[0],
+    });
+    expect(detail.phase.phase).toBe("detail");
+    const { next: back } = transition(detail, { type: "back" });
+    expect(expectBrowsing(back).infiniteScrollLimit).toBe(600);
   });
 });
