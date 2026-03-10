@@ -66,6 +66,8 @@ export interface EffectDeps {
     pos: UserPosition,
     count: number,
   ) => NearbyArticle[];
+  /** For infinite scroll: reset ArticleWindow and load articles via TileRadiusProvider. */
+  ensureArticleRange?: (pos: UserPosition, count: number) => void;
   summaryLoader: SummaryLoader;
   ui: RenderDeps;
   data: DataDeps;
@@ -228,8 +230,17 @@ export function createEffectExecutor(
         deps.ui.renderAppUpdateBanner();
         break;
       case "requery": {
+        const reqState = deps.getState();
+        if (
+          reqState.phase.phase === "browsing" &&
+          reqState.phase.scrollMode === "infinite" &&
+          deps.ensureArticleRange
+        ) {
+          deps.ensureArticleRange(effect.pos, effect.count);
+          break;
+        }
         const articles = deps.getNearby(
-          deps.getState().query,
+          reqState.query,
           effect.pos,
           effect.count,
         );

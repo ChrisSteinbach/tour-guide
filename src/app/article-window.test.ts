@@ -224,10 +224,37 @@ describe("ArticleWindow", () => {
     };
     const window = createArticleWindow(provider, { windowSize: 100 });
 
-    // Two overlapping requests at the same time
+    // Two identical requests at the same time — second awaits first, then skips
     await Promise.all([window.ensureRange(0, 15), window.ensureRange(0, 15)]);
 
     expect(fetchCount).toBe(1);
     expect(window.getArticle(14)?.title).toBe("Article 14");
+  });
+
+  it("serializes overlapping-but-different concurrent requests", async () => {
+    const articles = Array.from({ length: 30 }, (_, i) => makeArticle(i));
+    const fetchedRanges: [number, number][] = [];
+    const provider: ArticleProvider = {
+      fetchRange: async (start, end) => {
+        fetchedRanges.push([start, end]);
+        return {
+          articles: articles.slice(start, Math.min(end, articles.length)),
+          totalAvailable: articles.length,
+        };
+      },
+    };
+    const window = createArticleWindow(provider, { windowSize: 100 });
+
+    // Two overlapping but different ranges fired concurrently
+    await Promise.all([window.ensureRange(0, 10), window.ensureRange(5, 20)]);
+
+    // First fetches [0,10), second awaits it then fetches only the gap [10,20)
+    expect(fetchedRanges).toEqual([
+      [0, 10],
+      [10, 20],
+    ]);
+    // Both ranges are fully loaded
+    expect(window.getArticle(0)?.title).toBe("Article 0");
+    expect(window.getArticle(19)?.title).toBe("Article 19");
   });
 });
