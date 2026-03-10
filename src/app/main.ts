@@ -163,6 +163,12 @@ function getStoredLang(): Lang {
 
 // ── ArticleWindow management ─────────────────────────────────
 
+function getArticleByIndex(i: number): NearbyArticle | undefined {
+  if (articleWindow) return articleWindow.getArticle(i);
+  if (appState.phase.phase === "browsing") return appState.phase.articles[i];
+  return undefined;
+}
+
 let articleWindow: ArticleWindow | null = null;
 let articleWindowAbort: AbortController | null = null;
 
@@ -298,24 +304,19 @@ const infiniteScroll = createInfiniteScrollLifecycle({
   mapSyncSettleMs: 150,
   isDesktop: () => desktopQuery.matches,
   getTitle: (i) => {
-    if (appState.phase.phase !== "browsing") return null;
-    if (articleWindow) return articleWindow.getArticle(i)?.title ?? null;
-    return appState.phase.articles[i]?.title ?? null;
+    return getArticleByIndex(i)?.title ?? null;
   },
   enrich: (title) => summaryLoader.request(title, appState.currentLang),
   cancelEnrich: () => summaryLoader.cancel(),
   getVisibleArticles: (range) => {
     if (appState.phase.phase !== "browsing" || !appState.position) return null;
     if (!desktopQuery.matches) return null;
-    if (articleWindow) {
-      const result: NearbyArticle[] = [];
-      for (let i = range.start; i < range.end; i++) {
-        const a = articleWindow.getArticle(i);
-        if (a) result.push(a);
-      }
-      return result;
+    const result: NearbyArticle[] = [];
+    for (let i = range.start; i < range.end; i++) {
+      const a = getArticleByIndex(i);
+      if (a) result.push(a);
     }
-    return appState.phase.articles.slice(range.start, range.end);
+    return result;
   },
   syncMapMarkers: (articles) => {
     if (appState.position) {
@@ -324,7 +325,7 @@ const infiniteScroll = createInfiniteScrollLifecycle({
   },
   renderItem: (i) => {
     if (appState.phase.phase !== "browsing") return null;
-    const article = articleWindow?.getArticle(i) ?? appState.phase.articles[i];
+    const article = getArticleByIndex(i);
     if (!article) return null;
     const onSelect = (a: NearbyArticle) =>
       dispatch({ type: "selectArticle", article: a });
@@ -467,15 +468,9 @@ function renderInfiniteScrollDOM(): void {
       if (vl) {
         const range = vl.visibleRange();
         const visible: NearbyArticle[] = [];
-        if (articleWindow) {
-          for (let i = range.start; i < range.end; i++) {
-            const a = articleWindow.getArticle(i);
-            if (a) visible.push(a);
-          }
-        } else {
-          visible.push(
-            ...appState.phase.articles.slice(range.start, range.end),
-          );
+        for (let i = range.start; i < range.end; i++) {
+          const a = getArticleByIndex(i);
+          if (a) visible.push(a);
         }
         browseMap.update(appState.position, visible);
       }
