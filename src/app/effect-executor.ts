@@ -19,6 +19,7 @@ export const STARTED_TTL_MS = 60 * 60 * 1000;
 export interface RenderDeps {
   render: () => void;
   renderBrowsingList: () => void;
+  renderBrowsingHeader: () => void;
   updateDistances: (articles: NearbyArticle[]) => void;
   renderDetailLoading: (article: NearbyArticle) => void;
   renderDetailReady: (article: NearbyArticle, summary: ArticleSummary) => void;
@@ -180,6 +181,9 @@ export function createEffectExecutor(
         break;
       case "renderBrowsingList":
         deps.ui.renderBrowsingList();
+        break;
+      case "renderBrowsingHeader":
+        deps.ui.renderBrowsingHeader();
         break;
       case "updateDistances": {
         const state = deps.getState();

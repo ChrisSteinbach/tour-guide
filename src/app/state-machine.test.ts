@@ -422,6 +422,21 @@ describe("position event", () => {
     expect(effectTypes(effects)).not.toContain("requery");
   });
 
+  it("emits renderBrowsingHeader (not renderBrowsingList) when scroll-paused", () => {
+    const state = browsingState({
+      lastQueryPos: paris,
+      paused: true,
+      pauseReason: "scroll",
+      scrollMode: "infinite",
+    });
+    const { effects } = transition(state, {
+      type: "position",
+      pos: parisNearby,
+    });
+    expect(effectTypes(effects)).toContain("renderBrowsingHeader");
+    expect(effectTypes(effects)).not.toContain("renderBrowsingList");
+  });
+
   it("clears gpsSignalLost on successful position", () => {
     const state = browsingState({
       positionSource: "gps",

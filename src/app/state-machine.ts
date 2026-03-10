@@ -147,6 +147,7 @@ export type Event =
 export type Effect =
   | { type: "render" }
   | { type: "renderBrowsingList" }
+  | { type: "renderBrowsingHeader" }
   | { type: "updateDistances" }
   | { type: "startGps" }
   | { type: "stopGps" }
@@ -776,11 +777,13 @@ function handlePosition(
 
     case "browsing": {
       if (state.phase.paused) {
-        // When auto-paused by scroll, re-render header to restart blink
+        // When auto-paused by scroll, re-render header to restart blink.
+        // Use renderBrowsingHeader (not renderBrowsingList) to avoid a full
+        // virtual-list DOM rebuild that would destroy :hover state.
         if (state.phase.pauseReason === "scroll") {
           return {
             next,
-            effects: [...effects, { type: "renderBrowsingList" }],
+            effects: [...effects, { type: "renderBrowsingHeader" }],
           };
         }
         return { next, effects };

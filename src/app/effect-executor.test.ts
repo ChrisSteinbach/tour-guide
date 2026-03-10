@@ -126,6 +126,7 @@ function makeUi(overrides: Partial<RenderDeps> = {}): RenderDeps {
   return {
     render: vi.fn(),
     renderBrowsingList: vi.fn(),
+    renderBrowsingHeader: vi.fn(),
     updateDistances: vi.fn(),
     renderDetailLoading: vi.fn(),
     renderDetailReady: vi.fn(),
