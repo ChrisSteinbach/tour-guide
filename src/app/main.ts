@@ -33,9 +33,12 @@ import {
   findNearestTiled,
 } from "./tile-loader";
 import { tileFor } from "../tiles";
-import type { ArticleWindow } from "./article-window";
 import { tilesAtRing } from "./tile-radius";
 import { createArticleWindowFactory } from "./article-window-factory";
+import {
+  createArticleWindowLifecycle,
+  type ArticleWindowLifecycle,
+} from "./article-window-lifecycle";
 import { DEFAULT_LANG, SUPPORTED_LANGS } from "../lang";
 import type { Lang } from "../lang";
 import {
@@ -161,74 +164,22 @@ function getStoredLang(): Lang {
   return DEFAULT_LANG;
 }
 
-// ── ArticleWindow management ─────────────────────────────────
+// ── ArticleWindow lifecycle (wrapper functions; lifecycle initialized after infiniteScroll) ──
+
+// eslint-disable-next-line prefer-const -- initialized after infiniteScroll is declared
+let lifecycle: ArticleWindowLifecycle;
 
 function getArticleByIndex(i: number): NearbyArticle | undefined {
-  if (articleWindow) return articleWindow.getArticle(i);
-  if (appState.phase.phase === "browsing") return appState.phase.articles[i];
-  return undefined;
+  return lifecycle.getArticleByIndex(i);
 }
-
-let articleWindow: ArticleWindow | null = null;
-let articleWindowAbort: AbortController | null = null;
 
 function resetArticleWindow(): void {
-  if (articleWindow) {
-    articleWindow.reset();
-    articleWindow = null;
-  }
-  if (articleWindowAbort) {
-    articleWindowAbort.abort();
-    articleWindowAbort = null;
-  }
-}
-
-function getOrCreateArticleWindow(): ArticleWindow {
-  if (articleWindow) return articleWindow;
-
-  const state = appState;
-  if (state.query.mode !== "tiled" || !state.position) {
-    throw new Error(
-      "Cannot create ArticleWindow without tiled query and position",
-    );
-  }
-
-  articleWindowAbort = new AbortController();
-
-  const result = createArticleWindowFactory({
-    position: state.position,
-    tileMap: state.query.tileMap,
-    lang: state.currentLang,
-    signal: articleWindowAbort.signal,
-    getStateMachineTiles: () => {
-      const current = appState;
-      if (current.query.mode === "tiled") return current.query.tiles;
-      return new Map();
-    },
-    loadTile: (_basePath, lang, entry, signal) =>
-      loadTile(import.meta.env.BASE_URL, lang, entry, signal),
-    getTileEntry,
-    findNearestTiled,
-    tilesAtRing,
-    tileFor,
-    onWindowChange: () => {
-      if (articleWindow && infiniteScroll.isActive()) {
-        infiniteScroll.update(articleWindow.loadedCount());
-      }
-    },
-  });
-
-  articleWindow = result.articleWindow;
-
-  return articleWindow;
+  lifecycle.resetArticleWindow();
 }
 
 /** Called by the effect executor when requery fires in infinite scroll mode. */
 function ensureArticleRange(_pos: UserPosition, count: number): void {
-  resetArticleWindow();
-  const aw = getOrCreateArticleWindow();
-  void aw.ensureRange(0, count);
-  renderBrowsingListDOM();
+  lifecycle.ensureArticleRange(_pos, count);
 }
 
 // ── Lifecycle managers ───────────────────────────────────────
@@ -302,7 +253,7 @@ const infiniteScroll = createInfiniteScrollLifecycle({
     }
     const { paused, pauseReason } = appState.phase;
     const articleCount =
-      articleWindow?.totalKnown() || appState.phase.articles.length;
+      lifecycle.currentWindow()?.totalKnown() || appState.phase.articles.length;
     const isGps = appState.positionSource !== "picked";
     return renderNearbyHeader({
       articleCount,
@@ -326,18 +277,42 @@ const infiniteScroll = createInfiniteScrollLifecycle({
   },
   destroyBrowseMap: () => browseMap.destroy(),
   onNearEnd: () => {
-    if (articleWindow) {
+    const aw = lifecycle.currentWindow();
+    if (aw) {
       const vl = infiniteScroll.virtualList();
       if (!vl) return;
       const range = vl.visibleRange();
-      void articleWindow.ensureRange(range.start, range.end + 200).then(() => {
-        if (articleWindow && infiniteScroll.isActive()) {
-          infiniteScroll.update(articleWindow.loadedCount());
+      void aw.ensureRange(range.start, range.end + 200).then(() => {
+        if (lifecycle.currentWindow() && infiniteScroll.isActive()) {
+          infiniteScroll.update(lifecycle.currentWindow()!.loadedCount());
         }
       });
     } else {
       dispatch({ type: "expandInfiniteScroll" });
     }
+  },
+});
+
+// ── Initialize ArticleWindow lifecycle ────────────────────────
+
+lifecycle = createArticleWindowLifecycle({
+  getState: () => appState,
+  createArticleWindow: (opts) => {
+    const result = createArticleWindowFactory({
+      ...opts,
+      loadTile: (_basePath, lang, entry, signal) =>
+        loadTile(import.meta.env.BASE_URL, lang, entry, signal),
+      getTileEntry,
+      findNearestTiled,
+      tilesAtRing,
+      tileFor,
+    });
+    return result.articleWindow;
+  },
+  renderBrowsingList: renderBrowsingListDOM,
+  infiniteScroll: {
+    isActive: () => infiniteScroll.isActive(),
+    update: (count) => infiniteScroll.update(count),
   },
 });
 
@@ -415,7 +390,7 @@ function renderInfiniteScrollDOM(): void {
   }
 
   const totalCount =
-    articleWindow?.loadedCount() || appState.phase.articles.length;
+    lifecycle.currentWindow()?.loadedCount() || appState.phase.articles.length;
 
   if (!infiniteScroll.isActive()) {
     infiniteScroll.init(totalCount);
