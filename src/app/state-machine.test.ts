@@ -590,6 +590,8 @@ describe("togglePause event", () => {
     expect(browsing.lastQueryPos).toBe(paris);
     expect(effectTypes(effects)).toContain("scrollToTop");
     expect(effectTypes(effects)).toContain("requery");
+    expect(effectTypes(effects)).toContain("renderBrowsingList");
+    expect(effectTypes(effects)).toContain("fetchListSummaries");
     const requery = effects.find((e) => e.type === "requery");
     expect(requery).toMatchObject({ count: 20 });
   });
