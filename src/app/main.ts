@@ -8,8 +8,6 @@ import {
   updateNearbyDistances,
   enrichArticleItem,
 } from "./render";
-import type { MapPickerHandle } from "./map-picker";
-import type { BrowseMapHandle } from "./browse-map";
 import type { NearbyArticle } from "./types";
 import {
   renderLoading,
@@ -51,6 +49,8 @@ import {
 import { createScrollPauseDetector } from "./scroll-pause-detector";
 import type { ScrollPauseDetector } from "./scroll-pause-detector";
 import { createInfiniteScrollLifecycle } from "./infinite-scroll-lifecycle";
+import { createBrowseMapLifecycle } from "./browse-map-lifecycle";
+import { createMapPickerLifecycle } from "./map-picker-lifecycle";
 
 const app =
   document.getElementById("app") ??
@@ -121,7 +121,11 @@ const executeEffect = createEffectExecutor({
     renderDetailError: (article, msg, retry, lang) =>
       renderDetailError(app, article, msg, goBack, retry, lang),
     renderAppUpdateBanner,
-    showMapPicker,
+    showMapPicker: () => {
+      mapPicker.destroy();
+      browseMap.destroy();
+      mapPicker.show();
+    },
     scrollToTop: () => {
       window.scrollTo(0, 0);
       // Also reset container scroll in desktop split-view
@@ -151,6 +155,29 @@ function getStoredLang(): Lang {
   return DEFAULT_LANG;
 }
 
+// ── Lifecycle managers ───────────────────────────────────────
+
+const desktopQuery = window.matchMedia("(min-width: 1024px)");
+desktopQuery.addEventListener("change", () => {
+  if (appState.phase.phase === "browsing") renderBrowsingListDOM();
+});
+
+const browseMap = createBrowseMapLifecycle({
+  container: app,
+  isDesktop: () => desktopQuery.matches,
+  onSelectArticle: (article) => dispatch({ type: "selectArticle", article }),
+  importBrowseMap: () => import("./browse-map"),
+});
+
+const mapPicker = createMapPickerLifecycle({
+  container: app,
+  appName: APP_NAME,
+  getPosition: () => appState.position,
+  onPick: (lat, lon) =>
+    dispatch({ type: "pickPosition", position: { lat, lon } }),
+  importMapPicker: () => import("./map-picker"),
+});
+
 // ── Infinite scroll lifecycle ─────────────────────────────────
 
 const infiniteScroll = createInfiniteScrollLifecycle({
@@ -173,7 +200,7 @@ const infiniteScroll = createInfiniteScrollLifecycle({
   },
   syncMapMarkers: (articles) => {
     if (appState.position) {
-      updateBrowseMap(appState.position, articles as NearbyArticle[]);
+      browseMap.update(appState.position, articles as NearbyArticle[]);
     }
   },
   renderItem: (i) => {
@@ -212,84 +239,11 @@ const infiniteScroll = createInfiniteScrollLifecycle({
   },
   initBrowseMap: () => {
     if (appState.position) {
-      updateBrowseMap(appState.position, []);
+      browseMap.update(appState.position, []);
     }
   },
-  destroyBrowseMap: () => destroyBrowseMap(),
+  destroyBrowseMap: () => browseMap.destroy(),
 });
-
-// ── Map picker ──────────────────────────────────────────────
-
-let activeMapPicker: MapPickerHandle | null = null;
-let activeBrowseMap: BrowseMapHandle | null = null;
-
-const desktopQuery = window.matchMedia("(min-width: 1024px)");
-desktopQuery.addEventListener("change", () => {
-  if (appState.phase.phase === "browsing") renderBrowsingListDOM();
-});
-
-function destroyBrowseMap(): void {
-  if (activeBrowseMap) {
-    activeBrowseMap.destroy();
-    activeBrowseMap = null;
-  }
-  const el = app.querySelector(".browse-map");
-  el?.remove();
-  app.classList.remove("split-view");
-}
-
-function destroyMapPicker(): void {
-  if (activeMapPicker) {
-    activeMapPicker.destroy();
-    activeMapPicker = null;
-  }
-}
-
-function showMapPicker(): void {
-  destroyMapPicker();
-  destroyBrowseMap();
-  app.textContent = "";
-
-  const header = document.createElement("header");
-  header.className = "app-header";
-  const h1 = document.createElement("h1");
-  h1.textContent = APP_NAME;
-  header.appendChild(h1);
-
-  const instructions = document.createElement("p");
-  instructions.className = "map-picker-instructions";
-  instructions.textContent = "Tap the map to place a marker, then confirm.";
-
-  const mapContainer = document.createElement("div");
-  mapContainer.className = "map-picker-container";
-  const mapEl = document.createElement("div");
-  mapEl.className = "map-picker-map";
-  mapContainer.appendChild(mapEl);
-
-  app.append(header, instructions, mapContainer);
-
-  void import("./map-picker")
-    .then(({ createMapPicker }) => {
-      activeMapPicker = createMapPicker(mapEl, {
-        onPick: (lat, lon) => {
-          destroyMapPicker();
-          dispatch({ type: "pickPosition", position: { lat, lon } });
-        },
-        center: appState.position ?? undefined,
-      });
-    })
-    .catch(() => {
-      mapContainer.textContent = "";
-      const msg = document.createElement("p");
-      msg.className = "status-message";
-      msg.textContent = "Failed to load the map. Check your connection.";
-      const retryBtn = document.createElement("button");
-      retryBtn.className = "status-action";
-      retryBtn.textContent = "Retry";
-      retryBtn.addEventListener("click", showMapPicker);
-      mapContainer.append(msg, retryBtn);
-    });
-}
 
 // ── DOM rendering ────────────────────────────────────────────
 
@@ -344,7 +298,7 @@ function renderViewportListDOM(): void {
     onPickLocation: () => dispatch({ type: "showMapPicker" }),
     gpsSignalLost: appState.gpsSignalLost,
   });
-  updateBrowseMap(appState.position, appState.phase.articles);
+  browseMap.update(appState.position, appState.phase.articles);
   // Listen for user scroll to auto-pause GPS and transition to infinite scroll
   if (isGps && !appState.phase.paused) {
     setupScrollPauseListener();
@@ -376,59 +330,17 @@ function renderInfiniteScrollDOM(): void {
       if (vl) {
         const range = vl.visibleRange();
         const visible = articles.slice(range.start, range.end);
-        updateBrowseMap(appState.position, visible);
+        browseMap.update(appState.position, visible);
       }
     }
   }
 }
 
-function updateBrowseMap(
-  position: { lat: number; lon: number },
-  articles: NearbyArticle[],
-): void {
-  if (!desktopQuery.matches) {
-    destroyBrowseMap();
-    return;
-  }
-
-  // If the map handle exists but its container was removed (e.g. detail view
-  // cleared #app), discard the stale handle so we recreate it.
-  if (activeBrowseMap) {
-    const existing = app.querySelector(".browse-map");
-    if (existing && app.contains(existing)) {
-      activeBrowseMap.update(position, articles);
-      return;
-    }
-    activeBrowseMap = null;
-  }
-
-  // First render: create the map container
-  let mapEl = app.querySelector<HTMLElement>(".browse-map");
-  if (!mapEl) {
-    mapEl = document.createElement("div");
-    mapEl.className = "browse-map";
-    app.appendChild(mapEl);
-    app.classList.add("split-view");
-  }
-
-  void import("./browse-map")
-    .then(({ createBrowseMap }) => {
-      if (!mapEl || !app.contains(mapEl)) return;
-      activeBrowseMap = createBrowseMap(mapEl, position, articles, (article) =>
-        dispatch({ type: "selectArticle", article }),
-      );
-    })
-    .catch(() => {
-      // Map is a nice-to-have; browsing works without it
-      mapEl?.remove();
-    });
-}
-
 function renderPhase(): void {
   infiniteScroll.destroy();
   teardownScrollPauseListener();
-  destroyMapPicker();
-  destroyBrowseMap();
+  mapPicker.destroy();
+  browseMap.destroy();
   switch (appState.phase.phase) {
     case "welcome":
       renderWelcome(
