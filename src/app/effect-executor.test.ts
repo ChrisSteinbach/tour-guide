@@ -14,7 +14,7 @@ import {
   STARTED_STORAGE_KEY,
 } from "./effect-executor";
 import type { SummaryLoader } from "./summary-loader";
-import { NearestQuery } from "./query";
+import type { NearestQuery } from "./query";
 
 // ── Helpers ──────────────────────────────────────────────────
 //
@@ -22,6 +22,7 @@ import { NearestQuery } from "./query";
 // the dep group it exercises.
 
 const pos: UserPosition = { lat: 59.33, lon: 18.07 };
+const stubNearestQuery = {} as NearestQuery;
 
 function makeTileEntry(id: string, hash = "h1"): TileEntry {
   return {
@@ -131,18 +132,7 @@ function makeUi(overrides: Partial<RenderDeps> = {}): RenderDeps {
 function makeData(overrides: Partial<DataDeps> = {}): DataDeps {
   return {
     loadTileIndex: vi.fn(async () => null),
-    loadTile: vi.fn(
-      async () =>
-        new NearestQuery(
-          {
-            vertexPoints: new Float64Array(),
-            vertexTriangles: new Uint32Array(),
-            triangleVertices: new Uint32Array(),
-            triangleNeighbors: new Uint32Array(),
-          },
-          [],
-        ),
-    ),
+    loadTile: vi.fn(async () => stubNearestQuery),
     tilesForPosition: vi.fn(() => ({ primary: "t1", adjacent: [] })),
     getTileEntry: vi.fn(),
     ...overrides,
@@ -300,21 +290,12 @@ describe("createEffectExecutor", () => {
   it("loadTiles dispatches tileLoadStarted then tileLoaded", async () => {
     const entry = makeTileEntry("t1");
     const tileMap = new Map([["t1", entry]]);
-    const mockQuery = new NearestQuery(
-      {
-        vertexPoints: new Float64Array(),
-        vertexTriangles: new Uint32Array(),
-        triangleVertices: new Uint32Array(),
-        triangleNeighbors: new Uint32Array(),
-      },
-      [],
-    );
     const deps = makeDeps({
       getState: vi.fn(() => tiledState(tileMap)),
       data: makeData({
         tilesForPosition: vi.fn(() => ({ primary: "t1", adjacent: [] })),
         getTileEntry: vi.fn((_map, id) => (id === "t1" ? entry : undefined)),
-        loadTile: vi.fn(async () => mockQuery),
+        loadTile: vi.fn(async () => stubNearestQuery),
       }),
     });
     const exec = createEffectExecutor(deps);
@@ -343,16 +324,6 @@ describe("createEffectExecutor", () => {
     // Track the order of loadTile calls and when they resolve
     const loadOrder: string[] = [];
     const resolvers: Array<() => void> = [];
-    const mockQuery = new NearestQuery(
-      {
-        vertexPoints: new Float64Array(),
-        vertexTriangles: new Uint32Array(),
-        triangleVertices: new Uint32Array(),
-        triangleNeighbors: new Uint32Array(),
-      },
-      [],
-    );
-
     const deps = makeDeps({
       getState: vi.fn(() => tiledState(tileMap)),
       data: makeData({
@@ -364,7 +335,7 @@ describe("createEffectExecutor", () => {
         loadTile: vi.fn((_lang, entry: TileEntry) => {
           loadOrder.push(entry.id);
           return new Promise<NearestQuery>((resolve) => {
-            resolvers.push(() => resolve(mockQuery));
+            resolvers.push(() => resolve(stubNearestQuery));
           });
         }),
       }),
@@ -395,20 +366,7 @@ describe("createEffectExecutor", () => {
       ["t1", entry1],
       ["t2", entry2],
     ]);
-    const existingTiles = new Map([
-      [
-        "t1",
-        new NearestQuery(
-          {
-            vertexPoints: new Float64Array(),
-            vertexTriangles: new Uint32Array(),
-            triangleVertices: new Uint32Array(),
-            triangleNeighbors: new Uint32Array(),
-          },
-          [],
-        ),
-      ],
-    ]);
+    const existingTiles = new Map([["t1", stubNearestQuery]]);
     const query: QueryState = {
       mode: "tiled",
       index: {
@@ -449,15 +407,6 @@ describe("createEffectExecutor", () => {
     const entry = makeTileEntry("t1");
     const tileMap = new Map([["t1", entry]]);
     let loadResolved = false;
-    const mockQuery = new NearestQuery(
-      {
-        vertexPoints: new Float64Array(),
-        vertexTriangles: new Uint32Array(),
-        triangleVertices: new Uint32Array(),
-        triangleNeighbors: new Uint32Array(),
-      },
-      [],
-    );
     const deps = makeDeps({
       getState: vi.fn(() => {
         // After loadTile resolves, generation has advanced
@@ -470,7 +419,7 @@ describe("createEffectExecutor", () => {
         getTileEntry: vi.fn((_map, id) => (id === "t1" ? entry : undefined)),
         loadTile: vi.fn(async () => {
           loadResolved = true;
-          return mockQuery;
+          return stubNearestQuery;
         }),
       }),
     });
