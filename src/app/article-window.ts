@@ -28,6 +28,8 @@ export interface ArticleWindow {
   ensureRange(start: number, end: number): Promise<void>;
   /** How many articles are known to exist (from the provider). */
   totalKnown(): number;
+  /** The exclusive end of the contiguous loaded range. */
+  loadedCount(): number;
   /** Clear all loaded data. */
   reset(): void;
 }
@@ -136,6 +138,10 @@ export function createArticleWindow(
 
     totalKnown() {
       return total;
+    },
+
+    loadedCount() {
+      return loadedEnd;
     },
 
     reset() {

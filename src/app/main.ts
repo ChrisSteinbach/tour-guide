@@ -249,7 +249,7 @@ function getOrCreateArticleWindow(): ArticleWindow {
     windowSize: 1000,
     onWindowChange: () => {
       if (articleWindow && infiniteScroll.isActive()) {
-        infiniteScroll.update(articleWindow.totalKnown());
+        infiniteScroll.update(articleWindow.loadedCount());
       }
     },
   });
@@ -371,7 +371,7 @@ const infiniteScroll = createInfiniteScrollLifecycle({
       const range = vl.visibleRange();
       void articleWindow.ensureRange(range.start, range.end + 200).then(() => {
         if (articleWindow && infiniteScroll.isActive()) {
-          infiniteScroll.update(articleWindow.totalKnown());
+          infiniteScroll.update(articleWindow.loadedCount());
         }
       });
     } else {
@@ -454,7 +454,7 @@ function renderInfiniteScrollDOM(): void {
   }
 
   const totalCount =
-    articleWindow?.totalKnown() || appState.phase.articles.length;
+    articleWindow?.loadedCount() || appState.phase.articles.length;
 
   if (!infiniteScroll.isActive()) {
     infiniteScroll.init(totalCount);
