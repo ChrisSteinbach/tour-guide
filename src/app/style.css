@@ -522,6 +522,12 @@ body {
 
 /* Map picker */
 
+#app:has(.map-picker-container) {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+
 .map-picker-instructions {
   text-align: center;
   padding: 12px 16px;
@@ -539,7 +545,7 @@ body {
 
 .map-picker-map {
   flex: 1;
-  min-height: 60vh;
+  min-height: 0;
 }
 
 .map-picker-confirm {
