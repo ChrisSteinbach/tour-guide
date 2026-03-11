@@ -50,11 +50,12 @@ describe("createMapDrawer", () => {
     expect(drawer.element.classList.contains("map-drawer-content")).toBe(true);
   });
 
-  it("has a handle element in the DOM", () => {
+  it("has a handle element with chevron in the DOM", () => {
     createMapDrawer(container, () => true);
     const handle = container.querySelector(".map-drawer-handle");
     expect(handle).not.toBeNull();
-    expect(handle?.querySelector(".map-drawer-grip")).not.toBeNull();
+    expect(handle?.tagName).toBe("BUTTON");
+    expect(handle?.querySelector(".map-drawer-chevron")).not.toBeNull();
   });
 
   it("destroy() removes DOM elements", () => {
