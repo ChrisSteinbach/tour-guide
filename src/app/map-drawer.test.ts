@@ -8,36 +8,26 @@ describe("createMapDrawer", () => {
     container = document.createElement("div");
   });
 
-  it("starts open on desktop", () => {
-    const drawer = createMapDrawer(container, () => true);
-    expect(drawer.isOpen()).toBe(true);
-    expect(
-      container.querySelector(".map-drawer")?.classList.contains("open"),
-    ).toBe(true);
-  });
-
-  it("starts closed on mobile", () => {
-    const drawer = createMapDrawer(container, () => false);
+  it("starts closed", () => {
+    const drawer = createMapDrawer(container);
     expect(drawer.isOpen()).toBe(false);
-    expect(
-      container.querySelector(".map-drawer")?.classList.contains("open"),
-    ).toBe(false);
   });
 
   it("open() opens the drawer", () => {
-    const drawer = createMapDrawer(container, () => false);
+    const drawer = createMapDrawer(container);
     drawer.open();
     expect(drawer.isOpen()).toBe(true);
   });
 
   it("close() closes the drawer", () => {
-    const drawer = createMapDrawer(container, () => true);
+    const drawer = createMapDrawer(container);
+    drawer.open();
     drawer.close();
     expect(drawer.isOpen()).toBe(false);
   });
 
   it("toggle() flips the state", () => {
-    const drawer = createMapDrawer(container, () => false);
+    const drawer = createMapDrawer(container);
     drawer.toggle();
     expect(drawer.isOpen()).toBe(true);
     drawer.toggle();
@@ -45,21 +35,45 @@ describe("createMapDrawer", () => {
   });
 
   it("exposes the content element", () => {
-    const drawer = createMapDrawer(container, () => true);
+    const drawer = createMapDrawer(container);
     expect(drawer.element).toBeInstanceOf(HTMLElement);
     expect(drawer.element.classList.contains("map-drawer-content")).toBe(true);
   });
 
+  it("exposes the panel element", () => {
+    const drawer = createMapDrawer(container);
+    expect(drawer.panel).toBeInstanceOf(HTMLElement);
+    expect(drawer.panel.classList.contains("map-drawer")).toBe(true);
+  });
+
   it("has a handle element with chevron in the DOM", () => {
-    createMapDrawer(container, () => true);
+    createMapDrawer(container);
     const handle = container.querySelector(".map-drawer-handle");
     expect(handle).not.toBeNull();
     expect(handle?.tagName).toBe("BUTTON");
     expect(handle?.querySelector(".map-drawer-chevron")).not.toBeNull();
   });
 
+  it("sets aria-expanded on the handle", () => {
+    const drawer = createMapDrawer(container);
+    const handle = container.querySelector(".map-drawer-handle")!;
+    expect(handle.getAttribute("aria-expanded")).toBe("false");
+
+    drawer.open();
+    expect(handle.getAttribute("aria-expanded")).toBe("true");
+
+    drawer.close();
+    expect(handle.getAttribute("aria-expanded")).toBe("false");
+
+    drawer.toggle();
+    expect(handle.getAttribute("aria-expanded")).toBe("true");
+
+    drawer.toggle();
+    expect(handle.getAttribute("aria-expanded")).toBe("false");
+  });
+
   it("destroy() removes DOM elements", () => {
-    const drawer = createMapDrawer(container, () => true);
+    const drawer = createMapDrawer(container);
     expect(container.querySelector(".map-drawer")).not.toBeNull();
     drawer.destroy();
     expect(container.querySelector(".map-drawer")).toBeNull();

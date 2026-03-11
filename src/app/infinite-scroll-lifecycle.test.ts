@@ -105,16 +105,11 @@ describe("InfiniteScrollLifecycle", () => {
     });
 
     it("creates virtual list with correct total count", () => {
-      const container = makeContainer();
-      const lifecycle = createInfiniteScrollLifecycle(makeDeps({ container }));
+      const lifecycle = createInfiniteScrollLifecycle(makeDeps());
 
       lifecycle.init(20);
 
-      const list = container.querySelector<HTMLElement>(
-        ".nearby-list.virtual-scroll",
-      );
-      // Virtual scroll sets height = totalCount * itemHeight
-      expect(list?.style.height).toBe(`${20 * 68}px`);
+      expect(lifecycle.virtualList()?.totalCount()).toBe(20);
     });
 
     it("renders items via renderItem callback", () => {
@@ -170,16 +165,12 @@ describe("InfiniteScrollLifecycle", () => {
     });
 
     it("updates virtual list total count", () => {
-      const container = makeContainer();
-      const lifecycle = createInfiniteScrollLifecycle(makeDeps({ container }));
+      const lifecycle = createInfiniteScrollLifecycle(makeDeps());
 
       lifecycle.init(5);
       lifecycle.update(50);
 
-      const list = container.querySelector<HTMLElement>(
-        ".nearby-list.virtual-scroll",
-      );
-      expect(list?.style.height).toBe(`${50 * 68}px`);
+      expect(lifecycle.virtualList()?.totalCount()).toBe(50);
     });
   });
 
@@ -222,18 +213,14 @@ describe("InfiniteScrollLifecycle", () => {
 
   describe("re-init after destroy", () => {
     it("can init again after destroy", () => {
-      const container = makeContainer();
-      const lifecycle = createInfiniteScrollLifecycle(makeDeps({ container }));
+      const lifecycle = createInfiniteScrollLifecycle(makeDeps());
 
       lifecycle.init(5);
       lifecycle.destroy();
       lifecycle.init(10);
 
       expect(lifecycle.isActive()).toBe(true);
-      const list = container.querySelector<HTMLElement>(
-        ".nearby-list.virtual-scroll",
-      );
-      expect(list?.style.height).toBe(`${10 * 68}px`);
+      expect(lifecycle.virtualList()?.totalCount()).toBe(10);
     });
   });
 

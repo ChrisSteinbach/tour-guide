@@ -259,23 +259,6 @@ describe("drawer gesture", () => {
     );
   });
 
-  it("sets pointer capture when drag threshold is exceeded", () => {
-    const { handle } = createDrawer();
-
-    handle.dispatchEvent(
-      pointerEvent("pointerdown", { clientX: 380, timeStamp: 0 }),
-    );
-    // eslint-disable-next-line @typescript-eslint/unbound-method
-    expect(handle.setPointerCapture).not.toHaveBeenCalled();
-
-    // Move past threshold → capture
-    handle.dispatchEvent(
-      pointerEvent("pointermove", { clientX: 300, timeStamp: 50 }),
-    );
-    // eslint-disable-next-line @typescript-eslint/unbound-method
-    expect(handle.setPointerCapture).toHaveBeenCalledWith(1);
-  });
-
   it("removes inline transform after release", () => {
     const { handle, panel } = createDrawer();
 

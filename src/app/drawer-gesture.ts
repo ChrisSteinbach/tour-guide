@@ -25,12 +25,12 @@ export function setupDrawerGesture(opts: DrawerGestureOpts): () => void {
   let startX = 0;
   let startTime = 0;
   let startOpen = false;
-  let dragging = false;
+  let pointerDown = false;
   let hasMoved = false;
   let pointerId = -1;
 
   function onPointerDown(e: PointerEvent): void {
-    dragging = true;
+    pointerDown = true;
     hasMoved = false;
     startX = e.clientX;
     startTime = e.timeStamp;
@@ -43,7 +43,7 @@ export function setupDrawerGesture(opts: DrawerGestureOpts): () => void {
   }
 
   function onPointerMove(e: PointerEvent): void {
-    if (!dragging) return;
+    if (!pointerDown) return;
 
     const deltaX = e.clientX - startX;
 
@@ -74,8 +74,8 @@ export function setupDrawerGesture(opts: DrawerGestureOpts): () => void {
   }
 
   function onPointerUp(e: PointerEvent): void {
-    if (!dragging) return;
-    dragging = false;
+    if (!pointerDown) return;
+    pointerDown = false;
 
     // Click (no significant drag) — let the click event handler toggle.
     if (!hasMoved) return;
@@ -113,8 +113,8 @@ export function setupDrawerGesture(opts: DrawerGestureOpts): () => void {
   }
 
   function onPointerCancel(_e: PointerEvent): void {
-    if (!dragging) return;
-    dragging = false;
+    if (!pointerDown) return;
+    pointerDown = false;
 
     // Snap back to original state
     panel.style.transform = "";
