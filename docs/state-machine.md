@@ -236,5 +236,6 @@ On page load, `main.ts` runs:
 ## See Also
 
 - [Architecture Overview](architecture.md) — End-to-end system design and data flow
+- [Infinite Scroll](infinite-scroll.md) — Virtual scroll, article window, scroll-pause transitions
 - [Nearest-Neighbor Theory](nearest-neighbor.md) — Delaunay triangle walks and BFS expansion
 - [Tiling Strategy](tiling.md) — Geographic tiling, buffer zones, on-demand loading

@@ -97,7 +97,7 @@ Distance uses chord length (`2 * asin(||v - q|| / 2)`, clamped for numerical saf
 
 - Article cards with distance badges
 - Language selector dropdown and pause/resume button in header
-- "Show more" button loads next tier (10 → 20 → 50 → 100)
+- Virtual infinite scroll with progressive tile loading (see [infinite-scroll.md](infinite-scroll.md))
 - Smart re-render: if the article list is unchanged, only patches distance badges in-place (preserves dropdown/focus state)
 - Re-query threshold: 15m minimum movement before recalculating
 
@@ -289,6 +289,7 @@ src/pipeline/CLAUDE.md Module-specific dev instructions (extraction and pipeline
 
 ## See Also
 
+- [Infinite Scroll](infinite-scroll.md) — Virtual scroll, article window, progressive tile loading, scroll-pause detection
 - [State Machine](state-machine.md) — App state machine: phases, events, effects, transition table
 - [Nearest-Neighbor Theory](nearest-neighbor.md) — Voronoi/Delaunay theory, spherical adaptation, 3D convex hull approach, triangle walks
 - [Binary Format](binary-format.md) — Byte-level layout of `.bin` tile files
