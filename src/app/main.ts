@@ -188,16 +188,25 @@ function ensureArticleRange(_pos: UserPosition, count: number): void {
 // ── Lifecycle managers ───────────────────────────────────────
 
 const desktopQuery = window.matchMedia("(min-width: 1024px)");
+let drawerInitialized = false;
 desktopQuery.addEventListener("change", () => {
-  if (appState.phase.phase === "browsing") renderBrowsingListDOM();
+  if (appState.phase.phase === "browsing") {
+    // Responsive breakpoint changed — update drawer state
+    if (desktopQuery.matches) {
+      drawer.open();
+    } else {
+      drawer.close();
+    }
+    renderBrowsingListDOM();
+  }
 });
 
-const drawer = createMapDrawer(document.body, () => desktopQuery.matches);
+const drawer = createMapDrawer(document.body);
 
 // Listen for drawer open to invalidate Leaflet map size
-const drawerPanel = document.body.querySelector(".map-drawer")!;
-drawerPanel.addEventListener("transitionend", () => {
-  if (drawer.isOpen()) browseMap.resize();
+const drawerPanel = drawer.panel;
+drawerPanel.addEventListener("transitionend", (e: TransitionEvent) => {
+  if (e.propertyName === "transform" && drawer.isOpen()) browseMap.resize();
 });
 
 // Hide drawer initially — shown when browsing phase is active
@@ -339,12 +348,15 @@ function renderBrowsingHeaderDOM(): void {
 function renderBrowsingListDOM(): void {
   if (appState.phase.phase !== "browsing" || !appState.position) return;
 
-  // Show the map drawer during browsing
+  // Show the map drawer during browsing; only set initial state once
   drawerPanel.removeAttribute("hidden");
-  if (desktopQuery.matches) {
-    drawer.open();
-  } else {
-    drawer.close();
+  if (!drawerInitialized) {
+    drawerInitialized = true;
+    if (desktopQuery.matches) {
+      drawer.open();
+    } else {
+      drawer.close();
+    }
   }
 
   if (appState.phase.scrollMode === "infinite") {
@@ -447,6 +459,7 @@ function renderPhase(): void {
   browseMap.destroy();
   drawerPanel.setAttribute("hidden", "");
   drawer.close();
+  drawerInitialized = false;
   switch (appState.phase.phase) {
     case "welcome":
       renderWelcome(

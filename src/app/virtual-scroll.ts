@@ -59,6 +59,8 @@ export interface VirtualList {
   refresh(): void;
   /** Current visible range (includes overscan). */
   visibleRange(): VisibleRange;
+  /** Current total item count. */
+  totalCount(): number;
   /** Remove DOM and listeners. */
   destroy(): void;
 }
@@ -144,6 +146,10 @@ export function createVirtualList(options: VirtualListOptions): VirtualList {
 
     visibleRange() {
       return lastRange;
+    },
+
+    totalCount() {
+      return totalCount;
     },
 
     destroy() {

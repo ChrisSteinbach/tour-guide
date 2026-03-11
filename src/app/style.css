@@ -673,7 +673,7 @@ body {
   user-select: none;
   padding: 0;
   color: #666;
-  z-index: 1000;
+  z-index: 1;
 }
 
 .map-drawer-handle:hover {
@@ -699,6 +699,8 @@ body {
   flex: 1;
   min-width: 0;
   background: #fff;
+  position: relative;
+  z-index: 0;
 }
 
 @media (min-width: 1024px) {

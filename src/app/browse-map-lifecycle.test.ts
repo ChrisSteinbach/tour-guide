@@ -9,13 +9,11 @@ function makeContainer(): HTMLElement {
   return el;
 }
 
-function makeHandle(): BrowseMapHandle & { calls: string[] } {
-  const calls: string[] = [];
+function makeHandle(): BrowseMapHandle {
   return {
-    calls,
-    update: (...args) => calls.push(`update:${JSON.stringify(args)}`),
-    resize: () => calls.push("resize"),
-    destroy: () => calls.push("destroy"),
+    update: vi.fn(),
+    resize: vi.fn(),
+    destroy: vi.fn(),
   };
 }
 
@@ -61,8 +59,10 @@ describe("BrowseMapLifecycle", () => {
       // Second update should reuse existing handle
       lifecycle.update({ lat: 52, lon: 1 }, []);
 
-      expect(deps.lastHandle.calls).toContain(
-        `update:${JSON.stringify([{ lat: 52, lon: 1 }, []])}`,
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(deps.lastHandle.update).toHaveBeenCalledWith(
+        { lat: 52, lon: 1 },
+        [],
       );
     });
 
@@ -108,7 +108,8 @@ describe("BrowseMapLifecycle", () => {
 
       lifecycle.resize();
 
-      expect(deps.lastHandle.calls).toContain("resize");
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(deps.lastHandle.resize).toHaveBeenCalled();
     });
 
     it("is safe to call without a map", () => {
@@ -128,7 +129,8 @@ describe("BrowseMapLifecycle", () => {
       lifecycle.destroy();
 
       expect(deps.container.querySelector(".browse-map")).toBeNull();
-      expect(deps.lastHandle.calls).toContain("destroy");
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(deps.lastHandle.destroy).toHaveBeenCalled();
     });
 
     it("is safe to call without prior update", () => {
@@ -145,6 +147,26 @@ describe("BrowseMapLifecycle", () => {
 
       lifecycle.destroy();
       lifecycle.destroy(); // should not throw
+    });
+  });
+
+  describe("onSelectArticle passthrough", () => {
+    it("passes onSelectArticle to createBrowseMap", async () => {
+      const onSelectArticle = vi.fn();
+      const createBrowseMap = vi.fn(() => makeHandle());
+      const deps = makeDeps({
+        onSelectArticle,
+        importBrowseMap: () => Promise.resolve({ createBrowseMap }),
+      });
+      const lifecycle = createBrowseMapLifecycle(deps);
+
+      lifecycle.update({ lat: 51, lon: 0 }, []);
+      await Promise.resolve();
+
+      // 4th arg is onSelectArticle
+
+      const onSelect = (createBrowseMap.mock.calls[0] as any[])?.[3];
+      expect(onSelect).toBe(onSelectArticle);
     });
   });
 });
