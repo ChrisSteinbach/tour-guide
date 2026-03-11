@@ -6,7 +6,6 @@ import {
   createVirtualList,
   connectScroll,
   windowScrollState,
-  containerScrollState,
   type VirtualList,
 } from "./virtual-scroll";
 import {
@@ -26,9 +25,6 @@ export interface InfiniteScrollDeps {
   enrichSettleMs: number;
   /** Debounce period for map marker sync after scroll. */
   mapSyncSettleMs: number;
-
-  /** Whether desktop split-view is active. */
-  isDesktop: () => boolean;
 
   /** Return the article title at the given index, or null. */
   getTitle: (index: number) => string | null;
@@ -113,10 +109,7 @@ export function createInfiniteScrollLifecycle(
     listContainer.className = "virtual-scroll-container";
     deps.container.appendChild(listContainer);
 
-    const isDesktop = deps.isDesktop();
-    if (isDesktop) {
-      deps.initBrowseMap();
-    }
+    deps.initBrowseMap();
 
     const mapSync = createDebouncedMapSync({
       settleMs: deps.mapSyncSettleMs,
@@ -132,9 +125,7 @@ export function createInfiniteScrollLifecycle(
       cancel: deps.cancelEnrich,
     });
 
-    const getScrollState = isDesktop
-      ? containerScrollState(listContainer, listContainer)
-      : windowScrollState(listContainer);
+    const getScrollState = windowScrollState(listContainer);
 
     currentTotalCount = totalCount;
 
@@ -158,9 +149,7 @@ export function createInfiniteScrollLifecycle(
 
     virtualList.update(totalCount, deps.renderItem);
 
-    disconnectScroll = isDesktop
-      ? connectScroll(virtualList, listContainer)
-      : connectScroll(virtualList);
+    disconnectScroll = connectScroll(virtualList);
   }
 
   function updateHeader(): void {

@@ -1,13 +1,13 @@
 // Browse map lifecycle manager: handles lazy-loading, creation,
-// update, and teardown of the desktop split-view browse map.
+// update, and teardown of the browse map rendered inside the drawer.
 // All I/O boundaries are injected.
 
 import type { BrowseMapHandle } from "./browse-map";
 import type { NearbyArticle } from "./types";
 
 export interface BrowseMapLifecycleDeps {
+  /** The element to render the map into (e.g. the drawer's content area). */
   container: HTMLElement;
-  isDesktop: () => boolean;
   onSelectArticle: (article: NearbyArticle) => void;
   importBrowseMap: () => Promise<{
     createBrowseMap: (
@@ -24,6 +24,7 @@ export interface BrowseMapLifecycle {
     position: { lat: number; lon: number },
     articles: NearbyArticle[],
   ): void;
+  resize(): void;
   destroy(): void;
 }
 
@@ -39,20 +40,17 @@ export function createBrowseMapLifecycle(
     }
     const el = deps.container.querySelector(".browse-map");
     el?.remove();
-    deps.container.classList.remove("split-view");
+  }
+
+  function resize(): void {
+    handle?.resize();
   }
 
   function update(
     position: { lat: number; lon: number },
     articles: NearbyArticle[],
   ): void {
-    if (!deps.isDesktop()) {
-      destroy();
-      return;
-    }
-
-    // If the map handle exists but its container was removed (e.g. detail view
-    // cleared #app), discard the stale handle so we recreate it.
+    // If the map handle exists and its container is still in the DOM, just update.
     if (handle) {
       const existing = deps.container.querySelector(".browse-map");
       if (existing && deps.container.contains(existing)) {
@@ -68,7 +66,6 @@ export function createBrowseMapLifecycle(
       mapEl = document.createElement("div");
       mapEl.className = "browse-map";
       deps.container.appendChild(mapEl);
-      deps.container.classList.add("split-view");
     }
 
     void deps
@@ -88,5 +85,5 @@ export function createBrowseMapLifecycle(
       });
   }
 
-  return { update, destroy };
+  return { update, resize, destroy };
 }

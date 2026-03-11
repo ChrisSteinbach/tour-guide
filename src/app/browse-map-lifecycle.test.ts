@@ -14,6 +14,7 @@ function makeHandle(): BrowseMapHandle & { calls: string[] } {
   return {
     calls,
     update: (...args) => calls.push(`update:${JSON.stringify(args)}`),
+    resize: () => calls.push("resize"),
     destroy: () => calls.push("destroy"),
   };
 }
@@ -25,7 +26,6 @@ function makeDeps(
   return {
     lastHandle,
     container: overrides.container ?? makeContainer(),
-    isDesktop: () => true,
     onSelectArticle: () => {},
     importBrowseMap: () =>
       Promise.resolve({
@@ -41,7 +41,7 @@ describe("BrowseMapLifecycle", () => {
   });
 
   describe("update", () => {
-    it("creates map container and adds split-view class on desktop", async () => {
+    it("creates map container inside provided element", async () => {
       const deps = makeDeps();
       const lifecycle = createBrowseMapLifecycle(deps);
 
@@ -49,23 +49,6 @@ describe("BrowseMapLifecycle", () => {
       await Promise.resolve();
 
       expect(deps.container.querySelector(".browse-map")).toBeTruthy();
-      expect(deps.container.classList.contains("split-view")).toBe(true);
-    });
-
-    it("destroys map on mobile", () => {
-      const deps = makeDeps({ isDesktop: () => false });
-      const lifecycle = createBrowseMapLifecycle(deps);
-
-      // First, set up a map container manually to verify it gets removed
-      const mapEl = document.createElement("div");
-      mapEl.className = "browse-map";
-      deps.container.appendChild(mapEl);
-      deps.container.classList.add("split-view");
-
-      lifecycle.update({ lat: 51, lon: 0 }, []);
-
-      expect(deps.container.querySelector(".browse-map")).toBeNull();
-      expect(deps.container.classList.contains("split-view")).toBe(false);
     });
 
     it("calls handle.update when map DOM still exists", async () => {
@@ -115,8 +98,27 @@ describe("BrowseMapLifecycle", () => {
     });
   });
 
+  describe("resize", () => {
+    it("calls handle.resize when map exists", async () => {
+      const deps = makeDeps();
+      const lifecycle = createBrowseMapLifecycle(deps);
+
+      lifecycle.update({ lat: 51, lon: 0 }, []);
+      await Promise.resolve();
+
+      lifecycle.resize();
+
+      expect(deps.lastHandle.calls).toContain("resize");
+    });
+
+    it("is safe to call without a map", () => {
+      const lifecycle = createBrowseMapLifecycle(makeDeps());
+      lifecycle.resize(); // should not throw
+    });
+  });
+
   describe("destroy", () => {
-    it("removes map element and split-view class", async () => {
+    it("removes map element and calls handle.destroy", async () => {
       const deps = makeDeps();
       const lifecycle = createBrowseMapLifecycle(deps);
 
@@ -126,7 +128,6 @@ describe("BrowseMapLifecycle", () => {
       lifecycle.destroy();
 
       expect(deps.container.querySelector(".browse-map")).toBeNull();
-      expect(deps.container.classList.contains("split-view")).toBe(false);
       expect(deps.lastHandle.calls).toContain("destroy");
     });
 
