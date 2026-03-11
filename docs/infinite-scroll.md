@@ -2,14 +2,16 @@
 
 The app uses virtual infinite scroll to display articles sorted by distance. Instead of the old tier-based "Show more" button, articles load progressively as the user scrolls, with tiles fetched on demand in expanding rings around the user's position.
 
-The system spans six modules, each handling one concern:
+The system spans eight modules, each handling one concern:
 
 | Module                         | Concern                                                                   |
 | ------------------------------ | ------------------------------------------------------------------------- |
 | `virtual-scroll.ts`            | Viewport math, overscan buffer, RAF-throttled rendering                   |
 | `infinite-scroll-lifecycle.ts` | Orchestrates virtual list, enrichment, map sync as a single lifecycle     |
 | `article-window.ts`            | Distance-windowed data model with async expansion                         |
-| `article-window-lifecycle.ts`  | ArticleWindow creation, reset, and coordination with infinite scroll      |
+| `article-window-factory.ts`    | Constructs an ArticleWindow with its TileRadiusProvider wiring            |
+| `article-window-lifecycle.ts`  | ArticleWindow reset/create orchestration and infinite scroll coordination |
+| `summary-loader.ts`            | Concurrency-limited, cancellable batch fetcher for article summaries      |
 | `scroll-pause-detector.ts`     | Detects user scroll to trigger live-location → infinite scroll transition |
 | `tile-radius.ts`               | Progressive tile loading by expanding Chebyshev rings                     |
 
@@ -117,7 +119,7 @@ onRangeChange(range)
 
 Two debounced side effects run on `onRangeChange`:
 
-**Enrichment** (`enrich-scheduler.ts`): After the visible range settles for 300ms, fetches Wikipedia summaries for visible articles. Tracks already-enriched titles to avoid duplicate requests. Resets on position change.
+**Enrichment** (`enrich-scheduler.ts`): After the visible range settles for 300ms, fetches Wikipedia summaries for visible articles. Tracks already-enriched titles to avoid duplicate requests. Resets on position change. The actual fetching is handled by `SummaryLoader` (`summary-loader.ts`), which manages a concurrency-limited queue (default 3 concurrent requests) with per-item callbacks, cancellation support, and priority boosting for viewport-visible items via `request()`.
 
 **Map sync** (`debounced-map-sync.ts`): After 150ms of scroll settle, syncs browse-map markers with the currently visible articles. Desktop only.
 
@@ -132,7 +134,7 @@ The `InfiniteScrollLifecycle` (`infinite-scroll-lifecycle.ts`) bundles the virtu
 - **`updateHeader()`** — Replaces only the header element. Used by `renderBrowsingHeaderDOM` when GPS updates arrive while scroll-paused (avoids rebuilding the list, which would destroy hover states).
 - **`destroy()`** — Tears down all sub-components and listeners.
 
-The `ArticleWindowLifecycle` (`article-window-lifecycle.ts`) manages the ArticleWindow instance and its AbortController. Its `onWindowChange` callback connects the data model to the DOM: when articles load, it calls `infiniteScroll.update(loadedCount)`.
+The `ArticleWindowLifecycle` (`article-window-lifecycle.ts`) manages the ArticleWindow instance and its AbortController. It delegates construction to `ArticleWindowFactory` (`article-window-factory.ts`), which wires up the `TileRadiusProvider` with tile-merging logic and returns a ready-to-use `ArticleWindow`. This factory/lifecycle separation keeps the provider wiring (pure construction) independent from the reset/create orchestration and state machine integration. The lifecycle's `onWindowChange` callback connects the data model to the DOM: when articles load, it calls `infiniteScroll.update(loadedCount)`.
 
 ## Scroll Mode Transitions
 

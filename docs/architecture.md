@@ -259,13 +259,15 @@ src/geometry/
   predicates.ts        Robust orient3D (Shewchuk)
 
 src/app/
-  main.ts              Bootstrap, effect executor, language switching
+  main.ts              Bootstrap, language switching, wires lifecycles together
   state-machine.ts     Pure state machine (phase/event/effect)
+  effect-executor.ts   Executes state machine effects (I/O bridge between pure state and side effects)
   query.ts             NearestQuery class (flat typed-array walks)
   tile-loader.ts       Tile index + tile fetching, IDB cache, LRU eviction
   idb.ts               IndexedDB helpers, versioned key prefixes
   render.ts            Article list with distance badges
   detail.ts            Article detail via Wikipedia REST API
+  header.ts            App header element factory
   location.ts          Geolocation API wrapper
   status.ts            Loading, progress, error screens
   wiki-api.ts          Wikipedia REST API client
@@ -274,6 +276,22 @@ src/app/
   types.ts             Shared types
   style.css            UI styling
   index.html           PWA root
+
+  # Infinite scroll subsystem
+  article-window.ts           Distance-windowed data model (sync reads, async expansion)
+  article-window-factory.ts   Wires ArticleWindow to TileRadiusProvider and state machine tiles
+  article-window-lifecycle.ts Manages ArticleWindow instance, AbortController, reset/create/render orchestration
+  tile-radius.ts              Progressive tile loading by Chebyshev ring distance; implements ArticleProvider
+  virtual-scroll.ts           Pure viewport math (computeVisibleRange) + thin DOM adapter (VirtualList)
+  enrich-scheduler.ts         Debounced enrichment trigger — fires after articles settle in viewport
+  summary-loader.ts           Concurrency-limited, cancellable batch fetcher for article summaries
+  scroll-pause-detector.ts    Fires callback when scroll passes a pixel threshold (window + container)
+  debounced-map-sync.ts       Batches visible-range changes and syncs browse map markers after settle period
+  infinite-scroll-lifecycle.ts Orchestrates virtualList, enrichScheduler, map sync, scroll as one lifecycle
+
+  # Map lifecycles
+  browse-map-lifecycle.ts     Lazy-loads, creates, updates, and tears down the desktop split-view browse map
+  map-picker-lifecycle.ts     Lazy-loads and manages the full-screen map picker overlay
 
 src/lang.ts            Supported languages (en, sv, ja)
 src/tiles.ts           Tile types, grid constants, tile ID computation

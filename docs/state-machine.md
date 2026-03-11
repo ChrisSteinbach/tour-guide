@@ -14,16 +14,16 @@ The transition function has **no side effects** — it takes the current state a
 
 The primary UI state is the `Phase` discriminated union. Each phase corresponds to a distinct screen:
 
-| Phase             | Description                                           | Carries                                                        |
-| ----------------- | ----------------------------------------------------- | -------------------------------------------------------------- |
-| `welcome`         | Landing screen with language picker and start buttons | —                                                              |
-| `downloading`     | Fetching tile index from CDN                          | `progress` (-1 = not started, 0–1)                             |
-| `locating`        | Waiting for GPS fix                                   | —                                                              |
-| `loadingTiles`    | Tile index ready, loading first nearby tile           | —                                                              |
-| `error`           | GPS failed (denied, timeout, unavailable)             | `error: LocationError`                                         |
-| `dataUnavailable` | No tile data for the selected language                | —                                                              |
-| `browsing`        | Main list view with nearby articles                   | `articles`, `nearbyCount`, `paused`, `lastQueryPos`            |
-| `detail`          | Article detail page (Wikipedia summary)               | `article`, `articles`, `nearbyCount`, `paused`, `lastQueryPos` |
+| Phase             | Description                                           | Carries                                                                                                            |
+| ----------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `welcome`         | Landing screen with language picker and start buttons | —                                                                                                                  |
+| `downloading`     | Fetching tile index from CDN                          | `progress` (-1 = not started, 0–1)                                                                                 |
+| `locating`        | Waiting for GPS fix                                   | —                                                                                                                  |
+| `loadingTiles`    | Tile index ready, loading first nearby tile           | —                                                                                                                  |
+| `error`           | GPS failed (denied, timeout, unavailable)             | `error: LocationError`                                                                                             |
+| `dataUnavailable` | No tile data for the selected language                | —                                                                                                                  |
+| `browsing`        | Main list view with nearby articles                   | `articles`, `nearbyCount`, `paused`, `pauseReason`, `lastQueryPos`, `scrollMode`, `infiniteScrollLimit`            |
+| `detail`          | Article detail page (Wikipedia summary)               | `article`, `articles`, `nearbyCount`, `paused`, `pauseReason`, `lastQueryPos`, `scrollMode`, `infiniteScrollLimit` |
 
 The full `AppState` bundles the phase with supporting fields:
 
@@ -32,11 +32,15 @@ interface AppState {
   phase: Phase; // UI state (discriminated union above)
   query: QueryState; // "none" or "tiled" with loaded tile data
   position: UserPosition | null; // Latest GPS fix
+  positionSource: "gps" | "picked" | null; // How position was obtained
   currentLang: Lang; // Active language (en, sv, ja)
   loadGeneration: number; // Increments on language change; stale async events are ignored
   loadingTiles: Set<string>; // Tile IDs currently being fetched
   downloadProgress: number; // Latest download fraction (-1 = not started)
   updateBanner: null | "app"; // Whether the SW update banner is showing
+  hasGeolocation: boolean; // Whether the Geolocation API is available
+  gpsSignalLost: boolean; // True when GPS signal is lost mid-session (cleared on next position)
+  viewportFillCount: number; // How many articles to show in the initial viewport-filling view
 }
 ```
 
