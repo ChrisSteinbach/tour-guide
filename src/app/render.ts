@@ -219,7 +219,7 @@ export function renderNearbyHeader(
   for (const code of SUPPORTED_LANGS) {
     const opt = document.createElement("option");
     opt.value = code;
-    opt.textContent = LANG_NAMES[code];
+    opt.textContent = `${code.toUpperCase()} · ${LANG_NAMES[code]}`;
     if (code === currentLang) opt.selected = true;
     langSelect.appendChild(opt);
   }

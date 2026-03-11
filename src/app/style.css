@@ -59,10 +59,11 @@ body {
   background: rgba(255, 255, 255, 0.15);
   border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 6px;
-  padding: 4px 8px;
+  padding: 4px 6px;
   font-size: 0.8rem;
   color: #fff;
   cursor: pointer;
+  width: 4.2em;
 }
 
 .header-lang-select option {
