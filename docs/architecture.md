@@ -65,7 +65,7 @@ Float32 vertices give sub-meter precision on Earth. On deserialization, Uint32 i
 1. Register service worker (auto-update: new versions install automatically; the app shows a "Reload" banner via the `showAppUpdateBanner` effect)
 2. Load triangulation for stored language (default: English)
 3. Show welcome screen with language selector and "Find nearby" / "Use demo data" buttons
-4. On start: begin GPS watch, render article list
+4. On start: begin GPS watch, render article list in viewport mode (a short, GPS-updated list). When the user scrolls past a threshold or manually pauses, the view transitions to infinite scroll mode (see [infinite-scroll.md](infinite-scroll.md)).
 
 ### Data Loading (`tile-loader.ts`)
 
@@ -97,7 +97,7 @@ Distance uses chord length (`2 * asin(||v - q|| / 2)`, clamped for numerical saf
 
 - Article cards with distance badges
 - Language selector dropdown and pause/resume button in header
-- "Show more" button loads next tier (10 → 20 → 50 → 100)
+- Virtual infinite scroll with progressive tile loading (see [infinite-scroll.md](infinite-scroll.md))
 - Smart re-render: if the article list is unchanged, only patches distance badges in-place (preserves dropdown/focus state)
 - Re-query threshold: 15m minimum movement before recalculating
 
@@ -167,7 +167,7 @@ Smart merge: downloads the existing release first, so rebuilding one language pr
 
 ### Deployment (`deploy.yml`)
 
-Runs on every push to `main`:
+Triggered manually via `workflow_dispatch`:
 
 1. Downloads tile archives from `data-latest` release
 2. Decompresses tile files
@@ -259,13 +259,15 @@ src/geometry/
   predicates.ts        Robust orient3D (Shewchuk)
 
 src/app/
-  main.ts              Bootstrap, effect executor, language switching
+  main.ts              Bootstrap, language switching, wires lifecycles together
   state-machine.ts     Pure state machine (phase/event/effect)
+  effect-executor.ts   Executes state machine effects (I/O bridge between pure state and side effects)
   query.ts             NearestQuery class (flat typed-array walks)
   tile-loader.ts       Tile index + tile fetching, IDB cache, LRU eviction
   idb.ts               IndexedDB helpers, versioned key prefixes
   render.ts            Article list with distance badges
   detail.ts            Article detail via Wikipedia REST API
+  header.ts            App header element factory
   location.ts          Geolocation API wrapper
   status.ts            Loading, progress, error screens
   wiki-api.ts          Wikipedia REST API client
@@ -274,6 +276,22 @@ src/app/
   types.ts             Shared types
   style.css            UI styling
   index.html           PWA root
+
+  # Infinite scroll subsystem
+  article-window.ts           Distance-windowed data model (sync reads, async expansion)
+  article-window-factory.ts   Wires ArticleWindow to TileRadiusProvider and state machine tiles
+  article-window-lifecycle.ts Manages ArticleWindow instance, AbortController, reset/create/render orchestration
+  tile-radius.ts              Progressive tile loading by Chebyshev ring distance; implements ArticleProvider
+  virtual-scroll.ts           Pure viewport math (computeVisibleRange) + thin DOM adapter (VirtualList)
+  enrich-scheduler.ts         Debounced enrichment trigger — fires after articles settle in viewport
+  summary-loader.ts           Concurrency-limited, cancellable batch fetcher for article summaries
+  scroll-pause-detector.ts    Fires callback when scroll passes a pixel threshold (window + container)
+  debounced-map-sync.ts       Batches visible-range changes and syncs browse map markers after settle period
+  infinite-scroll-lifecycle.ts Orchestrates virtualList, enrichScheduler, map sync, scroll as one lifecycle
+
+  # Map lifecycles
+  browse-map-lifecycle.ts     Lazy-loads, creates, updates, and tears down the desktop split-view browse map
+  map-picker-lifecycle.ts     Lazy-loads and manages the full-screen map picker overlay
 
 src/lang.ts            Supported languages (en, sv, ja)
 src/tiles.ts           Tile types, grid constants, tile ID computation
@@ -289,6 +307,7 @@ src/pipeline/CLAUDE.md Module-specific dev instructions (extraction and pipeline
 
 ## See Also
 
+- [Infinite Scroll](infinite-scroll.md) — Virtual scroll, article window, progressive tile loading, scroll-pause detection
 - [State Machine](state-machine.md) — App state machine: phases, events, effects, transition table
 - [Nearest-Neighbor Theory](nearest-neighbor.md) — Voronoi/Delaunay theory, spherical adaptation, 3D convex hull approach, triangle walks
 - [Binary Format](binary-format.md) — Byte-level layout of `.bin` tile files
