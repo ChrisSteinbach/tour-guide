@@ -86,7 +86,7 @@ On each refresh, if the visible range changed, `onRangeChange` fires, which driv
 ArticleWindow
   → TileRadiusProvider.fetchRange(start, end)
     → loadRing(ring)          // fetch tiles at Chebyshev distance `ring`
-    → queryAllTiles()         // merge all loaded tiles, findNearestTiled(99999)
+    → queryAllTiles()         // merge all loaded tiles, findNearestTiled(99999) (effectively unlimited)
     → sort by distance, slice [start, end)
 ```
 
@@ -169,7 +169,7 @@ When scrolling fast in live-location mode, there is a brief "bump" — the scrol
 8. Fetch completes → `onWindowChange` → `infiniteScroll.update(newCount)` → list expands
 9. Bump resolves
 
-Tracked in [tour-guide-ea1](../tour-guide-ea1).
+Tracked in tour-guide-ea1.
 
 ## See Also
 

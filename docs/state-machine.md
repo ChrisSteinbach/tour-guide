@@ -131,6 +131,11 @@ stateDiagram-v2
 
     loadingTiles --> browsing : tileLoaded
 
+    error --> browsing : pickPosition (query=tiled)
+    error --> downloading : pickPosition (query=none)
+    dataUnavailable --> browsing : pickPosition (query=tiled)
+    dataUnavailable --> downloading : pickPosition (query=none)
+
     browsing --> detail : selectArticle
     browsing --> mapPicker : showMapPicker
     detail --> browsing : back
@@ -144,8 +149,8 @@ stateDiagram-v2
     }
 
     note right of browsing
-        pickPosition → browsing (infinite scroll)
-        useGps → browsing (viewport scroll)
+        pickPosition → browsing (infinite) or downloading
+        useGps → browsing (viewport)
     end note
 
     note right of downloading

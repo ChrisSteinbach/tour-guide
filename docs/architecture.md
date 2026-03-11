@@ -65,7 +65,7 @@ Float32 vertices give sub-meter precision on Earth. On deserialization, Uint32 i
 1. Register service worker (auto-update: new versions install automatically; the app shows a "Reload" banner via the `showAppUpdateBanner` effect)
 2. Load triangulation for stored language (default: English)
 3. Show welcome screen with language selector and "Find nearby" / "Use demo data" buttons
-4. On start: begin GPS watch, render article list
+4. On start: begin GPS watch, render article list in viewport mode (a short, GPS-updated list). When the user scrolls past a threshold or manually pauses, the view transitions to infinite scroll mode (see [infinite-scroll.md](infinite-scroll.md)).
 
 ### Data Loading (`tile-loader.ts`)
 
@@ -167,7 +167,7 @@ Smart merge: downloads the existing release first, so rebuilding one language pr
 
 ### Deployment (`deploy.yml`)
 
-Runs on every push to `main`:
+Triggered manually via `workflow_dispatch`:
 
 1. Downloads tile archives from `data-latest` release
 2. Decompresses tile files
