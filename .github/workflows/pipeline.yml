@@ -21,11 +21,11 @@ jobs:
     outputs:
       langs: ${{ steps.parse.outputs.langs }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           sparse-checkout: src/lang.ts
           sparse-checkout-cone-mode: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - id: parse
@@ -45,9 +45,9 @@ jobs:
       max-parallel: 3
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -55,7 +55,7 @@ jobs:
       - run: npm ci
 
       - name: Restore dump cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: data/dumps
           key: dumps-v1-${{ matrix.lang }}
@@ -72,7 +72,7 @@ jobs:
           tar czf data/tiles-${{ matrix.lang }}.tar.gz -C data/tiles ${{ matrix.lang }}
 
       - name: Upload data artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: pipeline-data-${{ matrix.lang }}-${{ github.run_id }}
           path: |
@@ -85,10 +85,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: artifacts
           pattern: pipeline-data-*
