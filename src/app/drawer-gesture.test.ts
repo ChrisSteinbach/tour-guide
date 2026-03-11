@@ -161,14 +161,46 @@ describe("drawer gesture", () => {
     expect(isOpen()).toBe(false);
   });
 
-  it("adds dragging class during drag and removes on release", () => {
+  it("click toggles drawer open and closed", () => {
+    const { handle, isOpen } = createDrawer();
+
+    // Click (pointerdown + pointerup + click with no movement) → opens
+    handle.dispatchEvent(
+      pointerEvent("pointerdown", { clientX: 380, timeStamp: 0 }),
+    );
+    handle.dispatchEvent(
+      pointerEvent("pointerup", { clientX: 380, timeStamp: 100 }),
+    );
+    handle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(isOpen()).toBe(true);
+
+    // Click again → closes
+    handle.dispatchEvent(
+      pointerEvent("pointerdown", { clientX: 380, timeStamp: 200 }),
+    );
+    handle.dispatchEvent(
+      pointerEvent("pointerup", { clientX: 380, timeStamp: 300 }),
+    );
+    handle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(isOpen()).toBe(false);
+  });
+
+  it("adds dragging class only after movement past threshold", () => {
     const { handle, panel } = createDrawer();
 
     handle.dispatchEvent(
       pointerEvent("pointerdown", { clientX: 380, timeStamp: 0 }),
     );
-    expect(panel.classList.contains("dragging")).toBe(true);
+    // No dragging class yet — haven't moved
+    expect(panel.classList.contains("dragging")).toBe(false);
 
+    // Small move within click threshold — still no dragging
+    handle.dispatchEvent(
+      pointerEvent("pointermove", { clientX: 378, timeStamp: 25 }),
+    );
+    expect(panel.classList.contains("dragging")).toBe(false);
+
+    // Move past threshold
     handle.dispatchEvent(
       pointerEvent("pointermove", { clientX: 300, timeStamp: 50 }),
     );
@@ -227,11 +259,18 @@ describe("drawer gesture", () => {
     );
   });
 
-  it("sets pointer capture on pointerdown", () => {
+  it("sets pointer capture when drag threshold is exceeded", () => {
     const { handle } = createDrawer();
 
     handle.dispatchEvent(
       pointerEvent("pointerdown", { clientX: 380, timeStamp: 0 }),
+    );
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(handle.setPointerCapture).not.toHaveBeenCalled();
+
+    // Move past threshold → capture
+    handle.dispatchEvent(
+      pointerEvent("pointermove", { clientX: 300, timeStamp: 50 }),
     );
     // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(handle.setPointerCapture).toHaveBeenCalledWith(1);

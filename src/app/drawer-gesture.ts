@@ -1,5 +1,6 @@
 // Drag gesture handling for the map drawer.
 // Uses PointerEvents for unified touch/mouse support.
+// Click-to-toggle uses the native click event to avoid mobile ghost clicks.
 
 export interface DrawerGestureOpts {
   panel: HTMLElement;
@@ -15,6 +16,8 @@ export interface DrawerGestureOpts {
 const VELOCITY_THRESHOLD = 0.5;
 /** Position threshold as fraction of drawer width for slow drags. */
 const POSITION_THRESHOLD = 0.5;
+/** Max pixels moved before a pointerdown→pointerup counts as a drag, not a click. */
+const CLICK_THRESHOLD = 5;
 
 export function setupDrawerGesture(opts: DrawerGestureOpts): () => void {
   const { panel, handle, getDrawerWidth, open, close, isOpen } = opts;
@@ -23,30 +26,43 @@ export function setupDrawerGesture(opts: DrawerGestureOpts): () => void {
   let startTime = 0;
   let startOpen = false;
   let dragging = false;
+  let hasMoved = false;
+  let pointerId = -1;
 
   function onPointerDown(e: PointerEvent): void {
     dragging = true;
+    hasMoved = false;
     startX = e.clientX;
     startTime = e.timeStamp;
     startOpen = isOpen();
+    pointerId = e.pointerId;
 
-    handle.setPointerCapture(e.pointerId);
-    panel.classList.add("dragging");
-
-    // Remove open class during drag — we control transform directly
-    panel.classList.remove("open");
-    // Set initial transform to match current visual state
-    const drawerWidth = getDrawerWidth();
-    panel.style.transform = startOpen
-      ? "translateX(0)"
-      : `translateX(${drawerWidth}px)`;
+    // Don't capture yet — delay until drag threshold is exceeded.
+    // Capturing immediately interferes with the click event chain on
+    // mobile, causing ghost clicks on elements underneath the handle.
   }
 
   function onPointerMove(e: PointerEvent): void {
     if (!dragging) return;
 
-    const drawerWidth = getDrawerWidth();
     const deltaX = e.clientX - startX;
+
+    // Don't enter drag mode until pointer has moved past click threshold
+    if (!hasMoved) {
+      if (Math.abs(deltaX) < CLICK_THRESHOLD) return;
+      hasMoved = true;
+      // Now capture — we're committed to a drag gesture
+      handle.setPointerCapture(pointerId);
+      // Enter drag mode: take over transform
+      panel.classList.add("dragging");
+      panel.classList.remove("open");
+      const drawerWidth = getDrawerWidth();
+      panel.style.transform = startOpen
+        ? "translateX(0)"
+        : `translateX(${drawerWidth}px)`;
+    }
+
+    const drawerWidth = getDrawerWidth();
 
     // Calculate current translateX based on start state + drag delta
     const baseOffset = startOpen ? 0 : drawerWidth;
@@ -60,6 +76,9 @@ export function setupDrawerGesture(opts: DrawerGestureOpts): () => void {
   function onPointerUp(e: PointerEvent): void {
     if (!dragging) return;
     dragging = false;
+
+    // Click (no significant drag) — let the click event handler toggle.
+    if (!hasMoved) return;
 
     const drawerWidth = getDrawerWidth();
     const deltaX = e.clientX - startX;
@@ -107,15 +126,28 @@ export function setupDrawerGesture(opts: DrawerGestureOpts): () => void {
     }
   }
 
+  function onClick(e: MouseEvent): void {
+    // Only handle clicks that weren't drags
+    if (hasMoved) return;
+    e.stopPropagation();
+    if (isOpen()) {
+      close();
+    } else {
+      open();
+    }
+  }
+
   handle.addEventListener("pointerdown", onPointerDown);
   handle.addEventListener("pointermove", onPointerMove);
   handle.addEventListener("pointerup", onPointerUp);
   handle.addEventListener("pointercancel", onPointerCancel);
+  handle.addEventListener("click", onClick);
 
   return function destroy(): void {
     handle.removeEventListener("pointerdown", onPointerDown);
     handle.removeEventListener("pointermove", onPointerMove);
     handle.removeEventListener("pointerup", onPointerUp);
     handle.removeEventListener("pointercancel", onPointerCancel);
+    handle.removeEventListener("click", onClick);
   };
 }

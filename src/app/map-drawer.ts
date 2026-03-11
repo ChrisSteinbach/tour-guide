@@ -20,13 +20,27 @@ export function createMapDrawer(
   const panel = document.createElement("div");
   panel.className = "map-drawer";
 
-  const handle = document.createElement("div");
+  const handle = document.createElement("button");
   handle.className = "map-drawer-handle";
   handle.setAttribute("aria-label", "Toggle map drawer");
+  handle.type = "button";
 
-  const grip = document.createElement("div");
-  grip.className = "map-drawer-grip";
-  handle.appendChild(grip);
+  // Chevron SVG — points left (open=visible) or right (closed)
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("class", "map-drawer-chevron");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", "18");
+  svg.setAttribute("height", "18");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2.5");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  const polyline = document.createElementNS(svgNS, "polyline");
+  polyline.setAttribute("points", "15 18 9 12 15 6");
+  svg.appendChild(polyline);
+  handle.appendChild(svg);
 
   const content = document.createElement("div");
   content.className = "map-drawer-content";
