@@ -72,7 +72,7 @@ jobs:
           tar czf data/tiles-${{ matrix.lang }}.tar.gz -C data/tiles ${{ matrix.lang }}
 
       - name: Upload data artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: pipeline-data-${{ matrix.lang }}-${{ github.run_id }}
           path: |
