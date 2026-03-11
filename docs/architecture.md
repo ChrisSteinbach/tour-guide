@@ -290,7 +290,9 @@ src/app/
   infinite-scroll-lifecycle.ts Orchestrates virtualList, enrichScheduler, map sync, scroll as one lifecycle
 
   # Map lifecycles
-  browse-map-lifecycle.ts     Lazy-loads, creates, updates, and tears down the desktop split-view browse map
+  browse-map-lifecycle.ts     Lazy-loads, creates, updates, and tears down the browse map (rendered inside the map drawer)
+  map-drawer.ts               Slide-in drawer panel that hosts the browse map; toggle via handle or swipe
+  drawer-gesture.ts           Swipe/drag gesture handling for the map drawer
   map-picker-lifecycle.ts     Lazy-loads and manages the full-screen map picker overlay
 
 src/lang.ts            Supported languages (en, sv, ja)
