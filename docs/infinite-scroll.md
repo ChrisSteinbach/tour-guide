@@ -59,7 +59,7 @@ The virtual list (`virtual-scroll.ts`) renders only the items visible in the vie
 </div>
 ```
 
-**Scroll connection** (`connectScroll`): Listens to `scroll` events on either `window` (mobile) or a container element (desktop split-view). Throttled via `requestAnimationFrame` — at most one `refresh()` per frame.
+**Scroll connection** (`connectScroll`): Listens to `scroll` events on `window`. Throttled via `requestAnimationFrame` — at most one `refresh()` per frame.
 
 **Constants:**
 
@@ -121,7 +121,7 @@ Two debounced side effects run on `onRangeChange`:
 
 **Enrichment** (`enrich-scheduler.ts`): After the visible range settles for 300ms, fetches Wikipedia summaries for visible articles. Tracks already-enriched titles to avoid duplicate requests. Resets on position change. The actual fetching is handled by `SummaryLoader` (`summary-loader.ts`), which manages a concurrency-limited queue (default 3 concurrent requests) with per-item callbacks, cancellation support, and priority boosting for viewport-visible items via `request()`.
 
-**Map sync** (`debounced-map-sync.ts`): After 150ms of scroll settle, syncs browse-map markers with the currently visible articles. Desktop only.
+**Map sync** (`debounced-map-sync.ts`): After 150ms of scroll settle, syncs browse-map markers with the currently visible articles (rendered in the map drawer).
 
 Both are created during `infiniteScroll.init()` and destroyed with the lifecycle.
 
