@@ -602,67 +602,33 @@ body {
   }
 }
 
-/* Browse map is hidden by default (mobile) */
+/* Browse map fills the drawer content area */
 .browse-map {
-  display: none;
-}
-
-/* Split view: article list + map side by side */
-@media (min-width: 1024px) {
-  #app.split-view {
-    display: grid;
-    grid-template-areas:
-      "header header"
-      "list   map"
-      "more   map";
-    grid-template-columns: 1fr 400px;
-    grid-template-rows: auto 1fr auto;
-    height: 100dvh;
-    overflow: hidden;
-  }
-
-  #app.split-view > .app-header {
-    grid-area: header;
-    position: static;
-    padding-left: 16px;
-    padding-right: 16px;
-  }
-
-  #app.split-view > .nearby-list {
-    grid-area: list;
-    max-width: none;
-    margin: 0;
-    overflow-y: auto;
-  }
-
-  #app.split-view > .virtual-scroll-container {
-    grid-area: list;
-    max-width: none;
-    margin: 0;
-    overflow-y: auto;
-  }
-
-  #app.split-view > .virtual-scroll-container .nearby-list {
-    max-width: none;
-    margin: 0;
-  }
-
-  #app.split-view > .show-more {
-    grid-area: more;
-    max-width: none;
-    margin: 8px auto 16px;
-  }
-
-  #app.split-view > .browse-map {
-    display: block;
-    grid-area: map;
-    min-height: 0;
-  }
+  width: 100%;
+  height: 100%;
 }
 
 @media (min-width: 1024px) {
   .nearby-item:hover {
     background: #f0f0f0;
+  }
+}
+
+/* ── Drawer-aware layout ───────────────────────────────────── */
+
+/* Reserve space for the visible drawer handle so it doesn't overlap articles */
+body:has(.map-drawer:not([hidden])) #app {
+  margin-right: 28px;
+}
+
+/* Desktop: article list shares viewport with open drawer */
+@media (min-width: 1024px) {
+  body:has(.map-drawer:not([hidden])) #app {
+    transition: margin-right 0.3s ease;
+  }
+
+  body:has(.map-drawer.open) #app {
+    margin-right: 50%;
   }
 }
 
@@ -674,11 +640,15 @@ body {
   right: 0;
   bottom: 0;
   width: 100%;
-  transform: translateX(100%);
+  transform: translateX(calc(100% - 28px));
   transition: transform 0.3s ease;
   will-change: transform;
   z-index: 50;
   display: flex;
+}
+
+.map-drawer[hidden] {
+  display: none;
 }
 
 .map-drawer.open {

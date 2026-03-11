@@ -59,6 +59,7 @@ import type { ScrollPauseDetector } from "./scroll-pause-detector";
 import { createInfiniteScrollLifecycle } from "./infinite-scroll-lifecycle";
 import { createBrowseMapLifecycle } from "./browse-map-lifecycle";
 import { createMapPickerLifecycle } from "./map-picker-lifecycle";
+import { createMapDrawer } from "./map-drawer";
 
 const app =
   document.getElementById("app") ??
@@ -134,11 +135,12 @@ const executeEffect = createEffectExecutor({
     showMapPicker: () => {
       mapPicker.destroy();
       browseMap.destroy();
+      drawerPanel.setAttribute("hidden", "");
+      drawer.close();
       mapPicker.show();
     },
     scrollToTop: () => {
       window.scrollTo(0, 0);
-      // Also reset container scroll in desktop split-view
       app.querySelector<HTMLElement>(".nearby-list")?.scrollTo(0, 0);
     },
   },
@@ -190,9 +192,19 @@ desktopQuery.addEventListener("change", () => {
   if (appState.phase.phase === "browsing") renderBrowsingListDOM();
 });
 
+const drawer = createMapDrawer(document.body, () => desktopQuery.matches);
+
+// Listen for drawer open to invalidate Leaflet map size
+const drawerPanel = document.body.querySelector(".map-drawer")!;
+drawerPanel.addEventListener("transitionend", () => {
+  if (drawer.isOpen()) browseMap.resize();
+});
+
+// Hide drawer initially — shown when browsing phase is active
+drawerPanel.setAttribute("hidden", "");
+
 const browseMap = createBrowseMapLifecycle({
-  container: app,
-  isDesktop: () => desktopQuery.matches,
+  container: drawer.element,
   onSelectArticle: (article) => dispatch({ type: "selectArticle", article }),
   importBrowseMap: () => import("./browse-map"),
 });
@@ -214,7 +226,6 @@ const infiniteScroll = createInfiniteScrollLifecycle({
   overscan: 5,
   enrichSettleMs: 300,
   mapSyncSettleMs: 150,
-  isDesktop: () => desktopQuery.matches,
   getTitle: (i) => {
     return getArticleByIndex(i)?.title ?? null;
   },
@@ -222,7 +233,6 @@ const infiniteScroll = createInfiniteScrollLifecycle({
   cancelEnrich: () => summaryLoader.cancel(),
   getVisibleArticles: (range) => {
     if (appState.phase.phase !== "browsing" || !appState.position) return null;
-    if (!desktopQuery.matches) return null;
     const result: NearbyArticle[] = [];
     for (let i = range.start; i < range.end; i++) {
       const a = getArticleByIndex(i);
@@ -329,6 +339,14 @@ function renderBrowsingHeaderDOM(): void {
 function renderBrowsingListDOM(): void {
   if (appState.phase.phase !== "browsing" || !appState.position) return;
 
+  // Show the map drawer during browsing
+  drawerPanel.removeAttribute("hidden");
+  if (desktopQuery.matches) {
+    drawer.open();
+  } else {
+    drawer.close();
+  }
+
   if (appState.phase.scrollMode === "infinite") {
     renderInfiniteScrollDOM();
   } else {
@@ -406,7 +424,7 @@ function renderInfiniteScrollDOM(): void {
     infiniteScroll.update(totalCount);
 
     // Sync browse map markers with current viewport after article list changes
-    if (desktopQuery.matches && appState.position) {
+    if (appState.position) {
       const vl = infiniteScroll.virtualList();
       if (vl) {
         const range = vl.visibleRange();
@@ -427,6 +445,8 @@ function renderPhase(): void {
   teardownScrollPauseListener();
   mapPicker.destroy();
   browseMap.destroy();
+  drawerPanel.setAttribute("hidden", "");
+  drawer.close();
   switch (appState.phase.phase) {
     case "welcome":
       renderWelcome(

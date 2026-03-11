@@ -20,7 +20,6 @@ function makeDeps(
     overscan: 5,
     enrichSettleMs: 300,
     mapSyncSettleMs: 150,
-    isDesktop: () => false,
     getTitle: (i) => `Article ${i}`,
     enrich: () => {},
     cancelEnrich: () => {},
@@ -92,11 +91,10 @@ describe("InfiniteScrollLifecycle", () => {
       expect(calls).toContain("destroyBrowseMap");
     });
 
-    it("initializes browse map on desktop", () => {
+    it("initializes browse map on init", () => {
       const calls: string[] = [];
       const lifecycle = createInfiniteScrollLifecycle(
         makeDeps({
-          isDesktop: () => true,
           initBrowseMap: () => calls.push("initBrowseMap"),
         }),
       );
@@ -104,20 +102,6 @@ describe("InfiniteScrollLifecycle", () => {
       lifecycle.init(5);
 
       expect(calls).toContain("initBrowseMap");
-    });
-
-    it("does not initialize browse map on mobile", () => {
-      const calls: string[] = [];
-      const lifecycle = createInfiniteScrollLifecycle(
-        makeDeps({
-          isDesktop: () => false,
-          initBrowseMap: () => calls.push("initBrowseMap"),
-        }),
-      );
-
-      lifecycle.init(5);
-
-      expect(calls).not.toContain("initBrowseMap");
     });
 
     it("creates virtual list with correct total count", () => {

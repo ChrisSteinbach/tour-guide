@@ -4,6 +4,7 @@ import type { NearbyArticle, UserPosition } from "./types";
 
 export interface BrowseMapHandle {
   update(position: UserPosition, articles: NearbyArticle[]): void;
+  resize(): void;
   destroy(): void;
 }
 
@@ -97,6 +98,9 @@ export function createBrowseMap(
         currentTitles = newTitles;
         fitToMarkers(newPosition, newArticles);
       }
+    },
+    resize() {
+      map.invalidateSize();
     },
     destroy() {
       map.remove();
