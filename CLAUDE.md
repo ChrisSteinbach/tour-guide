@@ -8,9 +8,10 @@
 npm test              # Lint + tests (runs npm run lint, then vitest run)
 npm run test:watch    # Tests in watch mode
 npm run test:coverage # Tests with coverage report
-npm run lint          # Type-check + ESLint + Prettier check (tsc --noEmit && eslint src/ && prettier --check .)
-npm run lint:fix      # Auto-fix ESLint + Prettier issues
+npm run lint          # Type-check + ESLint + Stylelint + Prettier check
+npm run lint:fix      # Auto-fix ESLint + Stylelint + Prettier issues
 npm run lint:eslint   # ESLint only (no type-check)
+npm run lint:stylelint # Stylelint only (CSS)
 npm run format        # Prettier check only
 npm run format:fix    # Prettier auto-fix only
 npm run dev           # Start Vite dev server (binds 0.0.0.0 for phone testing)

@@ -13,7 +13,7 @@ html {
     "Segoe UI",
     Roboto,
     sans-serif;
-  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   color: #1a1a1a;
   background: #f5f5f5;
 }
@@ -60,8 +60,8 @@ body {
 }
 
 .lang-trigger {
-  background: rgba(255, 255, 255, 0.15);
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgb(255 255 255 / 15%);
+  border: 1px solid rgb(255 255 255 / 40%);
   border-radius: 6px;
   padding: 4px 8px;
   font-size: 0.8rem;
@@ -71,7 +71,7 @@ body {
 }
 
 .lang-trigger:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgb(255 255 255 / 25%);
 }
 
 .lang-listbox {
@@ -82,10 +82,11 @@ body {
   background: #fff;
   border: 1px solid #ddd;
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 15%);
   list-style: none;
   padding: 4px 0;
   min-width: 160px;
+
   /* ≈ 8 visible items × ~33px each; scroll for the rest */
   max-height: 280px;
   overflow-y: auto;
@@ -124,17 +125,17 @@ body {
 }
 
 .header-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgb(255 255 255 / 15%);
 }
 
 .header-icon-btn:active {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgb(255 255 255 / 25%);
 }
 
 .mode-toggle {
   display: flex;
   gap: 0;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgb(255 255 255 / 10%);
   border-radius: 8px;
   padding: 2px;
 }
@@ -145,7 +146,7 @@ body {
 }
 
 .mode-toggle .mode-active {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgb(255 255 255 / 25%);
   opacity: 1;
 }
 
@@ -156,7 +157,7 @@ body {
 
 .mode-toggle .mode-inactive:hover {
   opacity: 0.7;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgb(255 255 255 / 10%);
 }
 
 .gps-signal-lost {
@@ -168,6 +169,7 @@ body {
   100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.2;
   }
@@ -185,6 +187,7 @@ body {
   100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.3;
   }
@@ -314,6 +317,7 @@ body {
     opacity: 0.3;
     transform: scale(0.8);
   }
+
   50% {
     opacity: 1;
     transform: scale(1.2);
@@ -417,7 +421,7 @@ body {
 }
 
 .detail-back:active {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgb(255 255 255 / 15%);
 }
 
 .detail-header-text {
@@ -473,18 +477,6 @@ body {
   background: #1557b0;
 }
 
-.detail-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 4px;
-}
-
-.detail-actions .detail-wiki-link,
-.detail-actions .detail-directions-link {
-  flex: 1;
-  margin-top: 0;
-}
-
 .detail-directions-link {
   display: inline-block;
   background: #fff;
@@ -501,6 +493,18 @@ body {
 
 .detail-directions-link:active {
   background: #e8f0fe;
+}
+
+.detail-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.detail-actions .detail-wiki-link,
+.detail-actions .detail-directions-link {
+  flex: 1;
+  margin-top: 0;
 }
 
 /* Update banner */
@@ -526,6 +530,7 @@ body {
   from {
     transform: translateY(100%);
   }
+
   to {
     transform: translateY(0);
   }
@@ -557,7 +562,7 @@ body {
 }
 
 .update-banner-btn:active {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgb(255 255 255 / 10%);
 }
 
 /* Map picker */
@@ -611,7 +616,7 @@ body {
 
 /* ── Desktop responsive layout ──────────────────────────────── */
 
-@media (min-width: 768px) {
+@media (width >= 768px) {
   .app-header {
     padding-left: max(16px, calc((100% - 720px) / 2));
     padding-right: max(16px, calc((100% - 720px) / 2));
@@ -648,7 +653,7 @@ body {
   height: 100%;
 }
 
-@media (min-width: 1024px) {
+@media (width >= 1024px) {
   .nearby-item:hover {
     background: #f0f0f0;
   }
@@ -657,7 +662,7 @@ body {
 /* ── Drawer-aware layout ───────────────────────────────────── */
 
 /* Desktop: article list shares viewport with open drawer */
-@media (min-width: 1024px) {
+@media (width >= 1024px) {
   body:has(.map-drawer:not([hidden])) #app {
     transition: margin-right 0.3s ease;
   }
@@ -708,7 +713,7 @@ body {
   cursor: pointer;
   background: #fff;
   border: 1px solid #ddd;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 15%);
   touch-action: none;
   user-select: none;
   padding: 0;
@@ -743,7 +748,7 @@ body {
   z-index: 0;
 }
 
-@media (min-width: 1024px) {
+@media (width >= 1024px) {
   .map-drawer {
     width: 50%;
   }
