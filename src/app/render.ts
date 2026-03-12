@@ -1,9 +1,9 @@
 import type { NearbyArticle } from "./types";
 import type { ArticleSummary } from "./wiki-api";
 import { formatDistance } from "./format";
-import { SUPPORTED_LANGS, LANG_NAMES } from "../lang";
 import type { Lang } from "../lang";
 import { createAppHeader } from "./header";
+import { createLangDropdown } from "./lang-dropdown";
 
 // ── SVG icon helpers ─────────────────────────────────────────
 
@@ -55,8 +55,7 @@ function captureFocus(container: HTMLElement): FocusInfo | null {
   const active = document.activeElement;
   if (!active || !container.contains(active)) return null;
 
-  if (active.classList.contains("header-lang-select"))
-    return { type: "langSelect" };
+  if (active.classList.contains("lang-trigger")) return { type: "langSelect" };
   if (active.classList.contains("pause-toggle")) return { type: "pauseToggle" };
   if (active.classList.contains("pick-location-btn"))
     return { type: "pickLocation" };
@@ -75,7 +74,7 @@ function restoreFocus(container: HTMLElement, info: FocusInfo | null): void {
   let target: HTMLElement | null = null;
   switch (info.type) {
     case "langSelect":
-      target = container.querySelector(".header-lang-select");
+      target = container.querySelector(".lang-trigger");
       break;
     case "pauseToggle":
       target = container.querySelector(".pause-toggle");
@@ -213,21 +212,8 @@ export function renderNearbyHeader(
     headerControls.appendChild(modeToggle);
   }
 
-  const langSelect = document.createElement("select");
-  langSelect.className = "header-lang-select";
-  langSelect.setAttribute("aria-label", "Wikipedia language");
-  for (const code of SUPPORTED_LANGS) {
-    const opt = document.createElement("option");
-    opt.value = code;
-    opt.textContent = `${code.toUpperCase()} · ${LANG_NAMES[code]}`;
-    if (code === currentLang) opt.selected = true;
-    langSelect.appendChild(opt);
-  }
-  langSelect.addEventListener("change", () => {
-    onLangChange(langSelect.value as Lang);
-  });
-
-  headerControls.appendChild(langSelect);
+  const langDropdown = createLangDropdown(currentLang, onLangChange);
+  headerControls.appendChild(langDropdown);
   row.append(titleGroup, headerControls);
   header.appendChild(row);
   return header;
