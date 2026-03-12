@@ -72,6 +72,9 @@ const app =
 /** Item height for virtual scroll (px). Matches .nearby-item (64px) + gap (4px). */
 const VIRTUAL_ITEM_HEIGHT = 68;
 
+/** Extra articles to prefetch beyond the visible range end. */
+const PREFETCH_BUFFER = 200;
+
 /** Compute how many articles fill the viewport, plus a few extra for scroll trigger. */
 const viewportFillCount = Math.max(
   DEFAULT_VIEWPORT_FILL,
@@ -302,7 +305,7 @@ const infiniteScroll = createInfiniteScrollLifecycle({
       const vl = infiniteScroll.virtualList();
       if (!vl) return;
       const range = vl.visibleRange();
-      void aw.ensureRange(range.start, range.end + 200).then(() => {
+      void aw.ensureRange(range.start, range.end + PREFETCH_BUFFER).then(() => {
         if (lifecycle.currentWindow() && infiniteScroll.isActive()) {
           infiniteScroll.update(lifecycle.currentWindow()!.loadedCount());
         }

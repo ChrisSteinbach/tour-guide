@@ -60,8 +60,11 @@ export function createMapDrawer(container: HTMLElement): MapDrawer {
   }
 
   function toggle(): void {
-    panel.classList.toggle("open");
-    handle.setAttribute("aria-expanded", String(isOpen()));
+    if (isOpen()) {
+      close();
+    } else {
+      open();
+    }
   }
 
   function isOpen(): boolean {
