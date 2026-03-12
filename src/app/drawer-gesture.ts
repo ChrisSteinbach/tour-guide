@@ -28,14 +28,17 @@ export function setupDrawerGesture(opts: DrawerGestureOpts): () => void {
   let pointerDown = false;
   let hasMoved = false;
   let pointerId = -1;
+  let cachedDrawerWidth = 0;
 
   function onPointerDown(e: PointerEvent): void {
+    if (pointerDown) return; // ignore second finger
     pointerDown = true;
     hasMoved = false;
     startX = e.clientX;
     startTime = e.timeStamp;
     startOpen = isOpen();
     pointerId = e.pointerId;
+    cachedDrawerWidth = getDrawerWidth();
 
     // Don't capture yet — delay until drag threshold is exceeded.
     // Capturing immediately interferes with the click event chain on
@@ -43,7 +46,7 @@ export function setupDrawerGesture(opts: DrawerGestureOpts): () => void {
   }
 
   function onPointerMove(e: PointerEvent): void {
-    if (!pointerDown) return;
+    if (!pointerDown || e.pointerId !== pointerId) return;
 
     const deltaX = e.clientX - startX;
 
@@ -56,40 +59,36 @@ export function setupDrawerGesture(opts: DrawerGestureOpts): () => void {
       // Enter drag mode: take over transform
       panel.classList.add("dragging");
       panel.classList.remove("open");
-      const drawerWidth = getDrawerWidth();
       panel.style.transform = startOpen
         ? "translateX(0)"
-        : `translateX(${drawerWidth}px)`;
+        : `translateX(${cachedDrawerWidth}px)`;
     }
 
-    const drawerWidth = getDrawerWidth();
-
     // Calculate current translateX based on start state + drag delta
-    const baseOffset = startOpen ? 0 : drawerWidth;
+    const baseOffset = startOpen ? 0 : cachedDrawerWidth;
     const rawOffset = baseOffset + deltaX;
 
     // Clamp: 0 = fully open, drawerWidth = fully closed
-    const clampedOffset = Math.max(0, Math.min(drawerWidth, rawOffset));
+    const clampedOffset = Math.max(0, Math.min(cachedDrawerWidth, rawOffset));
     panel.style.transform = `translateX(${clampedOffset}px)`;
   }
 
   function onPointerUp(e: PointerEvent): void {
-    if (!pointerDown) return;
+    if (!pointerDown || e.pointerId !== pointerId) return;
     pointerDown = false;
 
     // Click (no significant drag) — let the click event handler toggle.
     if (!hasMoved) return;
 
-    const drawerWidth = getDrawerWidth();
     const deltaX = e.clientX - startX;
     const deltaTime = e.timeStamp - startTime;
     const velocity = deltaTime > 0 ? deltaX / deltaTime : 0;
 
     // Calculate where the drawer ended up
-    const baseOffset = startOpen ? 0 : drawerWidth;
+    const baseOffset = startOpen ? 0 : cachedDrawerWidth;
     const rawOffset = baseOffset + deltaX;
-    const clampedOffset = Math.max(0, Math.min(drawerWidth, rawOffset));
-    const openFraction = 1 - clampedOffset / drawerWidth;
+    const clampedOffset = Math.max(0, Math.min(cachedDrawerWidth, rawOffset));
+    const openFraction = 1 - clampedOffset / cachedDrawerWidth;
 
     // Remove inline transform and dragging class — let CSS transition take over
     panel.style.transform = "";
@@ -112,7 +111,7 @@ export function setupDrawerGesture(opts: DrawerGestureOpts): () => void {
     }
   }
 
-  function onPointerCancel(_e: PointerEvent): void {
+  function onPointerCancel(_: PointerEvent): void {
     if (!pointerDown) return;
     pointerDown = false;
 

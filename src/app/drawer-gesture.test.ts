@@ -287,6 +287,68 @@ describe("drawer gesture", () => {
     expect(panel.classList.contains("dragging")).toBe(false);
   });
 
+  it("ignores second pointer while first gesture is active", () => {
+    const { handle, panel, isOpen } = createDrawer();
+
+    // First finger starts drag
+    const down1 = new PointerEvent("pointerdown", {
+      clientX: 380,
+      pointerId: 1,
+      bubbles: true,
+    });
+    Object.defineProperty(down1, "timeStamp", { value: 0 });
+    handle.dispatchEvent(down1);
+
+    handle.dispatchEvent(
+      new PointerEvent("pointermove", {
+        clientX: 350,
+        pointerId: 1,
+        bubbles: true,
+      }),
+    );
+    expect(panel.classList.contains("dragging")).toBe(true);
+
+    // Second finger tries to start — should be ignored
+    handle.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        clientX: 200,
+        pointerId: 2,
+        bubbles: true,
+      }),
+    );
+
+    // Move from second pointer — should be ignored
+    handle.dispatchEvent(
+      new PointerEvent("pointermove", {
+        clientX: 500,
+        pointerId: 2,
+        bubbles: true,
+      }),
+    );
+
+    // Up from second pointer — should be ignored, gesture still active
+    handle.dispatchEvent(
+      new PointerEvent("pointerup", {
+        clientX: 500,
+        pointerId: 2,
+        bubbles: true,
+      }),
+    );
+    expect(panel.classList.contains("dragging")).toBe(true);
+
+    // First pointer finishes with a fast swipe left to open
+    const up = new PointerEvent("pointerup", {
+      clientX: 350,
+      pointerId: 1,
+      bubbles: true,
+    });
+    Object.defineProperty(up, "timeStamp", { value: 20 });
+    handle.dispatchEvent(up);
+
+    expect(panel.classList.contains("dragging")).toBe(false);
+    expect(isOpen()).toBe(true);
+  });
+
   it("pointercancel restores original state", () => {
     const { handle, panel, isOpen } = createDrawer();
 
