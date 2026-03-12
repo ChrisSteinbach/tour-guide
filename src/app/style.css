@@ -56,19 +56,59 @@ body {
 }
 
 .header-lang-select {
+  position: relative;
+}
+
+.lang-trigger {
   background: rgba(255, 255, 255, 0.15);
   border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 6px;
-  padding: 4px 6px;
+  padding: 4px 8px;
   font-size: 0.8rem;
   color: #fff;
   cursor: pointer;
-  width: 4.2em;
+  font-weight: 500;
 }
 
-.header-lang-select option {
-  color: #1a1a1a;
+.lang-trigger:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.lang-listbox {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
   background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  list-style: none;
+  padding: 4px 0;
+  min-width: 160px;
+  /* ≈ 8 visible items × ~33px each; scroll for the rest */
+  max-height: 280px;
+  overflow-y: auto;
+  z-index: 20;
+}
+
+.lang-listbox li {
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  color: #1a1a1a;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.lang-listbox li:hover,
+.lang-listbox li:focus {
+  background: #f0f0f0;
+  outline: none;
+}
+
+.lang-listbox .lang-option-active {
+  color: #1a73e8;
+  font-weight: 500;
 }
 
 .header-icon-btn {

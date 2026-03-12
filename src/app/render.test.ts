@@ -139,10 +139,10 @@ describe("renderNearbyHeader", () => {
       onLangChange: () => {},
       paused: false,
     });
-    const select = header.querySelector(
-      ".header-lang-select",
-    ) as HTMLSelectElement;
-    expect(select.value).toBe("sv");
+    const trigger = header.querySelector(".lang-trigger") as HTMLButtonElement;
+    expect(trigger.textContent).toBe("SV");
+    const active = header.querySelector(".lang-option-active") as HTMLElement;
+    expect(active.dataset.lang).toBe("sv");
   });
 
   it("calls onLangChange when language is changed", () => {
@@ -153,11 +153,8 @@ describe("renderNearbyHeader", () => {
       onLangChange,
       paused: false,
     });
-    const select = header.querySelector(
-      ".header-lang-select",
-    ) as HTMLSelectElement;
-    select.value = "ja";
-    select.dispatchEvent(new Event("change"));
+    const jaOption = header.querySelector('[data-lang="ja"]') as HTMLElement;
+    jaOption.click();
     expect(onLangChange).toHaveBeenCalledWith("ja");
   });
 
@@ -407,7 +404,7 @@ describe("renderNearbyList", () => {
   it.each([
     {
       name: "language selector",
-      selector: ".header-lang-select",
+      selector: ".lang-trigger",
       articleCount: 2,
       extraOpts: {},
     },
