@@ -144,7 +144,7 @@ export function renderNearbyHeader(
 
   const titleGroup = document.createElement("div");
   const subtitle = document.createElement("p");
-  const subtitleText = `${articleCount} nearby attraction${articleCount !== 1 ? "s" : ""}`;
+  const subtitleText = `${articleCount} attraction${articleCount !== 1 ? "s" : ""}`;
   subtitle.textContent = paused ? `${subtitleText} · paused` : subtitleText;
   titleGroup.append(h1, subtitle);
 

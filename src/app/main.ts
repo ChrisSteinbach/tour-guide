@@ -481,7 +481,7 @@ function renderPhase(): void {
       renderLoading(app);
       return;
     case "loadingTiles":
-      renderLoading(app, "Loading nearby articles\u2026");
+      renderLoading(app, "Loading articles\u2026");
       return;
     case "dataUnavailable":
       renderDataUnavailable(app, appState.currentLang, (lang) =>

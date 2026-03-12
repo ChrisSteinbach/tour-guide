@@ -374,13 +374,34 @@ body {
   cursor: pointer;
 }
 
-.welcome-pick-link {
-  background: none;
-  border: none;
+.welcome-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 280px;
+  margin-top: 8px;
+}
+
+.welcome-choice {
+  background: #fff;
+  border: 1.5px solid #1a73e8;
+  border-radius: 8px;
+  padding: 12px 20px;
+  font-size: 0.9rem;
+  font-weight: 500;
   color: #1a73e8;
-  font-size: 0.85rem;
   cursor: pointer;
-  text-decoration: underline;
+  text-align: center;
+}
+
+.welcome-choice:active {
+  background: #e8f0fe;
+}
+
+.welcome-choice-icon {
+  font-size: 1.5rem;
+  vertical-align: middle;
 }
 
 .show-more {

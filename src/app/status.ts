@@ -76,7 +76,7 @@ export function renderWelcome(
 ): void {
   const tagline = document.createElement("p");
   tagline.className = "status-message";
-  tagline.textContent = "Discover Wikipedia articles about places near you.";
+  tagline.textContent = "Discover Wikipedia articles about nearby places.";
 
   const langSelect = document.createElement("select");
   langSelect.className = "lang-select";
@@ -92,17 +92,28 @@ export function renderWelcome(
     onLangChange(langSelect.value as Lang);
   });
 
-  const startBtn = document.createElement("button");
-  startBtn.className = "status-action";
-  startBtn.textContent = "Find nearby articles";
-  startBtn.addEventListener("click", onStart);
+  const choices = document.createElement("div");
+  choices.className = "welcome-choices";
 
-  const demoLink = document.createElement("button");
-  demoLink.className = "welcome-pick-link";
-  demoLink.textContent = "Or pick a location on the map";
-  demoLink.addEventListener("click", onPickLocation);
+  const liveIcon = document.createElement("span");
+  liveIcon.className = "welcome-choice-icon";
+  liveIcon.textContent = "\uD83D\uDEF0\uFE0F"; // 🛰️
+  const liveBtn = document.createElement("button");
+  liveBtn.className = "welcome-choice";
+  liveBtn.append(liveIcon, " Use my location");
+  liveBtn.addEventListener("click", onStart);
 
-  renderStatusScreen(container, [tagline, langSelect, startBtn, demoLink]);
+  const pickIcon = document.createElement("span");
+  pickIcon.className = "welcome-choice-icon";
+  pickIcon.textContent = "\uD83D\uDDFA\uFE0F"; // 🗺️
+  const pickBtn = document.createElement("button");
+  pickBtn.className = "welcome-choice";
+  pickBtn.append(pickIcon, " Pick a spot on the map");
+  pickBtn.addEventListener("click", onPickLocation);
+
+  choices.append(liveBtn, pickBtn);
+
+  renderStatusScreen(container, [tagline, langSelect, choices]);
 }
 
 /** Render the data-unavailable state with language picker. */
