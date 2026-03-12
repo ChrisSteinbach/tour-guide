@@ -26,7 +26,7 @@ describe("renderNearbyHeader", () => {
       paused: false,
     });
     const subtitle = header.querySelector("p");
-    expect(subtitle?.textContent).toBe("5 nearby attractions");
+    expect(subtitle?.textContent).toBe("5 attractions");
   });
 
   it("uses singular when count is 1", () => {
@@ -37,7 +37,7 @@ describe("renderNearbyHeader", () => {
       paused: false,
     });
     const subtitle = header.querySelector("p");
-    expect(subtitle?.textContent).toBe("1 nearby attraction");
+    expect(subtitle?.textContent).toBe("1 attraction");
   });
 
   it("shows paused in subtitle when paused", () => {

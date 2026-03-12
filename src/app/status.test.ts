@@ -13,7 +13,7 @@ import type { LocationError } from "./location";
 // ── renderWelcome ───────────────────────────────────────────
 
 describe("renderWelcome", () => {
-  it("calls onStart when start button is clicked", () => {
+  it("calls onStart when use-my-location button is clicked", () => {
     const onStart = vi.fn();
     const container = document.createElement("div");
     renderWelcome(
@@ -23,12 +23,12 @@ describe("renderWelcome", () => {
       "en",
       () => {},
     );
-    const btn = container.querySelector(".status-action") as HTMLButtonElement;
-    btn.click();
+    const btns = container.querySelectorAll(".welcome-choice");
+    (btns[0] as HTMLButtonElement).click();
     expect(onStart).toHaveBeenCalledOnce();
   });
 
-  it("calls onPickLocation when pick-location button is clicked", () => {
+  it("calls onPickLocation when pick-on-map button is clicked", () => {
     const onPickLocation = vi.fn();
     const container = document.createElement("div");
     renderWelcome(
@@ -38,11 +38,24 @@ describe("renderWelcome", () => {
       "en",
       () => {},
     );
-    const btn = container.querySelector(
-      ".welcome-pick-link",
-    ) as HTMLButtonElement;
-    btn.click();
+    const btns = container.querySelectorAll(".welcome-choice");
+    (btns[1] as HTMLButtonElement).click();
     expect(onPickLocation).toHaveBeenCalledOnce();
+  });
+
+  it("presents both entry modes with equal visual treatment", () => {
+    const container = document.createElement("div");
+    renderWelcome(
+      container,
+      () => {},
+      () => {},
+      "en",
+      () => {},
+    );
+    const btns = container.querySelectorAll(".welcome-choice");
+    expect(btns).toHaveLength(2);
+    // Both buttons share the same class — no primary/secondary distinction
+    expect(btns[0].className).toBe(btns[1].className);
   });
 
   it("language selector reflects currentLang", () => {
