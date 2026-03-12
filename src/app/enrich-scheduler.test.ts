@@ -6,7 +6,7 @@ describe("EnrichScheduler", () => {
   });
 
   afterEach(() => {
-    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it("does not enrich immediately on range change", () => {

@@ -230,7 +230,7 @@ describe("InfiniteScrollLifecycle", () => {
     });
 
     afterEach(() => {
-      vi.useRealTimers();
+      vi.restoreAllMocks();
     });
 
     it("enriches visible articles after settle period", () => {
