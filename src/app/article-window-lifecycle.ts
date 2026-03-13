@@ -50,6 +50,7 @@ export interface ArticleWindowLifecycle {
   getOrCreateArticleWindow: () => ArticleWindow;
   getArticleByIndex: (i: number) => NearbyArticle | undefined;
   currentWindow: () => ArticleWindow | null;
+  applyOptimisticCount: (count: number) => void;
 }
 
 export function createArticleWindowLifecycle(
@@ -112,6 +113,12 @@ export function createArticleWindowLifecycle(
   }
 
   let lastScrollCount = 0;
+
+  function applyOptimisticCount(count: number): void {
+    lastScrollCount = Math.max(lastScrollCount, count);
+    deps.infiniteScroll.update(lastScrollCount);
+  }
+
   let prefixInvariantChecked = false;
 
   function getArticleByIndex(i: number): NearbyArticle | undefined {
@@ -162,5 +169,6 @@ export function createArticleWindowLifecycle(
     getOrCreateArticleWindow,
     getArticleByIndex,
     currentWindow: () => articleWindow,
+    applyOptimisticCount,
   };
 }

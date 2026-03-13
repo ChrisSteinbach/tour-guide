@@ -338,6 +338,38 @@ describe("onWindowChange", () => {
     expect(deps.infiniteScroll.update).toHaveBeenLastCalledWith(30);
   });
 
+  it("never shrinks below an optimistic count set via applyOptimisticCount", () => {
+    let capturedOnWindowChange: (() => void) | undefined;
+    const totalKnown = vi.fn(() => 0);
+    const loadedCount = vi.fn(() => 100);
+    const aw = stubArticleWindow({ totalKnown, loadedCount });
+    const deps = makeDeps({
+      createArticleWindow: vi.fn((opts) => {
+        capturedOnWindowChange = opts.onWindowChange;
+        return aw;
+      }),
+      infiniteScroll: {
+        isActive: vi.fn(() => true),
+        update: vi.fn(),
+      },
+    });
+
+    const lifecycle = createArticleWindowLifecycle(deps);
+    lifecycle.getOrCreateArticleWindow();
+
+    // Simulate onNearEnd: optimistic count = 300
+    lifecycle.applyOptimisticCount(300);
+    expect(deps.infiniteScroll.update).toHaveBeenLastCalledWith(300);
+
+    // Simulate onWindowChange after fetch: realCount = 250 < 300
+    totalKnown.mockReturnValue(250);
+    loadedCount.mockReturnValue(200);
+    capturedOnWindowChange!();
+
+    // Count must NOT shrink from 300 to 250
+    expect(deps.infiniteScroll.update).toHaveBeenLastCalledWith(300);
+  });
+
   it("does not update infinite scroll when it is not active", () => {
     let capturedOnWindowChange: (() => void) | undefined;
     const aw = stubArticleWindow({
