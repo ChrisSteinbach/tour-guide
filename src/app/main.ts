@@ -236,6 +236,7 @@ const infiniteScroll = createInfiniteScrollLifecycle({
   container: app,
   itemHeight: VIRTUAL_ITEM_HEIGHT,
   overscan: 5,
+  nearEndThreshold: 100,
   enrichSettleMs: 300,
   mapSyncSettleMs: 150,
   getTitle: (i) => {
@@ -305,6 +306,16 @@ const infiniteScroll = createInfiniteScrollLifecycle({
       const vl = infiniteScroll.virtualList();
       if (!vl) return;
       const range = vl.visibleRange();
+
+      // Optimistically expand the list height so the user never hits
+      // the bottom while the async fetch is in progress.
+      const known = aw.totalKnown();
+      const optimistic =
+        known > 0
+          ? Math.min(aw.loadedCount() + PREFETCH_BUFFER, known)
+          : aw.loadedCount() + PREFETCH_BUFFER;
+      infiniteScroll.update(optimistic);
+
       void aw.ensureRange(range.start, range.end + PREFETCH_BUFFER).then(() => {
         if (lifecycle.currentWindow() && infiniteScroll.isActive()) {
           infiniteScroll.update(lifecycle.currentWindow()!.loadedCount());
