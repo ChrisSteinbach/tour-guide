@@ -53,6 +53,7 @@ export function renderDetailReady(
   article: NearbyArticle,
   summary: ArticleSummary,
   onBack: () => void,
+  onExploreFromHere: () => void,
 ): void {
   container.textContent = "";
 
@@ -101,8 +102,13 @@ export function renderDetailReady(
   directions.rel = "noopener";
   directions.textContent = "Directions";
 
+  const explore = document.createElement("button");
+  explore.className = "detail-explore-btn";
+  explore.textContent = "Explore from here";
+  explore.addEventListener("click", onExploreFromHere);
+
   actions.append(link, directions);
-  content.appendChild(actions);
+  content.append(actions, explore);
 
   container.append(header, content);
 }

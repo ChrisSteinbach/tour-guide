@@ -82,9 +82,11 @@ describe("renderDetailLoading", () => {
 // ── renderDetailReady ────────────────────────────────────────
 
 describe("renderDetailReady", () => {
+  const noop = () => {};
+
   it("renders header with title and distance", () => {
     const container = document.createElement("div");
-    renderDetailReady(container, makeArticle(), makeSummary(), () => {});
+    renderDetailReady(container, makeArticle(), makeSummary(), noop, noop);
 
     expect(container.querySelector("h1")?.textContent).toBe("Eiffel Tower");
     const sub = container.querySelector(".detail-header-text p");
@@ -93,7 +95,7 @@ describe("renderDetailReady", () => {
 
   it("renders thumbnail when summary has thumbnailUrl", () => {
     const container = document.createElement("div");
-    renderDetailReady(container, makeArticle(), makeSummary(), () => {});
+    renderDetailReady(container, makeArticle(), makeSummary(), noop, noop);
 
     const img = container.querySelector(
       ".detail-thumbnail",
@@ -110,7 +112,8 @@ describe("renderDetailReady", () => {
       container,
       makeArticle(),
       makeSummary({ thumbnailUrl: null }),
-      () => {},
+      noop,
+      noop,
     );
 
     expect(container.querySelector(".detail-thumbnail")).toBeNull();
@@ -118,7 +121,7 @@ describe("renderDetailReady", () => {
 
   it("renders description when present", () => {
     const container = document.createElement("div");
-    renderDetailReady(container, makeArticle(), makeSummary(), () => {});
+    renderDetailReady(container, makeArticle(), makeSummary(), noop, noop);
 
     const desc = container.querySelector(".detail-description");
     expect(desc?.textContent).toBe("Iron lattice tower in Paris");
@@ -130,7 +133,8 @@ describe("renderDetailReady", () => {
       container,
       makeArticle(),
       makeSummary({ description: "" }),
-      () => {},
+      noop,
+      noop,
     );
 
     expect(container.querySelector(".detail-description")).toBeNull();
@@ -138,7 +142,7 @@ describe("renderDetailReady", () => {
 
   it("renders extract when present", () => {
     const container = document.createElement("div");
-    renderDetailReady(container, makeArticle(), makeSummary(), () => {});
+    renderDetailReady(container, makeArticle(), makeSummary(), noop, noop);
 
     const extract = container.querySelector(".detail-extract");
     expect(extract?.textContent).toBe(
@@ -152,7 +156,8 @@ describe("renderDetailReady", () => {
       container,
       makeArticle(),
       makeSummary({ extract: "" }),
-      () => {},
+      noop,
+      noop,
     );
 
     expect(container.querySelector(".detail-extract")).toBeNull();
@@ -160,7 +165,7 @@ describe("renderDetailReady", () => {
 
   it("renders Wikipedia link with correct URL and target", () => {
     const container = document.createElement("div");
-    renderDetailReady(container, makeArticle(), makeSummary(), () => {});
+    renderDetailReady(container, makeArticle(), makeSummary(), noop, noop);
 
     const link = container.querySelector(
       ".detail-wiki-link",
@@ -173,7 +178,7 @@ describe("renderDetailReady", () => {
   it("renders directions link with correct URL", () => {
     const container = document.createElement("div");
     const article = makeArticle({ lat: 48.8584, lon: 2.2945 });
-    renderDetailReady(container, article, makeSummary(), () => {});
+    renderDetailReady(container, article, makeSummary(), noop, noop);
 
     const link = container.querySelector(
       ".detail-directions-link",
@@ -181,6 +186,29 @@ describe("renderDetailReady", () => {
     expect(link.href).toContain("48.8584");
     expect(link.href).toContain("2.2945");
     expect(link.target).toBe("_blank");
+  });
+
+  it("renders explore-from-here button", () => {
+    const container = document.createElement("div");
+    renderDetailReady(container, makeArticle(), makeSummary(), noop, noop);
+
+    const btn = container.querySelector(
+      ".detail-explore-btn",
+    ) as HTMLButtonElement;
+    expect(btn).not.toBeNull();
+    expect(btn.textContent).toBe("Explore from here");
+  });
+
+  it("fires onExploreFromHere when explore button is clicked", () => {
+    const onExplore = vi.fn();
+    const container = document.createElement("div");
+    renderDetailReady(container, makeArticle(), makeSummary(), noop, onExplore);
+
+    const btn = container.querySelector(
+      ".detail-explore-btn",
+    ) as HTMLButtonElement;
+    btn.click();
+    expect(onExplore).toHaveBeenCalledOnce();
   });
 });
 

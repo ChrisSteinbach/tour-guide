@@ -528,6 +528,25 @@ body {
   margin-top: 0;
 }
 
+.detail-explore-btn {
+  display: block;
+  width: 100%;
+  background: #fff;
+  color: #1a73e8;
+  border: 1.5px solid #1a73e8;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  margin-top: 10px;
+  text-align: center;
+}
+
+.detail-explore-btn:active {
+  background: #e8f0fe;
+}
+
 /* Update banner */
 
 .update-banner {
@@ -688,8 +707,14 @@ body {
     transition: margin-right 0.3s ease;
   }
 
+  body:has(.map-drawer.open:not([hidden])) {
+    overflow: hidden;
+  }
+
   body:has(.map-drawer.open:not([hidden])) #app {
     margin-right: 50%;
+    height: 100dvh;
+    overflow-y: auto;
   }
 }
 

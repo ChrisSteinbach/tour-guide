@@ -131,7 +131,12 @@ const executeEffect = createEffectExecutor({
     updateDistances: (articles) => updateNearbyDistances(app, articles),
     renderDetailLoading: (article) => renderDetailLoading(app, article, goBack),
     renderDetailReady: (article, summary) =>
-      renderDetailReady(app, article, summary, goBack),
+      renderDetailReady(app, article, summary, goBack, () =>
+        dispatch({
+          type: "pickPosition",
+          position: { lat: article.lat, lon: article.lon },
+        }),
+      ),
     renderDetailError: (article, msg, retry, lang) =>
       renderDetailError(app, article, msg, goBack, retry, lang),
     renderAppUpdateBanner,
@@ -144,7 +149,7 @@ const executeEffect = createEffectExecutor({
     },
     scrollToTop: () => {
       window.scrollTo(0, 0);
-      app.querySelector<HTMLElement>(".nearby-list")?.scrollTo(0, 0);
+      app.scrollTo(0, 0);
     },
   },
   data: {
@@ -200,6 +205,8 @@ desktopQuery.addEventListener("change", () => {
     } else {
       drawer.close();
     }
+    // Scroll source changes between window and #app — force reinit
+    infiniteScroll.destroy();
     renderBrowsingListDOM();
   }
 });
@@ -237,6 +244,8 @@ const infiniteScroll = createInfiniteScrollLifecycle({
   itemHeight: VIRTUAL_ITEM_HEIGHT,
   overscan: 5,
   nearEndThreshold: 100,
+  getScrollElement: () =>
+    desktopQuery.matches && drawer.isOpen() ? app : undefined,
   enrichSettleMs: 300,
   mapSyncSettleMs: 150,
   getTitle: (i) => {
@@ -389,14 +398,13 @@ let scrollPauseDetector: ScrollPauseDetector | null = null;
 
 function setupScrollPauseListener(): void {
   teardownScrollPauseListener();
-  const listEl = app.querySelector<HTMLElement>(".nearby-list");
   scrollPauseDetector = createScrollPauseDetector({
     threshold: SCROLL_PAUSE_THRESHOLD,
     onPause: () => {
       scrollPauseDetector = null;
       dispatch({ type: "scrollPause" });
     },
-    container: listEl ?? undefined,
+    container: app,
   });
 }
 
