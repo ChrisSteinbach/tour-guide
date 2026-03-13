@@ -441,8 +441,15 @@ function renderInfiniteScrollDOM(): void {
     infiniteScroll.destroy();
   }
 
-  const totalCount =
-    lifecycle.currentWindow()?.loadedCount() || appState.phase.articles.length;
+  // Use the largest of: loaded articles, viewport articles, or the
+  // infinite-scroll limit. This prevents the virtual list from starting
+  // with a small height that later jumps when the async fetch completes.
+  const loadedCount = lifecycle.currentWindow()?.loadedCount() ?? 0;
+  const totalCount = Math.max(
+    loadedCount,
+    appState.phase.articles.length,
+    appState.phase.infiniteScrollLimit,
+  );
 
   if (!infiniteScroll.isActive()) {
     infiniteScroll.init(totalCount);

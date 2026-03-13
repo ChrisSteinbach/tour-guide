@@ -77,7 +77,11 @@ export function createArticleWindowLifecycle(
       },
       onWindowChange: () => {
         if (articleWindow && deps.infiniteScroll.isActive()) {
-          deps.infiniteScroll.update(articleWindow.loadedCount());
+          // Use totalKnown (all articles from loaded tiles) rather than
+          // loadedCount to provide scroll headroom beyond the fetched range.
+          const known = articleWindow.totalKnown();
+          const loaded = articleWindow.loadedCount();
+          deps.infiniteScroll.update(known > loaded ? known : loaded);
         }
       },
     });
@@ -86,7 +90,11 @@ export function createArticleWindowLifecycle(
   }
 
   function getArticleByIndex(i: number): NearbyArticle | undefined {
-    if (articleWindow) return articleWindow.getArticle(i);
+    if (articleWindow) {
+      const article = articleWindow.getArticle(i);
+      if (article) return article;
+    }
+    // Fall back to viewport articles while ArticleWindow is loading
     const state = deps.getState();
     if (state.phase.phase === "browsing") return state.phase.articles[i];
     return undefined;
