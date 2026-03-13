@@ -37,6 +37,7 @@ import { tilesAtRing } from "./tile-radius";
 import { createArticleWindowFactory } from "./article-window-factory";
 import {
   createArticleWindowLifecycle,
+  computeOptimisticCount,
   type ArticleWindowLifecycle,
 } from "./article-window-lifecycle";
 import { DEFAULT_LANG, SUPPORTED_LANGS } from "../lang";
@@ -74,6 +75,12 @@ const VIRTUAL_ITEM_HEIGHT = 68;
 
 /** Extra articles to prefetch beyond the visible range end. */
 const PREFETCH_BUFFER = 200;
+
+/** Scroll-near-end detection threshold (items from bottom). */
+const NEAR_END_THRESHOLD = 100;
+
+// Safety cap — well above realistic scroll depth, well below browser scroll-height limits
+const MAX_OPTIMISTIC_LIMIT = 5000;
 
 /** Compute how many articles fill the viewport, plus a few extra for scroll trigger. */
 const viewportFillCount = Math.max(
@@ -185,7 +192,7 @@ function resetArticleWindow(): void {
 
 /** Called by the effect executor when requery fires in infinite scroll mode. */
 function ensureArticleRange(_pos: UserPosition, count: number): void {
-  lifecycle.ensureArticleRange(_pos, count);
+  lifecycle.ensureArticleRange(count);
 }
 
 // ── Lifecycle managers ───────────────────────────────────────
@@ -194,7 +201,6 @@ const desktopQuery = window.matchMedia("(min-width: 1024px)");
 let drawerInitialized = false;
 desktopQuery.addEventListener("change", () => {
   if (appState.phase.phase === "browsing") {
-    // Responsive breakpoint changed — update drawer state
     if (desktopQuery.matches) {
       drawer.open();
     } else {
@@ -206,13 +212,11 @@ desktopQuery.addEventListener("change", () => {
 
 const drawer = createMapDrawer(document.body);
 
-// Listen for drawer open to invalidate Leaflet map size
 const drawerPanel = drawer.panel;
 drawerPanel.addEventListener("transitionend", (e: TransitionEvent) => {
   if (e.propertyName === "transform" && drawer.isOpen()) browseMap.resize();
 });
 
-// Hide drawer initially — shown when browsing phase is active
 drawerPanel.setAttribute("hidden", "");
 
 const browseMap = createBrowseMapLifecycle({
@@ -236,6 +240,7 @@ const infiniteScroll = createInfiniteScrollLifecycle({
   container: app,
   itemHeight: VIRTUAL_ITEM_HEIGHT,
   overscan: 5,
+  nearEndThreshold: NEAR_END_THRESHOLD,
   enrichSettleMs: 300,
   mapSyncSettleMs: 150,
   getTitle: (i) => {
@@ -305,11 +310,21 @@ const infiniteScroll = createInfiniteScrollLifecycle({
       const vl = infiniteScroll.virtualList();
       if (!vl) return;
       const range = vl.visibleRange();
-      void aw.ensureRange(range.start, range.end + PREFETCH_BUFFER).then(() => {
-        if (lifecycle.currentWindow() && infiniteScroll.isActive()) {
-          infiniteScroll.update(lifecycle.currentWindow()!.loadedCount());
-        }
-      });
+
+      // Optimistically expand the list height so the user never hits
+      // the bottom while the async fetch is in progress.  Route through
+      // the lifecycle ratchet so onWindowChange can't shrink below this.
+      const optimistic = computeOptimisticCount(
+        aw.totalKnown(),
+        aw.loadedCount(),
+        PREFETCH_BUFFER,
+        MAX_OPTIMISTIC_LIMIT,
+      );
+      lifecycle.applyOptimisticCount(optimistic);
+
+      // onWindowChange fires when the fetch completes, updating the
+      // height to the real value — no .then() callback needed.
+      void aw.ensureRange(range.start, range.end + PREFETCH_BUFFER);
     } else {
       dispatch({ type: "expandInfiniteScroll" });
     }
@@ -351,7 +366,6 @@ function renderBrowsingHeaderDOM(): void {
 function renderBrowsingListDOM(): void {
   if (appState.phase.phase !== "browsing" || !appState.position) return;
 
-  // Show the map drawer during browsing; only set initial state once
   drawerPanel.removeAttribute("hidden");
   if (!drawerInitialized) {
     drawerInitialized = true;
@@ -412,7 +426,6 @@ function renderViewportListDOM(): void {
     gpsSignalLost: appState.gpsSignalLost,
   });
   browseMap.update(appState.position, appState.phase.articles);
-  // Listen for user scroll to auto-pause GPS and transition to infinite scroll
   if (isGps && !appState.phase.paused) {
     setupScrollPauseListener();
   }
@@ -422,7 +435,6 @@ function renderInfiniteScrollDOM(): void {
   if (appState.phase.phase !== "browsing" || !appState.position) return;
   teardownScrollPauseListener();
 
-  // If the DOM was destroyed (e.g., by detail view clearing #app), discard stale lifecycle
   if (
     infiniteScroll.isActive() &&
     !app.querySelector(".virtual-scroll-container")
@@ -430,15 +442,21 @@ function renderInfiniteScrollDOM(): void {
     infiniteScroll.destroy();
   }
 
-  const totalCount =
-    lifecycle.currentWindow()?.loadedCount() || appState.phase.articles.length;
+  // Use the largest of: loaded articles, viewport articles, or the
+  // infinite-scroll limit. This prevents the virtual list from starting
+  // with a small height that later jumps when the async fetch completes.
+  const loadedCount = lifecycle.currentWindow()?.loadedCount() ?? 0;
+  const totalCount = Math.max(
+    loadedCount,
+    appState.phase.articles.length,
+    appState.phase.infiniteScrollLimit,
+  );
 
   if (!infiniteScroll.isActive()) {
     infiniteScroll.init(totalCount);
   } else {
     infiniteScroll.update(totalCount);
 
-    // Sync browse map markers with current viewport after article list changes
     if (appState.position) {
       const vl = infiniteScroll.virtualList();
       if (vl) {
@@ -541,7 +559,6 @@ window.addEventListener("popstate", () => {
 
 // ── Bootstrap ────────────────────────────────────────────────
 
-// Clean up orphaned IDB keys from old schema versions
 void idbOpen().then((db) => {
   if (!db) return;
   idbCleanupOldKeys(db).catch(() => {});

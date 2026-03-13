@@ -18,6 +18,22 @@ export interface CreateWindowOpts {
   onWindowChange?: () => void;
 }
 
+/**
+ * Compute the optimistic article count for infinite scroll height.
+ * Used to expand the list before an async fetch completes so the
+ * user never hits the bottom while waiting.
+ */
+export function computeOptimisticCount(
+  known: number,
+  loaded: number,
+  buffer: number,
+  maxLimit: number,
+): number {
+  if (known > loaded) return known;
+  if (loaded === 0) return 0;
+  return Math.min(loaded + buffer, maxLimit);
+}
+
 export interface ArticleWindowLifecycleDeps {
   getState: () => AppState;
   createArticleWindow: (opts: CreateWindowOpts) => ArticleWindow;
@@ -29,11 +45,12 @@ export interface ArticleWindowLifecycleDeps {
 }
 
 export interface ArticleWindowLifecycle {
-  ensureArticleRange: (pos: UserPosition, count: number) => void;
+  ensureArticleRange: (count: number) => void;
   resetArticleWindow: () => void;
   getOrCreateArticleWindow: () => ArticleWindow;
   getArticleByIndex: (i: number) => NearbyArticle | undefined;
   currentWindow: () => ArticleWindow | null;
+  applyOptimisticCount: (count: number) => void;
 }
 
 export function createArticleWindowLifecycle(
@@ -51,6 +68,7 @@ export function createArticleWindowLifecycle(
       articleWindowAbort.abort();
       articleWindowAbort = null;
     }
+    lastScrollCount = 0;
   }
 
   function getOrCreateArticleWindow(): ArticleWindow {
@@ -77,7 +95,16 @@ export function createArticleWindowLifecycle(
       },
       onWindowChange: () => {
         if (articleWindow && deps.infiniteScroll.isActive()) {
-          deps.infiniteScroll.update(articleWindow.loadedCount());
+          // Use totalKnown (all articles from loaded tiles) rather than
+          // loadedCount to provide scroll headroom beyond the fetched range.
+          // Never shrink — reducing the count while the user is scrolled
+          // deep causes the same scroll jump this fix exists to prevent.
+          const realCount = Math.max(
+            articleWindow.totalKnown(),
+            articleWindow.loadedCount(),
+          );
+          lastScrollCount = Math.max(lastScrollCount, realCount);
+          deps.infiniteScroll.update(lastScrollCount);
         }
       },
     });
@@ -85,14 +112,51 @@ export function createArticleWindowLifecycle(
     return articleWindow;
   }
 
+  let lastScrollCount = 0;
+
+  function applyOptimisticCount(count: number): void {
+    lastScrollCount = Math.max(lastScrollCount, count);
+    deps.infiniteScroll.update(lastScrollCount);
+  }
+
+  let prefixInvariantChecked = false;
+
   function getArticleByIndex(i: number): NearbyArticle | undefined {
-    if (articleWindow) return articleWindow.getArticle(i);
+    if (articleWindow) {
+      const article = articleWindow.getArticle(i);
+      if (article) {
+        // Dev-mode assertion: verify viewport articles are a prefix of
+        // ArticleWindow results. Fires at most once per lifecycle.
+        if (import.meta.env.DEV && !prefixInvariantChecked) {
+          const state = deps.getState();
+          if (
+            state.phase.phase === "browsing" &&
+            state.phase.articles.length > 0
+          ) {
+            prefixInvariantChecked = true;
+            for (let j = 0; j < state.phase.articles.length; j++) {
+              const awArticle = articleWindow.getArticle(j);
+              if (!awArticle) break;
+              console.assert(
+                state.phase.articles[j].title === awArticle.title,
+                `Prefix invariant violated at index ${j}: viewport has "${state.phase.articles[j].title}" but ArticleWindow has "${awArticle.title}"`,
+              );
+            }
+          }
+        }
+        return article;
+      }
+    }
+    // Fallback: use viewport articles while ArticleWindow is loading.
+    // This is only safe when the viewport articles are a prefix of the
+    // eventual ArticleWindow results. If that invariant breaks, index i
+    // may refer to a different article.
     const state = deps.getState();
     if (state.phase.phase === "browsing") return state.phase.articles[i];
     return undefined;
   }
 
-  function ensureArticleRange(_pos: UserPosition, count: number): void {
+  function ensureArticleRange(count: number): void {
     resetArticleWindow();
     const aw = getOrCreateArticleWindow();
     void aw.ensureRange(0, count);
@@ -105,5 +169,6 @@ export function createArticleWindowLifecycle(
     getOrCreateArticleWindow,
     getArticleByIndex,
     currentWindow: () => articleWindow,
+    applyOptimisticCount,
   };
 }
