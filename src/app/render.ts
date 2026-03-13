@@ -404,7 +404,8 @@ export function renderNearbyList(
   }
 
   // Re-render: incremental update
-  const savedScrollY = window.scrollY;
+  // Save scroll position — #app may be the scroll container on desktop
+  const savedScrollY = container.scrollTop || window.scrollY;
   const savedFocus = captureFocus(container);
 
   // Replace header (cheap — ~5 nodes with fresh event listeners)
@@ -417,6 +418,7 @@ export function renderNearbyList(
   // Reconcile article list items by title key
   reconcileListItems(existingList, articles, onSelectArticle);
 
+  container.scrollTo?.(0, savedScrollY);
   window.scrollTo(0, savedScrollY);
   restoreFocus(container, savedFocus);
 }

@@ -6,6 +6,7 @@ import {
   createVirtualList,
   connectScroll,
   windowScrollState,
+  containerScrollState,
   type VirtualList,
 } from "./virtual-scroll";
 import {
@@ -53,6 +54,8 @@ export interface InfiniteScrollDeps {
   onNearEnd?: () => void;
   /** How many items from the end to trigger onNearEnd (default 50). */
   nearEndThreshold?: number;
+  /** Return a scroll container element for desktop split-view, or undefined to use window scroll. */
+  getScrollElement?: () => HTMLElement | undefined;
 }
 
 export interface InfiniteScrollLifecycle {
@@ -125,7 +128,10 @@ export function createInfiniteScrollLifecycle(
       cancel: deps.cancelEnrich,
     });
 
-    const getScrollState = windowScrollState(listContainer);
+    const scrollEl = deps.getScrollElement?.();
+    const getScrollState = scrollEl
+      ? containerScrollState(scrollEl, listContainer)
+      : windowScrollState(listContainer);
 
     currentTotalCount = totalCount;
 
@@ -149,7 +155,7 @@ export function createInfiniteScrollLifecycle(
 
     virtualList.update(totalCount, deps.renderItem);
 
-    disconnectScroll = connectScroll(virtualList);
+    disconnectScroll = connectScroll(virtualList, scrollEl);
   }
 
   function updateHeader(): void {
