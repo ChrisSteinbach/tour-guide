@@ -15,7 +15,23 @@ export interface CreateWindowOpts {
   lang: Lang;
   signal: AbortSignal;
   getStateMachineTiles: () => ReadonlyMap<string, NearestQuery>;
-  onWindowChange?: (start: number, end: number) => void;
+  onWindowChange?: () => void;
+}
+
+/**
+ * Compute the optimistic article count for infinite scroll height.
+ * Used to expand the list before an async fetch completes so the
+ * user never hits the bottom while waiting.
+ */
+export function computeOptimisticCount(
+  known: number,
+  loaded: number,
+  buffer: number,
+  maxLimit: number,
+): number {
+  if (known > loaded) return known;
+  if (loaded === 0) return 0;
+  return Math.min(loaded + buffer, maxLimit);
 }
 
 export interface ArticleWindowLifecycleDeps {
@@ -77,7 +93,11 @@ export function createArticleWindowLifecycle(
       },
       onWindowChange: () => {
         if (articleWindow && deps.infiniteScroll.isActive()) {
-          deps.infiniteScroll.update(articleWindow.loadedCount());
+          // Use totalKnown (all articles from loaded tiles) rather than
+          // loadedCount to provide scroll headroom beyond the fetched range.
+          deps.infiniteScroll.update(
+            Math.max(articleWindow.totalKnown(), articleWindow.loadedCount()),
+          );
         }
       },
     });
@@ -87,6 +107,10 @@ export function createArticleWindowLifecycle(
 
   function getArticleByIndex(i: number): NearbyArticle | undefined {
     if (articleWindow) return articleWindow.getArticle(i);
+    // Fallback: use viewport articles while ArticleWindow is loading.
+    // This is only safe when the viewport articles are a prefix of the
+    // eventual ArticleWindow results. If that invariant breaks, index i
+    // may refer to a different article.
     const state = deps.getState();
     if (state.phase.phase === "browsing") return state.phase.articles[i];
     return undefined;

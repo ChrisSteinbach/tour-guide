@@ -35,7 +35,7 @@ export interface ArticleWindowFactoryDeps {
     tileMap: Map<string, TileEntry>,
   ) => string[];
   tileFor: (lat: number, lon: number) => { row: number; col: number };
-  onWindowChange?: (start: number, end: number) => void;
+  onWindowChange?: () => void;
 }
 
 export interface ArticleWindowFactoryResult {

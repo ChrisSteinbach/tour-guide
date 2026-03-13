@@ -18,7 +18,7 @@ export interface ArticleWindowOptions {
   /** Max articles to keep in memory before evicting. */
   windowSize: number;
   /** Called when the loaded data range changes. */
-  onWindowChange?: (start: number, end: number) => void;
+  onWindowChange?: () => void;
 }
 
 export interface ArticleWindow {
@@ -129,7 +129,7 @@ export function createArticleWindow(
 
         pendingFetch = null;
 
-        onWindowChange?.(loadedStart, loadedEnd);
+        onWindowChange?.();
       };
 
       pendingFetch = doFetch();

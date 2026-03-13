@@ -37,6 +37,7 @@ import { tilesAtRing } from "./tile-radius";
 import { createArticleWindowFactory } from "./article-window-factory";
 import {
   createArticleWindowLifecycle,
+  computeOptimisticCount,
   type ArticleWindowLifecycle,
 } from "./article-window-lifecycle";
 import { DEFAULT_LANG, SUPPORTED_LANGS } from "../lang";
@@ -74,6 +75,12 @@ const VIRTUAL_ITEM_HEIGHT = 68;
 
 /** Extra articles to prefetch beyond the visible range end. */
 const PREFETCH_BUFFER = 200;
+
+/** Scroll-near-end detection threshold (px from bottom). */
+const NEAR_END_THRESHOLD = 100;
+
+/** Upper bound for optimistic scroll expansion when totalKnown is unknown. */
+const MAX_OPTIMISTIC_LIMIT = 5000;
 
 /** Compute how many articles fill the viewport, plus a few extra for scroll trigger. */
 const viewportFillCount = Math.max(
@@ -236,6 +243,7 @@ const infiniteScroll = createInfiniteScrollLifecycle({
   container: app,
   itemHeight: VIRTUAL_ITEM_HEIGHT,
   overscan: 5,
+  nearEndThreshold: NEAR_END_THRESHOLD,
   enrichSettleMs: 300,
   mapSyncSettleMs: 150,
   getTitle: (i) => {
@@ -305,11 +313,20 @@ const infiniteScroll = createInfiniteScrollLifecycle({
       const vl = infiniteScroll.virtualList();
       if (!vl) return;
       const range = vl.visibleRange();
-      void aw.ensureRange(range.start, range.end + PREFETCH_BUFFER).then(() => {
-        if (lifecycle.currentWindow() && infiniteScroll.isActive()) {
-          infiniteScroll.update(lifecycle.currentWindow()!.loadedCount());
-        }
-      });
+
+      // Optimistically expand the list height so the user never hits
+      // the bottom while the async fetch is in progress.
+      const optimistic = computeOptimisticCount(
+        aw.totalKnown(),
+        aw.loadedCount(),
+        PREFETCH_BUFFER,
+        MAX_OPTIMISTIC_LIMIT,
+      );
+      infiniteScroll.update(optimistic);
+
+      // onWindowChange fires when the fetch completes, updating the
+      // height to the real value — no .then() callback needed.
+      void aw.ensureRange(range.start, range.end + PREFETCH_BUFFER);
     } else {
       dispatch({ type: "expandInfiniteScroll" });
     }

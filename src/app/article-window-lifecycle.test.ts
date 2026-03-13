@@ -3,6 +3,7 @@ import type { NearbyArticle, UserPosition } from "./types";
 import type { AppState, QueryState } from "./state-machine";
 import {
   createArticleWindowLifecycle,
+  computeOptimisticCount,
   type ArticleWindowLifecycleDeps,
 } from "./article-window-lifecycle";
 
@@ -137,6 +138,31 @@ describe("createArticleWindowLifecycle", () => {
     );
   });
 
+  it("getArticleByIndex returns undefined for out-of-bounds index", () => {
+    const aw = stubArticleWindow({
+      getArticle: vi.fn(() => undefined),
+    });
+    const state = tiledAppState();
+    if (state.phase.phase === "browsing") {
+      // Only one article in viewport list (index 0)
+      state.phase.articles = [article];
+    }
+    const deps = makeDeps({
+      getState: vi.fn(() => state),
+      createArticleWindow: vi.fn(() => aw),
+    });
+
+    const lifecycle = createArticleWindowLifecycle(deps);
+
+    // Before ArticleWindow is created, falls back to viewport articles
+    expect(lifecycle.getArticleByIndex(0)?.title).toBe("Stockholm");
+    expect(lifecycle.getArticleByIndex(999)).toBeUndefined();
+
+    // After creating ArticleWindow, delegates to it
+    lifecycle.getOrCreateArticleWindow();
+    expect(lifecycle.getArticleByIndex(999)).toBeUndefined();
+  });
+
   it("resetArticleWindow aborts the controller", () => {
     let capturedSignal: AbortSignal | undefined;
     const aw = stubArticleWindow();
@@ -155,5 +181,32 @@ describe("createArticleWindowLifecycle", () => {
     expect(capturedSignal!.aborted).toBe(true);
     // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(aw.reset).toHaveBeenCalled();
+  });
+});
+
+describe("computeOptimisticCount", () => {
+  const BUFFER = 200;
+  const MAX = 5000;
+
+  it("caps at known when known > loaded", () => {
+    expect(computeOptimisticCount(500, 100, BUFFER, MAX)).toBe(500);
+  });
+
+  it("uses loaded + buffer (capped) when known <= loaded", () => {
+    expect(computeOptimisticCount(100, 100, BUFFER, MAX)).toBe(300);
+    expect(computeOptimisticCount(50, 200, BUFFER, MAX)).toBe(400);
+  });
+
+  it("respects maxLimit when known <= loaded", () => {
+    expect(computeOptimisticCount(100, 4900, BUFFER, MAX)).toBe(MAX);
+  });
+
+  it("returns 0 when both known and loaded are 0", () => {
+    expect(computeOptimisticCount(0, 0, BUFFER, MAX)).toBe(0);
+  });
+
+  it("caps at maxLimit when known is 0 but loaded > 0", () => {
+    expect(computeOptimisticCount(0, 100, BUFFER, MAX)).toBe(300);
+    expect(computeOptimisticCount(0, 4900, BUFFER, MAX)).toBe(MAX);
   });
 });
