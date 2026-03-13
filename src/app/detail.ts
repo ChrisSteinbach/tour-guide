@@ -1,4 +1,4 @@
-import type { NearbyArticle } from "./types";
+import type { NearbyArticle, UserPosition } from "./types";
 import type { ArticleSummary } from "./wiki-api";
 import { formatDistance, wikipediaUrl, directionsUrl } from "./format";
 import type { Lang } from "../lang";
@@ -53,6 +53,7 @@ export function renderDetailReady(
   article: NearbyArticle,
   summary: ArticleSummary,
   onBack: () => void,
+  origin?: UserPosition,
 ): void {
   container.textContent = "";
 
@@ -96,7 +97,7 @@ export function renderDetailReady(
 
   const directions = document.createElement("a");
   directions.className = "detail-directions-link";
-  directions.href = directionsUrl(article.lat, article.lon);
+  directions.href = directionsUrl(article.lat, article.lon, origin);
   directions.target = "_blank";
   directions.rel = "noopener";
   directions.textContent = "Directions";
@@ -115,6 +116,7 @@ export function renderDetailError(
   onBack: () => void,
   onRetry: () => void,
   lang: Lang = "en",
+  origin?: UserPosition,
 ): void {
   container.textContent = "";
 
@@ -140,7 +142,7 @@ export function renderDetailError(
 
   const directions = document.createElement("a");
   directions.className = "detail-directions-link";
-  directions.href = directionsUrl(article.lat, article.lon);
+  directions.href = directionsUrl(article.lat, article.lon, origin);
   directions.target = "_blank";
   directions.rel = "noopener";
   directions.textContent = "Directions";

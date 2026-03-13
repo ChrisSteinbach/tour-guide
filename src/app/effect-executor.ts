@@ -22,12 +22,17 @@ export interface RenderDeps {
   renderBrowsingHeader: () => void;
   updateDistances: (articles: NearbyArticle[]) => void;
   renderDetailLoading: (article: NearbyArticle) => void;
-  renderDetailReady: (article: NearbyArticle, summary: ArticleSummary) => void;
+  renderDetailReady: (
+    article: NearbyArticle,
+    summary: ArticleSummary,
+    origin?: UserPosition,
+  ) => void;
   renderDetailError: (
     article: NearbyArticle,
     message: string,
     onRetry: () => void,
     lang: Lang,
+    origin?: UserPosition,
   ) => void;
   renderAppUpdateBanner: () => void;
   showMapPicker: () => void;
@@ -90,7 +95,11 @@ export function createEffectExecutor(
         const state = deps.getState();
         if (state.phase.phase !== "detail" || state.phase.article !== article)
           return;
-        deps.ui.renderDetailReady(article, summary);
+        deps.ui.renderDetailReady(
+          article,
+          summary,
+          state.position ?? undefined,
+        );
       })
       .catch((err: unknown) => {
         const state = deps.getState();
@@ -102,6 +111,7 @@ export function createEffectExecutor(
           message,
           () => fetchAndRenderSummary(article),
           state.currentLang,
+          state.position ?? undefined,
         );
       });
   }

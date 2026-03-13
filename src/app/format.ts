@@ -27,15 +27,21 @@ export function distanceBetweenPositions(
 }
 
 /** Build a directions URL appropriate for the current platform. */
-export function directionsUrl(lat: number, lon: number): string {
+export function directionsUrl(
+  lat: number,
+  lon: number,
+  origin?: UserPosition,
+): string {
   const ua = navigator.userAgent;
   if (/iPad|iPhone|iPod/.test(ua)) {
-    return `https://maps.apple.com/?daddr=${lat},${lon}`;
+    const saddr = origin ? `&saddr=${origin.lat},${origin.lon}` : "";
+    return `https://maps.apple.com/?daddr=${lat},${lon}${saddr}`;
   }
   if (/Android/.test(ua)) {
     return `geo:${lat},${lon}?q=${lat},${lon}`;
   }
-  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`;
+  const originParam = origin ? `&origin=${origin.lat},${origin.lon}` : "";
+  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}${originParam}`;
 }
 
 /** Full Wikipedia article URL from a title. */

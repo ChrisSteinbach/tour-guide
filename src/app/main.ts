@@ -130,10 +130,10 @@ const executeEffect = createEffectExecutor({
     renderBrowsingHeader: renderBrowsingHeaderDOM,
     updateDistances: (articles) => updateNearbyDistances(app, articles),
     renderDetailLoading: (article) => renderDetailLoading(app, article, goBack),
-    renderDetailReady: (article, summary) =>
-      renderDetailReady(app, article, summary, goBack),
-    renderDetailError: (article, msg, retry, lang) =>
-      renderDetailError(app, article, msg, goBack, retry, lang),
+    renderDetailReady: (article, summary, origin) =>
+      renderDetailReady(app, article, summary, goBack, origin),
+    renderDetailError: (article, msg, retry, lang, origin) =>
+      renderDetailError(app, article, msg, goBack, retry, lang, origin),
     renderAppUpdateBanner,
     showMapPicker: () => {
       mapPicker.destroy();

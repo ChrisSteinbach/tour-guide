@@ -472,7 +472,11 @@ describe("createEffectExecutor", () => {
     expect(deps.ui.renderDetailLoading).toHaveBeenCalledWith(article);
 
     await vi.waitFor(() => {
-      expect(deps.ui.renderDetailReady).toHaveBeenCalledWith(article, summary);
+      expect(deps.ui.renderDetailReady).toHaveBeenCalledWith(
+        article,
+        summary,
+        pos,
+      );
     });
   });
 
@@ -534,7 +538,11 @@ describe("createEffectExecutor", () => {
     retryFn();
 
     await vi.waitFor(() => {
-      expect(deps.ui.renderDetailReady).toHaveBeenCalledWith(article, summary);
+      expect(deps.ui.renderDetailReady).toHaveBeenCalledWith(
+        article,
+        summary,
+        pos,
+      );
     });
   });
 
