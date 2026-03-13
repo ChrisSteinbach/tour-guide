@@ -219,15 +219,15 @@ describe("ArticleWindow", () => {
 
   it("fires onWindowChange when data loads", async () => {
     const articles = Array.from({ length: 20 }, (_, i) => makeArticle(i));
-    const changes: Array<{ start: number; end: number }> = [];
+    let callCount = 0;
     const window = createArticleWindow(fakeProvider(articles), {
       windowSize: 100,
-      onWindowChange: (start, end) => changes.push({ start, end }),
+      onWindowChange: () => callCount++,
     });
 
     await window.ensureRange(0, 10);
 
-    expect(changes).toEqual([{ start: 0, end: 10 }]);
+    expect(callCount).toBe(1);
   });
 
   // ── Edge cases ─────────────────────────────────────────────

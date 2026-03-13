@@ -18,7 +18,7 @@ export interface ArticleWindowOptions {
   /** Max articles to keep in memory before evicting. */
   windowSize: number;
   /** Called when the loaded data range changes. */
-  onWindowChange?: (start: number, end: number) => void;
+  onWindowChange?: () => void;
 }
 
 export interface ArticleWindow {
@@ -51,25 +51,18 @@ export function createArticleWindow(
 
   function evictIfNeeded(requestedStart: number, requestedEnd: number): void {
     if (articles.size <= windowSize) return;
-
     const excess = articles.size - windowSize;
     // Evict from whichever end is farthest from the requested range
     const distFromStart = requestedStart - loadedStart;
     const distFromEnd = loadedEnd - requestedEnd;
 
     if (distFromStart >= distFromEnd) {
-      // Evict from the start (scrolling forward)
       const newStart = loadedStart + excess;
-      for (let i = loadedStart; i < newStart; i++) {
-        articles.delete(i);
-      }
+      for (let i = loadedStart; i < newStart; i++) articles.delete(i);
       loadedStart = newStart;
     } else {
-      // Evict from the end (scrolling backward)
       const newEnd = loadedEnd - excess;
-      for (let i = newEnd; i < loadedEnd; i++) {
-        articles.delete(i);
-      }
+      for (let i = newEnd; i < loadedEnd; i++) articles.delete(i);
       loadedEnd = newEnd;
     }
   }
@@ -80,17 +73,10 @@ export function createArticleWindow(
     },
 
     async ensureRange(start, end) {
-      // Serialize: wait for any in-flight fetch before proceeding
-      if (pendingFetch) {
-        await pendingFetch;
-      }
+      if (pendingFetch) await pendingFetch;
 
-      // Re-check after awaiting — previous fetch may have loaded our range
-      if (articles.size > 0 && start >= loadedStart && end <= loadedEnd) {
-        return;
-      }
+      if (articles.size > 0 && start >= loadedStart && end <= loadedEnd) return;
 
-      // Compute what we actually need to fetch
       let fetchStart: number;
       let fetchEnd: number;
 
@@ -98,11 +84,9 @@ export function createArticleWindow(
         fetchStart = start;
         fetchEnd = end;
       } else if (end > loadedEnd) {
-        // Expanding forward
         fetchStart = Math.max(start, loadedEnd);
         fetchEnd = end;
       } else {
-        // Expanding backward (scrolling back to evicted data)
         fetchStart = start;
         fetchEnd = Math.min(end, loadedStart);
       }
@@ -115,9 +99,8 @@ export function createArticleWindow(
           articles.set(fetchStart + i, result.articles[i]);
         }
 
-        // Update loaded range
+        // First load
         if (articles.size === result.articles.length && loadedEnd === 0) {
-          // First load
           loadedStart = fetchStart;
           loadedEnd = fetchStart + result.articles.length;
         } else {
@@ -126,10 +109,8 @@ export function createArticleWindow(
         }
 
         evictIfNeeded(start, end);
-
         pendingFetch = null;
-
-        onWindowChange?.(loadedStart, loadedEnd);
+        onWindowChange?.();
       };
 
       pendingFetch = doFetch();

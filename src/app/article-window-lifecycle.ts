@@ -15,7 +15,7 @@ export interface CreateWindowOpts {
   lang: Lang;
   signal: AbortSignal;
   getStateMachineTiles: () => ReadonlyMap<string, NearestQuery>;
-  onWindowChange?: (start: number, end: number) => void;
+  onWindowChange?: () => void;
 }
 
 export interface ArticleWindowLifecycleDeps {
