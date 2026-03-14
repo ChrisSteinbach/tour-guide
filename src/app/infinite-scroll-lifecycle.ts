@@ -154,9 +154,10 @@ export function createInfiniteScrollLifecycle(
 
   function updateHeader(): void {
     const oldHeader = deps.container.querySelector("header.app-header");
-    const newHeader = deps.renderHeader();
-    if (oldHeader) {
-      oldHeader.replaceWith(newHeader);
+    // Skip replacement while the language dropdown is open so background
+    // re-renders (tile loads, distance updates) don't dismiss it.
+    if (oldHeader && !oldHeader.querySelector(".lang-listbox:not([hidden])")) {
+      oldHeader.replaceWith(deps.renderHeader());
     }
   }
 
