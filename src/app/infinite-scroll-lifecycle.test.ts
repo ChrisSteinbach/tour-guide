@@ -356,7 +356,7 @@ describe("InfiniteScrollLifecycle", () => {
       expect(called).toBe(0);
     });
 
-    it("adjusts to updated total count", () => {
+    it("adjusts to updated loaded count", () => {
       let called = 0;
       const lifecycle = createInfiniteScrollLifecycle(
         makeDeps({
@@ -368,9 +368,48 @@ describe("InfiniteScrollLifecycle", () => {
       lifecycle.init(1000);
       expect(called).toBe(0);
 
-      // Shrink to a small total so visible range meets threshold
-      lifecycle.update(3);
+      // Shrink loaded count so visible range meets threshold
+      lifecycle.update(3, 3);
       expect(called).toBeGreaterThan(0);
+    });
+
+    it("fires onNearEnd based on loadedCount, not totalCount", () => {
+      let called = 0;
+      const lifecycle = createInfiniteScrollLifecycle(
+        makeDeps({
+          onNearEnd: () => called++,
+          nearEndThreshold: 5,
+        }),
+      );
+
+      // Init with small count — near-end fires on init (range.end >= 3 - 5)
+      lifecycle.init(3);
+
+      // Update: inflate totalCount but keep loadedCount small
+      // Virtual list now has 10000 items, but loadedCount stays 3
+      // Near-end check: range.end >= 3 - 5 = -2 → true
+      called = 0;
+      lifecycle.update(10000, 3);
+      expect(called).toBeGreaterThan(0);
+    });
+
+    it("does not fire onNearEnd when loadedCount is large despite small totalCount", () => {
+      let called = 0;
+      const lifecycle = createInfiniteScrollLifecycle(
+        makeDeps({
+          onNearEnd: () => called++,
+          nearEndThreshold: 2,
+        }),
+      );
+
+      // Init with large count — range.end is small, no near-end
+      lifecycle.init(1000);
+      expect(called).toBe(0);
+
+      // Shrink totalCount but preserve loadedCount (omit second arg)
+      // currentLoadedCount stays at 1000, so near-end won't fire
+      lifecycle.update(3);
+      expect(called).toBe(0);
     });
   });
 });

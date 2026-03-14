@@ -40,7 +40,7 @@ export interface ArticleWindowLifecycleDeps {
   renderBrowsingList: () => void;
   infiniteScroll: {
     isActive: () => boolean;
-    update: (count: number) => void;
+    update: (count: number, loadedCount?: number) => void;
   };
 }
 
@@ -104,7 +104,10 @@ export function createArticleWindowLifecycle(
             articleWindow.loadedCount(),
           );
           lastScrollCount = Math.max(lastScrollCount, realCount);
-          deps.infiniteScroll.update(lastScrollCount);
+          deps.infiniteScroll.update(
+            lastScrollCount,
+            articleWindow.loadedCount(),
+          );
         }
       },
     });
