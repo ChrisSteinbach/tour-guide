@@ -211,6 +211,62 @@ describe("InfiniteScrollLifecycle", () => {
     });
   });
 
+  describe("updateHeader skips replacement while dropdown is open", () => {
+    it("preserves header when lang dropdown is open", () => {
+      const container = makeContainer();
+      const lifecycle = createInfiniteScrollLifecycle(
+        makeDeps({
+          container,
+          renderHeader: () => {
+            const h = document.createElement("header");
+            h.className = "app-header";
+            const listbox = document.createElement("ul");
+            listbox.className = "lang-listbox";
+            listbox.hidden = true;
+            h.appendChild(listbox);
+            return h;
+          },
+        }),
+      );
+
+      lifecycle.init(5);
+
+      const oldHeader = container.querySelector("header.app-header")!;
+      // Simulate opening the dropdown
+      const listbox = oldHeader.querySelector(".lang-listbox") as HTMLElement;
+      listbox.hidden = false;
+
+      lifecycle.updateHeader();
+
+      // Header should be the same DOM node (not replaced)
+      expect(container.querySelector("header.app-header")).toBe(oldHeader);
+    });
+
+    it("replaces header when lang dropdown is closed", () => {
+      let headerCount = 0;
+      const lifecycle = createInfiniteScrollLifecycle(
+        makeDeps({
+          renderHeader: () => {
+            headerCount++;
+            const h = document.createElement("header");
+            h.className = "app-header";
+            const listbox = document.createElement("ul");
+            listbox.className = "lang-listbox";
+            listbox.hidden = true;
+            h.appendChild(listbox);
+            h.textContent = `Header ${headerCount}`;
+            return h;
+          },
+        }),
+      );
+
+      lifecycle.init(5);
+      lifecycle.updateHeader();
+
+      expect(headerCount).toBe(2);
+    });
+  });
+
   describe("re-init after destroy", () => {
     it("can init again after destroy", () => {
       const lifecycle = createInfiniteScrollLifecycle(makeDeps());

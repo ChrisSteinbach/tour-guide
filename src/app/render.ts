@@ -407,11 +407,12 @@ export function renderNearbyList(
   const savedScrollY = window.scrollY;
   const savedFocus = captureFocus(container);
 
-  // Replace header (cheap — ~5 nodes with fresh event listeners)
+  // Replace header (cheap — ~5 nodes with fresh event listeners).
+  // Skip replacement while the language dropdown is open so background
+  // re-renders (tile loads, distance updates) don't dismiss it.
   const oldHeader = container.querySelector("header.app-header");
-  const newHeader = renderNearbyHeader(headerOpts);
-  if (oldHeader) {
-    oldHeader.replaceWith(newHeader);
+  if (oldHeader && !oldHeader.querySelector(".lang-listbox:not([hidden])")) {
+    oldHeader.replaceWith(renderNearbyHeader(headerOpts));
   }
 
   // Reconcile article list items by title key

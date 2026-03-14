@@ -470,6 +470,56 @@ describe("renderNearbyList", () => {
   );
 });
 
+// ── open dropdown protection ─────────────────────────────────
+
+describe("renderNearbyList skips header replacement while dropdown is open", () => {
+  it("preserves header when lang dropdown is open", () => {
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const opts = {
+      onSelectArticle: () => {},
+      currentLang: "en" as const,
+      onLangChange: () => {},
+    };
+    renderNearbyList(container, makeArticles(3), opts);
+
+    const oldHeader = container.querySelector("header.app-header")!;
+    // Simulate opening the dropdown
+    const listbox = oldHeader.querySelector(".lang-listbox") as HTMLElement;
+    listbox.hidden = false;
+
+    renderNearbyList(container, makeArticles(3), opts);
+
+    // Header should be the same DOM node (not replaced)
+    expect(container.querySelector("header.app-header")).toBe(oldHeader);
+    // Dropdown should still be open
+    expect(listbox.hidden).toBe(false);
+    vi.restoreAllMocks();
+  });
+
+  it("replaces header when lang dropdown is closed", () => {
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const opts = {
+      onSelectArticle: () => {},
+      currentLang: "en" as const,
+      onLangChange: () => {},
+    };
+    renderNearbyList(container, makeArticles(3), opts);
+
+    const oldHeader = container.querySelector("header.app-header")!;
+    // Dropdown stays closed (default)
+
+    renderNearbyList(container, makeArticles(3), opts);
+
+    // Header should be a new DOM node
+    expect(container.querySelector("header.app-header")).not.toBe(oldHeader);
+    vi.restoreAllMocks();
+  });
+});
+
 // ── reconciliation on re-render ──────────────────────────────
 
 describe("renderNearbyList reconciliation", () => {
