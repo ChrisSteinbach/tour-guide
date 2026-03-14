@@ -57,9 +57,9 @@ export interface InfiniteScrollDeps {
 
 export interface InfiniteScrollLifecycle {
   /** First-time setup: build DOM, create sub-components. */
-  init(totalCount: number): void;
+  init(totalCount: number, loadedCount?: number): void;
   /** Update with new data. Refreshes header and virtual list. */
-  update(totalCount: number): void;
+  update(totalCount: number, loadedCount?: number): void;
   /** Update only the header (e.g. to restart blink animation) without rebuilding the list. */
   updateHeader(): void;
   /** Tear down all sub-components and listeners. */
@@ -77,7 +77,7 @@ export function createInfiniteScrollLifecycle(
   let enrichScheduler: EnrichScheduler | null = null;
   let disconnectScroll: (() => void) | null = null;
   let cancelMapSync: (() => void) | null = null;
-  let currentTotalCount = 0;
+  let currentLoadedCount = 0;
   const nearEndThreshold = deps.nearEndThreshold ?? 50;
 
   function destroy(): void {
@@ -99,7 +99,7 @@ export function createInfiniteScrollLifecycle(
     }
   }
 
-  function init(totalCount: number): void {
+  function init(totalCount: number, loadedCount?: number): void {
     destroy();
     deps.destroyBrowseMap();
     deps.container.textContent = "";
@@ -127,7 +127,7 @@ export function createInfiniteScrollLifecycle(
 
     const getScrollState = windowScrollState(listContainer);
 
-    currentTotalCount = totalCount;
+    currentLoadedCount = loadedCount ?? totalCount;
 
     virtualList = createVirtualList({
       container: listContainer,
@@ -139,8 +139,8 @@ export function createInfiniteScrollLifecycle(
         mapSync.sync(range);
         if (
           deps.onNearEnd &&
-          currentTotalCount > 0 &&
-          range.end >= currentTotalCount - nearEndThreshold
+          currentLoadedCount > 0 &&
+          range.end >= currentLoadedCount - nearEndThreshold
         ) {
           deps.onNearEnd();
         }
@@ -161,9 +161,11 @@ export function createInfiniteScrollLifecycle(
     }
   }
 
-  function update(totalCount: number): void {
+  function update(totalCount: number, loadedCount?: number): void {
     if (!virtualList) return;
-    currentTotalCount = totalCount;
+    if (loadedCount !== undefined) {
+      currentLoadedCount = loadedCount;
+    }
 
     updateHeader();
 

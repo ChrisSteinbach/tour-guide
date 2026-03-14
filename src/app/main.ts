@@ -350,7 +350,7 @@ lifecycle = createArticleWindowLifecycle({
   renderBrowsingList: renderBrowsingListDOM,
   infiniteScroll: {
     isActive: () => infiniteScroll.isActive(),
-    update: (count) => infiniteScroll.update(count),
+    update: (count, loadedCount) => infiniteScroll.update(count, loadedCount),
   },
 });
 

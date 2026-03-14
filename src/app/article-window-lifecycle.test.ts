@@ -247,7 +247,7 @@ describe("onWindowChange", () => {
     lifecycle.getOrCreateArticleWindow();
     capturedOnWindowChange!();
 
-    expect(deps.infiniteScroll.update).toHaveBeenCalledWith(500);
+    expect(deps.infiniteScroll.update).toHaveBeenCalledWith(500, 100);
   });
 
   it("updates infinite scroll with loadedCount when totalKnown is not larger", () => {
@@ -271,7 +271,7 @@ describe("onWindowChange", () => {
     lifecycle.getOrCreateArticleWindow();
     capturedOnWindowChange!();
 
-    expect(deps.infiniteScroll.update).toHaveBeenCalledWith(100);
+    expect(deps.infiniteScroll.update).toHaveBeenCalledWith(100, 100);
   });
 
   it("never shrinks the scroll count below a previous update", () => {
@@ -295,13 +295,13 @@ describe("onWindowChange", () => {
 
     // First callback: count goes up to 500
     capturedOnWindowChange!();
-    expect(deps.infiniteScroll.update).toHaveBeenLastCalledWith(500);
+    expect(deps.infiniteScroll.update).toHaveBeenLastCalledWith(500, 100);
 
-    // Second callback with lower values: count stays at 500
+    // Second callback with lower values: scroll count stays at 500
     totalKnown.mockReturnValue(30);
     loadedCount.mockReturnValue(30);
     capturedOnWindowChange!();
-    expect(deps.infiniteScroll.update).toHaveBeenLastCalledWith(500);
+    expect(deps.infiniteScroll.update).toHaveBeenLastCalledWith(500, 30);
   });
 
   it("resets scroll count floor after resetArticleWindow", () => {
@@ -325,7 +325,7 @@ describe("onWindowChange", () => {
 
     // Push count to 500
     capturedOnWindowChange!();
-    expect(deps.infiniteScroll.update).toHaveBeenLastCalledWith(500);
+    expect(deps.infiniteScroll.update).toHaveBeenLastCalledWith(500, 100);
 
     // Reset clears the floor
     lifecycle.resetArticleWindow();
@@ -335,7 +335,7 @@ describe("onWindowChange", () => {
     loadedCount.mockReturnValue(30);
     lifecycle.getOrCreateArticleWindow();
     capturedOnWindowChange!();
-    expect(deps.infiniteScroll.update).toHaveBeenLastCalledWith(30);
+    expect(deps.infiniteScroll.update).toHaveBeenLastCalledWith(30, 30);
   });
 
   it("never shrinks below an optimistic count set via applyOptimisticCount", () => {
@@ -366,8 +366,8 @@ describe("onWindowChange", () => {
     loadedCount.mockReturnValue(200);
     capturedOnWindowChange!();
 
-    // Count must NOT shrink from 300 to 250
-    expect(deps.infiniteScroll.update).toHaveBeenLastCalledWith(300);
+    // Scroll count must NOT shrink from 300 to 250, but loadedCount reflects reality
+    expect(deps.infiniteScroll.update).toHaveBeenLastCalledWith(300, 200);
   });
 
   it("does not update infinite scroll when it is not active", () => {
