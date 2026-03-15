@@ -19,7 +19,28 @@ html {
 }
 
 body {
-  min-height: 100dvh;
+  height: 100dvh;
+}
+
+body:has(.app-scroll) {
+  overflow: hidden;
+}
+
+#app {
+  height: 100dvh;
+}
+
+/* Browsing mode: header stays fixed, only the list scrolls */
+#app:has(> .app-scroll) {
+  display: flex;
+  flex-direction: column;
+  overflow-y: hidden;
+}
+
+.app-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .app-header {
@@ -592,6 +613,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100dvh;
+  overflow: hidden;
 }
 
 .map-picker-instructions {

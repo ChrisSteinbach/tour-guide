@@ -199,7 +199,10 @@ function enterBrowsing(state: AppState): TransitionResult {
         infiniteScrollLimit: INFINITE_SCROLL_INITIAL,
       },
     },
-    effects: [{ type: "requery", pos: state.position, count: requeryCount }],
+    effects: [
+      { type: "requery", pos: state.position, count: requeryCount },
+      { type: "scrollToTop" },
+    ],
   };
 }
 
@@ -450,7 +453,7 @@ export function transition(state: AppState, event: Event): TransitionResult {
         const rq = forceRequery(next);
         return {
           next: rq.next,
-          effects: [...effects, ...rq.effects],
+          effects: [...effects, ...rq.effects, { type: "scrollToTop" }],
         };
       }
       effects.push({ type: "renderBrowsingList" });

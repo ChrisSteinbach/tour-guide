@@ -241,6 +241,7 @@ describe("start event", () => {
     expect(effectTypes(effects)).toContain("storeStarted");
     expect(effectTypes(effects)).toContain("startGps");
     expect(effectTypes(effects)).toContain("requery");
+    expect(effectTypes(effects)).toContain("scrollToTop");
   });
 
   it("enters locating when query ready but no position", () => {
@@ -312,6 +313,7 @@ describe("pickPosition event", () => {
     expect(next.position).toBe(pickedPos);
     expect(effectTypes(effects)).toContain("stopGps");
     expect(effectTypes(effects)).toContain("requery");
+    expect(effectTypes(effects)).toContain("scrollToTop");
   });
 
   it("enters downloading when no query", () => {
@@ -375,6 +377,7 @@ describe("position event", () => {
     });
     expect(next.phase.phase).toBe("browsing");
     expect(effectTypes(effects)).toContain("requery");
+    expect(effectTypes(effects)).toContain("scrollToTop");
   });
 
   it("enters loadingTiles from locating when tiled query with no tiles", () => {
@@ -690,6 +693,7 @@ describe("useGps event", () => {
     expect(browsing.scrollMode).toBe("viewport");
     expect(effectTypes(effects)).toContain("startGps");
     expect(effectTypes(effects)).toContain("requery");
+    expect(effectTypes(effects)).toContain("scrollToTop");
   });
 
   it("does not requery when no position is known", () => {
@@ -1032,6 +1036,7 @@ describe("tileLoaded event", () => {
       expect(next.query.tiles.has("27-36")).toBe(true);
     }
     expect(effectTypes(effects)).toContain("requery");
+    expect(effectTypes(effects)).toContain("scrollToTop");
   });
 
   it("ignores stale generation", () => {
@@ -1326,6 +1331,7 @@ describe("scroll mode transitions", () => {
     expect(browsing.scrollMode).toBe("viewport");
     const requery = effects.find((e) => e.type === "requery");
     expect(requery).toMatchObject({ count: 20 });
+    expect(effectTypes(effects)).toContain("scrollToTop");
   });
 });
 

@@ -150,8 +150,7 @@ const executeEffect = createEffectExecutor({
       mapPicker.show();
     },
     scrollToTop: () => {
-      window.scrollTo(0, 0);
-      app.querySelector<HTMLElement>(".nearby-list")?.scrollTo(0, 0);
+      getScrollContainer().scrollTo(0, 0);
     },
   },
   data: {
@@ -168,6 +167,15 @@ const executeEffect = createEffectExecutor({
 });
 
 // ── Helpers ──────────────────────────────────────────────────
+
+/** Resolve the current scroll container: infinite-scroll wrapper, viewport-mode wrapper, or #app fallback. */
+function getScrollContainer(): HTMLElement {
+  return (
+    infiniteScroll.scrollElement() ??
+    app.querySelector<HTMLElement>(".app-scroll") ??
+    app
+  );
+}
 
 function getStoredLang(): Lang {
   const stored = localStorage.getItem(LANG_STORAGE_KEY);
@@ -392,14 +400,13 @@ let scrollPauseDetector: ScrollPauseDetector | null = null;
 
 function setupScrollPauseListener(): void {
   teardownScrollPauseListener();
-  const listEl = app.querySelector<HTMLElement>(".nearby-list");
   scrollPauseDetector = createScrollPauseDetector({
     threshold: SCROLL_PAUSE_THRESHOLD,
     onPause: () => {
       scrollPauseDetector = null;
       dispatch({ type: "scrollPause" });
     },
-    container: listEl ?? undefined,
+    container: getScrollContainer(),
   });
 }
 

@@ -164,22 +164,6 @@ export function createVirtualList(options: VirtualListOptions): VirtualList {
 }
 
 /**
- * Create a getScrollState function that reads from window scroll,
- * adjusting for the list container's offset from the top of the page.
- */
-export function windowScrollState(
-  listContainer: HTMLElement,
-): () => ScrollState {
-  return () => {
-    const scrollTop = window.scrollY - listContainer.offsetTop;
-    return {
-      scrollTop: Math.max(0, scrollTop),
-      viewportHeight: window.innerHeight,
-    };
-  };
-}
-
-/**
  * Create a getScrollState function that reads from a scrollable container
  * element (for desktop split-view where window scroll is disabled).
  */
@@ -194,16 +178,15 @@ export function containerScrollState(
 }
 
 /**
- * Connect a VirtualList to scroll events from either window or a container element.
+ * Connect a VirtualList to scroll events from a container element.
  * Throttles via requestAnimationFrame to avoid excessive re-renders.
  * Returns a cleanup function.
  */
 export function connectScroll(
   list: { refresh(): void },
-  scrollSource?: HTMLElement,
+  scrollSource: HTMLElement,
 ): () => void {
   let rafId: number | null = null;
-  const target: EventTarget = scrollSource ?? window;
   const onScroll = () => {
     if (rafId !== null) return;
     rafId = requestAnimationFrame(() => {
@@ -211,9 +194,9 @@ export function connectScroll(
       list.refresh();
     });
   };
-  target.addEventListener("scroll", onScroll, { passive: true });
+  scrollSource.addEventListener("scroll", onScroll, { passive: true });
   return () => {
-    target.removeEventListener("scroll", onScroll);
+    scrollSource.removeEventListener("scroll", onScroll);
     if (rafId !== null) cancelAnimationFrame(rafId);
   };
 }

@@ -95,6 +95,13 @@ function restoreFocus(container: HTMLElement, info: FocusInfo | null): void {
   target?.focus();
 }
 
+/** Create the `.app-scroll` wrapper div used to scope scrolling to the article list. */
+export function createScrollWrapper(): HTMLDivElement {
+  const el = document.createElement("div");
+  el.className = "app-scroll";
+  return el;
+}
+
 /** Update only the distance badges in an already-rendered list. */
 export function updateNearbyDistances(
   container: HTMLElement,
@@ -393,18 +400,22 @@ export function renderNearbyList(
 
     const header = renderNearbyHeader(headerOpts);
 
+    const scrollWrapper = createScrollWrapper();
     const list = document.createElement("ul");
     list.className = "nearby-list";
     for (const article of articles) {
       list.appendChild(createArticleItem(article, onSelectArticle));
     }
+    scrollWrapper.appendChild(list);
 
-    container.append(header, list);
+    container.append(header, scrollWrapper);
     return;
   }
 
   // Re-render: incremental update
-  const savedScrollY = window.scrollY;
+  const scrollWrapper = container.querySelector<HTMLElement>(".app-scroll");
+  const scrollEl = scrollWrapper ?? container;
+  const savedScrollTop = scrollEl.scrollTop;
   const savedFocus = captureFocus(container);
 
   // Replace header (cheap — ~5 nodes with fresh event listeners).
@@ -418,6 +429,6 @@ export function renderNearbyList(
   // Reconcile article list items by title key
   reconcileListItems(existingList, articles, onSelectArticle);
 
-  window.scrollTo(0, savedScrollY);
+  scrollEl.scrollTop = savedScrollTop;
   restoreFocus(container, savedFocus);
 }
