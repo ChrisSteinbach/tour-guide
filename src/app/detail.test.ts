@@ -182,6 +182,18 @@ describe("renderDetailReady", () => {
     expect(link.href).toContain("2.2945");
     expect(link.target).toBe("_blank");
   });
+
+  it("includes origin in directions link when provided", () => {
+    const container = document.createElement("div");
+    const article = makeArticle({ lat: 48.8584, lon: 2.2945 });
+    const origin = { lat: 48.86, lon: 2.3 };
+    renderDetailReady(container, article, makeSummary(), () => {}, origin);
+
+    const link = container.querySelector(
+      ".detail-directions-link",
+    ) as HTMLAnchorElement;
+    expect(link.href).toContain("origin=48.86");
+  });
 });
 
 // ── renderDetailError ────────────────────────────────────────

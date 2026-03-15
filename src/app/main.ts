@@ -137,10 +137,24 @@ const executeEffect = createEffectExecutor({
     renderBrowsingHeader: renderBrowsingHeaderDOM,
     updateDistances: (articles) => updateNearbyDistances(app, articles),
     renderDetailLoading: (article) => renderDetailLoading(app, article, goBack),
-    renderDetailReady: (article, summary) =>
-      renderDetailReady(app, article, summary, goBack),
-    renderDetailError: (article, msg, retry, lang) =>
-      renderDetailError(app, article, msg, goBack, retry, lang),
+    renderDetailReady: (article, summary) => {
+      const origin =
+        appState.positionSource === "picked" ? appState.position : null;
+      renderDetailReady(app, article, summary, goBack, origin ?? undefined);
+    },
+    renderDetailError: (article, msg, retry, lang) => {
+      const origin =
+        appState.positionSource === "picked" ? appState.position : null;
+      renderDetailError(
+        app,
+        article,
+        msg,
+        goBack,
+        retry,
+        lang,
+        origin ?? undefined,
+      );
+    },
     renderAppUpdateBanner,
     showMapPicker: () => {
       mapPicker.destroy();

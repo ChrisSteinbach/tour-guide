@@ -1,4 +1,9 @@
-import { distanceMeters, formatDistance, wikipediaUrl } from "./format";
+import {
+  distanceMeters,
+  formatDistance,
+  wikipediaUrl,
+  directionsUrl,
+} from "./format";
 
 describe("distanceMeters", () => {
   it("returns 0 for the same point", () => {
@@ -60,5 +65,30 @@ describe("wikipediaUrl", () => {
 
   it("supports Japanese", () => {
     expect(wikipediaUrl("東京タワー", "ja")).toContain("ja.wikipedia.org");
+  });
+});
+
+describe("directionsUrl", () => {
+  const dest = { lat: 48.8584, lon: 2.2945 };
+  const origin = { lat: 48.86, lon: 2.3 };
+
+  it("returns Google Maps URL by default (desktop)", () => {
+    const url = directionsUrl(dest.lat, dest.lon);
+    expect(url).toBe(
+      "https://www.google.com/maps/dir/?api=1&destination=48.8584,2.2945",
+    );
+  });
+
+  it("includes origin in Google Maps URL when provided", () => {
+    const url = directionsUrl(dest.lat, dest.lon, origin);
+    expect(url).toBe(
+      "https://www.google.com/maps/dir/?api=1&destination=48.8584,2.2945&origin=48.86,2.3",
+    );
+  });
+
+  it("omits origin when not provided", () => {
+    const url = directionsUrl(dest.lat, dest.lon);
+    expect(url).not.toContain("origin");
+    expect(url).not.toContain("saddr");
   });
 });
