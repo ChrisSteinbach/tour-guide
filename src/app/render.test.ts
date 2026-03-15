@@ -365,40 +365,23 @@ describe("renderNearbyList", () => {
     };
     renderNearbyList(container, makeArticles(3), opts);
 
-    Object.defineProperty(window, "scrollY", {
-      value: 250,
-      configurable: true,
-    });
-    const scrollToSpy = vi
-      .spyOn(window, "scrollTo")
-      .mockImplementation(() => {});
+    container.scrollTop = 250;
 
     renderNearbyList(container, makeArticles(3), opts);
-    expect(scrollToSpy).toHaveBeenCalledWith(0, 250);
-
-    scrollToSpy.mockRestore();
-    Object.defineProperty(window, "scrollY", { value: 0, configurable: true });
+    expect(container.scrollTop).toBe(250);
   });
 
-  it("does not restore scroll on first render", () => {
+  it("first render takes the fresh-build path (no scroll restore)", () => {
     const container = document.createElement("div");
-    Object.defineProperty(window, "scrollY", {
-      value: 100,
-      configurable: true,
-    });
-    const scrollToSpy = vi
-      .spyOn(window, "scrollTo")
-      .mockImplementation(() => {});
-
     renderNearbyList(container, makeArticles(2), {
       onSelectArticle: () => {},
       currentLang: "en",
       onLangChange: () => {},
     });
-    expect(scrollToSpy).not.toHaveBeenCalled();
-
-    scrollToSpy.mockRestore();
-    Object.defineProperty(window, "scrollY", { value: 0, configurable: true });
+    // First render clears the container and builds from scratch
+    // (no existing .nearby-list to trigger the incremental path).
+    expect(container.querySelector(".app-scroll .nearby-list")).not.toBeNull();
+    expect(container.querySelectorAll(".nearby-item")).toHaveLength(2);
   });
 
   it.each([
@@ -446,7 +429,6 @@ describe("renderNearbyList", () => {
   ])(
     "restores focus to $name on re-render",
     ({ selector, articleCount, extraOpts }) => {
-      vi.spyOn(window, "scrollTo").mockImplementation(() => {});
       const container = document.createElement("div");
       document.body.appendChild(container);
       const opts = {
@@ -474,7 +456,6 @@ describe("renderNearbyList", () => {
 
 describe("renderNearbyList skips header replacement while dropdown is open", () => {
   it("preserves header when lang dropdown is open", () => {
-    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     const container = document.createElement("div");
     document.body.appendChild(container);
     const opts = {
@@ -499,7 +480,6 @@ describe("renderNearbyList skips header replacement while dropdown is open", () 
   });
 
   it("replaces header when lang dropdown is closed", () => {
-    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     const container = document.createElement("div");
     document.body.appendChild(container);
     const opts = {
@@ -524,7 +504,6 @@ describe("renderNearbyList skips header replacement while dropdown is open", () 
 
 describe("renderNearbyList reconciliation", () => {
   it("reuses DOM nodes for articles present in both renders", () => {
-    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     const container = document.createElement("div");
     const opts = {
       onSelectArticle: () => {},
@@ -547,7 +526,6 @@ describe("renderNearbyList reconciliation", () => {
   });
 
   it("creates new nodes only for new articles", () => {
-    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     const container = document.createElement("div");
     const original = makeArticles(3);
     const opts = {
@@ -579,7 +557,6 @@ describe("renderNearbyList reconciliation", () => {
   });
 
   it("updates distance badges on reused nodes", () => {
-    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     const container = document.createElement("div");
     const opts = {
       onSelectArticle: () => {},
@@ -747,7 +724,6 @@ describe("enrichArticleItem", () => {
   });
 
   it("preserves enrichment through list reconciliation", () => {
-    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     const container = document.createElement("div");
     const opts = {
       onSelectArticle: () => {},

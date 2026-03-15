@@ -60,6 +60,17 @@ describe("InfiniteScrollLifecycle", () => {
       ).toBeTruthy();
     });
 
+    it("nests virtual-scroll-container inside .app-scroll wrapper", () => {
+      const deps = makeDeps();
+      const lifecycle = createInfiniteScrollLifecycle(deps);
+
+      lifecycle.init(10);
+
+      expect(
+        deps.container.querySelector(".app-scroll > .virtual-scroll-container"),
+      ).toBeTruthy();
+    });
+
     it("marks lifecycle as active after init", () => {
       const lifecycle = createInfiniteScrollLifecycle(makeDeps());
 
@@ -264,6 +275,33 @@ describe("InfiniteScrollLifecycle", () => {
       lifecycle.updateHeader();
 
       expect(headerCount).toBe(2);
+    });
+  });
+
+  describe("scrollElement", () => {
+    it("returns null before init", () => {
+      const lifecycle = createInfiniteScrollLifecycle(makeDeps());
+
+      expect(lifecycle.scrollElement()).toBeNull();
+    });
+
+    it("returns the .app-scroll wrapper after init", () => {
+      const lifecycle = createInfiniteScrollLifecycle(makeDeps());
+
+      lifecycle.init(10);
+
+      const el = lifecycle.scrollElement();
+      expect(el).not.toBeNull();
+      expect(el!.className).toBe("app-scroll");
+    });
+
+    it("returns null after destroy", () => {
+      const lifecycle = createInfiniteScrollLifecycle(makeDeps());
+
+      lifecycle.init(10);
+      lifecycle.destroy();
+
+      expect(lifecycle.scrollElement()).toBeNull();
     });
   });
 

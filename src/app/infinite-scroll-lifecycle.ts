@@ -5,7 +5,7 @@
 import {
   createVirtualList,
   connectScroll,
-  windowScrollState,
+  containerScrollState,
   type VirtualList,
 } from "./virtual-scroll";
 import {
@@ -13,6 +13,7 @@ import {
   type EnrichScheduler,
 } from "./enrich-scheduler";
 import { createDebouncedMapSync } from "./debounced-map-sync";
+import { createScrollWrapper } from "./render";
 
 export interface InfiniteScrollDeps {
   /** App container element to render into. */
@@ -68,6 +69,8 @@ export interface InfiniteScrollLifecycle {
   isActive(): boolean;
   /** Get the underlying virtual list (for reading visible range). */
   virtualList(): VirtualList | null;
+  /** Get the current scroll container element (the .app-scroll wrapper). */
+  scrollElement(): HTMLElement | null;
 }
 
 export function createInfiniteScrollLifecycle(
@@ -77,6 +80,7 @@ export function createInfiniteScrollLifecycle(
   let enrichScheduler: EnrichScheduler | null = null;
   let disconnectScroll: (() => void) | null = null;
   let cancelMapSync: (() => void) | null = null;
+  let scrollEl: HTMLElement | null = null;
   let currentLoadedCount = 0;
   const nearEndThreshold = deps.nearEndThreshold ?? 50;
 
@@ -97,6 +101,7 @@ export function createInfiniteScrollLifecycle(
       cancelMapSync();
       cancelMapSync = null;
     }
+    scrollEl = null;
   }
 
   function init(totalCount: number, loadedCount?: number): void {
@@ -105,9 +110,13 @@ export function createInfiniteScrollLifecycle(
     deps.container.textContent = "";
     deps.container.appendChild(deps.renderHeader());
 
+    const scrollWrapper = createScrollWrapper();
+    deps.container.appendChild(scrollWrapper);
+    scrollEl = scrollWrapper;
+
     const listContainer = document.createElement("div");
     listContainer.className = "virtual-scroll-container";
-    deps.container.appendChild(listContainer);
+    scrollWrapper.appendChild(listContainer);
 
     deps.initBrowseMap();
 
@@ -125,7 +134,7 @@ export function createInfiniteScrollLifecycle(
       cancel: deps.cancelEnrich,
     });
 
-    const getScrollState = windowScrollState(listContainer);
+    const getScrollState = containerScrollState(scrollWrapper, listContainer);
 
     currentLoadedCount = loadedCount ?? totalCount;
 
@@ -149,7 +158,7 @@ export function createInfiniteScrollLifecycle(
 
     virtualList.update(totalCount, deps.renderItem);
 
-    disconnectScroll = connectScroll(virtualList);
+    disconnectScroll = connectScroll(virtualList, scrollWrapper);
   }
 
   function updateHeader(): void {
@@ -180,5 +189,6 @@ export function createInfiniteScrollLifecycle(
     destroy,
     isActive: () => virtualList !== null,
     virtualList: () => virtualList,
+    scrollElement: () => scrollEl,
   };
 }
