@@ -234,20 +234,15 @@ export function createEffectExecutor(
         deps.ui.renderAppUpdateBanner();
         break;
       case "requery": {
-        const reqState = deps.getState();
+        const state = deps.getState();
+        const articles = deps.getNearby(state.query, effect.pos, effect.count);
         if (
-          reqState.phase.phase === "browsing" &&
-          reqState.phase.scrollMode === "infinite" &&
+          state.phase.phase === "browsing" &&
+          state.phase.scrollMode === "infinite" &&
           deps.ensureArticleRange
         ) {
           deps.ensureArticleRange(effect.pos, effect.count);
-          break;
         }
-        const articles = deps.getNearby(
-          reqState.query,
-          effect.pos,
-          effect.count,
-        );
         deps.dispatch({
           type: "queryResult",
           articles,

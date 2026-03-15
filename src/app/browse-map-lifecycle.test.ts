@@ -33,8 +33,19 @@ function makeDeps(
   };
 }
 
+/** Flush the import promise (microtask) + deferred rAF (jsdom uses ~16ms setTimeout). */
+async function flushImportAndRaf(): Promise<void> {
+  await Promise.resolve();
+  await vi.advanceTimersByTimeAsync(20);
+}
+
 describe("BrowseMapLifecycle", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
   afterEach(() => {
+    vi.useRealTimers();
     document.body.textContent = "";
   });
 
@@ -44,7 +55,7 @@ describe("BrowseMapLifecycle", () => {
       const lifecycle = createBrowseMapLifecycle(deps);
 
       lifecycle.update({ lat: 51, lon: 0 }, []);
-      await Promise.resolve();
+      await flushImportAndRaf();
 
       expect(deps.container.querySelector(".browse-map")).toBeTruthy();
     });
@@ -54,7 +65,7 @@ describe("BrowseMapLifecycle", () => {
       const lifecycle = createBrowseMapLifecycle(deps);
 
       lifecycle.update({ lat: 51, lon: 0 }, []);
-      await Promise.resolve();
+      await flushImportAndRaf();
 
       // Second update should reuse existing handle
       lifecycle.update({ lat: 52, lon: 1 }, []);
@@ -71,13 +82,13 @@ describe("BrowseMapLifecycle", () => {
       const lifecycle = createBrowseMapLifecycle(deps);
 
       lifecycle.update({ lat: 51, lon: 0 }, []);
-      await Promise.resolve();
+      await flushImportAndRaf();
 
       // Simulate detail view clearing the container
       deps.container.textContent = "";
 
       lifecycle.update({ lat: 52, lon: 1 }, []);
-      await Promise.resolve();
+      await flushImportAndRaf();
 
       // Should have created a new map container
       expect(deps.container.querySelector(".browse-map")).toBeTruthy();
@@ -96,6 +107,28 @@ describe("BrowseMapLifecycle", () => {
 
       expect(deps.container.querySelector(".browse-map")).toBeNull();
     });
+
+    it("two rapid updates only create one map with the latest position", async () => {
+      const createBrowseMap = vi.fn(() => makeHandle());
+      const deps = makeDeps({
+        importBrowseMap: () => Promise.resolve({ createBrowseMap }),
+      });
+      const lifecycle = createBrowseMapLifecycle(deps);
+
+      const firstArticles = [{ title: "A" }] as any[];
+      const secondArticles = [{ title: "B" }] as any[];
+      lifecycle.update({ lat: 51, lon: 0 }, firstArticles);
+      lifecycle.update({ lat: 52, lon: 1 }, secondArticles);
+      await flushImportAndRaf();
+
+      expect(createBrowseMap).toHaveBeenCalledTimes(1);
+      expect(createBrowseMap).toHaveBeenCalledWith(
+        expect.any(HTMLElement),
+        { lat: 52, lon: 1 },
+        secondArticles,
+        expect.any(Function),
+      );
+    });
   });
 
   describe("resize", () => {
@@ -104,7 +137,7 @@ describe("BrowseMapLifecycle", () => {
       const lifecycle = createBrowseMapLifecycle(deps);
 
       lifecycle.update({ lat: 51, lon: 0 }, []);
-      await Promise.resolve();
+      await flushImportAndRaf();
 
       lifecycle.resize();
 
@@ -124,7 +157,7 @@ describe("BrowseMapLifecycle", () => {
       const lifecycle = createBrowseMapLifecycle(deps);
 
       lifecycle.update({ lat: 51, lon: 0 }, []);
-      await Promise.resolve();
+      await flushImportAndRaf();
 
       lifecycle.destroy();
 
@@ -143,7 +176,7 @@ describe("BrowseMapLifecycle", () => {
       const lifecycle = createBrowseMapLifecycle(deps);
 
       lifecycle.update({ lat: 51, lon: 0 }, []);
-      await Promise.resolve();
+      await flushImportAndRaf();
 
       lifecycle.destroy();
       lifecycle.destroy(); // should not throw
@@ -161,7 +194,7 @@ describe("BrowseMapLifecycle", () => {
       const lifecycle = createBrowseMapLifecycle(deps);
 
       lifecycle.update({ lat: 51, lon: 0 }, []);
-      await Promise.resolve();
+      await flushImportAndRaf();
 
       // 4th arg is onSelectArticle
 

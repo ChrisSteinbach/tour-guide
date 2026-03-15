@@ -32,12 +32,18 @@ export function createBrowseMapLifecycle(
   deps: BrowseMapLifecycleDeps,
 ): BrowseMapLifecycle {
   let handle: BrowseMapHandle | null = null;
+  let creating = false;
+  let pendingPosition: { lat: number; lon: number } | null = null;
+  let pendingArticles: NearbyArticle[] | null = null;
 
   function destroy(): void {
     if (handle) {
       handle.destroy();
       handle = null;
     }
+    creating = false;
+    pendingPosition = null;
+    pendingArticles = null;
     const el = deps.container.querySelector(".browse-map");
     el?.remove();
   }
@@ -60,6 +66,14 @@ export function createBrowseMapLifecycle(
       handle = null;
     }
 
+    // Prevent re-entry during async import + rAF pipeline
+    if (creating) {
+      pendingPosition = position;
+      pendingArticles = articles;
+      return;
+    }
+    creating = true;
+
     // First render: create the map container
     let mapEl = deps.container.querySelector<HTMLElement>(".browse-map");
     if (!mapEl) {
@@ -71,16 +85,41 @@ export function createBrowseMapLifecycle(
     void deps
       .importBrowseMap()
       .then(({ createBrowseMap }) => {
-        if (!mapEl || !deps.container.contains(mapEl)) return;
-        handle = createBrowseMap(
-          mapEl,
-          position,
-          articles,
-          deps.onSelectArticle,
-        );
+        if (!mapEl || !deps.container.contains(mapEl)) {
+          creating = false;
+          return;
+        }
+        // Defer map creation to a rAF so the browser has laid out the
+        // drawer container before Leaflet reads its dimensions. The
+        // dynamic import resolves as a microtask — before layout — so
+        // creating the map immediately can leave Leaflet with a
+        // zero-size container (especially Firefox hidden→visible).
+        requestAnimationFrame(() => {
+          if (!mapEl || !deps.container.contains(mapEl)) {
+            creating = false;
+            pendingPosition = null;
+            pendingArticles = null;
+            return;
+          }
+          const finalPosition = pendingPosition ?? position;
+          const finalArticles = pendingArticles ?? articles;
+          pendingPosition = null;
+          pendingArticles = null;
+          handle = createBrowseMap(
+            mapEl,
+            finalPosition,
+            finalArticles,
+            deps.onSelectArticle,
+          );
+          creating = false;
+          handle.resize();
+        });
       })
       .catch(() => {
         // Map is a nice-to-have; browsing works without it
+        creating = false;
+        pendingPosition = null;
+        pendingArticles = null;
         mapEl?.remove();
       });
   }
