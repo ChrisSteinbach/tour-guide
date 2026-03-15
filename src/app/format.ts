@@ -26,16 +26,25 @@ export function distanceBetweenPositions(
   return haversineDistance(a, b) * EARTH_RADIUS_M;
 }
 
-/** Build a directions URL appropriate for the current platform. */
-export function directionsUrl(lat: number, lon: number): string {
+/** Build a directions URL appropriate for the current platform.
+ *  When `origin` is provided it is used as the starting point;
+ *  otherwise the maps app defaults to the device's current location. */
+export function directionsUrl(
+  lat: number,
+  lon: number,
+  origin?: { lat: number; lon: number },
+): string {
   const ua = navigator.userAgent;
   if (/iPad|iPhone|iPod/.test(ua)) {
-    return `https://maps.apple.com/?daddr=${lat},${lon}`;
+    const base = `https://maps.apple.com/?daddr=${lat},${lon}`;
+    return origin ? `${base}&saddr=${origin.lat},${origin.lon}` : base;
   }
-  if (/Android/.test(ua)) {
+  if (/Android/.test(ua) && !origin) {
     return `geo:${lat},${lon}?q=${lat},${lon}`;
   }
-  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`;
+  // Google Maps for desktop and Android-with-origin
+  const base = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`;
+  return origin ? `${base}&origin=${origin.lat},${origin.lon}` : base;
 }
 
 /** Full Wikipedia article URL from a title. */
