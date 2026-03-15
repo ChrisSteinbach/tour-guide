@@ -557,10 +557,14 @@ export function transition(state: AppState, event: Event): TransitionResult {
         infiniteScrollLimit,
         savedScrollTop,
       } = state.phase;
-      const effects: Effect[] = [
-        { type: "renderBrowsingList" },
-        { type: "fetchListSummaries" },
-      ];
+      const effects: Effect[] = [{ type: "renderBrowsingList" }];
+      // In non-infinite mode, eagerly fetch all summaries. In infinite mode,
+      // the enrichment scheduler handles viewport-based fetching — calling
+      // load() with the full (potentially 14k+) article list would overwhelm
+      // the Wikipedia API with requests.
+      if (detailScrollMode !== "infinite") {
+        effects.push({ type: "fetchListSummaries" });
+      }
       if (savedScrollTop > 0) {
         effects.push({ type: "restoreScrollTop", scrollTop: savedScrollTop });
       }

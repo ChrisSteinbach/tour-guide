@@ -810,6 +810,19 @@ describe("back event", () => {
     expect(effectTypes(effects)).toContain("fetchListSummaries");
   });
 
+  it("skips fetchListSummaries in infinite scroll mode", () => {
+    const state = browsingState({ scrollMode: "infinite" });
+    const browsing = expectBrowsing(state);
+    const { next: detail } = transition(state, {
+      type: "selectArticle",
+      article: browsing.articles[0],
+      scrollTop: 0,
+    });
+    const { effects } = transition(detail, { type: "back" });
+    expect(effectTypes(effects)).toContain("renderBrowsingList");
+    expect(effectTypes(effects)).not.toContain("fetchListSummaries");
+  });
+
   it("emits restoreScrollTop when savedScrollTop > 0", () => {
     const state = browsingState();
     const browsing = expectBrowsing(state);
