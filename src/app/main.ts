@@ -153,6 +153,11 @@ const executeEffect = createEffectExecutor({
     scrollToTop: () => {
       getScrollContainer().scrollTo(0, 0);
     },
+    restoreScrollTop: (scrollTop) => {
+      requestAnimationFrame(() => {
+        getScrollContainer().scrollTop = scrollTop;
+      });
+    },
   },
   data: {
     loadTileIndex: (lang, signal) =>
@@ -230,7 +235,12 @@ drawerPanel.setAttribute("hidden", "");
 
 const browseMap = createBrowseMapLifecycle({
   container: drawer.element,
-  onSelectArticle: (article) => dispatch({ type: "selectArticle", article }),
+  onSelectArticle: (article) =>
+    dispatch({
+      type: "selectArticle",
+      article,
+      scrollTop: getScrollContainer().scrollTop,
+    }),
   importBrowseMap: () => import("./browse-map"),
 });
 
@@ -276,7 +286,11 @@ const infiniteScroll = createInfiniteScrollLifecycle({
     const article = getArticleByIndex(i);
     if (!article) return null;
     const onSelect = (a: NearbyArticle) =>
-      dispatch({ type: "selectArticle", article: a });
+      dispatch({
+        type: "selectArticle",
+        article: a,
+        scrollTop: getScrollContainer().scrollTop,
+      });
     const el = createArticleItemContent(article, onSelect);
     const cached = summaryLoader.get(article.title);
     if (cached) applyEnrichment(el, cached);
@@ -426,7 +440,12 @@ function renderViewportListDOM(): void {
   if (appState.phase.phase !== "browsing" || !appState.position) return;
   const isGps = appState.positionSource !== "picked";
   renderNearbyList(app, appState.phase.articles, {
-    onSelectArticle: (article) => dispatch({ type: "selectArticle", article }),
+    onSelectArticle: (article) =>
+      dispatch({
+        type: "selectArticle",
+        article,
+        scrollTop: getScrollContainer().scrollTop,
+      }),
     currentLang: appState.currentLang,
     onLangChange: (lang) => dispatch({ type: "langChanged", lang }),
     paused: appState.phase.paused,

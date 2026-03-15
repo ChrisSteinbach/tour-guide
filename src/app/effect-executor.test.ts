@@ -93,6 +93,7 @@ function detailState(overrides: Partial<AppState> = {}): AppState {
       lastQueryPos: pos,
       scrollMode: "viewport",
       infiniteScrollLimit: 200,
+      savedScrollTop: 0,
     },
     query: { mode: "none" },
     position: pos,
@@ -134,6 +135,7 @@ function makeUi(overrides: Partial<RenderDeps> = {}): RenderDeps {
     renderAppUpdateBanner: vi.fn(),
     showMapPicker: vi.fn(),
     scrollToTop: vi.fn(),
+    restoreScrollTop: vi.fn(),
     ...overrides,
   };
 }

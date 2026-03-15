@@ -32,6 +32,7 @@ export interface RenderDeps {
   renderAppUpdateBanner: () => void;
   showMapPicker: () => void;
   scrollToTop: () => void;
+  restoreScrollTop: (scrollTop: number) => void;
 }
 
 export interface DataDeps {
@@ -263,6 +264,9 @@ export function createEffectExecutor(
       }
       case "scrollToTop":
         deps.ui.scrollToTop();
+        break;
+      case "restoreScrollTop":
+        deps.ui.restoreScrollTop(effect.scrollTop);
         break;
     }
   };
