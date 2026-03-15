@@ -472,6 +472,7 @@ describe("position event", () => {
         lastQueryPos: paris,
         scrollMode: "viewport",
         infiniteScrollLimit: INFINITE_SCROLL_INITIAL,
+        savedScrollTop: 0,
       },
     });
     const { effects } = transition(state, {
@@ -516,6 +517,7 @@ describe("gpsError event", () => {
     const { next: detailState } = transition(state, {
       type: "selectArticle",
       article: defaultBrowsingArticles[0],
+      scrollTop: 0,
     });
     const { next, effects } = transition(detailState, {
       type: "gpsError",
@@ -720,6 +722,7 @@ describe("useGps event", () => {
         lastQueryPos: paris,
         scrollMode: "infinite",
         infiniteScrollLimit: INFINITE_SCROLL_INITIAL,
+        savedScrollTop: 0,
       },
     });
     const { next, effects } = transition(state, { type: "useGps" });
@@ -746,6 +749,7 @@ describe("selectArticle event", () => {
     const { next, effects } = transition(state, {
       type: "selectArticle",
       article,
+      scrollTop: 0,
     });
     const detail = expectDetail(next);
     expect(detail.article).toBe(article);
@@ -759,6 +763,7 @@ describe("selectArticle event", () => {
     const { next } = transition(state, {
       type: "selectArticle",
       article: browsing.articles[0],
+      scrollTop: 0,
     });
     const detail = expectDetail(next);
     expect(detail.articles).toBe(browsing.articles);
@@ -778,6 +783,7 @@ describe("selectArticle event", () => {
     const { next, effects } = transition(state, {
       type: "selectArticle",
       article,
+      scrollTop: 0,
     });
     expect(next).toBe(state);
     expect(effects).toEqual([]);
@@ -793,6 +799,7 @@ describe("back event", () => {
     const { next: detail } = transition(state, {
       type: "selectArticle",
       article: browsing.articles[0],
+      scrollTop: 0,
     });
     const { next: restored, effects } = transition(detail, { type: "back" });
     const restoredBrowsing = expectBrowsing(restored);
@@ -801,6 +808,32 @@ describe("back event", () => {
     expect(restoredBrowsing.paused).toBe(true);
     expect(effectTypes(effects)).toContain("renderBrowsingList");
     expect(effectTypes(effects)).toContain("fetchListSummaries");
+  });
+
+  it("emits restoreScrollTop when savedScrollTop > 0", () => {
+    const state = browsingState();
+    const browsing = expectBrowsing(state);
+    const { next: detail } = transition(state, {
+      type: "selectArticle",
+      article: browsing.articles[0],
+      scrollTop: 250,
+    });
+    expect(expectDetail(detail).savedScrollTop).toBe(250);
+    const { effects } = transition(detail, { type: "back" });
+    const restore = effects.find((e) => e.type === "restoreScrollTop");
+    expect(restore).toEqual({ type: "restoreScrollTop", scrollTop: 250 });
+  });
+
+  it("omits restoreScrollTop when savedScrollTop is 0", () => {
+    const state = browsingState();
+    const browsing = expectBrowsing(state);
+    const { next: detail } = transition(state, {
+      type: "selectArticle",
+      article: browsing.articles[0],
+      scrollTop: 0,
+    });
+    const { effects } = transition(detail, { type: "back" });
+    expect(effectTypes(effects)).not.toContain("restoreScrollTop");
   });
 
   it("no-ops when not in detail", () => {
@@ -1263,6 +1296,7 @@ describe("scroll mode transitions", () => {
     const { next: detail } = transition(state, {
       type: "selectArticle",
       article,
+      scrollTop: 0,
     });
     expect(expectDetail(detail).scrollMode).toBe("infinite");
     const { next: restored } = transition(detail, { type: "back" });
@@ -1382,6 +1416,7 @@ describe("expandInfiniteScroll event", () => {
     const { next: detail } = transition(state, {
       type: "selectArticle",
       article: defaultBrowsingArticles[0],
+      scrollTop: 0,
     });
     expect(detail.phase.phase).toBe("detail");
     const { next: back } = transition(detail, { type: "back" });

@@ -87,6 +87,8 @@ export type Phase =
       lastQueryPos: UserPosition;
       scrollMode: "infinite" | "viewport";
       infiniteScrollLimit: number;
+      /** Scroll position of the browse list, saved on entry to restore on back. */
+      savedScrollTop: number;
     }
   | { phase: "mapPicker"; returnPhase: Phase };
 
@@ -127,7 +129,7 @@ export type Event =
   | { type: "tileLoaded"; id: string; tileQuery: NearestQuery; gen: number }
   | { type: "downloadProgress"; fraction: number; gen: number }
   | { type: "langChanged"; lang: Lang }
-  | { type: "selectArticle"; article: NearbyArticle }
+  | { type: "selectArticle"; article: NearbyArticle; scrollTop: number }
   | { type: "back" }
   | { type: "scrollPause" }
   | { type: "togglePause" }
@@ -161,7 +163,8 @@ export type Effect =
   | { type: "showAppUpdateBanner" }
   | { type: "requery"; pos: UserPosition; count: number }
   | { type: "fetchListSummaries" }
-  | { type: "scrollToTop" };
+  | { type: "scrollToTop" }
+  | { type: "restoreScrollTop"; scrollTop: number };
 
 // ── Internal helpers ─────────────────────────────────────────
 
@@ -519,6 +522,7 @@ export function transition(state: AppState, event: Event): TransitionResult {
             lastQueryPos,
             scrollMode,
             infiniteScrollLimit,
+            savedScrollTop: event.scrollTop,
           },
         },
         effects: [
@@ -551,7 +555,15 @@ export function transition(state: AppState, event: Event): TransitionResult {
         lastQueryPos,
         scrollMode: detailScrollMode,
         infiniteScrollLimit,
+        savedScrollTop,
       } = state.phase;
+      const effects: Effect[] = [
+        { type: "renderBrowsingList" },
+        { type: "fetchListSummaries" },
+      ];
+      if (savedScrollTop > 0) {
+        effects.push({ type: "restoreScrollTop", scrollTop: savedScrollTop });
+      }
       return {
         next: {
           ...state,
@@ -566,10 +578,7 @@ export function transition(state: AppState, event: Event): TransitionResult {
             infiniteScrollLimit,
           },
         },
-        effects: [
-          { type: "renderBrowsingList" },
-          { type: "fetchListSummaries" },
-        ],
+        effects,
       };
     }
 
