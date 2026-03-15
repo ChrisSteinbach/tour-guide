@@ -602,8 +602,11 @@ describe("createEffectExecutor", () => {
     );
   });
 
-  it("requery in infinite scroll mode calls ensureArticleRange instead of getNearby", () => {
-    const ensureArticleRange = vi.fn();
+  it("requery in infinite scroll mode calls ensureArticleRange then dispatches queryResult", () => {
+    const callOrder: string[] = [];
+    const ensureArticleRange = vi.fn(() =>
+      callOrder.push("ensureArticleRange"),
+    );
     const deps = makeDeps({
       getState: vi.fn(() =>
         browsingState({
@@ -619,15 +622,27 @@ describe("createEffectExecutor", () => {
           },
         }),
       ),
+      getNearby: vi.fn(() => [article]),
       ensureArticleRange,
+      dispatch: vi.fn(() => callOrder.push("dispatch")),
     });
     const exec = createEffectExecutor(deps);
 
     exec({ type: "requery", pos, count: 20 });
 
+    expect(deps.getNearby).toHaveBeenCalled();
     expect(ensureArticleRange).toHaveBeenCalledWith(pos, 20);
-    expect(deps.getNearby).not.toHaveBeenCalled();
-    expect(deps.dispatch).not.toHaveBeenCalled();
+    expect(deps.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "queryResult",
+        articles: [article],
+        queryPos: pos,
+        count: 20,
+      }),
+    );
+    // ensureArticleRange must run BEFORE queryResult dispatch so the
+    // ArticleWindow exists when onNearEnd fires during rendering.
+    expect(callOrder).toEqual(["ensureArticleRange", "dispatch"]);
   });
 
   it("requery in viewport scroll mode uses getNearby even when ensureArticleRange is provided", () => {

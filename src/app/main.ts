@@ -147,6 +147,7 @@ const executeEffect = createEffectExecutor({
       browseMap.destroy();
       drawerPanel.setAttribute("hidden", "");
       drawer.close();
+      drawerInitialized = false;
       mapPicker.show();
     },
     scrollToTop: () => {
@@ -379,6 +380,10 @@ function renderBrowsingListDOM(): void {
     drawerInitialized = true;
     if (desktopQuery.matches) {
       drawer.open();
+      // No CSS transition fires when going from hidden to visible,
+      // so transitionend never triggers browseMap.resize(). Schedule
+      // it manually so Leaflet picks up the correct container size.
+      requestAnimationFrame(() => browseMap.resize());
     } else {
       drawer.close();
     }
