@@ -578,6 +578,56 @@ describe("renderNearbyList reconciliation", () => {
   });
 });
 
+// ── article item hover ───────────────────────────────────────
+
+describe("article item hover", () => {
+  it("fires onHoverArticle with title on pointerenter", () => {
+    const onHover = vi.fn();
+    const container = document.createElement("div");
+    renderNearbyList(container, makeArticles(2), {
+      onSelectArticle: () => {},
+      onHoverArticle: onHover,
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+
+    const item = container.querySelector(".nearby-item") as HTMLElement;
+    item.dispatchEvent(new Event("pointerenter"));
+
+    expect(onHover).toHaveBeenCalledWith("Article 0");
+  });
+
+  it("fires onHoverArticle with null on pointerleave", () => {
+    const onHover = vi.fn();
+    const container = document.createElement("div");
+    renderNearbyList(container, makeArticles(1), {
+      onSelectArticle: () => {},
+      onHoverArticle: onHover,
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+
+    const item = container.querySelector(".nearby-item") as HTMLElement;
+    item.dispatchEvent(new Event("pointerleave"));
+
+    expect(onHover).toHaveBeenCalledWith(null);
+  });
+
+  it("does not add pointer listeners when onHoverArticle is omitted", () => {
+    const container = document.createElement("div");
+    renderNearbyList(container, makeArticles(1), {
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+
+    const item = container.querySelector(".nearby-item") as HTMLElement;
+    // Should not throw — no listeners attached
+    item.dispatchEvent(new Event("pointerenter"));
+    item.dispatchEvent(new Event("pointerleave"));
+  });
+});
+
 // ── updateNearbyDistances ────────────────────────────────────
 
 describe("updateNearbyDistances", () => {

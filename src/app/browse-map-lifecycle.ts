@@ -24,6 +24,7 @@ export interface BrowseMapLifecycle {
     position: { lat: number; lon: number },
     articles: NearbyArticle[],
   ): void;
+  highlight(title: string | null): void;
   resize(): void;
   destroy(): void;
 }
@@ -35,6 +36,7 @@ export function createBrowseMapLifecycle(
   let creating = false;
   let pendingPosition: { lat: number; lon: number } | null = null;
   let pendingArticles: NearbyArticle[] | null = null;
+  let pendingHighlight: string | null | undefined = undefined;
 
   function destroy(): void {
     if (handle) {
@@ -44,6 +46,7 @@ export function createBrowseMapLifecycle(
     creating = false;
     pendingPosition = null;
     pendingArticles = null;
+    pendingHighlight = undefined;
     const el = deps.container.querySelector(".browse-map");
     el?.remove();
   }
@@ -99,6 +102,7 @@ export function createBrowseMapLifecycle(
             creating = false;
             pendingPosition = null;
             pendingArticles = null;
+            pendingHighlight = undefined;
             return;
           }
           const finalPosition = pendingPosition ?? position;
@@ -112,6 +116,10 @@ export function createBrowseMapLifecycle(
             deps.onSelectArticle,
           );
           creating = false;
+          if (pendingHighlight !== undefined) {
+            handle.highlight(pendingHighlight);
+            pendingHighlight = undefined;
+          }
           handle.resize();
         });
       })
@@ -120,9 +128,18 @@ export function createBrowseMapLifecycle(
         creating = false;
         pendingPosition = null;
         pendingArticles = null;
+        pendingHighlight = undefined;
         mapEl?.remove();
       });
   }
 
-  return { update, resize, destroy };
+  function highlight(title: string | null): void {
+    if (handle) {
+      handle.highlight(title);
+    } else if (creating) {
+      pendingHighlight = title;
+    }
+  }
+
+  return { update, highlight, resize, destroy };
 }

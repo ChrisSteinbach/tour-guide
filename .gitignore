@@ -3,6 +3,7 @@ dist/
 data/
 dev-dist/
 coverage/
+.idea/
 .playwright-mcp/
 *.png
 !src/app/public/icon-*.png
@@ -11,3 +12,4 @@ coverage/
 # Dolt database files (added by bd init)
 .dolt/
 *.db
+.prep-pr/
