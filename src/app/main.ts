@@ -247,6 +247,8 @@ drawerPanel.addEventListener("transitionend", (e: TransitionEvent) => {
 
 drawerPanel.setAttribute("hidden", "");
 
+const onHoverArticle = (title: string | null) => browseMap.highlight(title);
+
 const browseMap = createBrowseMapLifecycle({
   container: drawer.element,
   onSelectArticle: (article) =>
@@ -305,7 +307,7 @@ const infiniteScroll = createInfiniteScrollLifecycle({
         article: a,
         scrollTop: getScrollContainer().scrollTop,
       });
-    const el = createArticleItemContent(article, onSelect);
+    const el = createArticleItemContent(article, onSelect, onHoverArticle);
     const cached = summaryLoader.get(article.title);
     if (cached) applyEnrichment(el, cached);
     return el;
@@ -460,6 +462,7 @@ function renderViewportListDOM(): void {
         article,
         scrollTop: getScrollContainer().scrollTop,
       }),
+    onHoverArticle,
     currentLang: appState.currentLang,
     onLangChange: (lang) => dispatch({ type: "langChanged", lang }),
     paused: appState.phase.paused,

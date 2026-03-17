@@ -4,6 +4,7 @@ import type { NearbyArticle, UserPosition } from "./types";
 
 export interface BrowseMapHandle {
   update(position: UserPosition, articles: NearbyArticle[]): void;
+  highlight(title: string | null): void;
   resize(): void;
   destroy(): void;
 }
@@ -26,12 +27,25 @@ const WIKI_PIN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="117 52 27
 const MARKER_WIDTH = 30;
 const MARKER_HEIGHT = 42;
 
-const wikiPinIcon = L.icon({
-  iconUrl: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(WIKI_PIN_SVG)}`,
-  iconSize: [MARKER_WIDTH, MARKER_HEIGHT],
-  iconAnchor: [MARKER_WIDTH / 2, MARKER_HEIGHT],
-  tooltipAnchor: [0, -MARKER_HEIGHT],
-});
+const HIGHLIGHT_WIDTH = 36;
+const HIGHLIGHT_HEIGHT = 50;
+
+function makeWikiPinIcon(fill: string, w: number, h: number): L.Icon {
+  const svg = WIKI_PIN_SVG.replace('fill="#fff"', `fill="${fill}"`);
+  return L.icon({
+    iconUrl: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
+    iconSize: [w, h],
+    iconAnchor: [w / 2, h],
+    tooltipAnchor: [0, -h],
+  });
+}
+
+const wikiPinIcon = makeWikiPinIcon("#fff", MARKER_WIDTH, MARKER_HEIGHT);
+const wikiPinHighlightIcon = makeWikiPinIcon(
+  "#FFC107",
+  HIGHLIGHT_WIDTH,
+  HIGHLIGHT_HEIGHT,
+);
 
 export function createBrowseMap(
   container: HTMLElement,
@@ -59,18 +73,22 @@ export function createBrowseMap(
     fillOpacity: 0.8,
   }).addTo(map);
 
-  let articleMarkers: L.Marker[] = [];
+  let articleMarkers = new Map<string, L.Marker>();
+  let highlightedTitle: string | null = null;
 
   function updateMarkers(newArticles: NearbyArticle[]): void {
-    for (const m of articleMarkers) m.remove();
-    articleMarkers = newArticles.map((article) => {
+    for (const m of articleMarkers.values()) m.remove();
+    articleMarkers = new Map();
+    for (const article of newArticles) {
+      const isHighlighted = article.title === highlightedTitle;
       const m = L.marker([article.lat, article.lon], {
-        icon: wikiPinIcon,
+        icon: isHighlighted ? wikiPinHighlightIcon : wikiPinIcon,
+        zIndexOffset: isHighlighted ? 1000 : 0,
       }).addTo(map);
       m.bindTooltip(article.title);
       m.on("click", () => onSelectArticle(article));
-      return m;
-    });
+      articleMarkers.set(article.title, m);
+    }
   }
 
   function fitToMarkers(pos: UserPosition, arts: NearbyArticle[]): void {
@@ -97,6 +115,25 @@ export function createBrowseMap(
       ) {
         currentTitles = newTitles;
         fitToMarkers(newPosition, newArticles);
+      }
+    },
+    highlight(title) {
+      // Remove previous highlight
+      if (highlightedTitle) {
+        const prev = articleMarkers.get(highlightedTitle);
+        if (prev) {
+          prev.setIcon(wikiPinIcon);
+          prev.setZIndexOffset(0);
+        }
+      }
+      highlightedTitle = title;
+      // Apply new highlight
+      if (title) {
+        const marker = articleMarkers.get(title);
+        if (marker) {
+          marker.setIcon(wikiPinHighlightIcon);
+          marker.setZIndexOffset(1000);
+        }
       }
     },
     resize() {

@@ -12,6 +12,7 @@ function makeContainer(): HTMLElement {
 function makeHandle(): BrowseMapHandle {
   return {
     update: vi.fn(),
+    highlight: vi.fn(),
     resize: vi.fn(),
     destroy: vi.fn(),
   };
@@ -128,6 +129,53 @@ describe("BrowseMapLifecycle", () => {
         secondArticles,
         expect.any(Function),
       );
+    });
+  });
+
+  describe("highlight", () => {
+    it("calls handle.highlight when map exists", async () => {
+      const deps = makeDeps();
+      const lifecycle = createBrowseMapLifecycle(deps);
+
+      lifecycle.update({ lat: 51, lon: 0 }, []);
+      await flushImportAndRaf();
+
+      lifecycle.highlight("Some Article");
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(deps.lastHandle.highlight).toHaveBeenCalledWith("Some Article");
+    });
+
+    it("is safe to call without a map", () => {
+      const lifecycle = createBrowseMapLifecycle(makeDeps());
+      lifecycle.highlight("Some Article"); // should not throw
+    });
+
+    it("applies pending highlight after map initializes", async () => {
+      const deps = makeDeps();
+      const lifecycle = createBrowseMapLifecycle(deps);
+
+      lifecycle.update({ lat: 51, lon: 0 }, []);
+      lifecycle.highlight("Deferred Article");
+      await flushImportAndRaf();
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(deps.lastHandle.highlight).toHaveBeenCalledWith(
+        "Deferred Article",
+      );
+    });
+
+    it("highlight(null) before init clears pending highlight", async () => {
+      const deps = makeDeps();
+      const lifecycle = createBrowseMapLifecycle(deps);
+
+      lifecycle.update({ lat: 51, lon: 0 }, []);
+      lifecycle.highlight("Some Article");
+      lifecycle.highlight(null);
+      await flushImportAndRaf();
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(deps.lastHandle.highlight).toHaveBeenCalledWith(null);
     });
   });
 

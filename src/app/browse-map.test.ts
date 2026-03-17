@@ -27,6 +27,8 @@ vi.mock("leaflet", () => {
     bindTooltip: vi.fn().mockReturnThis(),
     on: vi.fn().mockReturnThis(),
     remove: vi.fn(),
+    setIcon: vi.fn(),
+    setZIndexOffset: vi.fn(),
   });
 
   return {
@@ -250,6 +252,107 @@ describe("createBrowseMap", () => {
       handle.update(pos(48, 2), [article("A", 49, 3)]);
 
       expect(mocks.mockMap.fitBounds).toHaveBeenCalled();
+      handle.destroy();
+    });
+
+    it("preserves highlight state on markers recreated by update()", () => {
+      const handle = createBrowseMap(
+        container,
+        pos(48, 2),
+        [article("X", 49, 3)],
+        vi.fn(),
+      );
+
+      handle.highlight("X");
+      handle.update(pos(48, 2), [article("X", 49, 3)]);
+
+      const markerMock = L.marker as ReturnType<typeof vi.fn>;
+      // update() recreates markers — the new "X" marker should retain highlight
+      expect(markerMock).toHaveBeenLastCalledWith(
+        [49, 3],
+        expect.objectContaining({
+          zIndexOffset: 1000,
+        }),
+      );
+      handle.destroy();
+    });
+  });
+
+  describe("highlight()", () => {
+    it("applies highlight icon and zIndexOffset to the matching marker", () => {
+      const articles = [article("Eiffel Tower", 48.858, 2.294)];
+      const handle = createBrowseMap(
+        container,
+        pos(48.86, 2.35),
+        articles,
+        vi.fn(),
+      );
+
+      const markerMock = L.marker as ReturnType<typeof vi.fn>;
+      const marker = markerMock.mock.results[0].value;
+
+      handle.highlight("Eiffel Tower");
+
+      expect(marker.setIcon).toHaveBeenCalledWith(expect.any(Object));
+      expect(marker.setZIndexOffset).toHaveBeenCalledWith(1000);
+      handle.destroy();
+    });
+
+    it("clears previous highlight when highlighting a different marker", () => {
+      const articles = [
+        article("Eiffel Tower", 48.858, 2.294),
+        article("Louvre", 48.861, 2.337),
+      ];
+      const handle = createBrowseMap(
+        container,
+        pos(48.86, 2.35),
+        articles,
+        vi.fn(),
+      );
+
+      const markerMock = L.marker as ReturnType<typeof vi.fn>;
+      const eiffelMarker = markerMock.mock.results[0].value;
+      const louvreMarker = markerMock.mock.results[1].value;
+
+      handle.highlight("Eiffel Tower");
+      handle.highlight("Louvre");
+
+      // Previous highlight cleared
+      expect(eiffelMarker.setZIndexOffset).toHaveBeenLastCalledWith(0);
+      // New highlight applied
+      expect(louvreMarker.setZIndexOffset).toHaveBeenCalledWith(1000);
+      handle.destroy();
+    });
+
+    it("removes highlight when called with null", () => {
+      const articles = [article("Eiffel Tower", 48.858, 2.294)];
+      const handle = createBrowseMap(
+        container,
+        pos(48.86, 2.35),
+        articles,
+        vi.fn(),
+      );
+
+      const markerMock = L.marker as ReturnType<typeof vi.fn>;
+      const marker = markerMock.mock.results[0].value;
+
+      handle.highlight("Eiffel Tower");
+      handle.highlight(null);
+
+      expect(marker.setZIndexOffset).toHaveBeenLastCalledWith(0);
+      handle.destroy();
+    });
+
+    it("is safe to call with a non-existent title", () => {
+      const articles = [article("Eiffel Tower", 48.858, 2.294)];
+      const handle = createBrowseMap(
+        container,
+        pos(48.86, 2.35),
+        articles,
+        vi.fn(),
+      );
+
+      handle.highlight("Nonexistent"); // should not throw
       handle.destroy();
     });
   });

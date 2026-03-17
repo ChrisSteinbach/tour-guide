@@ -230,6 +230,7 @@ export function renderNearbyHeader(
 export function createArticleItemContent(
   article: NearbyArticle,
   onSelectArticle: (article: NearbyArticle) => void,
+  onHoverArticle?: (title: string | null) => void,
 ): HTMLDivElement {
   const item = document.createElement("div");
   item.className = "nearby-item";
@@ -243,6 +244,10 @@ export function createArticleItemContent(
       onSelectArticle(article);
     }
   });
+  if (onHoverArticle) {
+    item.addEventListener("pointerenter", () => onHoverArticle(article.title));
+    item.addEventListener("pointerleave", () => onHoverArticle(null));
+  }
 
   const thumb = document.createElement("div");
   thumb.className = "nearby-thumb";
@@ -268,9 +273,12 @@ export function createArticleItemContent(
 function createArticleItem(
   article: NearbyArticle,
   onSelectArticle: (article: NearbyArticle) => void,
+  onHoverArticle?: (title: string | null) => void,
 ): HTMLLIElement {
   const li = document.createElement("li");
-  li.appendChild(createArticleItemContent(article, onSelectArticle));
+  li.appendChild(
+    createArticleItemContent(article, onSelectArticle, onHoverArticle),
+  );
   return li;
 }
 
@@ -320,6 +328,7 @@ function reconcileListItems(
   ul: HTMLUListElement,
   articles: NearbyArticle[],
   onSelectArticle: (article: NearbyArticle) => void,
+  onHoverArticle?: (title: string | null) => void,
 ): void {
   const existingByTitle = new Map<string, HTMLLIElement>();
   for (const child of Array.from(ul.children)) {
@@ -339,7 +348,9 @@ function reconcileListItems(
       existingByTitle.delete(article.title);
       newChildren.push(existing);
     } else {
-      newChildren.push(createArticleItem(article, onSelectArticle));
+      newChildren.push(
+        createArticleItem(article, onSelectArticle, onHoverArticle),
+      );
     }
   }
 
@@ -348,6 +359,7 @@ function reconcileListItems(
 
 export interface RenderNearbyListOptions {
   onSelectArticle: (article: NearbyArticle) => void;
+  onHoverArticle?: (title: string | null) => void;
   currentLang: Lang;
   onLangChange: (lang: Lang) => void;
   paused?: boolean;
@@ -367,6 +379,7 @@ export function renderNearbyList(
 ): void {
   const {
     onSelectArticle,
+    onHoverArticle,
     currentLang,
     onLangChange,
     paused,
@@ -404,7 +417,9 @@ export function renderNearbyList(
     const list = document.createElement("ul");
     list.className = "nearby-list";
     for (const article of articles) {
-      list.appendChild(createArticleItem(article, onSelectArticle));
+      list.appendChild(
+        createArticleItem(article, onSelectArticle, onHoverArticle),
+      );
     }
     scrollWrapper.appendChild(list);
 
@@ -427,7 +442,7 @@ export function renderNearbyList(
   }
 
   // Reconcile article list items by title key
-  reconcileListItems(existingList, articles, onSelectArticle);
+  reconcileListItems(existingList, articles, onSelectArticle, onHoverArticle);
 
   scrollEl.scrollTop = savedScrollTop;
   restoreFocus(container, savedFocus);
