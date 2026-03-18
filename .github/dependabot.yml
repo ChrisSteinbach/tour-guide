@@ -18,3 +18,7 @@ updates:
         dependency-type: development
       production:
         dependency-type: production
+    ignore:
+      # vite-plugin-pwa@1.2.0 doesn't support Vite 8 yet
+      - dependency-name: vite
+        versions: [">=8.0.0"]
