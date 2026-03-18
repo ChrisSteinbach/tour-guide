@@ -127,6 +127,7 @@ export type Event =
       gen: number;
     }
   | { type: "tileLoaded"; id: string; tileQuery: NearestQuery; gen: number }
+  | { type: "tileLoadFailed"; id: string; gen: number }
   | { type: "downloadProgress"; fraction: number; gen: number }
   | { type: "langChanged"; lang: Lang }
   | { type: "selectArticle"; article: NearbyArticle; scrollTop: number }
@@ -142,6 +143,7 @@ export type Event =
       queryPos: UserPosition;
       count: number;
     }
+  | { type: "noTilesNearby" }
   | { type: "swUpdateAvailable" };
 
 // ── Effect (all side effects the machine requests) ───────────
@@ -717,6 +719,69 @@ export function transition(state: AppState, event: Event): TransitionResult {
         return forceRequery(next);
       }
       return { next, effects: [] };
+    }
+
+    case "tileLoadFailed": {
+      if (event.gen !== state.loadGeneration) {
+        return { next: state, effects: [] };
+      }
+      const failedLoadingTiles = new Set(state.loadingTiles);
+      failedLoadingTiles.delete(event.id);
+      const next: AppState = { ...state, loadingTiles: failedLoadingTiles };
+      if (
+        state.phase.phase === "loadingTiles" &&
+        state.position &&
+        failedLoadingTiles.size === 0
+      ) {
+        // If some tiles loaded successfully, enterBrowsing will requery them.
+        // If all tiles failed (none loaded), go straight to empty browsing.
+        const hasTiles =
+          next.query.mode === "tiled" && next.query.tiles.size > 0;
+        if (hasTiles) return enterBrowsing(next);
+        const scrollMode = computeScrollMode(state.positionSource, false);
+        const count = state.viewportFillCount;
+        return {
+          next: {
+            ...next,
+            phase: {
+              phase: "browsing",
+              articles: [],
+              nearbyCount: count,
+              paused: false,
+              pauseReason: null,
+              lastQueryPos: state.position,
+              scrollMode,
+              infiniteScrollLimit: INFINITE_SCROLL_INITIAL,
+            },
+          },
+          effects: [{ type: "renderBrowsingList" }],
+        };
+      }
+      return { next, effects: [] };
+    }
+
+    case "noTilesNearby": {
+      if (state.phase.phase !== "loadingTiles" || !state.position) {
+        return { next: state, effects: [] };
+      }
+      const scrollMode = computeScrollMode(state.positionSource, false);
+      const count = state.viewportFillCount;
+      return {
+        next: {
+          ...state,
+          phase: {
+            phase: "browsing",
+            articles: [],
+            nearbyCount: count,
+            paused: false,
+            pauseReason: null,
+            lastQueryPos: state.position,
+            scrollMode,
+            infiniteScrollLimit: INFINITE_SCROLL_INITIAL,
+          },
+        },
+        effects: [{ type: "renderBrowsingList" }],
+      };
     }
 
     default:

@@ -144,6 +144,7 @@ export function createEffectExecutor(
     );
 
     const allTiles = [primary, ...adjacent];
+    let anyStarted = false;
     for (const id of allTiles) {
       if (signal.aborted) return;
       const currentState = deps.getState();
@@ -156,6 +157,7 @@ export function createEffectExecutor(
       const entry = deps.data.getTileEntry(tileMap, id);
       if (!entry) continue;
 
+      anyStarted = true;
       const isPrimary = id === primary;
       deps.dispatch({ type: "tileLoadStarted", id });
 
@@ -166,11 +168,20 @@ export function createEffectExecutor(
           deps.dispatch({ type: "tileLoaded", id, tileQuery, gen });
         })
         .catch(() => {
-          // Tile load failures are non-fatal; the tile simply won't appear
+          if (signal.aborted) return;
+          if (gen !== deps.getState().loadGeneration) return;
+          deps.dispatch({ type: "tileLoadFailed", id, gen });
         });
 
       if (isPrimary) {
         await loadOne;
+      }
+    }
+
+    if (!anyStarted && !signal.aborted) {
+      const finalState = deps.getState();
+      if (finalState.loadingTiles.size === 0) {
+        deps.dispatch({ type: "noTilesNearby" });
       }
     }
   }
@@ -193,6 +204,7 @@ export function createEffectExecutor(
         break;
       }
       case "startGps":
+        stopWatcher?.();
         stopWatcher = deps.watchLocation({
           onPosition: (pos) => deps.dispatch({ type: "position", pos }),
           onError: (error) => deps.dispatch({ type: "gpsError", error }),

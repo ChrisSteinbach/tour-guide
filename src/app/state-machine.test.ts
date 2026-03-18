@@ -1039,6 +1039,23 @@ describe("tileIndexLoaded event", () => {
     expect(effectTypes(effects)).toContain("render");
   });
 
+  it("enters locating when downloading with geolocation but no position yet", () => {
+    const state = makeState({
+      phase: { phase: "downloading", progress: 0 },
+      hasGeolocation: true,
+      position: null,
+    });
+    const { next, effects } = transition(state, {
+      type: "tileIndexLoaded",
+      index: tileIndex,
+      lang: "en",
+      gen: 0,
+    });
+    expect(next.phase.phase).toBe("locating");
+    expect(next.query.mode).toBe("tiled");
+    expect(effectTypes(effects)).toContain("render");
+  });
+
   it("enters error when downloading with no position and no geolocation", () => {
     const state = makeState({
       phase: { phase: "downloading", progress: 0 },
@@ -1085,6 +1102,45 @@ describe("tileLoaded event", () => {
     expect(effectTypes(effects)).toContain("scrollToTop");
   });
 
+  it("triggers requery during browsing when a new tile arrives", () => {
+    const state = browsingState({ loadingTiles: new Set(["28-37"]) });
+    const tileQuery = stubNearestQuery;
+    const { next, effects } = transition(state, {
+      type: "tileLoaded",
+      id: "28-37",
+      tileQuery,
+      gen: 0,
+    });
+    expect(next.phase.phase).toBe("browsing");
+    expect(next.loadingTiles.has("28-37")).toBe(false);
+    if (next.query.mode === "tiled") {
+      expect(next.query.tiles.has("28-37")).toBe(true);
+    }
+    expect(effectTypes(effects)).toContain("requery");
+  });
+
+  it("stores tile during detail phase without requery", () => {
+    const base = browsingState({ loadingTiles: new Set(["28-37"]) });
+    const { next: detailState } = transition(base, {
+      type: "selectArticle",
+      article: defaultBrowsingArticles[0],
+      scrollTop: 0,
+    });
+    const tileQuery = stubNearestQuery;
+    const { next, effects } = transition(detailState, {
+      type: "tileLoaded",
+      id: "28-37",
+      tileQuery,
+      gen: 0,
+    });
+    expect(next.phase.phase).toBe("detail");
+    expect(next.loadingTiles.has("28-37")).toBe(false);
+    if (next.query.mode === "tiled") {
+      expect(next.query.tiles.has("28-37")).toBe(true);
+    }
+    expect(effectTypes(effects)).not.toContain("requery");
+  });
+
   it("ignores stale generation", () => {
     const tiledQuery = makeTiledQuery([]);
     const state = makeState({
@@ -1098,6 +1154,164 @@ describe("tileLoaded event", () => {
       tileQuery,
       gen: 1,
     });
+    expect(next).toBe(state);
+    expect(effects).toEqual([]);
+  });
+});
+
+// ── tileLoadFailed event ──────────────────────────────────
+
+describe("tileLoadFailed event", () => {
+  it("removes tile from loadingTiles", () => {
+    const state = browsingState({ loadingTiles: new Set(["27-36", "28-37"]) });
+    const { next, effects } = transition(state, {
+      type: "tileLoadFailed",
+      id: "27-36",
+      gen: 0,
+    });
+    expect(next.loadingTiles.has("27-36")).toBe(false);
+    expect(next.loadingTiles.has("28-37")).toBe(true);
+    expect(effects).toEqual([]);
+  });
+
+  it("enters browsing with empty articles when all tiles fail", () => {
+    const tiledQuery = makeTiledQuery();
+    const state = makeState({
+      phase: { phase: "loadingTiles" },
+      query: tiledQuery,
+      position: paris,
+      positionSource: "gps",
+      loadingTiles: new Set(["27-36"]),
+    });
+    const { next, effects } = transition(state, {
+      type: "tileLoadFailed",
+      id: "27-36",
+      gen: 0,
+    });
+    const browsing = expectBrowsing(next);
+    expect(browsing.articles).toEqual([]);
+    expect(next.loadingTiles.has("27-36")).toBe(false);
+    expect(effectTypes(effects)).toContain("renderBrowsingList");
+  });
+
+  it("enters browsing via requery when last tile fails but others loaded", () => {
+    const index = makeTileIndex(["27-36", "28-37"]);
+    const query: QueryState = {
+      mode: "tiled",
+      index,
+      tileMap: buildTileMap(index),
+      tiles: new Map([["27-36", stubNearestQuery]]),
+    };
+    const state = makeState({
+      phase: { phase: "loadingTiles" },
+      query,
+      position: paris,
+      positionSource: "gps",
+      loadingTiles: new Set(["28-37"]),
+    });
+    const { next, effects } = transition(state, {
+      type: "tileLoadFailed",
+      id: "28-37",
+      gen: 0,
+    });
+    expect(next.phase.phase).toBe("browsing");
+    expect(next.loadingTiles.has("28-37")).toBe(false);
+    expect(effectTypes(effects)).toContain("requery");
+  });
+
+  it("stays in loadingTiles when other tiles are still pending", () => {
+    const tiledQuery = makeTiledQuery();
+    const state = makeState({
+      phase: { phase: "loadingTiles" },
+      query: tiledQuery,
+      position: paris,
+      loadingTiles: new Set(["27-36", "28-37"]),
+    });
+    const { next } = transition(state, {
+      type: "tileLoadFailed",
+      id: "27-36",
+      gen: 0,
+    });
+    expect(next.phase.phase).toBe("loadingTiles");
+    expect(next.loadingTiles.has("27-36")).toBe(false);
+    expect(next.loadingTiles.has("28-37")).toBe(true);
+  });
+
+  it("removes tile during browsing with no effects", () => {
+    const state = browsingState({ loadingTiles: new Set(["28-37"]) });
+    const { next, effects } = transition(state, {
+      type: "tileLoadFailed",
+      id: "28-37",
+      gen: 0,
+    });
+    expectBrowsing(next);
+    expect(next.loadingTiles.has("28-37")).toBe(false);
+    expect(effects).toEqual([]);
+  });
+
+  it("removes tile during detail phase with no effects", () => {
+    const base = browsingState({ loadingTiles: new Set(["28-37"]) });
+    const { next: detailState } = transition(base, {
+      type: "selectArticle",
+      article: defaultBrowsingArticles[0],
+      scrollTop: 0,
+    });
+    const { next, effects } = transition(detailState, {
+      type: "tileLoadFailed",
+      id: "28-37",
+      gen: 0,
+    });
+    expectDetail(next);
+    expect(next.loadingTiles.has("28-37")).toBe(false);
+    expect(effects).toEqual([]);
+  });
+
+  it("ignores stale generation", () => {
+    const state = browsingState({
+      loadingTiles: new Set(["27-36"]),
+      loadGeneration: 2,
+    });
+    const { next, effects } = transition(state, {
+      type: "tileLoadFailed",
+      id: "27-36",
+      gen: 1,
+    });
+    expect(next).toBe(state);
+    expect(effects).toEqual([]);
+  });
+});
+
+// ── noTilesNearby event ───────────────────────────────────
+
+describe("noTilesNearby event", () => {
+  it("enters browsing with empty articles from loadingTiles", () => {
+    const tiledQuery = makeTiledQuery();
+    const state = makeState({
+      phase: { phase: "loadingTiles" },
+      query: tiledQuery,
+      position: paris,
+      positionSource: "gps",
+    });
+    const { next, effects } = transition(state, { type: "noTilesNearby" });
+    const browsing = expectBrowsing(next);
+    expect(browsing.articles).toEqual([]);
+    expect(browsing.scrollMode).toBe("viewport");
+    expect(effectTypes(effects)).toContain("renderBrowsingList");
+  });
+
+  it("is a no-op when not in loadingTiles phase", () => {
+    const state = browsingState();
+    const { next, effects } = transition(state, { type: "noTilesNearby" });
+    expect(next).toBe(state);
+    expect(effects).toEqual([]);
+  });
+
+  it("is a no-op when position is null", () => {
+    const state = makeState({
+      phase: { phase: "loadingTiles" },
+      position: null,
+    });
+    const { next, effects } = transition(state, { type: "noTilesNearby" });
     expect(next).toBe(state);
     expect(effects).toEqual([]);
   });
