@@ -21,7 +21,7 @@ Two SQL dump files are downloaded per language from `dumps.wikimedia.org`:
 | `page`     | `{wiki}-latest-page.sql.gz`     | Article IDs, titles, namespaces, redirect flags | ~2 GB          |
 | `geo_tags` | `{wiki}-latest-geo_tags.sql.gz` | Geographic coordinates linked to page IDs       | ~600 MB        |
 
-Files are downloaded to `data/dumps/` and cached across runs.
+Files are downloaded to `data/dumps/` and cached across runs. Wikipedia publishes new SQL dumps every 1–2 weeks per wiki. Geographic coordinate data (`geo_tags`) changes slowly relative to article text, so a monthly refresh (see `pipeline.yml`) captures new and relocated articles without excessive CI cost.
 
 ### Extraction Steps
 
