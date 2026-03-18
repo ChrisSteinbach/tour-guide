@@ -61,7 +61,6 @@ bd show <id>          # View issue details
 bd create "<title>"   # Create a new issue
 bd update <id> --status in_progress  # Claim work
 bd close <id>         # Complete work (alias for bd update --status done)
-bd sync               # Sync with git
 ```
 
 ## Branching & Deployment
@@ -83,7 +82,6 @@ When ending a work session, ALL steps below are mandatory. Work is NOT complete 
 4. **Push to remote:**
    ```bash
    git push -u origin HEAD  # Push feature branch
-   bd sync
    gh pr create              # Open PR to main
    ```
 5. **Clean up** — Clear stashes, prune remote branches
