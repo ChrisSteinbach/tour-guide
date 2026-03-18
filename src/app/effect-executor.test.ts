@@ -452,6 +452,93 @@ describe("createEffectExecutor", () => {
     );
   });
 
+  it("loadTiles dispatches noTilesNearby when no tiles exist for position", async () => {
+    const tileMap = new Map<string, TileEntry>();
+    const deps = makeDeps({
+      getState: vi.fn(() =>
+        tiledState(tileMap, { phase: { phase: "loadingTiles" } }),
+      ),
+      data: makeData({
+        tilesForPosition: vi.fn(() => ({ primary: "28-38", adjacent: [] })),
+        getTileEntry: vi.fn(() => undefined),
+      }),
+    });
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "loadTiles", lang: "de" });
+    await Promise.resolve();
+
+    expect(deps.dispatch).toHaveBeenCalledWith({ type: "noTilesNearby" });
+  });
+
+  it("loadTiles does not dispatch noTilesNearby when tiles are in progress", async () => {
+    const tileMap = new Map<string, TileEntry>();
+    const deps = makeDeps({
+      getState: vi.fn(() =>
+        tiledState(tileMap, {
+          phase: { phase: "loadingTiles" },
+          loadingTiles: new Set(["28-38"]),
+        }),
+      ),
+      data: makeData({
+        tilesForPosition: vi.fn(() => ({ primary: "28-38", adjacent: [] })),
+        getTileEntry: vi.fn(() => undefined),
+      }),
+    });
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "loadTiles", lang: "de" });
+    await Promise.resolve();
+
+    expect(deps.dispatch).not.toHaveBeenCalledWith({ type: "noTilesNearby" });
+  });
+
+  it("loadTiles does not dispatch noTilesNearby when tiles are loaded", async () => {
+    const entry = makeTileEntry("t1");
+    const tileMap = new Map([["t1", entry]]);
+    const deps = makeDeps({
+      getState: vi.fn(() => tiledState(tileMap)),
+      data: makeData({
+        tilesForPosition: vi.fn(() => ({ primary: "t1", adjacent: [] })),
+        getTileEntry: vi.fn((_map, id) => (id === "t1" ? entry : undefined)),
+        loadTile: vi.fn(async () => stubNearestQuery),
+      }),
+    });
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "loadTiles", lang: "en" });
+    await vi.waitFor(() => {
+      expect(deps.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "tileLoaded" }),
+      );
+    });
+
+    expect(deps.dispatch).not.toHaveBeenCalledWith({ type: "noTilesNearby" });
+  });
+
+  it("loadTiles dispatches tileLoadFailed when a tile fetch rejects", async () => {
+    const entry = makeTileEntry("t1");
+    const tileMap = new Map([["t1", entry]]);
+    const deps = makeDeps({
+      getState: vi.fn(() => tiledState(tileMap)),
+      data: makeData({
+        tilesForPosition: vi.fn(() => ({ primary: "t1", adjacent: [] })),
+        getTileEntry: vi.fn((_map, id) => (id === "t1" ? entry : undefined)),
+        loadTile: vi.fn(async () => {
+          throw new Error("network error");
+        }),
+      }),
+    });
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "loadTiles", lang: "en" });
+    await vi.waitFor(() => {
+      expect(deps.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "tileLoadFailed", id: "t1" }),
+      );
+    });
+  });
+
   // ── Async orchestration: fetchSummary ──────────────────────
 
   it("fetchSummary renders loading then ready on success", async () => {
@@ -558,6 +645,65 @@ describe("createEffectExecutor", () => {
     // Second stop is a no-op
     exec({ type: "stopGps" });
     expect(stopFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("startGps stops previous watcher before creating a new one", () => {
+    const callOrder: string[] = [];
+    const firstStop = vi.fn(() => callOrder.push("stopFirst"));
+    const secondStop = vi.fn();
+    const deps = makeDeps({
+      watchLocation: vi
+        .fn()
+        .mockImplementationOnce((_callbacks) => {
+          callOrder.push("watchFirst");
+          return firstStop;
+        })
+        .mockImplementationOnce((_callbacks) => {
+          callOrder.push("watchSecond");
+          return secondStop;
+        }),
+    });
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "startGps" });
+    exec({ type: "startGps" });
+
+    expect(firstStop).toHaveBeenCalledTimes(1);
+    expect(deps.watchLocation).toHaveBeenCalledTimes(2);
+    expect(callOrder).toEqual(["watchFirst", "stopFirst", "watchSecond"]);
+  });
+
+  it("startGps onPosition callback dispatches position event", () => {
+    const deps = makeDeps({
+      watchLocation: vi.fn((callbacks) => {
+        callbacks.onPosition({ lat: 48.85, lon: 2.35 });
+        return vi.fn();
+      }),
+    });
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "startGps" });
+    expect(deps.dispatch).toHaveBeenCalledWith({
+      type: "position",
+      pos: { lat: 48.85, lon: 2.35 },
+    });
+  });
+
+  it("startGps onError callback dispatches gpsError event", () => {
+    const error = { code: "TIMEOUT" as const, message: "timed out" };
+    const deps = makeDeps({
+      watchLocation: vi.fn((callbacks) => {
+        callbacks.onError(error);
+        return vi.fn();
+      }),
+    });
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "startGps" });
+    expect(deps.dispatch).toHaveBeenCalledWith({
+      type: "gpsError",
+      error,
+    });
   });
 
   // ── Wiring correctness ────────────────────────────────────
