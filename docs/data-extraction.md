@@ -82,9 +82,9 @@ This approach avoids bloating the static data files and ensures descriptions sta
 
 ## Multi-Language Support
 
-Three languages are supported: English (`en`), Swedish (`sv`), and Japanese (`ja`).
+14 languages are supported: English (`en`), German (`de`), French (`fr`), Spanish (`es`), Italian (`it`), Russian (`ru`), Chinese (`zh`), Portuguese (`pt`), Polish (`pl`), Dutch (`nl`), Korean (`ko`), Arabic (`ar`), Swedish (`sv`), and Japanese (`ja`).
 
-Each language produces its own independent data file (`articles-en.json`, `articles-sv.json`, `articles-ja.json`). The language list is defined in `src/lang.ts`.
+Each language produces its own independent data file (e.g. `articles-en.json`, `articles-de.json`). The language list is defined in `src/lang.ts`.
 
 The `--lang` flag controls which language to extract:
 
@@ -94,12 +94,12 @@ npm run extract -- --lang=ja
 
 ## Adding a New Language
 
-To add a fourth language (e.g. German `de`):
+To add a new language:
 
 1. Add the language code to the `SUPPORTED_LANGS` array in `src/lang.ts`. This automatically extends the `Lang` type.
 2. Add canary landmarks for the new language in `src/pipeline/canary.ts` (the `LANDMARKS` record). The `Record<Lang, ...>` type requires this — TypeScript will report a type error after step 1 until this step is done. Without canary landmarks, extraction will succeed but data integrity won't be validated.
-3. Run extraction: `npm run extract -- --lang=de`
-4. Run the pipeline: `npm run pipeline -- --lang=de`
+3. Run extraction: `npm run extract -- --lang=xx`
+4. Run the pipeline: `npm run pipeline -- --lang=xx`
 5. Add the language to the CI matrix in `.github/workflows/pipeline.yml` so it's included in monthly rebuilds.
 
 No special parsing is needed — the SQL dump format is identical across all Wikipedia languages. CJK titles (Japanese, Chinese, Korean) are handled transparently via UTF-8.

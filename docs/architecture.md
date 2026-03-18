@@ -295,7 +295,7 @@ src/app/
   drawer-gesture.ts           Swipe/drag gesture handling for the map drawer
   map-picker-lifecycle.ts     Lazy-loads and manages the full-screen map picker overlay
 
-src/lang.ts            Supported languages (en, sv, ja)
+src/lang.ts            Supported languages (en, de, fr, es, it, ru, zh, pt, pl, nl, ko, ar, sv, ja)
 src/tiles.ts           Tile types, grid constants, tile ID computation
 
 src/app/CLAUDE.md      Module-specific dev instructions (browser verification workflow)
