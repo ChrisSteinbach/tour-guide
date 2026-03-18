@@ -19,6 +19,7 @@ updates:
       production:
         dependency-type: production
     ignore:
-      # vite-plugin-pwa@1.2.0 doesn't support Vite 8 yet
+      # TODO: Remove this ignore rule once vite-plugin-pwa releases a version
+      # that supports Vite 8. Check: npm view vite-plugin-pwa peerDependencies
       - dependency-name: vite
         versions: [">=8.0.0"]
