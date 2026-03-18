@@ -43,7 +43,7 @@
     "stylelint-config-standard": "^40.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.57.0",
+    "typescript-eslint": "^8.57.1",
     "vite": "^7.0.0",
     "vite-plugin-pwa": "^1.2.0",
     "vitest": "^4.1.0"
