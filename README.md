@@ -171,13 +171,24 @@ src/
 
 ## Supported languages
 
-| Language      | Articles |
-| ------------- | -------- |
-| English (en)  | ~1.2M    |
-| Swedish (sv)  | ~250K    |
-| Japanese (ja) | ~180K    |
+| Language        |
+| --------------- |
+| English (en)    |
+| German (de)     |
+| French (fr)     |
+| Spanish (es)    |
+| Italian (it)    |
+| Russian (ru)    |
+| Chinese (zh)    |
+| Portuguese (pt) |
+| Polish (pl)     |
+| Dutch (nl)      |
+| Korean (ko)     |
+| Arabic (ar)     |
+| Swedish (sv)    |
+| Japanese (ja)   |
 
-Counts are approximate point-in-time estimates (as of early 2025).
+The full list is defined in `src/lang.ts`.
 
 ## Browser support
 
