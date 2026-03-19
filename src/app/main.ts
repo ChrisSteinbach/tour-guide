@@ -168,9 +168,7 @@ const executeEffect = createEffectExecutor({
       getScrollContainer().scrollTo(0, 0);
     },
     restoreScrollTop: (scrollTop) => {
-      requestAnimationFrame(() => {
-        getScrollContainer().scrollTop = scrollTop;
-      });
+      getScrollContainer().scrollTop = scrollTop;
     },
   },
   data: {
