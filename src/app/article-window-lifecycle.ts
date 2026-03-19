@@ -140,10 +140,13 @@ export function createArticleWindowLifecycle(
             for (let j = 0; j < state.phase.articles.length; j++) {
               const awArticle = articleWindow.getArticle(j);
               if (!awArticle) break;
-              console.assert(
-                state.phase.articles[j].title === awArticle.title,
-                `Prefix invariant violated at index ${j}: viewport has "${state.phase.articles[j].title}" but ArticleWindow has "${awArticle.title}"`,
-              );
+              if (state.phase.articles[j].title !== awArticle.title) {
+                console.assert(
+                  false,
+                  `Prefix invariant violated at index ${j}: viewport has "${state.phase.articles[j].title}" but ArticleWindow has "${awArticle.title}"`,
+                );
+                break;
+              }
             }
           }
         }
