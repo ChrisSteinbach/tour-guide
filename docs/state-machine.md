@@ -196,12 +196,16 @@ The `start` event branches based on two conditions — whether tile data is read
 | `loadingTiles`      | `tileLoadFailed`       | last pending, none loaded   | `browsing`                   | renderBrowsingList                                                  |
 | `loadingTiles`      | `noTilesNearby`        | has position                | `browsing`                   | renderBrowsingList                                                  |
 | `browsing`          | `position`             | moved ≥15m, not paused      | `browsing`                   | loadTiles, requery                                                  |
-| `browsing`          | `position`             | moved <15m or paused        | `browsing`                   | (loadTiles only)                                                    |
+| `browsing`          | `position`             | paused by scroll            | `browsing`                   | loadTiles, renderBrowsingHeader                                     |
+| `browsing`          | `position`             | moved <15m or paused other  | `browsing`                   | (loadTiles only)                                                    |
 | `browsing`          | `scrollPause`          | not already paused/infinite | `browsing` (infinite scroll) | requery (INFINITE_SCROLL_INITIAL)                                   |
-| `browsing`          | `togglePause`          | paused→unpaused             | `browsing` (viewport scroll) | scrollToTop, requery, renderBrowsingList                            |
+| `browsing`          | `togglePause`          | paused→unpaused             | `browsing` (viewport scroll) | scrollToTop, requery, renderBrowsingList, fetchListSummaries        |
 | `browsing`          | `togglePause`          | unpaused→paused             | `browsing` (infinite scroll) | requery (INFINITE_SCROLL_INITIAL)                                   |
 | `browsing`          | `expandInfiniteScroll` | in infinite scroll mode     | `browsing`                   | requery (limit += INFINITE_SCROLL_STEP)                             |
-| `browsing`/`detail` | `useGps`               | —                           | (same phase, viewport mode)  | startGps, requery                                                   |
+| `browsing`          | `useGps`               | has position                | `browsing` (viewport mode)   | startGps, requery, scrollToTop                                      |
+| `browsing`          | `useGps`               | no position                 | `browsing` (viewport mode)   | startGps, renderBrowsingList                                        |
+| `detail`            | `useGps`               | has position                | `detail` (viewport mode)     | startGps, scrollToTop                                               |
+| `detail`            | `useGps`               | no position                 | `detail` (viewport mode)     | startGps, renderBrowsingList                                        |
 | any                 | `showMapPicker`        | —                           | `mapPicker`                  | pushHistory, showMapPicker                                          |
 | `mapPicker`         | `back`                 | —                           | (returnPhase)                | renderBrowsingList or render                                        |
 | `browsing`          | `selectArticle`        | —                           | `detail`                     | pushHistory, fetchSummary                                           |
@@ -211,7 +215,8 @@ The `start` event branches based on two conditions — whether tile data is read
 | `detail`            | `back`                 | not infinite scroll         | `browsing`                   | renderBrowsingList, fetchListSummaries, restoreScrollTop (if saved) |
 | `detail`            | `back`                 | infinite scroll             | `browsing`                   | renderBrowsingList, restoreScrollTop (if saved)                     |
 | `detail`            | `position`             | —                           | `detail`                     | loadTiles, render                                                   |
-| `detail`            | `tileLoaded`           | —                           | `detail`                     | (tile data stored, requery)                                         |
+| `browsing`          | `tileLoaded`           | —                           | `browsing`                   | requery                                                             |
+| `detail`            | `tileLoaded`           | —                           | `detail`                     | (tile data stored in query state)                                   |
 | any (post-welcome)  | `langChanged`          | —                           | `downloading`                | storeLang, loadData, render                                         |
 | any                 | `tileLoadStarted`      | —                           | (unchanged)                  | (tracks tile ID in loadingTiles)                                    |
 | any                 | `swUpdateAvailable`    | no banner yet               | (unchanged)                  | showAppUpdateBanner                                                 |
