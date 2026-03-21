@@ -14,17 +14,17 @@ The transition function has **no side effects** — it takes the current state a
 
 The primary UI state is the `Phase` discriminated union. Each phase corresponds to a distinct screen:
 
-| Phase             | Description                                           | Carries                                        |
-| ----------------- | ----------------------------------------------------- | ---------------------------------------------- |
-| `welcome`         | Landing screen with language picker and start buttons | —                                              |
-| `downloading`     | Fetching tile index from CDN                          | `progress` (-1 = not started, 0–1)             |
-| `locating`        | Waiting for GPS fix                                   | —                                              |
-| `loadingTiles`    | Tile index ready, loading first nearby tile           | —                                              |
-| `error`           | GPS failed (denied, timeout, unavailable)             | `error: LocationError`                         |
-| `dataUnavailable` | No tile data for the selected language                | —                                              |
-| `browsing`        | Main list view with nearby articles                   | Browsing context (see below)                   |
-| `detail`          | Article detail page (Wikipedia summary)               | `article`, `savedScrollTop` + browsing context |
-| `mapPicker`       | Map view for picking a location                       | `returnPhase` (phase to restore on back)       |
+| Phase             | Description                                           | Carries                                                |
+| ----------------- | ----------------------------------------------------- | ------------------------------------------------------ |
+| `welcome`         | Landing screen with language picker and start buttons | —                                                      |
+| `downloading`     | Fetching tile index from CDN                          | `progress` (-1 = not started, 0–1)                     |
+| `locating`        | Waiting for GPS fix                                   | —                                                      |
+| `loadingTiles`    | Tile index ready, loading first nearby tile           | —                                                      |
+| `error`           | GPS failed (denied, timeout, unavailable)             | `error: LocationError`                                 |
+| `dataUnavailable` | No tile data for the selected language                | —                                                      |
+| `browsing`        | Main list view with nearby articles                   | Browsing context (see below)                           |
+| `detail`          | Article detail page (Wikipedia summary)               | `article`, `savedFirstVisibleIndex` + browsing context |
+| `mapPicker`       | Map view for picking a location                       | `returnPhase` (phase to restore on back)               |
 
 **Browsing context** (shared by `browsing` and `detail`): `articles`, `nearbyCount`, `paused`, `pauseReason`, `lastQueryPos`, `scrollMode`, `infiniteScrollLimit`.
 
@@ -70,7 +70,7 @@ All inputs to the machine are modeled as a single `Event` union:
 | `tileLoadFailed`       | `id`, `gen`                     | Individual tile fetch failed                       |
 | `downloadProgress`     | `fraction`, `gen`               | Tile index download progress                       |
 | `langChanged`          | `lang`                          | User selects a different language                  |
-| `selectArticle`        | `article`, `scrollTop`          | User taps an article in the list                   |
+| `selectArticle`        | `article`, `firstVisibleIndex`  | User taps an article in the list                   |
 | `back`                 | —                               | Browser popstate or back button                    |
 | `scrollPause`          | —                               | User scrolls the article list                      |
 | `togglePause`          | —                               | User taps pause/resume button                      |
@@ -179,19 +179,19 @@ The `start` event branches based on two conditions — whether tile data is read
 | From                | Event                  | Condition                   | To                           | Key effects                                                         |
 | ------------------- | ---------------------- | --------------------------- | ---------------------------- | ------------------------------------------------------------------- |
 | `welcome`           | `start`                | query=none                  | `downloading`                | storeStarted, startGps, render                                      |
-| `welcome`           | `start`                | query ready, has position   | `browsing`                   | storeStarted, startGps, requery                                     |
+| `welcome`           | `start`                | query ready, has position   | `browsing`                   | storeStarted, startGps, requery, scrollToTop                        |
 | `welcome`           | `start`                | query ready, no position    | `locating`                   | storeStarted, startGps, render                                      |
 | `downloading`       | `downloadProgress`     | —                           | `downloading`                | render (progress bar)                                               |
-| `downloading`       | `tileIndexLoaded`      | has index, has position     | `browsing` or `loadingTiles` | loadTiles, requery or render                                        |
+| `downloading`       | `tileIndexLoaded`      | has index, has position     | `browsing` or `loadingTiles` | loadTiles, requery, scrollToTop or render                           |
 | `downloading`       | `tileIndexLoaded`      | has index, no position      | `locating`                   | render                                                              |
 | `downloading`       | `tileIndexLoaded`      | has index, no geolocation   | `error`                      | render                                                              |
 | `downloading`       | `tileIndexLoaded`      | null index                  | `dataUnavailable`            | render                                                              |
 | any                 | `pickPosition`         | query=none                  | `downloading`                | stopGps, render                                                     |
-| any                 | `pickPosition`         | query=tiled                 | `browsing` (infinite scroll) | stopGps, loadTiles, requery                                         |
+| any                 | `pickPosition`         | query=tiled                 | `browsing` (infinite scroll) | stopGps, loadTiles, requery, scrollToTop                            |
 | `locating`          | `position`             | tiled, no tiles loaded      | `loadingTiles`               | loadTiles, render                                                   |
-| `locating`          | `position`             | tiles available             | `browsing`                   | loadTiles, requery                                                  |
+| `locating`          | `position`             | tiles available             | `browsing`                   | loadTiles, requery, scrollToTop                                     |
 | `locating`          | `gpsError`             | —                           | `error`                      | render                                                              |
-| `loadingTiles`      | `tileLoaded`           | has position                | `browsing`                   | requery                                                             |
+| `loadingTiles`      | `tileLoaded`           | has position                | `browsing`                   | requery, scrollToTop                                                |
 | `loadingTiles`      | `tileLoadFailed`       | last pending, some loaded   | `browsing`                   | requery, scrollToTop                                                |
 | `loadingTiles`      | `tileLoadFailed`       | last pending, none loaded   | `browsing`                   | renderBrowsingList                                                  |
 | `loadingTiles`      | `noTilesNearby`        | has position                | `browsing`                   | renderBrowsingList                                                  |

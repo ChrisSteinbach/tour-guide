@@ -167,8 +167,8 @@ const executeEffect = createEffectExecutor({
     scrollToTop: () => {
       getScrollContainer().scrollTo(0, 0);
     },
-    restoreScrollTop: (scrollTop) => {
-      getScrollContainer().scrollTop = scrollTop;
+    restoreScrollTop: (firstVisibleIndex) => {
+      getScrollContainer().scrollTop = firstVisibleIndex * VIRTUAL_ITEM_HEIGHT;
     },
   },
   data: {
@@ -253,7 +253,9 @@ const browseMap = createBrowseMapLifecycle({
     dispatch({
       type: "selectArticle",
       article,
-      scrollTop: getScrollContainer().scrollTop,
+      firstVisibleIndex: Math.floor(
+        getScrollContainer().scrollTop / VIRTUAL_ITEM_HEIGHT,
+      ),
     }),
   importBrowseMap: () => import("./browse-map"),
 });
@@ -303,7 +305,9 @@ const infiniteScroll = createInfiniteScrollLifecycle({
       dispatch({
         type: "selectArticle",
         article: a,
-        scrollTop: getScrollContainer().scrollTop,
+        firstVisibleIndex: Math.floor(
+          getScrollContainer().scrollTop / VIRTUAL_ITEM_HEIGHT,
+        ),
       });
     const el = createArticleItemContent(article, onSelect, onHoverArticle);
     const cached = summaryLoader.get(article.title);
@@ -458,7 +462,9 @@ function renderViewportListDOM(): void {
       dispatch({
         type: "selectArticle",
         article,
-        scrollTop: getScrollContainer().scrollTop,
+        firstVisibleIndex: Math.floor(
+          getScrollContainer().scrollTop / VIRTUAL_ITEM_HEIGHT,
+        ),
       }),
     onHoverArticle,
     currentLang: appState.currentLang,

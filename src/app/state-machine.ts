@@ -87,8 +87,8 @@ export type Phase =
       lastQueryPos: UserPosition;
       scrollMode: "infinite" | "viewport";
       infiniteScrollLimit: number;
-      /** Scroll position of the browse list, saved on entry to restore on back. */
-      savedScrollTop: number;
+      /** Index of the first visible article in the browse list, saved on entry to restore on back. */
+      savedFirstVisibleIndex: number;
     }
   | { phase: "mapPicker"; returnPhase: Phase };
 
@@ -130,7 +130,11 @@ export type Event =
   | { type: "tileLoadFailed"; id: string; gen: number }
   | { type: "downloadProgress"; fraction: number; gen: number }
   | { type: "langChanged"; lang: Lang }
-  | { type: "selectArticle"; article: NearbyArticle; scrollTop: number }
+  | {
+      type: "selectArticle";
+      article: NearbyArticle;
+      firstVisibleIndex: number;
+    }
   | { type: "back" }
   | { type: "scrollPause" }
   | { type: "togglePause" }
@@ -166,7 +170,7 @@ export type Effect =
   | { type: "requery"; pos: UserPosition; count: number }
   | { type: "fetchListSummaries" }
   | { type: "scrollToTop" }
-  | { type: "restoreScrollTop"; scrollTop: number };
+  | { type: "restoreScrollTop"; firstVisibleIndex: number };
 
 // ── Internal helpers ─────────────────────────────────────────
 
@@ -524,7 +528,7 @@ export function transition(state: AppState, event: Event): TransitionResult {
             lastQueryPos,
             scrollMode,
             infiniteScrollLimit,
-            savedScrollTop: event.scrollTop,
+            savedFirstVisibleIndex: event.firstVisibleIndex,
           },
         },
         effects: [
@@ -557,7 +561,7 @@ export function transition(state: AppState, event: Event): TransitionResult {
         lastQueryPos,
         scrollMode: detailScrollMode,
         infiniteScrollLimit,
-        savedScrollTop,
+        savedFirstVisibleIndex,
       } = state.phase;
       const effects: Effect[] = [{ type: "renderBrowsingList" }];
       // In non-infinite mode, eagerly fetch all summaries. In infinite mode,
@@ -567,8 +571,11 @@ export function transition(state: AppState, event: Event): TransitionResult {
       if (detailScrollMode !== "infinite") {
         effects.push({ type: "fetchListSummaries" });
       }
-      if (savedScrollTop > 0) {
-        effects.push({ type: "restoreScrollTop", scrollTop: savedScrollTop });
+      if (savedFirstVisibleIndex > 0) {
+        effects.push({
+          type: "restoreScrollTop",
+          firstVisibleIndex: savedFirstVisibleIndex,
+        });
       }
       return {
         next: {

@@ -93,7 +93,7 @@ function detailState(overrides: Partial<AppState> = {}): AppState {
       lastQueryPos: pos,
       scrollMode: "viewport",
       infiniteScrollLimit: 200,
-      savedScrollTop: 0,
+      savedFirstVisibleIndex: 0,
     },
     query: { mode: "none" },
     position: pos,
@@ -856,6 +856,22 @@ describe("createEffectExecutor", () => {
 
     exec({ type: "fetchListSummaries" });
     expect(summaryLoader.load).not.toHaveBeenCalled();
+  });
+
+  it("scrollToTop calls deps.ui.scrollToTop", () => {
+    const deps = makeDeps();
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "scrollToTop" });
+    expect(deps.ui.scrollToTop).toHaveBeenCalledTimes(1);
+  });
+
+  it("restoreScrollTop calls deps.ui.restoreScrollTop with firstVisibleIndex", () => {
+    const deps = makeDeps();
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "restoreScrollTop", firstVisibleIndex: 5 });
+    expect(deps.ui.restoreScrollTop).toHaveBeenCalledWith(5);
   });
 
   it("updateDistances guards on browsing phase", () => {
