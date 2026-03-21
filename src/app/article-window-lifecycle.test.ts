@@ -359,7 +359,7 @@ describe("onWindowChange", () => {
 
     // Simulate onNearEnd: optimistic count = 300
     lifecycle.applyOptimisticCount(300);
-    expect(deps.infiniteScroll.update).toHaveBeenLastCalledWith(300);
+    expect(deps.infiniteScroll.update).toHaveBeenLastCalledWith(300, 100);
 
     // Simulate onWindowChange after fetch: realCount = 250 < 300
     totalKnown.mockReturnValue(250);
@@ -368,6 +368,20 @@ describe("onWindowChange", () => {
 
     // Scroll count must NOT shrink from 300 to 250, but loadedCount reflects reality
     expect(deps.infiniteScroll.update).toHaveBeenLastCalledWith(300, 200);
+  });
+
+  it("applyOptimisticCount passes undefined loadedCount when no ArticleWindow exists", () => {
+    const deps = makeDeps({
+      infiniteScroll: {
+        isActive: vi.fn(() => true),
+        update: vi.fn(),
+      },
+    });
+
+    const lifecycle = createArticleWindowLifecycle(deps);
+    lifecycle.applyOptimisticCount(300);
+
+    expect(deps.infiniteScroll.update).toHaveBeenCalledWith(300, undefined);
   });
 
   it("does not update infinite scroll when it is not active", () => {

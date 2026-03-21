@@ -119,7 +119,7 @@ export function createArticleWindowLifecycle(
 
   function applyOptimisticCount(count: number): void {
     lastScrollCount = Math.max(lastScrollCount, count);
-    deps.infiniteScroll.update(lastScrollCount);
+    deps.infiniteScroll.update(lastScrollCount, articleWindow?.loadedCount());
   }
 
   let prefixInvariantChecked = false;
