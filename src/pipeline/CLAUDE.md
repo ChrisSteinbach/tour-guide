@@ -51,7 +51,7 @@ Data is refreshed automatically via GitHub Actions (`pipeline.yml`) on a monthly
 2. **Build** — Runs the pipeline to produce tiled output in `data/tiles/{lang}/`
 3. **Publish** — Uploads compressed tile archives to a `data-latest` GitHub Release
 
-Deployment (`deploy.yml`) runs on every push to main:
+Deployment (`deploy.yml`) is triggered manually via `workflow_dispatch`:
 
 1. Downloads tile archives from `data-latest` release
 2. Decompresses tile files into `dist/app/tiles/`
