@@ -77,6 +77,7 @@ function browsingState(overrides: Partial<AppState> = {}): AppState {
     hasGeolocation: true,
     gpsSignalLost: false,
     viewportFillCount: 15,
+    aboutOpen: false,
     ...overrides,
   };
 }
@@ -106,6 +107,7 @@ function detailState(overrides: Partial<AppState> = {}): AppState {
     hasGeolocation: true,
     gpsSignalLost: false,
     viewportFillCount: 15,
+    aboutOpen: false,
     ...overrides,
   };
 }
@@ -129,6 +131,7 @@ function makeUi(overrides: Partial<RenderDeps> = {}): RenderDeps {
     renderBrowsingList: vi.fn(),
     renderBrowsingHeader: vi.fn(),
     updateDistances: vi.fn(),
+    showAbout: vi.fn(),
     hideAbout: vi.fn(),
     renderDetailLoading: vi.fn(),
     renderDetailReady: vi.fn(),

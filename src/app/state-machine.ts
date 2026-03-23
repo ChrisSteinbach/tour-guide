@@ -110,6 +110,8 @@ export interface AppState {
   gpsSignalLost: boolean;
   /** How many articles to show in the initial viewport-filling view. */
   viewportFillCount: number;
+  /** Whether the About dialog is currently open. */
+  aboutOpen: boolean;
 }
 
 // ── Event (all inputs to the state machine) ──────────────────
@@ -148,7 +150,9 @@ export type Event =
       count: number;
     }
   | { type: "noTilesNearby" }
-  | { type: "swUpdateAvailable" };
+  | { type: "swUpdateAvailable" }
+  | { type: "showAbout" }
+  | { type: "closeAbout" };
 
 // ── Effect (all side effects the machine requests) ───────────
 
@@ -157,6 +161,7 @@ export type Effect =
   | { type: "renderBrowsingList" }
   | { type: "renderBrowsingHeader" }
   | { type: "updateDistances" }
+  | { type: "showAbout" }
   | { type: "hideAbout" }
   | { type: "startGps" }
   | { type: "stopGps" }
@@ -239,13 +244,21 @@ function forceRequery(state: AppState): TransitionResult {
 
 // ── Transition function ──────────────────────────────────────
 
+// Invariant: the About dialog is only openable during these phases.
+// If the About button is added to other phases, update this set.
+const ABOUT_PHASES = new Set<Phase["phase"]>(["welcome", "browsing"]);
+
 export function transition(state: AppState, event: Event): TransitionResult {
   const result = transitionCore(state, event);
-  // Auto-dismiss the about dialog on any phase change so it never
-  // survives a lifecycle transition (e.g. langChanged → downloading).
-  if (result.next.phase.phase !== state.phase.phase) {
+  // Auto-dismiss the about dialog when leaving a phase where it can be open.
+  if (
+    state.aboutOpen &&
+    result.next.phase.phase !== state.phase.phase &&
+    ABOUT_PHASES.has(state.phase.phase)
+  ) {
     return {
       ...result,
+      next: { ...result.next, aboutOpen: false },
       effects: [{ type: "hideAbout" }, ...result.effects],
     };
   }
@@ -618,6 +631,22 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
       return {
         next: { ...state, updateBanner: "app" },
         effects: [{ type: "showAppUpdateBanner" }],
+      };
+    }
+
+    case "showAbout": {
+      if (state.aboutOpen) return { next: state, effects: [] };
+      return {
+        next: { ...state, aboutOpen: true },
+        effects: [{ type: "showAbout" }],
+      };
+    }
+
+    case "closeAbout": {
+      if (!state.aboutOpen) return { next: state, effects: [] };
+      return {
+        next: { ...state, aboutOpen: false },
+        effects: [{ type: "hideAbout" }],
       };
     }
 

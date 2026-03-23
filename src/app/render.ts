@@ -131,6 +131,7 @@ export interface RenderNearbyHeaderOptions {
   onPickLocation?: () => void;
   onUseGps?: () => void;
   gpsSignalLost?: boolean;
+  onShowAbout: () => void;
 }
 
 /** Render the header bar with title, pause button, and language selector. */
@@ -148,6 +149,7 @@ export function renderNearbyHeader(
     onPickLocation,
     onUseGps,
     gpsSignalLost,
+    onShowAbout,
   } = options;
   const header = createAppHeader({ title: false });
 
@@ -228,7 +230,7 @@ export function renderNearbyHeader(
 
   const langDropdown = createLangDropdown(currentLang, onLangChange);
   headerControls.appendChild(langDropdown);
-  headerControls.appendChild(createAboutButton());
+  headerControls.appendChild(createAboutButton(onShowAbout));
   row.append(titleGroup, headerControls);
   header.appendChild(row);
   return header;
@@ -377,6 +379,7 @@ export interface RenderNearbyListOptions {
   onPickLocation?: () => void;
   onUseGps?: () => void;
   gpsSignalLost?: boolean;
+  onShowAbout: () => void;
 }
 
 /** Build and replace the contents of `container` with a nearby-articles list. */
@@ -397,6 +400,7 @@ export function renderNearbyList(
     onPickLocation,
     onUseGps,
     gpsSignalLost,
+    onShowAbout,
   } = options;
 
   const headerOpts = {
@@ -410,6 +414,7 @@ export function renderNearbyList(
     onPickLocation,
     onUseGps,
     gpsSignalLost,
+    onShowAbout,
   };
 
   const existingList =

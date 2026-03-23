@@ -63,6 +63,7 @@ function tiledAppState(): AppState {
     hasGeolocation: true,
     gpsSignalLost: false,
     viewportFillCount: 15,
+    aboutOpen: false,
   };
 }
 

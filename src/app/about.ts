@@ -23,7 +23,7 @@ function link(text: string, href: string): HTMLAnchorElement {
 }
 
 /** Show the About dialog. Use hideAbout() to close programmatically. */
-export function showAbout(): void {
+export function showAbout(onClose?: () => void): void {
   // Prevent stacking — call teardown so listeners are cleaned up
   if (activeTeardown) activeTeardown();
 
@@ -32,8 +32,6 @@ export function showAbout(): void {
   const dialog = document.createElement("dialog");
   dialog.className = "about-dialog";
   dialog.setAttribute("aria-label", "About");
-  dialog.tabIndex = -1;
-
   const close = document.createElement("button");
   close.className = "about-close";
   close.textContent = "\u00d7";
@@ -89,6 +87,7 @@ export function showAbout(): void {
       const fallback = document.querySelector<HTMLElement>(".about-btn");
       fallback?.focus();
     }
+    onClose?.();
   };
 
   activeTeardown = teardown;
@@ -116,12 +115,11 @@ export function showAbout(): void {
     e.preventDefault(); // Prevent default close so our teardown handles cleanup
     teardown();
   });
-
-  dialog.focus();
 }
 
 /** Create an info button that opens the About dialog. */
 export function createAboutButton(
+  onClick: () => void,
   className = "header-icon-btn",
 ): HTMLButtonElement {
   const btn = document.createElement("button");
@@ -129,6 +127,6 @@ export function createAboutButton(
   btn.setAttribute("aria-label", "About");
   btn.title = "About";
   btn.textContent = "\u24d8"; // ⓘ
-  btn.addEventListener("click", () => showAbout());
+  btn.addEventListener("click", onClick);
   return btn;
 }

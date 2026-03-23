@@ -9,6 +9,8 @@ import {
 import type { NearbyArticle } from "./types";
 import type { ArticleSummary } from "./wiki-api";
 
+const onShowAbout = () => {};
+
 afterEach(() => {
   while (document.body.firstChild) {
     document.body.firstChild.remove();
@@ -21,6 +23,7 @@ describe("renderNearbyHeader", () => {
   afterEach(() => vi.restoreAllMocks());
   it("renders article count in subtitle", () => {
     const header = renderNearbyHeader({
+      onShowAbout,
       articleCount: 5,
       currentLang: "en",
       onLangChange: () => {},
@@ -32,6 +35,7 @@ describe("renderNearbyHeader", () => {
 
   it("uses singular when count is 1", () => {
     const header = renderNearbyHeader({
+      onShowAbout,
       articleCount: 1,
       currentLang: "en",
       onLangChange: () => {},
@@ -43,6 +47,7 @@ describe("renderNearbyHeader", () => {
 
   it("shows paused in subtitle when paused", () => {
     const header = renderNearbyHeader({
+      onShowAbout,
       articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
@@ -54,6 +59,7 @@ describe("renderNearbyHeader", () => {
 
   it("pause button label says Resume when manually paused", () => {
     const header = renderNearbyHeader({
+      onShowAbout,
       articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
@@ -68,6 +74,7 @@ describe("renderNearbyHeader", () => {
 
   it("pause button label says paused by scroll when scroll-paused", () => {
     const header = renderNearbyHeader({
+      onShowAbout,
       articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
@@ -86,6 +93,7 @@ describe("renderNearbyHeader", () => {
 
   it("adds blink class when scroll-paused", () => {
     const header = renderNearbyHeader({
+      onShowAbout,
       articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
@@ -99,6 +107,7 @@ describe("renderNearbyHeader", () => {
 
   it("does not add blink class when manually paused", () => {
     const header = renderNearbyHeader({
+      onShowAbout,
       articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
@@ -112,6 +121,7 @@ describe("renderNearbyHeader", () => {
 
   it("pause button label says Pause when unpaused", () => {
     const header = renderNearbyHeader({
+      onShowAbout,
       articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
@@ -125,6 +135,7 @@ describe("renderNearbyHeader", () => {
 
   it("omits pause button when no onTogglePause callback", () => {
     const header = renderNearbyHeader({
+      onShowAbout,
       articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
@@ -135,6 +146,7 @@ describe("renderNearbyHeader", () => {
 
   it("language selector reflects currentLang", () => {
     const header = renderNearbyHeader({
+      onShowAbout,
       articleCount: 3,
       currentLang: "sv",
       onLangChange: () => {},
@@ -149,6 +161,7 @@ describe("renderNearbyHeader", () => {
   it("calls onLangChange when language is changed", () => {
     const onLangChange = vi.fn();
     const header = renderNearbyHeader({
+      onShowAbout,
       articleCount: 3,
       currentLang: "en",
       onLangChange,
@@ -162,6 +175,7 @@ describe("renderNearbyHeader", () => {
   it("calls onTogglePause when pause button clicked", () => {
     const onTogglePause = vi.fn();
     const header = renderNearbyHeader({
+      onShowAbout,
       articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
@@ -177,6 +191,7 @@ describe("renderNearbyHeader", () => {
     const onPickLocation = vi.fn();
     const onUseGps = vi.fn();
     const header = renderNearbyHeader({
+      onShowAbout,
       articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
@@ -205,6 +220,7 @@ describe("renderNearbyHeader", () => {
     const onPickLocation = vi.fn();
     const onUseGps = vi.fn();
     const header = renderNearbyHeader({
+      onShowAbout,
       articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
@@ -229,6 +245,7 @@ describe("renderNearbyHeader", () => {
     const onUseGps = vi.fn();
     vi.spyOn(globalThis, "confirm").mockReturnValue(true);
     const header = renderNearbyHeader({
+      onShowAbout,
       articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
@@ -252,6 +269,7 @@ describe("renderNearbyHeader", () => {
     const onUseGps = vi.fn();
     vi.spyOn(globalThis, "confirm").mockReturnValue(false);
     const header = renderNearbyHeader({
+      onShowAbout,
       articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
@@ -270,6 +288,7 @@ describe("renderNearbyHeader", () => {
 
   it("adds gps-signal-lost class when gpsSignalLost is true", () => {
     const header = renderNearbyHeader({
+      onShowAbout,
       articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
@@ -285,6 +304,7 @@ describe("renderNearbyHeader", () => {
 
   it("aria-label reads 'GPS signal lost' when gpsSignalLost is true", () => {
     const header = renderNearbyHeader({
+      onShowAbout,
       articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
@@ -300,6 +320,7 @@ describe("renderNearbyHeader", () => {
 
   it("aria-label reads 'Use GPS location' when gpsSignalLost is absent", () => {
     const header = renderNearbyHeader({
+      onShowAbout,
       articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
@@ -314,6 +335,7 @@ describe("renderNearbyHeader", () => {
 
   it("omits mode toggle when positionSource not provided", () => {
     const header = renderNearbyHeader({
+      onShowAbout,
       articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
@@ -342,6 +364,7 @@ describe("renderNearbyList", () => {
   it("renders correct number of list items", () => {
     const container = document.createElement("div");
     renderNearbyList(container, makeArticles(3), {
+      onShowAbout,
       onSelectArticle: () => {},
       currentLang: "en",
       onLangChange: () => {},
@@ -353,6 +376,7 @@ describe("renderNearbyList", () => {
   it("article items are keyboard-accessible", () => {
     const container = document.createElement("div");
     renderNearbyList(container, makeArticles(1), {
+      onShowAbout,
       onSelectArticle: () => {},
       currentLang: "en",
       onLangChange: () => {},
@@ -367,6 +391,7 @@ describe("renderNearbyList", () => {
     const onSelect = vi.fn();
     const container = document.createElement("div");
     renderNearbyList(container, articles, {
+      onShowAbout,
       onSelectArticle: onSelect,
       currentLang: "en",
       onLangChange: () => {},
@@ -381,6 +406,7 @@ describe("renderNearbyList", () => {
     const onSelect = vi.fn();
     const container = document.createElement("div");
     renderNearbyList(container, articles, {
+      onShowAbout,
       onSelectArticle: onSelect,
       currentLang: "en",
       onLangChange: () => {},
@@ -397,6 +423,7 @@ describe("renderNearbyList", () => {
     const onSelect = vi.fn();
     const container = document.createElement("div");
     renderNearbyList(container, articles, {
+      onShowAbout,
       onSelectArticle: onSelect,
       currentLang: "en",
       onLangChange: () => {},
@@ -412,6 +439,7 @@ describe("renderNearbyList", () => {
     const onSelect = vi.fn();
     const container = document.createElement("div");
     renderNearbyList(container, makeArticles(1), {
+      onShowAbout,
       onSelectArticle: onSelect,
       currentLang: "en",
       onLangChange: () => {},
@@ -429,6 +457,7 @@ describe("renderNearbyList", () => {
     stale.textContent = "stale";
     container.appendChild(stale);
     renderNearbyList(container, makeArticles(1), {
+      onShowAbout,
       onSelectArticle: () => {},
       currentLang: "en",
       onLangChange: () => {},
@@ -439,6 +468,7 @@ describe("renderNearbyList", () => {
   it("sets data-title on each list item", () => {
     const container = document.createElement("div");
     renderNearbyList(container, makeArticles(2), {
+      onShowAbout,
       onSelectArticle: () => {},
       currentLang: "en",
       onLangChange: () => {},
@@ -451,6 +481,7 @@ describe("renderNearbyList", () => {
   it("restores scroll position on re-render", () => {
     const container = document.createElement("div");
     const opts = {
+      onShowAbout,
       onSelectArticle: () => {},
       currentLang: "en" as const,
       onLangChange: () => {},
@@ -466,6 +497,7 @@ describe("renderNearbyList", () => {
   it("first render takes the fresh-build path (no scroll restore)", () => {
     const container = document.createElement("div");
     renderNearbyList(container, makeArticles(2), {
+      onShowAbout,
       onSelectArticle: () => {},
       currentLang: "en",
       onLangChange: () => {},
@@ -530,6 +562,7 @@ describe("renderNearbyList", () => {
       const container = document.createElement("div");
       document.body.appendChild(container);
       const opts = {
+        onShowAbout,
         onSelectArticle: () => {},
         currentLang: "en" as const,
         onLangChange: () => {},
@@ -555,6 +588,7 @@ describe("renderNearbyList skips header replacement while dropdown is open", () 
     const container = document.createElement("div");
     document.body.appendChild(container);
     const opts = {
+      onShowAbout,
       onSelectArticle: () => {},
       currentLang: "en" as const,
       onLangChange: () => {},
@@ -578,6 +612,7 @@ describe("renderNearbyList skips header replacement while dropdown is open", () 
     const container = document.createElement("div");
     document.body.appendChild(container);
     const opts = {
+      onShowAbout,
       onSelectArticle: () => {},
       currentLang: "en" as const,
       onLangChange: () => {},
@@ -600,6 +635,7 @@ describe("renderNearbyList reconciliation", () => {
   it("reuses DOM nodes for articles present in both renders", () => {
     const container = document.createElement("div");
     const opts = {
+      onShowAbout,
       onSelectArticle: () => {},
       currentLang: "en" as const,
       onLangChange: () => {},
@@ -622,6 +658,7 @@ describe("renderNearbyList reconciliation", () => {
     const container = document.createElement("div");
     const original = makeArticles(3);
     const opts = {
+      onShowAbout,
       onSelectArticle: () => {},
       currentLang: "en" as const,
       onLangChange: () => {},
@@ -651,6 +688,7 @@ describe("renderNearbyList reconciliation", () => {
   it("updates distance badges on reused nodes", () => {
     const container = document.createElement("div");
     const opts = {
+      onShowAbout,
       onSelectArticle: () => {},
       currentLang: "en" as const,
       onLangChange: () => {},
@@ -676,6 +714,7 @@ describe("article item hover", () => {
     const onHover = vi.fn();
     const container = document.createElement("div");
     renderNearbyList(container, makeArticles(2), {
+      onShowAbout,
       onSelectArticle: () => {},
       onHoverArticle: onHover,
       currentLang: "en",
@@ -692,6 +731,7 @@ describe("article item hover", () => {
     const onHover = vi.fn();
     const container = document.createElement("div");
     renderNearbyList(container, makeArticles(1), {
+      onShowAbout,
       onSelectArticle: () => {},
       onHoverArticle: onHover,
       currentLang: "en",
@@ -707,6 +747,7 @@ describe("article item hover", () => {
   it("does not add pointer listeners when onHoverArticle is omitted", () => {
     const container = document.createElement("div");
     renderNearbyList(container, makeArticles(1), {
+      onShowAbout,
       onSelectArticle: () => {},
       currentLang: "en",
       onLangChange: () => {},
@@ -729,6 +770,7 @@ describe("updateNearbyDistances", () => {
     ];
     const container = document.createElement("div");
     renderNearbyList(container, articles, {
+      onShowAbout,
       onSelectArticle: () => {},
       currentLang: "en",
       onLangChange: () => {},
@@ -774,6 +816,7 @@ describe("enrichArticleItem", () => {
   it("sets description text on matching item", () => {
     const container = document.createElement("div");
     renderNearbyList(container, makeArticles(2), {
+      onShowAbout,
       onSelectArticle: () => {},
       currentLang: "en",
       onLangChange: () => {},
@@ -789,6 +832,7 @@ describe("enrichArticleItem", () => {
   it("adds thumbnail image on matching item", () => {
     const container = document.createElement("div");
     renderNearbyList(container, makeArticles(1), {
+      onShowAbout,
       onSelectArticle: () => {},
       currentLang: "en",
       onLangChange: () => {},
@@ -804,6 +848,7 @@ describe("enrichArticleItem", () => {
   it("does not add duplicate images on repeated calls", () => {
     const container = document.createElement("div");
     renderNearbyList(container, makeArticles(1), {
+      onShowAbout,
       onSelectArticle: () => {},
       currentLang: "en",
       onLangChange: () => {},
@@ -819,6 +864,7 @@ describe("enrichArticleItem", () => {
   it("handles missing thumbnail gracefully", () => {
     const container = document.createElement("div");
     renderNearbyList(container, makeArticles(1), {
+      onShowAbout,
       onSelectArticle: () => {},
       currentLang: "en",
       onLangChange: () => {},
@@ -841,6 +887,7 @@ describe("enrichArticleItem", () => {
   it("handles empty description gracefully", () => {
     const container = document.createElement("div");
     renderNearbyList(container, makeArticles(1), {
+      onShowAbout,
       onSelectArticle: () => {},
       currentLang: "en",
       onLangChange: () => {},
@@ -854,6 +901,7 @@ describe("enrichArticleItem", () => {
   it("does nothing for non-matching title", () => {
     const container = document.createElement("div");
     renderNearbyList(container, makeArticles(1), {
+      onShowAbout,
       onSelectArticle: () => {},
       currentLang: "en",
       onLangChange: () => {},
@@ -867,6 +915,7 @@ describe("enrichArticleItem", () => {
   it("preserves enrichment through list reconciliation", () => {
     const container = document.createElement("div");
     const opts = {
+      onShowAbout,
       onSelectArticle: () => {},
       currentLang: "en" as const,
       onLangChange: () => {},
