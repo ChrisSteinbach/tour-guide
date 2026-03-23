@@ -148,11 +148,12 @@ Key design decisions:
 
 ### CI (`ci.yml`)
 
-Runs on every push to `main` and on pull requests. Three parallel jobs:
+Runs on every push to `main` and on pull requests. Four parallel jobs:
 
 1. **lint** — Prettier check (`npm run format`) then ESLint (`npm run lint:eslint`)
 2. **type-check** — `tsc --noEmit`
-3. **test** — `npm run test:coverage` (vitest with coverage). Coverage artifacts are uploaded to GitHub Actions with 30-day retention.
+3. **build** — `npm run build` (production build verification)
+4. **test** — `npm run test:coverage` (vitest with coverage). Coverage artifacts are uploaded to GitHub Actions with 30-day retention.
 
 ### Data Pipeline (`pipeline.yml`)
 
@@ -302,7 +303,7 @@ src/app/CLAUDE.md      Module-specific dev instructions (browser verification wo
 src/pipeline/CLAUDE.md Module-specific dev instructions (extraction and pipeline commands)
 
 .github/workflows/
-  ci.yml               Three parallel jobs: lint (Prettier check then ESLint), type-check (tsc --noEmit), test (vitest + coverage)
+  ci.yml               Four parallel jobs: lint (Prettier check then ESLint), type-check (tsc --noEmit), build (production build), test (vitest + coverage)
   pipeline.yml         Monthly data extraction + build (manual trigger accepts `langs` JSON array for selective rebuild)
   deploy.yml           App deployment to GitHub Pages
 ```
