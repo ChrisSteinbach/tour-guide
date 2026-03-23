@@ -64,7 +64,7 @@ Float32 vertices give sub-meter precision on Earth. On deserialization, Uint32 i
 
 1. Register service worker (auto-update: new versions install automatically; the app shows a "Reload" banner via the `showAppUpdateBanner` effect)
 2. Load triangulation for stored language (default: English)
-3. Show welcome screen with language selector, "Use my location" / "Pick a spot on the map" buttons
+3. Show welcome screen with language selector, "Use my location" / "Pick a spot on the map" buttons, and an About link
 4. On start: begin GPS watch, render article list in viewport mode (a short, GPS-updated list). When the user scrolls past a threshold or manually pauses, the view transitions to infinite scroll mode (see [infinite-scroll.md](infinite-scroll.md)).
 
 ### Data Loading (`tile-loader.ts`)
@@ -96,7 +96,7 @@ Distance uses chord length (`2 * asin(||v - q|| / 2)`, clamped for numerical saf
 **List view:**
 
 - Article cards with distance badges
-- Language selector dropdown, GPS/Pin position source toggle, and pause/resume button in header
+- Language selector dropdown, GPS/Pin position source toggle, pause/resume button, and About button in header
 - Virtual infinite scroll with progressive tile loading (see [infinite-scroll.md](infinite-scroll.md))
 - Smart re-render with two paths: if the article list is unchanged, `updateDistances` patches only the distance badges in-place. If articles change, `reconcileListItems` matches existing DOM nodes by article title — reused nodes keep their enrichment (thumbnails, descriptions fetched from Wikipedia) and only get a badge update, while new articles get fresh nodes. This title-keyed reconciliation is why enrichment survives GPS-triggered re-renders even as the article list shifts.
 - Re-query threshold: 15m minimum movement before recalculating

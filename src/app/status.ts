@@ -3,6 +3,7 @@ import type { LocationError } from "./location";
 import { SUPPORTED_LANGS, LANG_NAMES } from "../lang";
 import type { Lang } from "../lang";
 import { createAppHeader } from "./header";
+import { showAbout } from "./about";
 
 export type AppState =
   | { kind: "loading" }
@@ -125,7 +126,12 @@ export function renderWelcome(
 
   choices.append(liveBtn, pickBtn);
 
-  renderStatusScreen(container, [tagline, langSelect, choices]);
+  const aboutLink = document.createElement("button");
+  aboutLink.className = "welcome-about";
+  aboutLink.textContent = "About";
+  aboutLink.addEventListener("click", () => showAbout());
+
+  renderStatusScreen(container, [tagline, langSelect, choices, aboutLink]);
 }
 
 /** Render the data-unavailable state with language picker. */

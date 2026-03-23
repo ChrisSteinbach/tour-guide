@@ -74,6 +74,13 @@ body:has(.app-scroll) {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
+}
+
+@media (width < 360px) {
+  .header-controls {
+    gap: 4px;
+  }
 }
 
 .header-lang-select {
@@ -147,6 +154,11 @@ body:has(.app-scroll) {
 
 .header-icon-btn:hover {
   background: rgb(255 255 255 / 15%);
+}
+
+.header-icon-btn:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
 }
 
 .header-icon-btn:active {
@@ -420,9 +432,34 @@ body:has(.app-scroll) {
   background: #e8f0fe;
 }
 
+.welcome-choice:focus-visible {
+  outline: 2px solid #1a73e8;
+  outline-offset: 2px;
+}
+
 .welcome-choice-icon {
   font-size: 1.5rem;
   vertical-align: middle;
+}
+
+.welcome-about {
+  background: none;
+  border: none;
+  color: #888;
+  font-family: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  margin-top: 8px;
+}
+
+.welcome-about:hover {
+  color: #1a73e8;
+  text-decoration: underline;
+}
+
+.welcome-about:focus-visible {
+  outline: 2px solid #1a73e8;
+  outline-offset: 2px;
 }
 
 .show-more {
@@ -795,4 +832,95 @@ body:has(.app-scroll) {
   .map-drawer {
     width: 50%;
   }
+}
+
+/* ── About dialog ──────────────────────────────────────────── */
+
+.about-btn {
+  font-size: 1.1rem;
+  padding: 4px;
+  flex-shrink: 0;
+}
+
+dialog.about-dialog {
+  border: none;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 400px;
+  max-height: calc(100dvh - 48px);
+  width: calc(100% - 48px);
+  margin: auto;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgb(0 0 0 / 20%);
+}
+
+dialog.about-dialog::backdrop {
+  background: rgb(0 0 0 / 50%);
+}
+
+.about-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  color: #666;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.about-close:hover {
+  background: #f0f0f0;
+}
+
+.about-close:focus-visible {
+  outline: 2px solid #1a73e8;
+  outline-offset: 2px;
+}
+
+.about-dialog h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.about-tagline {
+  font-size: 0.85rem;
+  color: #666;
+  line-height: 1.4;
+  margin-bottom: 16px;
+}
+
+.about-section h3 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #999;
+  margin-bottom: 8px;
+}
+
+.about-section p {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.about-section a {
+  color: #1a73e8;
+  text-decoration: none;
+}
+
+.about-section a:hover {
+  text-decoration: underline;
+}
+
+.about-section a:focus-visible {
+  outline: 2px solid #1a73e8;
+  outline-offset: 2px;
 }

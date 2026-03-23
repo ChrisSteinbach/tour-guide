@@ -157,6 +157,7 @@ export type Effect =
   | { type: "renderBrowsingList" }
   | { type: "renderBrowsingHeader" }
   | { type: "updateDistances" }
+  | { type: "hideAbout" }
   | { type: "startGps" }
   | { type: "stopGps" }
   | { type: "storeLang"; lang: Lang }
@@ -239,6 +240,19 @@ function forceRequery(state: AppState): TransitionResult {
 // ── Transition function ──────────────────────────────────────
 
 export function transition(state: AppState, event: Event): TransitionResult {
+  const result = transitionCore(state, event);
+  // Auto-dismiss the about dialog on any phase change so it never
+  // survives a lifecycle transition (e.g. langChanged → downloading).
+  if (result.next.phase.phase !== state.phase.phase) {
+    return {
+      ...result,
+      effects: [{ type: "hideAbout" }, ...result.effects],
+    };
+  }
+  return result;
+}
+
+function transitionCore(state: AppState, event: Event): TransitionResult {
   switch (event.type) {
     // ── Core lifecycle (tour-guide-fed) ──────────────────────
 

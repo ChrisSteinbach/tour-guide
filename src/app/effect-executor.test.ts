@@ -129,6 +129,7 @@ function makeUi(overrides: Partial<RenderDeps> = {}): RenderDeps {
     renderBrowsingList: vi.fn(),
     renderBrowsingHeader: vi.fn(),
     updateDistances: vi.fn(),
+    hideAbout: vi.fn(),
     renderDetailLoading: vi.fn(),
     renderDetailReady: vi.fn(),
     renderDetailError: vi.fn(),
@@ -882,5 +883,13 @@ describe("createEffectExecutor", () => {
 
     exec({ type: "updateDistances" });
     expect(deps.ui.updateDistances).not.toHaveBeenCalled();
+  });
+
+  it("hideAbout calls deps.ui.hideAbout", () => {
+    const deps = makeDeps();
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "hideAbout" });
+    expect(deps.ui.hideAbout).toHaveBeenCalled();
   });
 });

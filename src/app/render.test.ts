@@ -518,6 +518,12 @@ describe("renderNearbyList", () => {
         onTogglePause: () => {},
       },
     },
+    {
+      name: "about button",
+      selector: ".about-btn",
+      articleCount: 2,
+      extraOpts: {},
+    },
   ])(
     "restores focus to $name on re-render",
     ({ selector, articleCount, extraOpts }) => {

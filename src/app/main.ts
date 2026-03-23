@@ -1,4 +1,5 @@
 import "./style.css";
+import { hideAbout } from "./about";
 import { APP_NAME } from "./config";
 import {
   renderNearbyList,
@@ -136,6 +137,7 @@ const executeEffect = createEffectExecutor({
     renderBrowsingList: renderBrowsingListDOM,
     renderBrowsingHeader: renderBrowsingHeaderDOM,
     updateDistances: (articles) => updateNearbyDistances(app, articles),
+    hideAbout,
     renderDetailLoading: (article) => renderDetailLoading(app, article, goBack),
     renderDetailReady: (article, summary) => {
       const origin =
