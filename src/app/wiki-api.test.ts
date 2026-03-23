@@ -138,6 +138,11 @@ describe("fetchArticleSummary", () => {
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       expect.stringContaining("sv.wikipedia.org"),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "Api-User-Agent": expect.stringContaining("WikiRadar"),
+        }),
+      }),
     );
   });
 
@@ -150,9 +155,19 @@ describe("fetchArticleSummary", () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
     expect(globalThis.fetch).toHaveBeenCalledWith(
       expect.stringContaining("en.wikipedia.org"),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "Api-User-Agent": expect.stringContaining("WikiRadar"),
+        }),
+      }),
     );
     expect(globalThis.fetch).toHaveBeenCalledWith(
       expect.stringContaining("sv.wikipedia.org"),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "Api-User-Agent": expect.stringContaining("WikiRadar"),
+        }),
+      }),
     );
   });
 });

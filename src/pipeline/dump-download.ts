@@ -9,6 +9,12 @@ import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import type { Lang } from "../lang.js";
+import { USER_AGENT } from "../user-agent.js";
+
+/** Wrap fetch to include the required User-Agent header for Wikimedia. */
+function wikimediaFetch(url: string | URL | Request): Promise<Response> {
+  return fetch(url, { headers: { "User-Agent": USER_AGENT } });
+}
 
 /** Derive wiki prefix from language code (e.g. "en" → "enwiki"). */
 function wikiPrefix(lang: Lang): string {
@@ -122,7 +128,7 @@ export async function downloadDump(
 ): Promise<DownloadResult> {
   const {
     dir = "data/dumps",
-    fetchFn = fetch,
+    fetchFn = wikimediaFetch,
     onProgress,
     onComplete,
     skipExisting = false,

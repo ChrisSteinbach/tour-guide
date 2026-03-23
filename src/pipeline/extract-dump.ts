@@ -156,7 +156,7 @@ export async function extractDump(opts: ExtractDumpOptions): Promise<{
     skipDownload = false,
     dumpsDir = "data/dumps",
     outputPath = `data/articles-${lang}.json`,
-    fetchFn = fetch,
+    fetchFn,
     onPhase,
     onProgress,
   } = opts;
