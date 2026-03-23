@@ -9,6 +9,27 @@ export type AppState =
   | { kind: "error"; error: LocationError }
   | { kind: "ready"; position: UserPosition };
 
+/** Create a native `<select>` language picker for status screens. */
+function createLangSelect(
+  currentLang: Lang,
+  onLangChange: (lang: Lang) => void,
+): HTMLSelectElement {
+  const select = document.createElement("select");
+  select.className = "lang-select";
+  select.setAttribute("aria-label", "Wikipedia language");
+  for (const code of SUPPORTED_LANGS) {
+    const opt = document.createElement("option");
+    opt.value = code;
+    opt.textContent = LANG_NAMES[code];
+    if (code === currentLang) opt.selected = true;
+    select.appendChild(opt);
+  }
+  select.addEventListener("change", () => {
+    onLangChange(select.value as Lang);
+  });
+  return select;
+}
+
 /** Render a centered status screen (loading or error). */
 function renderStatusScreen(
   container: HTMLElement,
@@ -69,28 +90,19 @@ export function renderLoadingProgress(
 /** Render the welcome/landing screen before requesting location. */
 export function renderWelcome(
   container: HTMLElement,
-  onStart: () => void,
-  onPickLocation: () => void,
-  currentLang: Lang,
-  onLangChange: (lang: Lang) => void,
+  options: {
+    onStart: () => void;
+    onPickLocation: () => void;
+    currentLang: Lang;
+    onLangChange: (lang: Lang) => void;
+  },
 ): void {
+  const { onStart, onPickLocation, currentLang, onLangChange } = options;
   const tagline = document.createElement("p");
   tagline.className = "status-message";
   tagline.textContent = "Discover Wikipedia articles about nearby places.";
 
-  const langSelect = document.createElement("select");
-  langSelect.className = "lang-select";
-  langSelect.setAttribute("aria-label", "Wikipedia language");
-  for (const code of SUPPORTED_LANGS) {
-    const opt = document.createElement("option");
-    opt.value = code;
-    opt.textContent = LANG_NAMES[code];
-    if (code === currentLang) opt.selected = true;
-    langSelect.appendChild(opt);
-  }
-  langSelect.addEventListener("change", () => {
-    onLangChange(langSelect.value as Lang);
-  });
+  const langSelect = createLangSelect(currentLang, onLangChange);
 
   const choices = document.createElement("div");
   choices.className = "welcome-choices";
@@ -126,19 +138,7 @@ export function renderDataUnavailable(
   msg.className = "status-message";
   msg.textContent = `No data available for ${LANG_NAMES[currentLang]}. Try a different language.`;
 
-  const langSelect = document.createElement("select");
-  langSelect.className = "lang-select";
-  langSelect.setAttribute("aria-label", "Wikipedia language");
-  for (const code of SUPPORTED_LANGS) {
-    const opt = document.createElement("option");
-    opt.value = code;
-    opt.textContent = LANG_NAMES[code];
-    if (code === currentLang) opt.selected = true;
-    langSelect.appendChild(opt);
-  }
-  langSelect.addEventListener("change", () => {
-    onLangChange(langSelect.value as Lang);
-  });
+  const langSelect = createLangSelect(currentLang, onLangChange);
 
   renderStatusScreen(container, [msg, langSelect]);
 }
