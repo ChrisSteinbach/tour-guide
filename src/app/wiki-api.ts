@@ -1,4 +1,9 @@
 import type { Lang } from "../lang";
+import { USER_AGENT } from "../user-agent";
+
+const WIKI_HEADERS = {
+  "Api-User-Agent": USER_AGENT,
+};
 
 /** Shape of the Wikipedia REST API /page/summary response (subset we use). */
 interface WikiSummaryResponse {
@@ -45,7 +50,9 @@ export async function fetchArticleSummary(
     return cached;
   }
 
-  const res = await fetch(summaryUrl(title, lang));
+  const res = await fetch(summaryUrl(title, lang), {
+    headers: WIKI_HEADERS,
+  });
   if (res.status === 404) throw new Error("Article not found");
   if (!res.ok) throw new Error(`Wikipedia API error: ${res.status}`);
 
