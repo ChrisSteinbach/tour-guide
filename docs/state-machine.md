@@ -14,17 +14,17 @@ The transition function has **no side effects** — it takes the current state a
 
 The primary UI state is the `Phase` discriminated union. Each phase corresponds to a distinct screen:
 
-| Phase             | Description                                           | Carries                                                |
-| ----------------- | ----------------------------------------------------- | ------------------------------------------------------ |
-| `welcome`         | Landing screen with language picker and start buttons | —                                                      |
-| `downloading`     | Fetching tile index from CDN                          | `progress` (-1 = not started, 0–1)                     |
-| `locating`        | Waiting for GPS fix                                   | —                                                      |
-| `loadingTiles`    | Tile index ready, loading first nearby tile           | —                                                      |
-| `error`           | GPS failed (denied, timeout, unavailable)             | `error: LocationError`                                 |
-| `dataUnavailable` | No tile data for the selected language                | —                                                      |
-| `browsing`        | Main list view with nearby articles                   | Browsing context (see below)                           |
-| `detail`          | Article detail page (Wikipedia summary)               | `article`, `savedFirstVisibleIndex` + browsing context |
-| `mapPicker`       | Map view for picking a location                       | `returnPhase` (phase to restore on back)               |
+| Phase             | Description                                                        | Carries                                                |
+| ----------------- | ------------------------------------------------------------------ | ------------------------------------------------------ |
+| `welcome`         | Landing screen with language picker, start buttons, and About link | —                                                      |
+| `downloading`     | Fetching tile index from CDN                                       | `progress` (-1 = not started, 0–1)                     |
+| `locating`        | Waiting for GPS fix                                                | —                                                      |
+| `loadingTiles`    | Tile index ready, loading first nearby tile                        | —                                                      |
+| `error`           | GPS failed (denied, timeout, unavailable)                          | `error: LocationError`                                 |
+| `dataUnavailable` | No tile data for the selected language                             | —                                                      |
+| `browsing`        | Main list view with nearby articles                                | Browsing context (see below)                           |
+| `detail`          | Article detail page (Wikipedia summary)                            | `article`, `savedFirstVisibleIndex` + browsing context |
+| `mapPicker`       | Map view for picking a location                                    | `returnPhase` (phase to restore on back)               |
 
 **Browsing context** (shared by `browsing` and `detail`): `articles`, `nearbyCount`, `paused`, `pauseReason`, `lastQueryPos`, `scrollMode`, `infiniteScrollLimit`.
 
@@ -60,7 +60,7 @@ All inputs to the machine are modeled as a single `Event` union:
 
 | Event                  | Payload                         | Source                                             |
 | ---------------------- | ------------------------------- | -------------------------------------------------- |
-| `start`                | `hasGeolocation`                | User clicks "Find nearby" or session restore       |
+| `start`                | `hasGeolocation`                | User clicks "Use my location" or session restore   |
 | `pickPosition`         | `position`                      | User picks a location on the map                   |
 | `position`             | `pos`                           | GPS `watchPosition` callback                       |
 | `gpsError`             | `error`                         | GPS error callback                                 |
@@ -92,7 +92,7 @@ Effects are the machine's way of requesting side effects. The transition functio
 | Effect                 | What the executor does                                                      |
 | ---------------------- | --------------------------------------------------------------------------- |
 | `render`               | Calls `renderPhase()` — full screen redraw based on current phase           |
-| `renderBrowsingList`   | Re-renders just the article list (preserves header state)                   |
+| `renderBrowsingList`   | Re-renders article list and rebuilds header (skipped when dropdown is open) |
 | `renderBrowsingHeader` | Re-renders only the browsing header (e.g. blink GPS indicator while paused) |
 | `updateDistances`      | Patches only distance badges in-place (no DOM rebuild)                      |
 | `startGps`             | Calls `watchLocation()`, wires callbacks to dispatch                        |
