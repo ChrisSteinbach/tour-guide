@@ -23,11 +23,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          sparse-checkout: src/lang.ts
+          sparse-checkout: |
+            src/lang.ts
+            .nvmrc
           sparse-checkout-cone-mode: false
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       - id: parse
         name: Read supported languages from src/lang.ts
         run: |
@@ -49,7 +51,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
 
       - run: npm ci
