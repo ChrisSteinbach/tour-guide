@@ -3,6 +3,7 @@ import type { ArticleSummary } from "./wiki-api";
 import { formatDistance } from "./format";
 import type { Lang } from "../lang";
 import { createAppHeader } from "./header";
+import { APP_NAME } from "./config";
 import { createLangDropdown } from "./lang-dropdown";
 
 // ── SVG icon helpers ─────────────────────────────────────────
@@ -142,14 +143,14 @@ export function renderNearbyHeader(
     onUseGps,
     gpsSignalLost,
   } = options;
-  const header = createAppHeader();
-  const h1 = header.querySelector("h1")!;
-  h1.remove();
+  const header = createAppHeader({ title: false });
 
   const row = document.createElement("div");
   row.className = "app-header-row";
 
   const titleGroup = document.createElement("div");
+  const h1 = document.createElement("h1");
+  h1.textContent = APP_NAME;
   const subtitle = document.createElement("p");
   const subtitleText = `${articleCount} attraction${articleCount !== 1 ? "s" : ""}`;
   subtitle.textContent = paused ? `${subtitleText} · paused` : subtitleText;

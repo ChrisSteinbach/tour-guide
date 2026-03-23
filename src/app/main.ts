@@ -535,14 +535,13 @@ function renderPhase(): void {
   drawerInitialized = false;
   switch (appState.phase.phase) {
     case "welcome":
-      renderWelcome(
-        app,
-        () =>
+      renderWelcome(app, {
+        onStart: () =>
           dispatch({ type: "start", hasGeolocation: !!navigator.geolocation }),
-        () => dispatch({ type: "showMapPicker" }),
-        appState.currentLang,
-        (lang) => dispatch({ type: "langChanged", lang }),
-      );
+        onPickLocation: () => dispatch({ type: "showMapPicker" }),
+        currentLang: appState.currentLang,
+        onLangChange: (lang) => dispatch({ type: "langChanged", lang }),
+      });
       return;
     case "downloading":
       renderLoadingProgress(app, appState.phase.progress);
@@ -623,11 +622,11 @@ const startedAt = Number(localStorage.getItem(STARTED_STORAGE_KEY));
 if (startedAt && Date.now() - startedAt < STARTED_TTL_MS) {
   dispatch({ type: "start", hasGeolocation: !!navigator.geolocation });
 } else {
-  renderWelcome(
-    app,
-    () => dispatch({ type: "start", hasGeolocation: !!navigator.geolocation }),
-    () => dispatch({ type: "showMapPicker" }),
-    appState.currentLang,
-    (lang) => dispatch({ type: "langChanged", lang }),
-  );
+  renderWelcome(app, {
+    onStart: () =>
+      dispatch({ type: "start", hasGeolocation: !!navigator.geolocation }),
+    onPickLocation: () => dispatch({ type: "showMapPicker" }),
+    currentLang: appState.currentLang,
+    onLangChange: (lang) => dispatch({ type: "langChanged", lang }),
+  });
 }

@@ -16,13 +16,12 @@ describe("renderWelcome", () => {
   it("calls onStart when use-my-location button is clicked", () => {
     const onStart = vi.fn();
     const container = document.createElement("div");
-    renderWelcome(
-      container,
+    renderWelcome(container, {
       onStart,
-      () => {},
-      "en",
-      () => {},
-    );
+      onPickLocation: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
     const btns = container.querySelectorAll(".welcome-choice");
     (btns[0] as HTMLButtonElement).click();
     expect(onStart).toHaveBeenCalledOnce();
@@ -31,13 +30,12 @@ describe("renderWelcome", () => {
   it("calls onPickLocation when pick-on-map button is clicked", () => {
     const onPickLocation = vi.fn();
     const container = document.createElement("div");
-    renderWelcome(
-      container,
-      () => {},
+    renderWelcome(container, {
+      onStart: () => {},
       onPickLocation,
-      "en",
-      () => {},
-    );
+      currentLang: "en",
+      onLangChange: () => {},
+    });
     const btns = container.querySelectorAll(".welcome-choice");
     (btns[1] as HTMLButtonElement).click();
     expect(onPickLocation).toHaveBeenCalledOnce();
@@ -45,13 +43,12 @@ describe("renderWelcome", () => {
 
   it("presents both entry modes with equal visual treatment", () => {
     const container = document.createElement("div");
-    renderWelcome(
-      container,
-      () => {},
-      () => {},
-      "en",
-      () => {},
-    );
+    renderWelcome(container, {
+      onStart: () => {},
+      onPickLocation: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
     const btns = container.querySelectorAll(".welcome-choice");
     expect(btns).toHaveLength(2);
     // Both buttons share the same class — no primary/secondary distinction
@@ -60,13 +57,12 @@ describe("renderWelcome", () => {
 
   it("language selector reflects currentLang", () => {
     const container = document.createElement("div");
-    renderWelcome(
-      container,
-      () => {},
-      () => {},
-      "sv",
-      () => {},
-    );
+    renderWelcome(container, {
+      onStart: () => {},
+      onPickLocation: () => {},
+      currentLang: "sv",
+      onLangChange: () => {},
+    });
     const select = container.querySelector(".lang-select") as HTMLSelectElement;
     expect(select.value).toBe("sv");
   });
@@ -74,13 +70,12 @@ describe("renderWelcome", () => {
   it("calls onLangChange when language is changed", () => {
     const onLangChange = vi.fn();
     const container = document.createElement("div");
-    renderWelcome(
-      container,
-      () => {},
-      () => {},
-      "en",
+    renderWelcome(container, {
+      onStart: () => {},
+      onPickLocation: () => {},
+      currentLang: "en",
       onLangChange,
-    );
+    });
     const select = container.querySelector(".lang-select") as HTMLSelectElement;
     select.value = "ja";
     select.dispatchEvent(new Event("change"));
@@ -89,26 +84,24 @@ describe("renderWelcome", () => {
 
   it("renders the app header with app name", () => {
     const container = document.createElement("div");
-    renderWelcome(
-      container,
-      () => {},
-      () => {},
-      "en",
-      () => {},
-    );
+    renderWelcome(container, {
+      onStart: () => {},
+      onPickLocation: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
     const h1 = container.querySelector("h1");
     expect(h1?.textContent).toBe(APP_NAME);
   });
 
   it("renders a tagline message", () => {
     const container = document.createElement("div");
-    renderWelcome(
-      container,
-      () => {},
-      () => {},
-      "en",
-      () => {},
-    );
+    renderWelcome(container, {
+      onStart: () => {},
+      onPickLocation: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
     const msg = container.querySelector(".status-message");
     expect(msg).not.toBeNull();
     expect(msg?.textContent).toMatch(/discover/i);
