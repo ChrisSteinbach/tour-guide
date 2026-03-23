@@ -39,6 +39,7 @@ function makeState(overrides: Partial<AppState> = {}): AppState {
     hasGeolocation: true,
     gpsSignalLost: false,
     viewportFillCount: DEFAULT_VIEWPORT_FILL,
+    aboutOpen: false,
     ...overrides,
   };
 }
@@ -1654,27 +1655,29 @@ describe("expandInfiniteScroll event", () => {
 // ── hideAbout effect on phase transitions ─────────────────────
 
 describe("hideAbout effect on phase transitions", () => {
-  it("emits hideAbout when langChanged moves from browsing to downloading", () => {
-    const state = browsingState({ currentLang: "en" });
-    const { effects } = transition(state, {
+  it("emits hideAbout when aboutOpen and langChanged moves from browsing to downloading", () => {
+    const state = browsingState({ currentLang: "en", aboutOpen: true });
+    const { effects, next } = transition(state, {
       type: "langChanged",
       lang: "sv",
     });
     expect(effectTypes(effects)).toContain("hideAbout");
+    expect(next.aboutOpen).toBe(false);
   });
 
-  it("emits hideAbout when selectArticle moves from browsing to detail", () => {
-    const state = browsingState();
-    const { effects } = transition(state, {
+  it("emits hideAbout when aboutOpen and selectArticle moves from browsing to detail", () => {
+    const state = browsingState({ aboutOpen: true });
+    const { effects, next } = transition(state, {
       type: "selectArticle",
       article: defaultBrowsingArticles[0],
       firstVisibleIndex: 0,
     });
     expect(effectTypes(effects)).toContain("hideAbout");
+    expect(next.aboutOpen).toBe(false);
   });
 
   it("emits hideAbout before render so dialog is dismissed first", () => {
-    const state = browsingState({ currentLang: "en" });
+    const state = browsingState({ currentLang: "en", aboutOpen: true });
     const { effects } = transition(state, {
       type: "langChanged",
       lang: "sv",
@@ -1685,18 +1688,54 @@ describe("hideAbout effect on phase transitions", () => {
     expect(hideIdx).toBeLessThan(renderIdx);
   });
 
-  it("does not emit hideAbout when phase stays the same", () => {
-    const state = browsingState();
-    const { effects } = transition(state, { type: "togglePause" });
-    expect(effectTypes(effects)).not.toContain("hideAbout");
-  });
-
-  it("does not emit hideAbout when langChanged stays on welcome", () => {
-    const state = makeState({ currentLang: "en" });
+  it("does not emit hideAbout when aboutOpen is false", () => {
+    const state = browsingState({ currentLang: "en", aboutOpen: false });
     const { effects } = transition(state, {
       type: "langChanged",
       lang: "sv",
     });
     expect(effectTypes(effects)).not.toContain("hideAbout");
+  });
+
+  it("does not emit hideAbout when phase stays the same", () => {
+    const state = browsingState({ aboutOpen: true });
+    const { effects } = transition(state, { type: "togglePause" });
+    expect(effectTypes(effects)).not.toContain("hideAbout");
+  });
+
+  it("does not emit hideAbout when langChanged stays on welcome", () => {
+    const state = makeState({ currentLang: "en", aboutOpen: true });
+    const { effects } = transition(state, {
+      type: "langChanged",
+      lang: "sv",
+    });
+    expect(effectTypes(effects)).not.toContain("hideAbout");
+  });
+
+  it("does not emit hideAbout when back moves from detail to browsing", () => {
+    const browsing = browsingState({ query: sampleQuery, aboutOpen: true });
+    const { next: detail } = transition(browsing, {
+      type: "selectArticle",
+      article: defaultBrowsingArticles[0],
+      firstVisibleIndex: 0,
+    });
+    const { effects } = transition(detail, { type: "back" });
+    expect(effectTypes(effects)).not.toContain("hideAbout");
+  });
+});
+
+describe("showAbout event", () => {
+  it("sets aboutOpen and emits showAbout effect", () => {
+    const state = browsingState({ aboutOpen: false });
+    const { next, effects } = transition(state, { type: "showAbout" });
+    expect(next.aboutOpen).toBe(true);
+    expect(effectTypes(effects)).toContain("showAbout");
+  });
+
+  it("is a no-op when aboutOpen is already true", () => {
+    const state = browsingState({ aboutOpen: true });
+    const { next, effects } = transition(state, { type: "showAbout" });
+    expect(next.aboutOpen).toBe(true);
+    expect(effects).toHaveLength(0);
   });
 });

@@ -3,8 +3,6 @@ import type { LocationError } from "./location";
 import { SUPPORTED_LANGS, LANG_NAMES } from "../lang";
 import type { Lang } from "../lang";
 import { createAppHeader } from "./header";
-import { showAbout } from "./about";
-
 export type AppState =
   | { kind: "loading" }
   | { kind: "error"; error: LocationError }
@@ -96,9 +94,11 @@ export function renderWelcome(
     onPickLocation: () => void;
     currentLang: Lang;
     onLangChange: (lang: Lang) => void;
+    onShowAbout: () => void;
   },
 ): void {
-  const { onStart, onPickLocation, currentLang, onLangChange } = options;
+  const { onStart, onPickLocation, currentLang, onLangChange, onShowAbout } =
+    options;
   const tagline = document.createElement("p");
   tagline.className = "status-message";
   tagline.textContent = "Discover Wikipedia articles about nearby places.";
@@ -129,7 +129,7 @@ export function renderWelcome(
   const aboutLink = document.createElement("button");
   aboutLink.className = "welcome-about";
   aboutLink.textContent = "About";
-  aboutLink.addEventListener("click", () => showAbout());
+  aboutLink.addEventListener("click", onShowAbout);
 
   renderStatusScreen(container, [tagline, langSelect, choices, aboutLink]);
 }

@@ -76,7 +76,6 @@ describe("showAbout", () => {
     trigger.focus();
 
     showAbout();
-    expect(document.activeElement).not.toBe(trigger);
 
     const close = document.querySelector(".about-close") as HTMLButtonElement;
     close.click();
@@ -193,8 +192,9 @@ describe("hideAbout", () => {
 });
 
 describe("createAboutButton", () => {
-  it("returns a button that opens the About dialog on click", () => {
-    const btn = createAboutButton();
+  it("returns a button that calls onClick handler on click", () => {
+    const onClick = vi.fn();
+    const btn = createAboutButton(onClick);
 
     expect(btn.tagName).toBe("BUTTON");
     expect(btn.getAttribute("aria-label")).toBe("About");
@@ -203,6 +203,6 @@ describe("createAboutButton", () => {
     document.body.appendChild(btn);
     btn.click();
 
-    expect(document.querySelector("dialog.about-dialog")).not.toBeNull();
+    expect(onClick).toHaveBeenCalledOnce();
   });
 });

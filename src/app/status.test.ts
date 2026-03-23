@@ -20,6 +20,7 @@ describe("renderWelcome", () => {
     const onStart = vi.fn();
     const container = document.createElement("div");
     renderWelcome(container, {
+      onShowAbout: () => {},
       onStart,
       onPickLocation: () => {},
       currentLang: "en",
@@ -34,6 +35,7 @@ describe("renderWelcome", () => {
     const onPickLocation = vi.fn();
     const container = document.createElement("div");
     renderWelcome(container, {
+      onShowAbout: () => {},
       onStart: () => {},
       onPickLocation,
       currentLang: "en",
@@ -47,6 +49,7 @@ describe("renderWelcome", () => {
   it("presents both entry modes with equal visual treatment", () => {
     const container = document.createElement("div");
     renderWelcome(container, {
+      onShowAbout: () => {},
       onStart: () => {},
       onPickLocation: () => {},
       currentLang: "en",
@@ -61,6 +64,7 @@ describe("renderWelcome", () => {
   it("language selector reflects currentLang", () => {
     const container = document.createElement("div");
     renderWelcome(container, {
+      onShowAbout: () => {},
       onStart: () => {},
       onPickLocation: () => {},
       currentLang: "sv",
@@ -74,6 +78,7 @@ describe("renderWelcome", () => {
     const onLangChange = vi.fn();
     const container = document.createElement("div");
     renderWelcome(container, {
+      onShowAbout: () => {},
       onStart: () => {},
       onPickLocation: () => {},
       currentLang: "en",
@@ -88,6 +93,7 @@ describe("renderWelcome", () => {
   it("renders the app header with app name", () => {
     const container = document.createElement("div");
     renderWelcome(container, {
+      onShowAbout: () => {},
       onStart: () => {},
       onPickLocation: () => {},
       currentLang: "en",
@@ -100,6 +106,7 @@ describe("renderWelcome", () => {
   it("renders a tagline message", () => {
     const container = document.createElement("div");
     renderWelcome(container, {
+      onShowAbout: () => {},
       onStart: () => {},
       onPickLocation: () => {},
       currentLang: "en",
@@ -110,9 +117,11 @@ describe("renderWelcome", () => {
     expect(msg?.textContent).toMatch(/discover/i);
   });
 
-  it("renders an About button that opens the about dialog", () => {
+  it("renders an About button that calls onShowAbout", () => {
+    const onShowAbout = vi.fn();
     const container = document.createElement("div");
     renderWelcome(container, {
+      onShowAbout,
       onStart: () => {},
       onPickLocation: () => {},
       currentLang: "en",
@@ -125,7 +134,7 @@ describe("renderWelcome", () => {
     expect(aboutBtn).not.toBeNull();
 
     aboutBtn.click();
-    expect(document.querySelector("dialog.about-dialog")).not.toBeNull();
+    expect(onShowAbout).toHaveBeenCalledOnce();
   });
 });
 

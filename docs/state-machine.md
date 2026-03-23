@@ -89,26 +89,27 @@ The `loadGeneration` counter prevents stale async results from corrupting state.
 
 Effects are the machine's way of requesting side effects. The transition function never performs I/O — it returns a list of effects, and the executor in `main.ts` interprets them:
 
-| Effect                 | What the executor does                                                      |
-| ---------------------- | --------------------------------------------------------------------------- |
-| `render`               | Calls `renderPhase()` — full screen redraw based on current phase           |
-| `renderBrowsingList`   | Re-renders article list and rebuilds header (skipped when dropdown is open) |
-| `renderBrowsingHeader` | Re-renders only the browsing header (e.g. blink GPS indicator while paused) |
-| `updateDistances`      | Patches only distance badges in-place (no DOM rebuild)                      |
-| `startGps`             | Calls `watchLocation()`, wires callbacks to dispatch                        |
-| `stopGps`              | Stops the GPS watcher                                                       |
-| `storeLang`            | Persists language to `localStorage`                                         |
-| `storeStarted`         | Persists start timestamp to `localStorage` (checked with TTL on reload)     |
-| `loadData`             | Aborts previous load, fetches tile index for the language                   |
-| `loadTiles`            | Loads nearby tiles based on current GPS position                            |
-| `pushHistory`          | Pushes a history entry (enables browser back for detail→browsing)           |
-| `fetchSummary`         | Fetches Wikipedia article summary, renders detail view                      |
-| `fetchListSummaries`   | Fetches summaries for all visible articles in the list                      |
-| `showMapPicker`        | Opens the map picker UI                                                     |
-| `showAppUpdateBanner`  | Appends the SW update banner to the DOM                                     |
-| `scrollToTop`          | Scrolls the article list to the top                                         |
-| `restoreScrollTop`     | Restores the article list scroll position saved when entering detail view   |
-| `requery`              | Runs `getNearby()` synchronously and dispatches a `queryResult` event       |
+| Effect                 | What the executor does                                                            |
+| ---------------------- | --------------------------------------------------------------------------------- |
+| `render`               | Calls `renderPhase()` — full screen redraw based on current phase                 |
+| `renderBrowsingList`   | Re-renders article list and rebuilds header (skipped when dropdown is open)       |
+| `renderBrowsingHeader` | Re-renders only the browsing header (e.g. blink GPS indicator while paused)       |
+| `updateDistances`      | Patches only distance badges in-place (no DOM rebuild)                            |
+| `hideAbout`            | Dismisses the About dialog when leaving an ABOUT_PHASES phase (welcome, browsing) |
+| `startGps`             | Calls `watchLocation()`, wires callbacks to dispatch                              |
+| `stopGps`              | Stops the GPS watcher                                                             |
+| `storeLang`            | Persists language to `localStorage`                                               |
+| `storeStarted`         | Persists start timestamp to `localStorage` (checked with TTL on reload)           |
+| `loadData`             | Aborts previous load, fetches tile index for the language                         |
+| `loadTiles`            | Loads nearby tiles based on current GPS position                                  |
+| `pushHistory`          | Pushes a history entry (enables browser back for detail→browsing)                 |
+| `fetchSummary`         | Fetches Wikipedia article summary, renders detail view                            |
+| `fetchListSummaries`   | Fetches summaries for all visible articles in the list                            |
+| `showMapPicker`        | Opens the map picker UI                                                           |
+| `showAppUpdateBanner`  | Appends the SW update banner to the DOM                                           |
+| `scrollToTop`          | Scrolls the article list to the top                                               |
+| `restoreScrollTop`     | Restores the article list scroll position saved when entering detail view         |
+| `requery`              | Runs `getNearby()` synchronously and dispatches a `queryResult` event             |
 
 The `requery` effect is notable: it re-enters the dispatch loop synchronously by calling `getNearby()` and immediately dispatching a `queryResult` event. This keeps the nearest-neighbor computation outside the pure machine while avoiding an async round-trip.
 

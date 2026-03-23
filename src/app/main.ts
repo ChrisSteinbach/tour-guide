@@ -1,5 +1,5 @@
 import "./style.css";
-import { hideAbout } from "./about";
+import { hideAbout, showAbout } from "./about";
 import { APP_NAME } from "./config";
 import {
   renderNearbyList,
@@ -102,6 +102,7 @@ let appState: AppState = {
   hasGeolocation: true,
   gpsSignalLost: false,
   viewportFillCount,
+  aboutOpen: false,
 };
 
 // ── Dispatch ─────────────────────────────────────────────────
@@ -137,6 +138,7 @@ const executeEffect = createEffectExecutor({
     renderBrowsingList: renderBrowsingListDOM,
     renderBrowsingHeader: renderBrowsingHeaderDOM,
     updateDistances: (articles) => updateNearbyDistances(app, articles),
+    showAbout,
     hideAbout,
     renderDetailLoading: (article) => renderDetailLoading(app, article, goBack),
     renderDetailReady: (article, summary) => {
@@ -339,6 +341,7 @@ const infiniteScroll = createInfiniteScrollLifecycle({
       onPickLocation: () => dispatch({ type: "showMapPicker" }),
       onUseGps: () => dispatch({ type: "useGps" }),
       gpsSignalLost: appState.gpsSignalLost,
+      onShowAbout: () => dispatch({ type: "showAbout" }),
     });
   },
   initBrowseMap: () => {
@@ -478,6 +481,7 @@ function renderViewportListDOM(): void {
     onUseGps: () => dispatch({ type: "useGps" }),
     onPickLocation: () => dispatch({ type: "showMapPicker" }),
     gpsSignalLost: appState.gpsSignalLost,
+    onShowAbout: () => dispatch({ type: "showAbout" }),
   });
   browseMap.update(appState.position, appState.phase.articles);
   if (isGps && !appState.phase.paused) {
@@ -543,6 +547,7 @@ function renderPhase(): void {
         onPickLocation: () => dispatch({ type: "showMapPicker" }),
         currentLang: appState.currentLang,
         onLangChange: (lang) => dispatch({ type: "langChanged", lang }),
+        onShowAbout: () => dispatch({ type: "showAbout" }),
       });
       return;
     case "downloading":
@@ -630,5 +635,6 @@ if (startedAt && Date.now() - startedAt < STARTED_TTL_MS) {
     onPickLocation: () => dispatch({ type: "showMapPicker" }),
     currentLang: appState.currentLang,
     onLangChange: (lang) => dispatch({ type: "langChanged", lang }),
+    onShowAbout: () => dispatch({ type: "showAbout" }),
   });
 }

@@ -6,6 +6,7 @@ if (typeof HTMLDialogElement !== "undefined") {
   };
   HTMLDialogElement.prototype.close ??= function () {
     this.removeAttribute("open");
+    this.dispatchEvent(new Event("close"));
   };
 }
 /* eslint-enable @typescript-eslint/unbound-method */
