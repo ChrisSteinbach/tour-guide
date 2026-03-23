@@ -1650,3 +1650,53 @@ describe("expandInfiniteScroll event", () => {
     expect(expectBrowsing(back).infiniteScrollLimit).toBe(600);
   });
 });
+
+// ── hideAbout effect on phase transitions ─────────────────────
+
+describe("hideAbout effect on phase transitions", () => {
+  it("emits hideAbout when langChanged moves from browsing to downloading", () => {
+    const state = browsingState({ currentLang: "en" });
+    const { effects } = transition(state, {
+      type: "langChanged",
+      lang: "sv",
+    });
+    expect(effectTypes(effects)).toContain("hideAbout");
+  });
+
+  it("emits hideAbout when selectArticle moves from browsing to detail", () => {
+    const state = browsingState();
+    const { effects } = transition(state, {
+      type: "selectArticle",
+      article: defaultBrowsingArticles[0],
+      firstVisibleIndex: 0,
+    });
+    expect(effectTypes(effects)).toContain("hideAbout");
+  });
+
+  it("emits hideAbout before render so dialog is dismissed first", () => {
+    const state = browsingState({ currentLang: "en" });
+    const { effects } = transition(state, {
+      type: "langChanged",
+      lang: "sv",
+    });
+    const types = effectTypes(effects);
+    const hideIdx = types.indexOf("hideAbout");
+    const renderIdx = types.indexOf("render");
+    expect(hideIdx).toBeLessThan(renderIdx);
+  });
+
+  it("does not emit hideAbout when phase stays the same", () => {
+    const state = browsingState();
+    const { effects } = transition(state, { type: "togglePause" });
+    expect(effectTypes(effects)).not.toContain("hideAbout");
+  });
+
+  it("does not emit hideAbout when langChanged stays on welcome", () => {
+    const state = makeState({ currentLang: "en" });
+    const { effects } = transition(state, {
+      type: "langChanged",
+      lang: "sv",
+    });
+    expect(effectTypes(effects)).not.toContain("hideAbout");
+  });
+});

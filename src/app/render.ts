@@ -5,6 +5,7 @@ import type { Lang } from "../lang";
 import { createAppHeader } from "./header";
 import { APP_NAME } from "./config";
 import { createLangDropdown } from "./lang-dropdown";
+import { createAboutButton } from "./about";
 
 // ── SVG icon helpers ─────────────────────────────────────────
 
@@ -50,6 +51,7 @@ type FocusInfo =
   | { type: "pauseToggle" }
   | { type: "pickLocation" }
   | { type: "useGps" }
+  | { type: "aboutBtn" }
   | { type: "article"; title: string };
 
 function captureFocus(container: HTMLElement): FocusInfo | null {
@@ -61,6 +63,7 @@ function captureFocus(container: HTMLElement): FocusInfo | null {
   if (active.classList.contains("pick-location-btn"))
     return { type: "pickLocation" };
   if (active.classList.contains("use-gps-btn")) return { type: "useGps" };
+  if (active.classList.contains("about-btn")) return { type: "aboutBtn" };
 
   const item = (active as HTMLElement).closest<HTMLElement>(".nearby-item");
   if (item?.dataset.title)
@@ -85,6 +88,9 @@ function restoreFocus(container: HTMLElement, info: FocusInfo | null): void {
       break;
     case "useGps":
       target = container.querySelector(".use-gps-btn");
+      break;
+    case "aboutBtn":
+      target = container.querySelector(".about-btn");
       break;
     case "article":
       target =
@@ -222,6 +228,7 @@ export function renderNearbyHeader(
 
   const langDropdown = createLangDropdown(currentLang, onLangChange);
   headerControls.appendChild(langDropdown);
+  headerControls.appendChild(createAboutButton());
   row.append(titleGroup, headerControls);
   header.appendChild(row);
   return header;

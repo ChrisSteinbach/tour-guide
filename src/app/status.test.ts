@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import "./test-dialog-polyfill";
+import { hideAbout } from "./about";
 import { APP_NAME } from "./config";
 import {
   renderWelcome,
@@ -13,6 +15,7 @@ import type { LocationError } from "./location";
 // ── renderWelcome ───────────────────────────────────────────
 
 describe("renderWelcome", () => {
+  afterEach(() => hideAbout());
   it("calls onStart when use-my-location button is clicked", () => {
     const onStart = vi.fn();
     const container = document.createElement("div");
@@ -105,6 +108,24 @@ describe("renderWelcome", () => {
     const msg = container.querySelector(".status-message");
     expect(msg).not.toBeNull();
     expect(msg?.textContent).toMatch(/discover/i);
+  });
+
+  it("renders an About button that opens the about dialog", () => {
+    const container = document.createElement("div");
+    renderWelcome(container, {
+      onStart: () => {},
+      onPickLocation: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+
+    const aboutBtn = container.querySelector(
+      ".welcome-about",
+    ) as HTMLButtonElement;
+    expect(aboutBtn).not.toBeNull();
+
+    aboutBtn.click();
+    expect(document.querySelector("dialog.about-dialog")).not.toBeNull();
   });
 });
 

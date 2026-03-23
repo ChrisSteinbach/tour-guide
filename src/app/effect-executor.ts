@@ -21,6 +21,7 @@ export interface RenderDeps {
   renderBrowsingList: () => void;
   renderBrowsingHeader: () => void;
   updateDistances: (articles: NearbyArticle[]) => void;
+  hideAbout: () => void;
   renderDetailLoading: (article: NearbyArticle) => void;
   renderDetailReady: (article: NearbyArticle, summary: ArticleSummary) => void;
   renderDetailError: (
@@ -190,6 +191,9 @@ export function createEffectExecutor(
     switch (effect.type) {
       case "render":
         deps.ui.render();
+        break;
+      case "hideAbout":
+        deps.ui.hideAbout();
         break;
       case "renderBrowsingList":
         deps.ui.renderBrowsingList();
