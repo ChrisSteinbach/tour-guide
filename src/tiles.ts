@@ -26,13 +26,16 @@ export interface TileIndex {
   tiles: TileEntry[];
 }
 
+const ROWS = 180 / GRID_DEG; // 36
+const COLS = 360 / GRID_DEG; // 72
+
 /** Compute tile row and column for a lat/lon position. */
 export function tileFor(
   lat: number,
   lon: number,
 ): { row: number; col: number } {
-  const row = Math.floor((lat + 90) / GRID_DEG);
-  const col = Math.floor((lon + 180) / GRID_DEG);
+  const row = Math.min(Math.floor((lat + 90) / GRID_DEG), ROWS - 1);
+  const col = Math.min(Math.floor((lon + 180) / GRID_DEG), COLS - 1);
   return { row, col };
 }
 

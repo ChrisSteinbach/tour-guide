@@ -25,6 +25,14 @@ describe("tileFor", () => {
     expect(tileFor(10, 0)).toEqual({ row: 20, col: 36 });
     expect(tileFor(9.99, 0)).toEqual({ row: 19, col: 36 });
   });
+
+  it("clamps lat=90 to max row", () => {
+    expect(tileFor(90, 0)).toEqual({ row: 35, col: 36 });
+  });
+
+  it("clamps lon=180 to max col", () => {
+    expect(tileFor(0, 180)).toEqual({ row: 18, col: 71 });
+  });
 });
 
 describe("tileId", () => {

@@ -13,8 +13,8 @@ Grid dimensions: 72 columns (longitude) x 36 rows (latitude) = 2,592 cells. Afte
 Tile IDs use zero-padded row and column indices: `"14-38"` for row 14, column 38 (corresponding to 20°S–15°S, 10°E–15°E). More precisely:
 
 ```
-row = floor((lat + 90) / 5)     // 0..35,  row 0 = 90°S–85°S
-col = floor((lon + 180) / 5)    // 0..71,  col 0 = 180°W–175°W
+row = min(floor((lat + 90) / 5), 35)   // 0..35,  row 0 = 90°S–85°S
+col = min(floor((lon + 180) / 5), 71)  // 0..71,  col 0 = 180°W–175°W
 ```
 
 This makes tile lookup from a lat/lon position a single division — no library, no lookup table.
@@ -152,7 +152,7 @@ Content hashes drive cache invalidation. When the app already has a tile cached 
 When the user's position is known, the app:
 
 1. **Fetches the tile index** (if not already cached). This is small and cacheable in IDB.
-2. **Determines the primary tile** from `floor((lat+90)/5)` and `floor((lon+180)/5)`.
+2. **Determines the primary tile** from `min(floor((lat+90)/5), 35)` and `min(floor((lon+180)/5), 71)`.
 3. **Fetches and deserializes the primary tile**. Shows results immediately.
 4. **Checks proximity to edges**. If the user is within 1° of any tile boundary, identifies adjacent tiles that should be loaded.
 5. **Prefetches adjacent tiles** in the background (up to 3 adjacent tiles for a corner case, typically 1-2).
