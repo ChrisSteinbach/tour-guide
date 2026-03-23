@@ -64,7 +64,7 @@ Float32 vertices give sub-meter precision on Earth. On deserialization, Uint32 i
 
 1. Register service worker (auto-update: new versions install automatically; the app shows a "Reload" banner via the `showAppUpdateBanner` effect)
 2. Load triangulation for stored language (default: English)
-3. Show welcome screen with language selector and "Find nearby" / "Use demo data" buttons
+3. Show welcome screen with language selector, "Use my location" / "Pick a spot on the map" buttons
 4. On start: begin GPS watch, render article list in viewport mode (a short, GPS-updated list). When the user scrolls past a threshold or manually pauses, the view transitions to infinite scroll mode (see [infinite-scroll.md](infinite-scroll.md)).
 
 ### Data Loading (`tile-loader.ts`)
@@ -96,9 +96,9 @@ Distance uses chord length (`2 * asin(||v - q|| / 2)`, clamped for numerical saf
 **List view:**
 
 - Article cards with distance badges
-- Language selector dropdown and pause/resume button in header
+- Language selector dropdown, GPS/Pin position source toggle, and pause/resume button in header
 - Virtual infinite scroll with progressive tile loading (see [infinite-scroll.md](infinite-scroll.md))
-- Smart re-render: if the article list is unchanged, only patches distance badges in-place (preserves dropdown/focus state)
+- Smart re-render with two paths: if the article list is unchanged, `updateDistances` patches only the distance badges in-place. If articles change, `reconcileListItems` matches existing DOM nodes by article title — reused nodes keep their enrichment (thumbnails, descriptions fetched from Wikipedia) and only get a badge update, while new articles get fresh nodes. This title-keyed reconciliation is why enrichment survives GPS-triggered re-renders even as the article list shifts.
 - Re-query threshold: 15m minimum movement before recalculating
 
 **Detail view:**
@@ -126,8 +126,8 @@ The app is designed for mobile networks where failures are common. Each subsyste
 | **Binary deserialization failure** (corrupt `.bin`, truncated download, format version mismatch) | `deserializeBinary` validates magic bytes (`"WKRD"`), format version, section bounds, and article JSON — throws `BinaryFormatError` on any mismatch; `loadTile` propagates the error, which is caught and logged; app continues with remaining tiles | Same as tile fetch failure — results from other tiles still display; corrupt tile is not cached in IDB |
 | **Tile index fetch failure**                                                                     | Falls back to IDB-cached index if available; if no cache, transitions to "data unavailable" screen                                                                                                                                                   | Offline revisit works; first-time offline shows language picker with "No data available" message       |
 | **IndexedDB unavailable** (private browsing, quota exceeded)                                     | `idbOpen()` returns `null`; all IDB reads/writes silently skip                                                                                                                                                                                       | App works normally but without caching — tiles reload from network on each visit                       |
-| **GPS denied**                                                                                   | State machine transitions to error screen with message and "Use demo data" button                                                                                                                                                                    | User can grant permission and retry, or explore with Paris demo data                                   |
-| **GPS timeout/unavailable**                                                                      | Same as GPS denied — error screen with demo data option                                                                                                                                                                                              | Explicit user action required to proceed                                                               |
+| **GPS denied**                                                                                   | State machine transitions to error screen with message and "Pick on map" button                                                                                                                                                                      | User can grant permission and retry, or pick a location on the map                                     |
+| **GPS timeout/unavailable**                                                                      | Same as GPS denied — error screen with map picker option                                                                                                                                                                                             | Explicit user action required to proceed                                                               |
 | **Wikipedia API failure**                                                                        | Detail view shows error with "Retry" button and direct "Open on Wikipedia" link                                                                                                                                                                      | User can retry or read the article on Wikipedia directly                                               |
 | **Wikipedia API 404**                                                                            | Treated as "article not found"                                                                                                                                                                                                                       | Detail view shows error; Wikipedia link still works as fallback                                        |
 
@@ -266,13 +266,13 @@ src/app/
   tile-loader.ts       Tile index + tile fetching, IDB cache, LRU eviction
   idb.ts               IndexedDB helpers, versioned key prefixes
   render.ts            Article list with distance badges
+  about.ts             About dialog with Wikipedia and OSM attribution
   detail.ts            Article detail via Wikipedia REST API
   header.ts            App header element factory
   location.ts          Geolocation API wrapper
-  status.ts            Loading, progress, error screens
+  status.ts            Loading, progress, error, welcome, and data-unavailable screens
   wiki-api.ts          Wikipedia REST API client
   format.ts            Distance formatting
-  mock-data.ts         Demo data for "Use demo data" flow
   types.ts             Shared types
   style.css            UI styling
   index.html           PWA root
