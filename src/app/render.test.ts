@@ -18,6 +18,7 @@ afterEach(() => {
 // ── renderNearbyHeader ───────────────────────────────────────
 
 describe("renderNearbyHeader", () => {
+  afterEach(() => vi.restoreAllMocks());
   it("renders article count in subtitle", () => {
     const header = renderNearbyHeader({
       articleCount: 5,
@@ -226,7 +227,7 @@ describe("renderNearbyHeader", () => {
   it("re-picks location with confirmation when pin is active", () => {
     const onPickLocation = vi.fn();
     const onUseGps = vi.fn();
-    globalThis.confirm = vi.fn(() => true);
+    vi.spyOn(globalThis, "confirm").mockReturnValue(true);
     const header = renderNearbyHeader({
       articleCount: 3,
       currentLang: "en",
@@ -249,7 +250,7 @@ describe("renderNearbyHeader", () => {
   it("does not re-pick location when confirmation is dismissed", () => {
     const onPickLocation = vi.fn();
     const onUseGps = vi.fn();
-    globalThis.confirm = vi.fn(() => false);
+    vi.spyOn(globalThis, "confirm").mockReturnValue(false);
     const header = renderNearbyHeader({
       articleCount: 3,
       currentLang: "en",
@@ -265,6 +266,50 @@ describe("renderNearbyHeader", () => {
     pinBtn.click();
     expect(globalThis.confirm).toHaveBeenCalled();
     expect(onPickLocation).not.toHaveBeenCalled();
+  });
+
+  it("adds gps-signal-lost class when gpsSignalLost is true", () => {
+    const header = renderNearbyHeader({
+      articleCount: 3,
+      currentLang: "en",
+      onLangChange: () => {},
+      paused: false,
+      positionSource: "gps",
+      onPickLocation: () => {},
+      onUseGps: () => {},
+      gpsSignalLost: true,
+    });
+    const gpsBtn = header.querySelector(".use-gps-btn") as HTMLButtonElement;
+    expect(gpsBtn.classList.contains("gps-signal-lost")).toBe(true);
+  });
+
+  it("aria-label reads 'GPS signal lost' when gpsSignalLost is true", () => {
+    const header = renderNearbyHeader({
+      articleCount: 3,
+      currentLang: "en",
+      onLangChange: () => {},
+      paused: false,
+      positionSource: "gps",
+      onPickLocation: () => {},
+      onUseGps: () => {},
+      gpsSignalLost: true,
+    });
+    const gpsBtn = header.querySelector(".use-gps-btn") as HTMLButtonElement;
+    expect(gpsBtn.getAttribute("aria-label")).toBe("GPS signal lost");
+  });
+
+  it("aria-label reads 'Use GPS location' when gpsSignalLost is absent", () => {
+    const header = renderNearbyHeader({
+      articleCount: 3,
+      currentLang: "en",
+      onLangChange: () => {},
+      paused: false,
+      positionSource: "gps",
+      onPickLocation: () => {},
+      onUseGps: () => {},
+    });
+    const gpsBtn = header.querySelector(".use-gps-btn") as HTMLButtonElement;
+    expect(gpsBtn.getAttribute("aria-label")).toBe("Use GPS location");
   });
 
   it("omits mode toggle when positionSource not provided", () => {
@@ -329,6 +374,53 @@ describe("renderNearbyList", () => {
     const items = container.querySelectorAll(".nearby-item");
     (items[1] as HTMLElement).click();
     expect(onSelect).toHaveBeenCalledWith(articles[1]);
+  });
+
+  it("calls onSelectArticle when Enter is pressed on item", () => {
+    const articles = makeArticles(1);
+    const onSelect = vi.fn();
+    const container = document.createElement("div");
+    renderNearbyList(container, articles, {
+      onSelectArticle: onSelect,
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+    const item = container.querySelector(".nearby-item") as HTMLElement;
+    item.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+    expect(onSelect).toHaveBeenCalledWith(articles[0]);
+  });
+
+  it("calls onSelectArticle when Space is pressed on item", () => {
+    const articles = makeArticles(1);
+    const onSelect = vi.fn();
+    const container = document.createElement("div");
+    renderNearbyList(container, articles, {
+      onSelectArticle: onSelect,
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+    const item = container.querySelector(".nearby-item") as HTMLElement;
+    item.dispatchEvent(
+      new KeyboardEvent("keydown", { key: " ", bubbles: true }),
+    );
+    expect(onSelect).toHaveBeenCalledWith(articles[0]);
+  });
+
+  it("does not call onSelectArticle for unrelated keys", () => {
+    const onSelect = vi.fn();
+    const container = document.createElement("div");
+    renderNearbyList(container, makeArticles(1), {
+      onSelectArticle: onSelect,
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+    const item = container.querySelector(".nearby-item") as HTMLElement;
+    item.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Tab", bubbles: true }),
+    );
+    expect(onSelect).not.toHaveBeenCalled();
   });
 
   it("clears container before rendering", () => {
@@ -446,8 +538,6 @@ describe("renderNearbyList", () => {
       renderNearbyList(container, makeArticles(articleCount), opts);
       const newEl = container.querySelector<HTMLElement>(selector)!;
       expect(document.activeElement).toBe(newEl);
-
-      vi.restoreAllMocks();
     },
   );
 });
@@ -476,7 +566,6 @@ describe("renderNearbyList skips header replacement while dropdown is open", () 
     expect(container.querySelector("header.app-header")).toBe(oldHeader);
     // Dropdown should still be open
     expect(listbox.hidden).toBe(false);
-    vi.restoreAllMocks();
   });
 
   it("replaces header when lang dropdown is closed", () => {
@@ -496,7 +585,6 @@ describe("renderNearbyList skips header replacement while dropdown is open", () 
 
     // Header should be a new DOM node
     expect(container.querySelector("header.app-header")).not.toBe(oldHeader);
-    vi.restoreAllMocks();
   });
 });
 
@@ -522,7 +610,6 @@ describe("renderNearbyList reconciliation", () => {
     expect(newItems[0]).toBe(originalItems[0]);
     expect(newItems[1]).toBe(originalItems[1]);
     expect(newItems[2]).toBe(originalItems[2]);
-    vi.restoreAllMocks();
   });
 
   it("creates new nodes only for new articles", () => {
@@ -553,7 +640,6 @@ describe("renderNearbyList reconciliation", () => {
     expect(newItems[0]).toBe(originalItems[1]);
     expect(newItems[1]).toBe(originalItems[2]);
     expect(newItems[2].dataset.title).toBe("Article 3");
-    vi.restoreAllMocks();
   });
 
   it("updates distance badges on reused nodes", () => {
@@ -574,7 +660,6 @@ describe("renderNearbyList reconciliation", () => {
     const badges = container.querySelectorAll(".nearby-distance");
     expect(badges[0].textContent).toBe("600 m");
     expect(badges[1].textContent).toBe("700 m");
-    vi.restoreAllMocks();
   });
 });
 
@@ -793,6 +878,5 @@ describe("enrichArticleItem", () => {
     expect(desc?.textContent).toBe("A nice description");
     const img = container.querySelector(".nearby-thumb img");
     expect(img).not.toBeNull();
-    vi.restoreAllMocks();
   });
 });
