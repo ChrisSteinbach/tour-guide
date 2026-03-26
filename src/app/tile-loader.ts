@@ -32,16 +32,17 @@ async function touchLru(
   db: IDBDatabase,
   lang: Lang,
   tile: string,
+  deps: TileLoaderDeps,
 ): Promise<void> {
   const lruKey = `tile-lru-v1-${lang}`;
-  const lru = (await idbGetAny<string[]>(db, lruKey)) ?? [];
+  const lru = (await deps.getAny<string[]>(db, lruKey)) ?? [];
   const { updated, evict } = updateLru(lru, tile);
 
   for (const id of evict) {
-    idbDelete(db, `tile-v1-${lang}-${id}`).catch(() => undefined);
+    deps.deleteKey(db, `tile-v1-${lang}-${id}`).catch(() => undefined);
   }
 
-  idbPutAny(db, lruKey, updated).catch(() => undefined);
+  deps.putAny(db, lruKey, updated).catch(() => undefined);
 }
 
 // ---------- Tile query functions ----------
@@ -172,6 +173,20 @@ interface CachedTileData {
   hash: string;
 }
 
+export interface TileLoaderDeps {
+  openDb: () => Promise<IDBDatabase | null>;
+  getAny: <T>(db: IDBDatabase, key: string) => Promise<T | undefined>;
+  putAny: (db: IDBDatabase, key: string, value: unknown) => Promise<void>;
+  deleteKey: (db: IDBDatabase, key: string) => Promise<void>;
+}
+
+export const defaultDeps: TileLoaderDeps = {
+  openDb: idbOpen,
+  getAny: idbGetAny,
+  putAny: idbPutAny,
+  deleteKey: idbDelete,
+};
+
 /**
  * Fetch tile index. Returns null on 404.
  * Caches in IDB, falls back to cached index on network error.
@@ -180,11 +195,12 @@ export async function loadTileIndex(
   baseUrl: string,
   lang: Lang,
   signal?: AbortSignal,
+  deps: TileLoaderDeps = defaultDeps,
 ): Promise<TileIndex | null> {
   const url = `${baseUrl}tiles/${lang}/index.json`;
   const cacheKey = `tile-index-v1-${lang}`;
 
-  const db = await idbOpen();
+  const db = await deps.openDb();
 
   try {
     const response = await fetch(url, { cache: "no-store", signal });
@@ -199,7 +215,7 @@ export async function loadTileIndex(
 
     // Cache for offline use
     if (db) {
-      idbPutAny(db, cacheKey, JSON.stringify(index)).catch(() => undefined);
+      deps.putAny(db, cacheKey, JSON.stringify(index)).catch(() => undefined);
     }
 
     return index;
@@ -208,7 +224,7 @@ export async function loadTileIndex(
     if (signal?.aborted) throw err;
     // Network error — try IDB cache
     if (db) {
-      const cached = await idbGetAny<string>(db, cacheKey);
+      const cached = await deps.getAny<string>(db, cacheKey);
       if (cached) {
         return JSON.parse(cached) as TileIndex;
       }
@@ -227,16 +243,17 @@ export async function loadTile(
   lang: Lang,
   entry: TileEntry,
   signal?: AbortSignal,
+  deps: TileLoaderDeps = defaultDeps,
 ): Promise<NearestQuery> {
   const cacheKey = `tile-v1-${lang}-${entry.id}`;
-  const db = await idbOpen();
+  const db = await deps.openDb();
 
   // Check IDB cache
   if (db) {
-    const cached = await idbGetAny<CachedTileData>(db, cacheKey);
+    const cached = await deps.getAny<CachedTileData>(db, cacheKey);
     if (cached && cached.hash === entry.hash) {
       // Touch LRU (no eviction expected on a hit, but keeps order current)
-      await touchLru(db, lang, entry.id);
+      await touchLru(db, lang, entry.id, deps);
       return new NearestQuery(
         {
           vertexPoints: cached.vertexPoints,
@@ -271,8 +288,8 @@ export async function loadTile(
       articles: articles.map((a) => a.title),
       hash: entry.hash,
     };
-    idbPutAny(db, cacheKey, cacheData).catch(() => undefined);
-    await touchLru(db, lang, entry.id);
+    deps.putAny(db, cacheKey, cacheData).catch(() => undefined);
+    await touchLru(db, lang, entry.id, deps);
   }
 
   return new NearestQuery(fd, articles);

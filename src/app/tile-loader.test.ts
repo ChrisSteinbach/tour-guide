@@ -1,13 +1,12 @@
 import {
   findNearestTiled,
   tilesForPosition,
-  tileExistsInMap,
-  getTileEntry,
   buildTileMap,
   updateLru,
   MAX_CACHED_TILES,
   loadTileIndex,
 } from "./tile-loader";
+import type { TileLoaderDeps } from "./tile-loader";
 import { NearestQuery, toFlatDelaunay } from "./query";
 import type { TileIndex, TileEntry } from "../tiles";
 import { GRID_DEG } from "../tiles";
@@ -38,7 +37,7 @@ function buildQuery(
 }
 
 /** Create a minimal TileIndex with the given tile IDs. */
-function makeIndex(tileIds: string[]): TileIndex {
+function makeIndex(tileIds: string[], hash = "abcd1234"): TileIndex {
   return {
     version: 1,
     gridDeg: GRID_DEG,
@@ -58,7 +57,7 @@ function makeIndex(tileIds: string[]): TileIndex {
         east: col * GRID_DEG - 180 + GRID_DEG,
         articles: 10,
         bytes: 1024,
-        hash: "abcd1234",
+        hash,
       } satisfies TileEntry;
     }),
   };
@@ -94,7 +93,7 @@ describe("findNearestTiled", () => {
 
     const results = findNearestTiled(tiles, 0, 0, 3);
     expect(results.length).toBe(3);
-    expect(results[0].title).toBeDefined();
+    expect(results[0].title).toBe("Atlantic");
     for (let i = 1; i < results.length; i++) {
       expect(results[i].distanceM).toBeGreaterThanOrEqual(
         results[i - 1].distanceM,
@@ -207,32 +206,6 @@ describe("tilesForPosition", () => {
   });
 });
 
-// ---------- Tile index helpers ----------
-
-describe("tileExistsInMap", () => {
-  it("returns true for tiles in the map", () => {
-    const tileMap = makeTileMap(["18-36", "18-37"]);
-    expect(tileExistsInMap(tileMap, "18-36")).toBe(true);
-  });
-
-  it("returns false for tiles not in the map", () => {
-    const tileMap = makeTileMap(["18-36"]);
-    expect(tileExistsInMap(tileMap, "99-99")).toBe(false);
-  });
-});
-
-describe("getTileEntry", () => {
-  it("returns entry when tile exists", () => {
-    const tileMap = makeTileMap(["18-36"]);
-    expect(getTileEntry(tileMap, "18-36")?.id).toBe("18-36");
-  });
-
-  it("returns undefined when tile does not exist", () => {
-    const tileMap = makeTileMap(["18-36"]);
-    expect(getTileEntry(tileMap, "99-99")).toBeUndefined();
-  });
-});
-
 // ---------- updateLru ----------
 
 describe("updateLru", () => {
@@ -291,7 +264,36 @@ describe("updateLru", () => {
   });
 });
 
-// ---------- loadTileIndex abort vs network error ----------
+// ---------- IDB + network integration helpers ----------
+
+const fakeDb = {} as IDBDatabase;
+
+/** Build deps with a fake IDB backed by a Map. */
+function makeDeps(
+  store: Map<string, unknown> = new Map(),
+  db: IDBDatabase | null = fakeDb,
+): TileLoaderDeps {
+  return {
+    openDb: () => Promise.resolve(db),
+    getAny: <T>(_db: IDBDatabase, key: string) =>
+      Promise.resolve(store.get(key) as T | undefined),
+    putAny: (_db: IDBDatabase, key: string, value: unknown) => {
+      store.set(key, value);
+      return Promise.resolve();
+    },
+    deleteKey: (_db: IDBDatabase, key: string) => {
+      store.delete(key);
+      return Promise.resolve();
+    },
+  };
+}
+
+/** Build deps with no IDB. */
+function makeNullDeps(): TileLoaderDeps {
+  return makeDeps(new Map(), null);
+}
+
+// ---------- loadTileIndex ----------
 
 describe("loadTileIndex", () => {
   afterEach(() => {
@@ -308,7 +310,7 @@ describe("loadTileIndex", () => {
     controller.abort();
 
     await expect(
-      loadTileIndex("/base/", "en", controller.signal),
+      loadTileIndex("/base/", "en", controller.signal, makeNullDeps()),
     ).rejects.toThrow();
   });
 
@@ -318,7 +320,12 @@ describe("loadTileIndex", () => {
       vi.fn().mockRejectedValue(new TypeError("fetch failed")),
     );
 
-    const result = await loadTileIndex("/base/", "en");
+    const result = await loadTileIndex(
+      "/base/",
+      "en",
+      undefined,
+      makeNullDeps(),
+    );
     expect(result).toBeNull();
   });
 });
