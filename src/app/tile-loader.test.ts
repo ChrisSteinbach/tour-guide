@@ -5,6 +5,7 @@ import {
   updateLru,
   MAX_CACHED_TILES,
   loadTileIndex,
+  loadTile,
 } from "./tile-loader";
 import type { TileLoaderDeps } from "./tile-loader";
 import { NearestQuery, toFlatDelaunay } from "./query";
@@ -15,8 +16,15 @@ import {
   convexHull,
   buildTriangulation,
   serialize,
+  deserializeBinary,
 } from "../geometry";
-import type { ArticleMeta } from "../geometry";
+import type { ArticleMeta, FlatDelaunay } from "../geometry";
+
+vi.mock("../geometry", async (importOriginal) => {
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports
+  const actual = await importOriginal<typeof import("../geometry")>();
+  return { ...actual, deserializeBinary: vi.fn() };
+});
 
 // ---------- Helpers ----------
 
@@ -268,6 +276,8 @@ describe("updateLru", () => {
 
 const fakeDb = {} as IDBDatabase;
 
+const SAMPLE_INDEX = makeIndex(["18-36"], "abc123");
+
 /** Build deps with a fake IDB backed by a Map. */
 function makeDeps(
   store: Map<string, unknown> = new Map(),
@@ -327,5 +337,516 @@ describe("loadTileIndex", () => {
       makeNullDeps(),
     );
     expect(result).toBeNull();
+  });
+
+  it("returns index on successful fetch and caches in IDB", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(SAMPLE_INDEX),
+      }),
+    );
+
+    const store = new Map<string, unknown>();
+    const deps = makeDeps(store);
+    const result = await loadTileIndex("/base/", "en", undefined, deps);
+    expect(result).toEqual(SAMPLE_INDEX);
+    expect(store.get("tile-index-v1-en")).toEqual(SAMPLE_INDEX);
+  });
+
+  it("returns null on 404", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 404 }),
+    );
+
+    const result = await loadTileIndex("/base/", "en", undefined, makeDeps());
+    expect(result).toBeNull();
+  });
+
+  it("falls back to IDB cache on non-OK response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 500 }),
+    );
+
+    const store = new Map<string, unknown>([
+      ["tile-index-v1-en", SAMPLE_INDEX],
+    ]);
+    const result = await loadTileIndex(
+      "/base/",
+      "en",
+      undefined,
+      makeDeps(store),
+    );
+    expect(result).toEqual(SAMPLE_INDEX);
+  });
+
+  it("falls back to IDB cache on network error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new TypeError("fetch failed")),
+    );
+
+    const store = new Map<string, unknown>([
+      ["tile-index-v1-en", SAMPLE_INDEX],
+    ]);
+    const result = await loadTileIndex(
+      "/base/",
+      "en",
+      undefined,
+      makeDeps(store),
+    );
+    expect(result).toEqual(SAMPLE_INDEX);
+  });
+
+  it("returns null when cached value is a corrupt object (no tiles array)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new TypeError("fetch failed")),
+    );
+
+    const corrupt = { not: "a tile index" };
+    const store = new Map<string, unknown>([["tile-index-v1-en", corrupt]]);
+    const result = await loadTileIndex(
+      "/base/",
+      "en",
+      undefined,
+      makeDeps(store),
+    );
+    expect(result).toBeNull();
+  });
+
+  it("returns null when cached value is a legacy JSON string", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new TypeError("fetch failed")),
+    );
+
+    const store = new Map<string, unknown>([
+      ["tile-index-v1-en", JSON.stringify(SAMPLE_INDEX)],
+    ]);
+    const result = await loadTileIndex(
+      "/base/",
+      "en",
+      undefined,
+      makeDeps(store),
+    );
+    expect(result).toBeNull();
+  });
+
+  it("returns null when IDB read itself throws", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new TypeError("fetch failed")),
+    );
+
+    const deps = makeDeps();
+    deps.getAny = () => Promise.reject(new Error("IDB read failed"));
+    const result = await loadTileIndex("/base/", "en", undefined, deps);
+    expect(result).toBeNull();
+  });
+});
+
+// ---------- loadTile ----------
+
+describe("loadTile", () => {
+  const entry: TileEntry = SAMPLE_INDEX.tiles[0];
+
+  const fakeFd: FlatDelaunay = {
+    vertexPoints: new Float64Array([1, 0, 0, 0, 1, 0, 0, 0, 1]),
+    vertexTriangles: new Uint32Array([0, 0, 0]),
+    triangleVertices: new Uint32Array([0, 1, 2]),
+    triangleNeighbors: new Uint32Array([0, 0, 0]),
+  };
+  const fakeArticles: ArticleMeta[] = [
+    { title: "A" },
+    { title: "B" },
+    { title: "C" },
+  ];
+
+  const cachedTile = {
+    vertexPoints: fakeFd.vertexPoints,
+    vertexTriangles: fakeFd.vertexTriangles,
+    triangleVertices: fakeFd.triangleVertices,
+    triangleNeighbors: fakeFd.triangleNeighbors,
+    articles: ["A", "B", "C"],
+    hash: "abc123",
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns from IDB cache when hash matches", async () => {
+    const store = new Map<string, unknown>([["tile-v1-en-18-36", cachedTile]]);
+
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await loadTile(
+      "/base/",
+      "en",
+      entry,
+      undefined,
+      makeDeps(store),
+    );
+    expect(result).toBeInstanceOf(NearestQuery);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("fetches from network on cache miss", async () => {
+    vi.mocked(deserializeBinary).mockReturnValueOnce({
+      fd: fakeFd,
+      articles: fakeArticles,
+    });
+
+    const fakeBuf = new ArrayBuffer(8);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: () => Promise.resolve(fakeBuf),
+      }),
+    );
+
+    const store = new Map<string, unknown>();
+    const result = await loadTile(
+      "/base/",
+      "en",
+      entry,
+      undefined,
+      makeDeps(store),
+    );
+    expect(result).toBeInstanceOf(NearestQuery);
+    expect(store.has("tile-v1-en-18-36")).toBe(true);
+  });
+
+  it("fetches from network when cached hash is stale", async () => {
+    const staleCache = { ...cachedTile, hash: "old-hash" };
+    const store = new Map<string, unknown>([["tile-v1-en-18-36", staleCache]]);
+
+    vi.mocked(deserializeBinary).mockReturnValueOnce({
+      fd: fakeFd,
+      articles: fakeArticles,
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+      }),
+    );
+
+    const result = await loadTile(
+      "/base/",
+      "en",
+      entry,
+      undefined,
+      makeDeps(store),
+    );
+    expect(result).toBeInstanceOf(NearestQuery);
+  });
+
+  it("throws on non-OK HTTP response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 500 }),
+    );
+
+    await expect(
+      loadTile("/base/", "en", entry, undefined, makeDeps()),
+    ).rejects.toThrow("HTTP 500");
+  });
+
+  it("works without IDB", async () => {
+    vi.mocked(deserializeBinary).mockReturnValueOnce({
+      fd: fakeFd,
+      articles: fakeArticles,
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+      }),
+    );
+
+    const result = await loadTile(
+      "/base/",
+      "en",
+      entry,
+      undefined,
+      makeNullDeps(),
+    );
+    expect(result).toBeInstanceOf(NearestQuery);
+  });
+
+  it("falls through to network when IDB read throws", async () => {
+    vi.mocked(deserializeBinary).mockReturnValueOnce({
+      fd: fakeFd,
+      articles: fakeArticles,
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+      }),
+    );
+
+    const deps = makeDeps();
+    const originalGet = deps.getAny;
+    deps.getAny = <T>(_db: IDBDatabase, key: string) => {
+      if (key === "tile-v1-en-18-36")
+        return Promise.reject(new Error("IDB read failed"));
+      return originalGet<T>(_db, key);
+    };
+    const result = await loadTile("/base/", "en", entry, undefined, deps);
+    expect(result).toBeInstanceOf(NearestQuery);
+  });
+
+  it("returns valid NearestQuery even when LRU bookkeeping throws", async () => {
+    vi.mocked(deserializeBinary).mockReturnValueOnce({
+      fd: fakeFd,
+      articles: fakeArticles,
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+      }),
+    );
+
+    const deps = makeDeps();
+    const originalGet = deps.getAny;
+    deps.getAny = <T>(_db: IDBDatabase, key: string) => {
+      if (key === "tile-lru-v1-en")
+        return Promise.reject(new Error("IDB LRU read failed"));
+      return originalGet<T>(_db, key);
+    };
+    const result = await loadTile("/base/", "en", entry, undefined, deps);
+    expect(result).toBeInstanceOf(NearestQuery);
+  });
+
+  it("propagates error when response.arrayBuffer() rejects", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: () =>
+          Promise.reject(new TypeError("network error during body read")),
+      }),
+    );
+
+    await expect(
+      loadTile("/base/", "en", entry, undefined, makeDeps()),
+    ).rejects.toThrow("network error during body read");
+  });
+
+  it("falls through to network when cached data has matching hash but corrupt arrays", async () => {
+    vi.mocked(deserializeBinary).mockReturnValueOnce({
+      fd: fakeFd,
+      articles: fakeArticles,
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+      }),
+    );
+
+    // Matching hash so the cache-hit branch is entered, but vertexTriangles
+    // is null — NearestQuery constructor throws accessing null.length,
+    // exercising the catch path that falls through to network fetch.
+    const corruptCache = {
+      ...cachedTile,
+      vertexTriangles: null,
+    };
+    const store = new Map<string, unknown>([
+      ["tile-v1-en-18-36", corruptCache],
+    ]);
+    const result = await loadTile(
+      "/base/",
+      "en",
+      entry,
+      undefined,
+      makeDeps(store),
+    );
+    expect(result).toBeInstanceOf(NearestQuery);
+  });
+
+  it("propagates abort instead of returning stale cache", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new DOMException("aborted", "AbortError")),
+    );
+
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      loadTile("/base/", "en", entry, controller.signal, makeNullDeps()),
+    ).rejects.toThrow();
+  });
+
+  it("returns valid NearestQuery even when cache write fails", async () => {
+    vi.mocked(deserializeBinary).mockReturnValueOnce({
+      fd: fakeFd,
+      articles: fakeArticles,
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+      }),
+    );
+
+    const deps = makeDeps();
+    deps.putAny = () => Promise.reject(new Error("IDB quota exceeded"));
+    const result = await loadTile("/base/", "en", entry, undefined, deps);
+    expect(result).toBeInstanceOf(NearestQuery);
+  });
+
+  // ---------- touchLru integration ----------
+
+  // Flush fire-and-forget microtasks spawned by touchLru
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it("updates tile-lru key in IDB after loading a tile from network", async () => {
+    vi.mocked(deserializeBinary).mockReturnValueOnce({
+      fd: fakeFd,
+      articles: fakeArticles,
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+      }),
+    );
+
+    const store = new Map<string, unknown>();
+    await loadTile("/base/", "en", entry, undefined, makeDeps(store));
+    await flush();
+
+    const lru = store.get("tile-lru-v1-en") as string[];
+    expect(lru).toContain("18-36");
+  });
+
+  it("deletes oldest tile cache key when LRU exceeds capacity", async () => {
+    vi.mocked(deserializeBinary).mockReturnValueOnce({
+      fd: fakeFd,
+      articles: fakeArticles,
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+      }),
+    );
+
+    // Pre-populate LRU at capacity with MAX_CACHED_TILES entries
+    const existingIds = Array.from(
+      { length: MAX_CACHED_TILES },
+      (_, i) => `old-${i}`,
+    );
+    const store = new Map<string, unknown>();
+    store.set("tile-lru-v1-en", existingIds);
+    // Add a cache entry for the tile that should be evicted (oldest)
+    store.set("tile-v1-en-old-0", { fake: "data" });
+
+    await loadTile("/base/", "en", entry, undefined, makeDeps(store));
+    await flush();
+
+    // Oldest tile (old-0) should be evicted from cache
+    expect(store.has("tile-v1-en-old-0")).toBe(false);
+    // LRU should contain the new tile at the end, still at capacity
+    const lru = store.get("tile-lru-v1-en") as string[];
+    expect(lru).toHaveLength(MAX_CACHED_TILES);
+    expect(lru[lru.length - 1]).toBe("18-36");
+    expect(lru).not.toContain("old-0");
+  });
+
+  it("updates LRU order on cache hit without eviction", async () => {
+    // Pre-populate LRU with 18-36 not at the most-recent position
+    const store = new Map<string, unknown>();
+    store.set("tile-lru-v1-en", ["other-1", "18-36", "other-2"]);
+    store.set("tile-v1-en-18-36", cachedTile);
+
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await loadTile("/base/", "en", entry, undefined, makeDeps(store));
+    await flush();
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    // 18-36 should be moved to the most-recent (last) position
+    const lru = store.get("tile-lru-v1-en") as string[];
+    expect(lru).toEqual(["other-1", "other-2", "18-36"]);
+  });
+
+  it("keeps per-language LRU lists independent", async () => {
+    vi.mocked(deserializeBinary).mockReturnValue({
+      fd: fakeFd,
+      articles: fakeArticles,
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+      }),
+    );
+
+    // Pre-populate 'de' LRU at capacity so the next load evicts the oldest
+    const deIds = Array.from(
+      { length: MAX_CACHED_TILES },
+      (_, i) => `de-tile-${i}`,
+    );
+    const store = new Map<string, unknown>();
+    store.set("tile-lru-v1-de", [...deIds]);
+    store.set("tile-v1-de-de-tile-0", { fake: "data" });
+
+    // Load a tile in 'en' — should NOT touch the 'de' LRU
+    await loadTile("/base/", "en", entry, undefined, makeDeps(store));
+    await flush();
+
+    // 'en' LRU should contain only the loaded tile
+    const enLru = store.get("tile-lru-v1-en") as string[];
+    expect(enLru).toEqual(["18-36"]);
+
+    // 'de' LRU should be completely untouched
+    const deLru = store.get("tile-lru-v1-de") as string[];
+    expect(deLru).toEqual(deIds);
+
+    // 'de' cache entry should NOT have been evicted
+    expect(store.has("tile-v1-de-de-tile-0")).toBe(true);
   });
 });

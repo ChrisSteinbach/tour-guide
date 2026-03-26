@@ -39,10 +39,14 @@ async function touchLru(
   const { updated, evict } = updateLru(lru, tile);
 
   for (const id of evict) {
-    deps.deleteKey(db, `tile-v1-${lang}-${id}`).catch(() => undefined);
+    deps
+      .deleteKey(db, `tile-v1-${lang}-${id}`)
+      .catch((e) => console.warn("IDB tile eviction failed:", e));
   }
 
-  deps.putAny(db, lruKey, updated).catch(() => undefined);
+  deps
+    .putAny(db, lruKey, updated)
+    .catch((e) => console.warn("IDB LRU list write failed:", e));
 }
 
 // ---------- Tile query functions ----------
@@ -215,7 +219,9 @@ export async function loadTileIndex(
 
     // Cache for offline use
     if (db) {
-      deps.putAny(db, cacheKey, JSON.stringify(index)).catch(() => undefined);
+      deps
+        .putAny(db, cacheKey, index)
+        .catch((e) => console.warn("IDB tile-index cache write failed:", e));
     }
 
     return index;
@@ -224,9 +230,17 @@ export async function loadTileIndex(
     if (signal?.aborted) throw err;
     // Network error — try IDB cache
     if (db) {
-      const cached = await deps.getAny<string>(db, cacheKey);
-      if (cached) {
-        return JSON.parse(cached) as TileIndex;
+      try {
+        const cached = await deps.getAny<TileIndex>(db, cacheKey);
+        if (
+          cached &&
+          typeof cached === "object" &&
+          Array.isArray(cached.tiles)
+        ) {
+          return cached;
+        }
+      } catch (cacheErr) {
+        console.warn("IDB tile-index cache unreadable:", cacheErr);
       }
     }
     return null;
@@ -250,19 +264,23 @@ export async function loadTile(
 
   // Check IDB cache
   if (db) {
-    const cached = await deps.getAny<CachedTileData>(db, cacheKey);
-    if (cached && cached.hash === entry.hash) {
-      // Touch LRU (no eviction expected on a hit, but keeps order current)
-      await touchLru(db, lang, entry.id, deps);
-      return new NearestQuery(
-        {
-          vertexPoints: cached.vertexPoints,
-          vertexTriangles: cached.vertexTriangles,
-          triangleVertices: cached.triangleVertices,
-          triangleNeighbors: cached.triangleNeighbors,
-        },
-        cached.articles.map((title) => ({ title })),
-      );
+    try {
+      const cached = await deps.getAny<CachedTileData>(db, cacheKey);
+      if (cached && cached.hash === entry.hash) {
+        // Touch LRU (no eviction expected on a hit, but keeps order current)
+        touchLru(db, lang, entry.id, deps).catch(() => undefined);
+        return new NearestQuery(
+          {
+            vertexPoints: cached.vertexPoints,
+            vertexTriangles: cached.vertexTriangles,
+            triangleVertices: cached.triangleVertices,
+            triangleNeighbors: cached.triangleNeighbors,
+          },
+          cached.articles.map((title) => ({ title })),
+        );
+      }
+    } catch (cacheErr) {
+      console.warn("IDB tile cache unreadable:", cacheErr);
     }
   }
 
@@ -288,8 +306,10 @@ export async function loadTile(
       articles: articles.map((a) => a.title),
       hash: entry.hash,
     };
-    deps.putAny(db, cacheKey, cacheData).catch(() => undefined);
-    await touchLru(db, lang, entry.id, deps);
+    deps
+      .putAny(db, cacheKey, cacheData)
+      .catch((e) => console.warn("IDB tile cache write failed:", e));
+    touchLru(db, lang, entry.id, deps).catch(() => undefined);
   }
 
   return new NearestQuery(fd, articles);
