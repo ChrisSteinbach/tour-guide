@@ -234,7 +234,11 @@ The `deserializeBinary()` function in `src/geometry/serialization.ts` works unch
 
 ### IDB cache keys
 
-Tiled cache keys: `tile-v1-{lang}-{id}` (one entry per tile per language). The tile index is cached as `tile-index-v1-{lang}`.
+Tiled cache keys use three prefixes:
+
+- `tile-index-v1-{lang}` — tile index JSON (one per language)
+- `tile-v1-{lang}-{id}` — individual tile data (one entry per tile per language)
+- `tile-lru-v1-{lang}` — tile LRU eviction list (tracks access order for cache eviction)
 
 ## Summary
 
