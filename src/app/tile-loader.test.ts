@@ -657,6 +657,40 @@ describe("loadTile", () => {
     ).rejects.toThrow("network error during body read");
   });
 
+  it("falls through to network when cached.articles contains non-string elements", async () => {
+    vi.mocked(deserializeBinary).mockReturnValueOnce({
+      fd: fakeFd,
+      articles: fakeArticles,
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+      }),
+    );
+
+    const corruptArticlesCache = {
+      ...cachedTile,
+      articles: [null, 42, {}],
+    };
+    const store = new Map<string, unknown>([
+      ["tile-v1-en-18-36", corruptArticlesCache],
+    ]);
+    const result = await loadTile(
+      "/base/",
+      "en",
+      entry,
+      undefined,
+      makeDeps(store),
+    );
+    expect(result).toBeInstanceOf(NearestQuery);
+    // Confirm it fetched from network (cache was rejected)
+    expect(fetch).toHaveBeenCalled();
+  });
+
   it("falls through to network when cached data has matching hash but corrupt arrays", async () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
