@@ -27,26 +27,51 @@ export function updateLru(
   return { updated, evict };
 }
 
+/**
+ * Per-key promise chain so concurrent touchLru calls for the same language
+ * are serialized (adjacent tiles load concurrently, so this is common).
+ */
+const lruQueues = new Map<string, Promise<void>>();
+
 /** Update LRU tracking in IDB and evict tiles over the cap. */
-async function touchLru(
+function touchLru(
   db: IDBDatabase,
   lang: Lang,
   tile: string,
   deps: TileLoaderDeps,
 ): Promise<void> {
   const lruKey = `tile-lru-v1-${lang}`;
-  const lru = (await deps.getAny<string[]>(db, lruKey)) ?? [];
-  const { updated, evict } = updateLru(lru, tile);
+  // Callers fire-and-forget (.catch(() => undefined)) so LRU bookkeeping
+  // never blocks tile delivery. The queue retains the full chain; the leading
+  // .catch ensures a failed predecessor resolves (not rejects), so subsequent
+  // queued operations always run.
+  const next = (lruQueues.get(lruKey) ?? Promise.resolve())
+    .catch(() => {})
+    .then(async () => {
+      let lru: string[];
+      try {
+        const raw = await deps.getAny<string[]>(db, lruKey);
+        lru = Array.isArray(raw) ? raw : [];
+      } catch (e) {
+        console.warn("IDB LRU list unreadable:", e);
+        lru = [];
+      }
+      const { updated, evict } = updateLru(lru, tile);
 
-  for (const id of evict) {
-    deps
-      .deleteKey(db, `tile-v1-${lang}-${id}`)
-      .catch((e) => console.warn("IDB tile eviction failed:", e));
-  }
+      for (const id of evict) {
+        deps
+          .deleteKey(db, `tile-v1-${lang}-${id}`)
+          .catch((e) => console.warn("IDB tile eviction failed:", e));
+      }
 
-  deps
-    .putAny(db, lruKey, updated)
-    .catch((e) => console.warn("IDB LRU list write failed:", e));
+      try {
+        await deps.putAny(db, lruKey, updated);
+      } catch (e) {
+        console.warn("IDB LRU list write failed:", e);
+      }
+    });
+  lruQueues.set(lruKey, next);
+  return next;
 }
 
 // ---------- Tile query functions ----------
