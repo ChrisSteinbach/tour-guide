@@ -13,3 +13,4 @@ coverage/
 .dolt/
 *.db
 .prep-pr/
+.restory/
