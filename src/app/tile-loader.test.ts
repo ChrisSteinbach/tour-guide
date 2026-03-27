@@ -810,6 +810,162 @@ describe("loadTile", () => {
     expect(lru).toEqual(["other-1", "other-2", "18-36"]);
   });
 
+  it("proceeds with fresh LRU list when getAny rejects for LRU key", async () => {
+    vi.mocked(deserializeBinary).mockReturnValueOnce({
+      fd: fakeFd,
+      articles: fakeArticles,
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+      }),
+    );
+
+    const store = new Map<string, unknown>();
+    // Add a stale tile that would be evicted if LRU were full
+    store.set("tile-v1-en-stale-0", { fake: "data" });
+
+    const deps = makeDeps(store);
+    const originalGet = deps.getAny;
+    deps.getAny = <T>(_db: IDBDatabase, key: string) => {
+      if (key === "tile-lru-v1-en")
+        return Promise.reject(new Error("corrupted IDB entry"));
+      return originalGet<T>(_db, key);
+    };
+
+    await loadTile("/base/", "en", entry, undefined, deps);
+    await flush();
+
+    // LRU write should still proceed with a fresh list containing the new tile
+    const lru = store.get("tile-lru-v1-en") as string[];
+    expect(lru).toEqual(["18-36"]);
+  });
+
+  it("defaults to fresh LRU when getAny resolves with a non-array value", async () => {
+    vi.mocked(deserializeBinary).mockReturnValueOnce({
+      fd: fakeFd,
+      articles: fakeArticles,
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+      }),
+    );
+
+    // Simulate IDB corruption: LRU key holds a string instead of an array
+    const store = new Map<string, unknown>();
+    store.set("tile-lru-v1-en", "corrupted-string-value");
+
+    const result = await loadTile(
+      "/base/",
+      "en",
+      entry,
+      undefined,
+      makeDeps(store),
+    );
+    await flush();
+
+    // Tile should load successfully despite corrupted LRU
+    expect(result).toBeInstanceOf(NearestQuery);
+    // LRU should be reset to a fresh list containing only the new tile
+    const lru = store.get("tile-lru-v1-en") as string[];
+    expect(lru).toEqual(["18-36"]);
+  });
+
+  it("serializes concurrent touchLru calls so both tiles appear in LRU", async () => {
+    vi.mocked(deserializeBinary).mockReturnValue({
+      fd: fakeFd,
+      articles: fakeArticles,
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+      }),
+    );
+
+    const store = new Map<string, unknown>();
+    store.set("tile-lru-v1-en", ["existing-1", "existing-2"]);
+    const deps = makeDeps(store);
+    const entryA: TileEntry = makeIndex(["10-20"]).tiles[0];
+    const entryB: TileEntry = makeIndex(["11-21"]).tiles[0];
+
+    // Fire both loads concurrently (simulates primary + adjacent)
+    const [a, b] = await Promise.all([
+      loadTile("/base/", "en", entryA, undefined, deps),
+      loadTile("/base/", "en", entryB, undefined, deps),
+    ]);
+    await flush();
+
+    expect(a).toBeInstanceOf(NearestQuery);
+    expect(b).toBeInstanceOf(NearestQuery);
+
+    const lru = store.get("tile-lru-v1-en") as string[];
+    // Both tiles must be present — without serialization the second
+    // write would clobber the first, losing one of them.
+    expect(lru).toContain("10-20");
+    expect(lru).toContain("11-21");
+    expect(lru).toContain("existing-1");
+    expect(lru).toContain("existing-2");
+  });
+
+  it("queues a successful touchLru after a prior LRU write failure for the same language", async () => {
+    vi.mocked(deserializeBinary).mockReturnValue({
+      fd: fakeFd,
+      articles: fakeArticles,
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+      }),
+    );
+
+    const store = new Map<string, unknown>();
+    const deps = makeDeps(store);
+    const originalPut = deps.putAny;
+    let lruPutCount = 0;
+    deps.putAny = (_db: IDBDatabase, key: string, value: unknown) => {
+      if (key === "tile-lru-v1-en") {
+        lruPutCount++;
+        if (lruPutCount === 1) {
+          return Promise.reject(new Error("IDB write failed"));
+        }
+      }
+      return originalPut(_db, key, value);
+    };
+
+    const entryA: TileEntry = makeIndex(["10-20"]).tiles[0];
+    const entryB: TileEntry = makeIndex(["11-21"]).tiles[0];
+
+    // First load: touchLru will fail at putAny for the LRU key
+    await loadTile("/base/", "en", entryA, undefined, deps);
+    await flush();
+
+    // Second load: touchLru should succeed despite prior failure
+    await loadTile("/base/", "en", entryB, undefined, deps);
+    await flush();
+
+    // The second touchLru reads the LRU (empty since first write failed),
+    // adds its tile, and writes successfully
+    const lru = store.get("tile-lru-v1-en") as string[];
+    expect(lru).toContain("11-21");
+  });
+
   it("keeps per-language LRU lists independent", async () => {
     vi.mocked(deserializeBinary).mockReturnValue({
       fd: fakeFd,
