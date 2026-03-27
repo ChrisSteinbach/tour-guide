@@ -291,10 +291,13 @@ export async function loadTile(
   if (db) {
     try {
       const cached = await deps.getAny<CachedTileData>(db, cacheKey);
-      if (cached && cached.hash === entry.hash) {
-        // Touch LRU (no eviction expected on a hit, but keeps order current)
-        touchLru(db, lang, entry.id, deps).catch(() => undefined);
-        return new NearestQuery(
+      if (
+        cached &&
+        cached.hash === entry.hash &&
+        Array.isArray(cached.articles) &&
+        cached.articles.every((a) => typeof a === "string")
+      ) {
+        const query = new NearestQuery(
           {
             vertexPoints: cached.vertexPoints,
             vertexTriangles: cached.vertexTriangles,
@@ -303,6 +306,9 @@ export async function loadTile(
           },
           cached.articles.map((title) => ({ title })),
         );
+        // Touch LRU only after NearestQuery construction succeeds
+        touchLru(db, lang, entry.id, deps).catch(() => undefined);
+        return query;
       }
     } catch (cacheErr) {
       console.warn("IDB tile cache unreadable:", cacheErr);
