@@ -224,6 +224,8 @@ Each tile is cached independently in IndexedDB, keyed by `tile-v1-{lang}-{id}` w
 3. Only re-fetches tiles whose hash changed.
 4. Loads the primary tile from IDB in ~1ms.
 
+To keep IDB storage bounded, each tile access updates a per-language LRU list that tracks access order. When the list exceeds 50 tiles, the least-recently-used entries are evicted from the cache. Each language maintains its own independent LRU list (`tile-lru-v1-{lang}`), so tiles for one language never displace tiles for another. Concurrent LRU updates are serialized through a per-key promise queue to avoid races.
+
 ## 5. Implementation Notes
 
 ### Binary format
