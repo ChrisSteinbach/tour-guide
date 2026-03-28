@@ -63,6 +63,59 @@ describe("collectTileArticles", () => {
     );
     expect(native).toHaveLength(2);
   });
+
+  it("wraps columns across the antimeridian (col=0 pulls from col=71)", () => {
+    // Tile col=0: west=-180, east=-175. Buffer extends to west=-180.5.
+    // An article at lon=179.8 in col=71 is only 0.2° away — should appear in buffer.
+    const articles: Article[] = [
+      { title: "native-west", lat: 12, lon: -178 }, // native to col=0
+      { title: "across-dateline", lat: 12, lon: 179.8 }, // col=71, within buffer
+      { title: "far-east", lat: 12, lon: 170 }, // col=70, too far
+    ];
+    const idx = buildArticleIndex(articles);
+    const { native, all } = collectTileArticles(idx, row, 0);
+
+    expect(native.map((a) => a.title)).toEqual(["native-west"]);
+    expect(all.map((a) => a.title)).toEqual(
+      expect.arrayContaining(["native-west", "across-dateline"]),
+    );
+    expect(all).toHaveLength(2);
+  });
+
+  it("wraps columns across the antimeridian (col=71 pulls from col=0)", () => {
+    // Tile col=71: west=175, east=180. Buffer extends to east=180.5.
+    // An article at lon=-179.8 in col=0 is only 0.2° away — should appear in buffer.
+    const articles: Article[] = [
+      { title: "native-east", lat: 12, lon: 177 }, // native to col=71
+      { title: "across-dateline", lat: 12, lon: -179.8 }, // col=0, within buffer
+      { title: "far-west", lat: 12, lon: -170 }, // col=2, too far
+    ];
+    const idx = buildArticleIndex(articles);
+    const { native, all } = collectTileArticles(idx, row, 71);
+
+    expect(native.map((a) => a.title)).toEqual(["native-east"]);
+    expect(all.map((a) => a.title)).toEqual(
+      expect.arrayContaining(["native-east", "across-dateline"]),
+    );
+    expect(all).toHaveLength(2);
+  });
+
+  it("classifies article near lon=+180 as native for easternmost tile (col=71)", () => {
+    // Tile col=71: west=175, east=180. An article at lon=179.99 is inside the
+    // native half-open interval [175, 180) and should be classified as native.
+    const articles: Article[] = [
+      { title: "near-dateline", lat: 12, lon: 179.99 }, // native to col=71
+      { title: "mid-tile", lat: 12, lon: 177 }, // also native
+    ];
+    const idx = buildArticleIndex(articles);
+    const { native, all } = collectTileArticles(idx, row, 71);
+
+    expect(native.map((a) => a.title)).toEqual(
+      expect.arrayContaining(["near-dateline", "mid-tile"]),
+    );
+    expect(native).toHaveLength(2);
+    expect(all).toHaveLength(2);
+  });
 });
 
 // ---------- Integration: tiled pipeline ----------
