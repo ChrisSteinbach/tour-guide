@@ -94,6 +94,19 @@ const MIN_ARTICLES = 4;
 const TILE_ROWS = 180 / GRID_DEG;
 const TILE_COLS = 360 / GRID_DEG;
 
+/** Wrap column index to [0, TILE_COLS) for antimeridian crossing. */
+function wrapCol(c: number): number {
+  return ((c % TILE_COLS) + TILE_COLS) % TILE_COLS;
+}
+
+/** Shift longitude to be within ±180° of a reference longitude. */
+function normalizeLon(lon: number, refLon: number): number {
+  const d = lon - refLon;
+  if (d > 180) return lon - 360;
+  if (d < -180) return lon + 360;
+  return lon;
+}
+
 // Re-export for build.test.ts
 export { tileFor } from "../tiles.js";
 export type { TileEntry, TileIndex } from "../tiles.js";
@@ -135,6 +148,7 @@ export function collectTileArticles(
     east: east + BUFFER_DEG,
   };
 
+  const tileCenterLon = (west + east) / 2;
   const native: Article[] = [];
   const all: Article[] = [];
 
@@ -142,19 +156,16 @@ export function collectTileArticles(
     const nr = row + dr;
     if (nr < 0 || nr >= TILE_ROWS) continue;
     for (let dc = -1; dc <= 1; dc++) {
-      const nc = col + dc;
-      if (nc < 0 || nc >= TILE_COLS) continue;
+      const nc = wrapCol(col + dc);
       const bucket = index.get(tileId(nr, nc));
       if (!bucket) continue;
       for (const a of bucket) {
-        if (isInBounds(a.lat, a.lon, bufferedBounds)) {
+        const alon = normalizeLon(a.lon, tileCenterLon);
+        if (isInBounds(a.lat, alon, bufferedBounds)) {
+          // Push original a.lon (not normalized alon): toCartesian uses
+          // cos/sin which are periodic mod 360°, so ±180° wrapping is harmless.
           all.push(a);
-          if (
-            a.lat >= south &&
-            a.lat < north &&
-            a.lon >= west &&
-            a.lon < east
-          ) {
+          if (a.lat >= south && a.lat < north && alon >= west && alon < east) {
             native.push(a);
           }
         }
