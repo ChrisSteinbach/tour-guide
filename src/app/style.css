@@ -462,23 +462,6 @@ body:has(.app-scroll) {
   outline-offset: 2px;
 }
 
-.show-more {
-  display: block;
-  margin: 4px auto 16px;
-  background: #1a73e8;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  padding: 10px 24px;
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.show-more:active {
-  background: #1557b0;
-}
-
 /* Detail view */
 
 .detail-header {
@@ -715,10 +698,6 @@ body:has(.app-scroll) {
   .detail-content {
     max-width: 720px;
     margin: 0 auto;
-  }
-
-  .show-more {
-    max-width: 720px;
   }
 
   .update-banner {

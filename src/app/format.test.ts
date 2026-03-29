@@ -1,24 +1,4 @@
-import {
-  distanceMeters,
-  formatDistance,
-  wikipediaUrl,
-  directionsUrl,
-} from "./format";
-
-describe("distanceMeters", () => {
-  it("returns 0 for the same point", () => {
-    const p = { lat: 48.8584, lon: 2.2945 };
-    expect(distanceMeters(p, { ...p, title: "X" })).toBe(0);
-  });
-
-  it("returns ~350 m between Eiffel Tower and Champ de Mars", () => {
-    const eiffel = { lat: 48.8584, lon: 2.2945 };
-    const champ = { lat: 48.856, lon: 2.2983, title: "Champ de Mars" };
-    const d = distanceMeters(eiffel, champ);
-    expect(d).toBeGreaterThan(300);
-    expect(d).toBeLessThan(450);
-  });
-});
+import { formatDistance, wikipediaUrl, directionsUrl } from "./format";
 
 describe("formatDistance", () => {
   it("formats meters below 1 km", () => {
