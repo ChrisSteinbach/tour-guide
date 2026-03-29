@@ -20,7 +20,7 @@ import { SUPPORTED_LANGS, DEFAULT_LANG } from "../lang.js";
 import type { Lang } from "../lang.js";
 import { isInBounds, parseBounds } from "./extract-dump.js";
 import type { Article, Bounds } from "./extract-dump.js";
-import { GRID_DEG, BUFFER_DEG, tileFor, tileId } from "../tiles.js";
+import { GRID_DEG, BUFFER_DEG, tileFor, tileId, wrapCol } from "../tiles.js";
 import type { TileEntry, TileIndex } from "../tiles.js";
 
 // ---------- CLI arg parsing ----------
@@ -92,13 +92,6 @@ async function readArticles(
 
 const MIN_ARTICLES = 4;
 const TILE_ROWS = 180 / GRID_DEG;
-const TILE_COLS = 360 / GRID_DEG;
-
-/** Wrap column index to [0, TILE_COLS) for antimeridian crossing. */
-function wrapCol(c: number): number {
-  return ((c % TILE_COLS) + TILE_COLS) % TILE_COLS;
-}
-
 /** Shift longitude to be within ±180° of a reference longitude. */
 function normalizeLon(lon: number, refLon: number): number {
   const d = lon - refLon;

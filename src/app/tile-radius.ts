@@ -1,19 +1,12 @@
 // Progressive tile loading by distance radius.
 // Pure ring geometry + orchestrator that expands rings on demand.
 
-import { GRID_DEG, tileId } from "../tiles";
+import { GRID_DEG, tileId, wrapCol } from "../tiles";
 import type { TileEntry } from "../tiles";
 import type { NearbyArticle } from "./types";
 import type { ArticleProvider, FetchResult } from "./article-window";
 
 const MAX_ROW = Math.floor(180 / GRID_DEG) - 1; // 35
-const MAX_COL = Math.floor(360 / GRID_DEG) - 1; // 71
-
-/** Wrap column index for longitude (0–MAX_COL), handling arbitrary offsets. */
-function wrapCol(col: number): number {
-  const period = MAX_COL + 1;
-  return ((col % period) + period) % period;
-}
 
 /**
  * Return tile IDs at exactly Chebyshev distance `ring` from center.
