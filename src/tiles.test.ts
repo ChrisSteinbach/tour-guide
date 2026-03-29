@@ -54,7 +54,7 @@ describe("wrapCol", () => {
     expect(wrapCol(145)).toBe(1);
   });
 
-  it("wraps exact multiples of COLS (72) to 0", () => {
+  it("wraps full-period multiples to 0", () => {
     expect(wrapCol(72)).toBe(0);
     expect(wrapCol(144)).toBe(0);
     expect(wrapCol(-72)).toBe(0);
