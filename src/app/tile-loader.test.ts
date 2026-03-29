@@ -189,6 +189,22 @@ describe("tilesForPosition", () => {
     expect(adjacent).toContain("18-71");
   });
 
+  it("wraps corner neighbor at antimeridian (east side)", () => {
+    const tileMap = makeTileMap(["18-71", "17-71", "18-00", "17-00"]);
+
+    const { primary, adjacent } = tilesForPosition(tileMap, 0.5, 179.5);
+    expect(primary).toBe("18-71");
+    expect(adjacent).toContain("17-00");
+  });
+
+  it("wraps corner neighbor at antimeridian (west side)", () => {
+    const tileMap = makeTileMap(["18-00", "17-00", "18-71", "17-71"]);
+
+    const { primary, adjacent } = tilesForPosition(tileMap, 0.5, -179.5);
+    expect(primary).toBe("18-00");
+    expect(adjacent).toContain("17-71");
+  });
+
   it("clamps latitude (no adjacent south below row 0)", () => {
     const tileMap = makeTileMap(["00-36"]);
 
