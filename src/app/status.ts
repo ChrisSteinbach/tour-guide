@@ -3,7 +3,9 @@ import { SUPPORTED_LANGS, LANG_NAMES } from "../lang";
 import type { Lang } from "../lang";
 import { createAppHeader } from "./header";
 
-/** Create a native `<select>` language picker for status screens. */
+/** Native `<select>` language picker for status screens (welcome, data-unavailable).
+ *  The browsing header uses {@link createLangDropdown} from `lang-dropdown.ts` instead,
+ *  which has open-state tracking to prevent re-renders while the user is choosing. */
 function createLangSelect(
   currentLang: Lang,
   onLangChange: (lang: Lang) => void,
