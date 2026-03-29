@@ -37,7 +37,7 @@ Three directories under `src/`, plus two shared files:
 - **`src/pipeline/`** — Offline build: extracts Wikipedia coordinates, computes triangulation, outputs static tiles. Run via `tsx`.
 - **`src/app/`** — PWA frontend: loads pre-computed data, performs nearest-neighbor queries. Vite root (`root: "src/app"`).
 - **`src/lang.ts`** — Supported language definitions, shared by all modules.
-- **`src/tiles.ts`** — Tile grid constants and ID computation, shared by pipeline and app.
+- **`src/tiles.ts`** — Tile grid constants, ID computation, and column wrapping, shared by pipeline and app.
 
 Core algorithm: spherical Delaunay triangulation (3D convex hull) → O(√N) nearest-neighbor via triangle walks. See `docs/` for theory and data flow details.
 

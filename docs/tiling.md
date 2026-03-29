@@ -155,7 +155,7 @@ When the user's position is known, the app:
 2. **Determines the primary tile** from `min(floor((lat+90)/5), 35)` and `min(floor((lon+180)/5), 71)`.
 3. **Fetches and deserializes the primary tile**. Shows results immediately.
 4. **Checks proximity to edges**. If the user is within 1° of any tile boundary, identifies adjacent tiles that should be loaded.
-5. **Prefetches adjacent tiles** in the background (up to 3 adjacent tiles for a corner case, typically 1-2).
+5. **Prefetches adjacent tiles** in the background (up to 8 adjacent tiles when near a corner, typically 1-2).
 6. **Merges results** when adjacent tiles finish loading.
 
 ### Cross-tile query merging
