@@ -39,6 +39,11 @@ export function tileFor(
   return { row, col };
 }
 
+/** Wrap column index to [0, COLS) for antimeridian crossing. */
+export function wrapCol(col: number): number {
+  return ((col % COLS) + COLS) % COLS;
+}
+
 /** Format row-col as zero-padded tile ID. */
 export function tileId(row: number, col: number): string {
   return `${String(row).padStart(2, "0")}-${String(col).padStart(2, "0")}`;
