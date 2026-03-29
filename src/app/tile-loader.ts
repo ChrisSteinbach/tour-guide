@@ -1,7 +1,13 @@
 // Tile loading orchestration — fetches tile index and individual tiles on demand
 
 import { deserializeBinary } from "../geometry";
-import { tileFor, tileId, GRID_DEG, EDGE_PROXIMITY_DEG } from "../tiles";
+import {
+  tileFor,
+  tileId,
+  GRID_DEG,
+  EDGE_PROXIMITY_DEG,
+  wrapCol,
+} from "../tiles";
 import type { TileEntry, TileIndex } from "../tiles";
 import { NearestQuery } from "./query";
 import type { QueryResult } from "./query";
@@ -130,7 +136,6 @@ export function tilesForPosition(
   const nearEast = distFromEast < EDGE_PROXIMITY_DEG;
 
   const maxRow = Math.floor(180 / GRID_DEG) - 1; // 35
-  const maxCol = Math.floor(360 / GRID_DEG) - 1; // 71
 
   // Cardinal neighbors
   if (nearSouth && row > 0) {
@@ -140,30 +145,24 @@ export function tilesForPosition(
     adjacent.push(tileId(row + 1, col));
   }
   if (nearWest) {
-    const wCol = col > 0 ? col - 1 : maxCol; // wrap longitude
-    adjacent.push(tileId(row, wCol));
+    adjacent.push(tileId(row, wrapCol(col - 1)));
   }
   if (nearEast) {
-    const eCol = col < maxCol ? col + 1 : 0; // wrap longitude
-    adjacent.push(tileId(row, eCol));
+    adjacent.push(tileId(row, wrapCol(col + 1)));
   }
 
   // Corner neighbors
   if (nearSouth && nearWest && row > 0) {
-    const wCol = col > 0 ? col - 1 : maxCol;
-    adjacent.push(tileId(row - 1, wCol));
+    adjacent.push(tileId(row - 1, wrapCol(col - 1)));
   }
   if (nearSouth && nearEast && row > 0) {
-    const eCol = col < maxCol ? col + 1 : 0;
-    adjacent.push(tileId(row - 1, eCol));
+    adjacent.push(tileId(row - 1, wrapCol(col + 1)));
   }
   if (nearNorth && nearWest && row < maxRow) {
-    const wCol = col > 0 ? col - 1 : maxCol;
-    adjacent.push(tileId(row + 1, wCol));
+    adjacent.push(tileId(row + 1, wrapCol(col - 1)));
   }
   if (nearNorth && nearEast && row < maxRow) {
-    const eCol = col < maxCol ? col + 1 : 0;
-    adjacent.push(tileId(row + 1, eCol));
+    adjacent.push(tileId(row + 1, wrapCol(col + 1)));
   }
 
   // Filter to tiles that exist in the index
