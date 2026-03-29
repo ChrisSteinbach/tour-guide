@@ -163,3 +163,112 @@ describe("idbCleanupOldKeys", () => {
     ]);
   });
 });
+
+// ---------- idbOpen tests ----------
+
+describe("idbOpen", () => {
+  const origIndexedDB = globalThis.indexedDB;
+
+  afterEach(() => {
+    globalThis.indexedDB = origIndexedDB;
+  });
+
+  /**
+   * Helper: install a fake indexedDB.open that calls onerror for the first
+   * `failCount` calls, then onsuccess for all subsequent calls.
+   */
+  function installFakeIndexedDB(fakeDB: IDBDatabase, failCount: number) {
+    let callCount = 0;
+    globalThis.indexedDB = {
+      open: () => {
+        callCount++;
+        const req: Record<string, unknown> = {
+          result: fakeDB,
+          error: new DOMException("open failed"),
+          onupgradeneeded: null,
+          onsuccess: null,
+          onerror: null,
+        };
+        const current = callCount;
+        queueMicrotask(() => {
+          if (current <= failCount) {
+            (req.onerror as (() => void) | null)?.();
+          } else {
+            (req.onsuccess as (() => void) | null)?.();
+          }
+        });
+        return req;
+      },
+    } as unknown as typeof indexedDB;
+    return { getCallCount: () => callCount };
+  }
+
+  it("retries after a transient failure instead of caching null", async () => {
+    const fakeDB = {} as IDBDatabase;
+    const { getCallCount } = installFakeIndexedDB(fakeDB, 1);
+
+    vi.resetModules();
+    const { idbOpen: freshOpen } = await import("./idb");
+
+    const first = await freshOpen();
+    expect(first).toBeNull();
+
+    const second = await freshOpen();
+    expect(second).toBe(fakeDB);
+    expect(getCallCount()).toBe(2);
+  });
+
+  it("retries through multiple consecutive failures before succeeding", async () => {
+    const fakeDB = {} as IDBDatabase;
+    const { getCallCount } = installFakeIndexedDB(fakeDB, 3);
+
+    vi.resetModules();
+    const { idbOpen: freshOpen } = await import("./idb");
+
+    expect(await freshOpen()).toBeNull();
+    expect(await freshOpen()).toBeNull();
+    expect(await freshOpen()).toBeNull();
+
+    const result = await freshOpen();
+    expect(result).toBe(fakeDB);
+    expect(getCallCount()).toBe(4);
+  });
+
+  it("concurrent callers during failure both receive null", async () => {
+    const fakeDB = {} as IDBDatabase;
+    installFakeIndexedDB(fakeDB, 1);
+
+    vi.resetModules();
+    const { idbOpen: freshOpen } = await import("./idb");
+
+    // Both calls issued before the microtask fires share the same promise
+    const [a, b] = await Promise.all([freshOpen(), freshOpen()]);
+    expect(a).toBeNull();
+    expect(b).toBeNull();
+  });
+
+  it("caches the promise after a successful open", async () => {
+    const fakeDB = {} as IDBDatabase;
+    const { getCallCount } = installFakeIndexedDB(fakeDB, 0);
+
+    vi.resetModules();
+    const { idbOpen: freshOpen } = await import("./idb");
+
+    const first = await freshOpen();
+    const second = await freshOpen();
+
+    expect(first).toBe(fakeDB);
+    expect(second).toBe(fakeDB);
+    expect(getCallCount()).toBe(1);
+  });
+
+  it("returns null when indexedDB is undefined", async () => {
+    delete (globalThis as any).indexedDB;
+
+    vi.resetModules();
+    const { idbOpen: freshOpen } = await import("./idb");
+
+    const result = await freshOpen();
+    expect(result).toBeNull();
+  });
+});
