@@ -1,4 +1,4 @@
-import { tileFor, tileId } from "./tiles";
+import { tileFor, tileId, wrapCol } from "./tiles";
 
 describe("tileFor", () => {
   it("maps equator/prime meridian", () => {
@@ -32,6 +32,33 @@ describe("tileFor", () => {
 
   it("clamps lon=180 to max col", () => {
     expect(tileFor(0, 180)).toEqual({ row: 18, col: 71 });
+  });
+});
+
+describe("wrapCol", () => {
+  it("returns positive in-range columns unchanged", () => {
+    expect(wrapCol(0)).toBe(0);
+    expect(wrapCol(35)).toBe(35);
+    expect(wrapCol(71)).toBe(71);
+  });
+
+  it("wraps negative columns into range", () => {
+    expect(wrapCol(-1)).toBe(71);
+    expect(wrapCol(-3)).toBe(69);
+    expect(wrapCol(-72)).toBe(0);
+  });
+
+  it("wraps large positive columns into range", () => {
+    expect(wrapCol(73)).toBe(1);
+    expect(wrapCol(144)).toBe(0);
+    expect(wrapCol(145)).toBe(1);
+  });
+
+  it("wraps exact multiples of COLS (72) to 0", () => {
+    expect(wrapCol(72)).toBe(0);
+    expect(wrapCol(144)).toBe(0);
+    expect(wrapCol(-72)).toBe(0);
+    expect(wrapCol(-144)).toBe(0);
   });
 });
 
