@@ -2,8 +2,10 @@ import { SUPPORTED_LANGS, LANG_NAMES } from "../lang";
 import type { Lang } from "../lang";
 
 /**
- * Create a custom language-selector dropdown with keyboard navigation
- * and ARIA listbox semantics.
+ * Custom language-selector dropdown for the browsing header, with keyboard
+ * navigation, ARIA listbox semantics, and open-state tracking that prevents
+ * re-renders while the user is choosing.
+ * Status screens use a native `<select>` via `createLangSelect` in `status.ts`.
  */
 export function createLangDropdown(
   currentLang: Lang,
