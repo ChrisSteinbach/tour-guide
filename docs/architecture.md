@@ -267,6 +267,7 @@ src/app/
   query.ts             NearestQuery class (flat typed-array walks)
   tile-loader.ts       Tile index + tile fetching, IDB cache, LRU eviction
   idb.ts               IndexedDB helpers, versioned key prefixes
+  lang-dropdown.ts     Custom language-selector dropdown for browsing header
   render.ts            Article list with distance badges
   about.ts             About dialog with Wikipedia and OSM attribution
   detail.ts            Article detail via Wikipedia REST API
