@@ -24,11 +24,15 @@ let dbPromise: Promise<IDBDatabase | null> | null = null;
 export function idbOpen(): Promise<IDBDatabase | null> {
   if (dbPromise) return dbPromise;
   if (typeof indexedDB === "undefined") return Promise.resolve(null);
-  dbPromise = new Promise((resolve) => {
+  dbPromise = new Promise<IDBDatabase | null>((resolve) => {
     const req = indexedDB.open(IDB_NAME, 1);
     req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
     req.onsuccess = () => resolve(req.result);
-    req.onerror = () => resolve(null);
+    req.onerror = () => {
+      console.warn("IDB open failed:", req.error);
+      dbPromise = null;
+      resolve(null);
+    };
   });
   return dbPromise;
 }
