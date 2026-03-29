@@ -1,12 +1,7 @@
-import type { UserPosition } from "./types";
 import type { LocationError } from "./location";
 import { SUPPORTED_LANGS, LANG_NAMES } from "../lang";
 import type { Lang } from "../lang";
 import { createAppHeader } from "./header";
-export type AppState =
-  | { kind: "loading" }
-  | { kind: "error"; error: LocationError }
-  | { kind: "ready"; position: UserPosition };
 
 /** Create a native `<select>` language picker for status screens. */
 function createLangSelect(

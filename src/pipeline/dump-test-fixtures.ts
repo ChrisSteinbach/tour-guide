@@ -50,14 +50,14 @@ const GEO_SCHEMA = [
 
 // ---------- Row types with sensible defaults ----------
 
-export interface PageRow {
+interface PageRow {
   id: number;
   title: string;
   ns?: number; // default: 0 (article namespace)
   redirect?: number; // default: 0 (not a redirect)
 }
 
-export interface GeoRow {
+interface GeoRow {
   pageId: number;
   lat: number;
   lon: number;

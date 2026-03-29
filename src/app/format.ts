@@ -1,13 +1,8 @@
 import { haversineDistance } from "../geometry/index";
-import type { UserPosition, Article } from "./types";
+import type { UserPosition } from "./types";
 import type { Lang } from "../lang";
 
 const EARTH_RADIUS_M = 6_371_000;
-
-/** Compute distance in meters between a user position and an article. */
-export function distanceMeters(from: UserPosition, to: Article): number {
-  return haversineDistance(from, to) * EARTH_RADIUS_M;
-}
 
 /** Human-readable distance string: meters below 1 km, km above. */
 export function formatDistance(meters: number): string {
