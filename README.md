@@ -125,10 +125,10 @@ format and [`docs/tiling.md`](docs/tiling.md) for the tiling strategy.
 ### Automated refresh
 
 A GitHub Actions workflow ([`pipeline.yml`](.github/workflows/pipeline.yml))
-runs monthly to re-extract and rebuild tiles for all supported languages (en,
-sv, ja). Tile archives are published to a `data-latest` GitHub Release.
+runs monthly to re-extract and rebuild tiles for all supported languages.
+Tile archives are published to a `data-latest` GitHub Release.
 Deployment ([`deploy.yml`](.github/workflows/deploy.yml)) downloads these
-archives and deploys the app to GitHub Pages on every push to main.
+archives and deploys the app to GitHub Pages (manual trigger).
 
 ## Deployment
 

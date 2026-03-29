@@ -27,7 +27,7 @@ Requires **Node.js 18+** (ES2022 target; tested with Node 20 and 22).
 
 ## Pre-commit Hooks
 
-Husky runs lint-staged on every commit, auto-fixing ESLint and Prettier issues on staged `.ts` files. Hooks are installed automatically by `npm install` (via the `prepare` script).
+Husky runs lint-staged on every commit, auto-fixing ESLint and Prettier on staged `.ts` files and Stylelint and Prettier on staged `.css` files. Hooks are installed automatically by `npm install` (via the `prepare` script).
 
 ## Architecture
 
