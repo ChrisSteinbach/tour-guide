@@ -100,10 +100,6 @@ function normalizeLon(lon: number, refLon: number): number {
   return lon;
 }
 
-// Re-export for build.test.ts
-export { tileFor } from "../tiles.js";
-export type { TileEntry, TileIndex } from "../tiles.js";
-
 /** Spatial index mapping tile IDs to their articles. */
 export type ArticleIndex = Map<string, Article[]>;
 

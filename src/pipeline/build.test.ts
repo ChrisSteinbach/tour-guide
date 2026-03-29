@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { deserializeBinary } from "../geometry/serialization.js";
 import { collectTileArticles, buildArticleIndex } from "./build.js";
-import type { TileIndex } from "./build.js";
+import type { TileIndex } from "../tiles.js";
 import type { Article } from "./extract-dump.js";
 
 // ---------- Unit: collectTileArticles ----------
