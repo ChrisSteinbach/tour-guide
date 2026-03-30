@@ -26,8 +26,8 @@ export interface TileIndex {
   tiles: TileEntry[];
 }
 
-const ROWS = 180 / GRID_DEG; // 36
-const COLS = 360 / GRID_DEG; // 72
+export const ROWS = 180 / GRID_DEG; // 36
+export const COLS = 360 / GRID_DEG; // 72
 
 /** Compute tile row and column for a lat/lon position. */
 export function tileFor(
