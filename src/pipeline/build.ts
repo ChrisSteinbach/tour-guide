@@ -20,7 +20,14 @@ import { SUPPORTED_LANGS, DEFAULT_LANG } from "../lang.js";
 import type { Lang } from "../lang.js";
 import { isInBounds, parseBounds } from "./extract-dump.js";
 import type { Article, Bounds } from "./extract-dump.js";
-import { GRID_DEG, BUFFER_DEG, tileFor, tileId, wrapCol } from "../tiles.js";
+import {
+  GRID_DEG,
+  BUFFER_DEG,
+  ROWS,
+  tileFor,
+  tileId,
+  wrapCol,
+} from "../tiles.js";
 import type { TileEntry, TileIndex } from "../tiles.js";
 
 // ---------- CLI arg parsing ----------
@@ -91,7 +98,6 @@ async function readArticles(
 // ---------- Tiling ----------
 
 const MIN_ARTICLES = 4;
-const TILE_ROWS = 180 / GRID_DEG;
 /** Shift longitude to be within ±180° of a reference longitude. */
 function normalizeLon(lon: number, refLon: number): number {
   const d = lon - refLon;
@@ -143,7 +149,7 @@ export function collectTileArticles(
 
   for (let dr = -1; dr <= 1; dr++) {
     const nr = row + dr;
-    if (nr < 0 || nr >= TILE_ROWS) continue;
+    if (nr < 0 || nr >= ROWS) continue;
     for (let dc = -1; dc <= 1; dc++) {
       const nc = wrapCol(col + dc);
       const bucket = index.get(tileId(nr, nc));

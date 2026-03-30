@@ -5,6 +5,7 @@ import {
   tileFor,
   tileId,
   GRID_DEG,
+  ROWS,
   EDGE_PROXIMITY_DEG,
   wrapCol,
 } from "../tiles";
@@ -13,6 +14,8 @@ import { NearestQuery } from "./query";
 import type { QueryResult } from "./query";
 import { idbOpen, idbGetAny, idbPutAny, idbDelete } from "./idb";
 import type { Lang } from "../lang";
+
+const MAX_ROW = ROWS - 1; // 35
 
 // ---------- LRU eviction ----------
 
@@ -135,13 +138,11 @@ export function tilesForPosition(
   const nearWest = distFromWest < EDGE_PROXIMITY_DEG;
   const nearEast = distFromEast < EDGE_PROXIMITY_DEG;
 
-  const maxRow = Math.floor(180 / GRID_DEG) - 1; // 35
-
   // Cardinal neighbors
   if (nearSouth && row > 0) {
     adjacent.push(tileId(row - 1, col));
   }
-  if (nearNorth && row < maxRow) {
+  if (nearNorth && row < MAX_ROW) {
     adjacent.push(tileId(row + 1, col));
   }
   if (nearWest) {
@@ -158,10 +159,10 @@ export function tilesForPosition(
   if (nearSouth && nearEast && row > 0) {
     adjacent.push(tileId(row - 1, wrapCol(col + 1)));
   }
-  if (nearNorth && nearWest && row < maxRow) {
+  if (nearNorth && nearWest && row < MAX_ROW) {
     adjacent.push(tileId(row + 1, wrapCol(col - 1)));
   }
-  if (nearNorth && nearEast && row < maxRow) {
+  if (nearNorth && nearEast && row < MAX_ROW) {
     adjacent.push(tileId(row + 1, wrapCol(col + 1)));
   }
 
