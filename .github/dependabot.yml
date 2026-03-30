@@ -23,3 +23,7 @@ updates:
       # that supports Vite 8. Check: npm view vite-plugin-pwa peerDependencies
       - dependency-name: vite
         versions: [">=8.0.0"]
+      # TODO: Remove this ignore rule once typescript-eslint supports TypeScript 6.
+      # Check: npm view typescript-eslint peerDependencies
+      - dependency-name: typescript
+        versions: [">=6.0.0"]
