@@ -56,8 +56,9 @@ export function vertexNeighbors(
   const startTri = tri.vertices[vIdx].triangle;
   const neighbors: number[] = [];
   let currentTri = startTri;
+  const maxSteps = tri.triangles.length;
 
-  do {
+  for (let step = 0; step < maxSteps; step++) {
     const t = tri.triangles[currentTri];
     let k = 0;
     for (let i = 0; i < 3; i++) {
@@ -70,7 +71,8 @@ export function vertexNeighbors(
     neighbors.push(t.vertices[(k + 1) % 3]);
     // Cross edge k (from vIdx to next vertex) to the adjacent triangle
     currentTri = t.neighbor[k];
-  } while (currentTri !== startTri);
+    if (currentTri === startTri) break;
+  }
 
   return neighbors;
 }
@@ -106,9 +108,9 @@ export function findNearest(
   }
 
   // Greedy walk: check neighbors of current best, move if closer
-  let improved = true;
-  while (improved) {
-    improved = false;
+  const maxWalk = vertices.length;
+  for (let step = 0; step < maxWalk; step++) {
+    let improved = false;
     for (const nIdx of vertexNeighbors(tri, bestVertex)) {
       const d = sphericalDistance(vertices[nIdx].point, query);
       if (d < bestDist) {
@@ -118,6 +120,7 @@ export function findNearest(
         break;
       }
     }
+    if (!improved) break;
   }
 
   return bestVertex;

@@ -109,7 +109,8 @@ function flatNeighbors(fd: FlatDelaunay, vIdx: number): number[] {
   const startTri = fd.vertexTriangles[vIdx];
   const neighbors: number[] = [];
   let cur = startTri;
-  do {
+  const maxSteps = fd.triangleVertices.length / 3;
+  for (let step = 0; step < maxSteps; step++) {
     const ti = cur * 3;
     let k = 0;
     for (let i = 0; i < 3; i++) {
@@ -120,7 +121,8 @@ function flatNeighbors(fd: FlatDelaunay, vIdx: number): number[] {
     }
     neighbors.push(fd.triangleVertices[ti + ((k + 1) % 3)]);
     cur = fd.triangleNeighbors[ti + k];
-  } while (cur !== startTri);
+    if (cur === startTri) break;
+  }
   return neighbors;
 }
 
@@ -169,9 +171,9 @@ function flatFindNearest(
     }
   }
 
-  let improved = true;
-  while (improved) {
-    improved = false;
+  const maxWalk = fd.vertexTriangles.length;
+  for (let step = 0; step < maxWalk; step++) {
+    let improved = false;
     for (const nIdx of flatNeighbors(fd, bestV)) {
       const d = dist(fd.vertexPoints, nIdx * 3, qx, qy, qz);
       if (d < bestD) {
@@ -181,6 +183,7 @@ function flatFindNearest(
         break;
       }
     }
+    if (!improved) break;
   }
 
   return bestV;
