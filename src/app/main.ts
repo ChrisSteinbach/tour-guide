@@ -221,8 +221,8 @@ function resetArticleWindow(): void {
 }
 
 /** Called by the effect executor when requery fires in infinite scroll mode. */
-function ensureArticleRange(_pos: UserPosition, count: number): void {
-  lifecycle.ensureArticleRange(count);
+function ensureArticleRange(pos: UserPosition, count: number): void {
+  lifecycle.ensureArticleRange(pos, count);
 }
 
 // ── Lifecycle managers ───────────────────────────────────────
