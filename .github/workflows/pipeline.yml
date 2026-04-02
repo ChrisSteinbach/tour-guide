@@ -15,6 +15,10 @@ permissions:
   contents: write
   actions: write
 
+concurrency:
+  group: pipeline-publish
+  cancel-in-progress: false
+
 jobs:
   read-langs:
     runs-on: ubuntu-latest
