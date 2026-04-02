@@ -436,22 +436,22 @@ describe("onWindowChange", () => {
 
 describe("computeOptimisticCount", () => {
   it("returns known when known > loaded", () => {
-    expect(computeOptimisticCount(500, 100, 200, 5000)).toBe(500);
+    expect(computeOptimisticCount(500, 100)).toBe(500);
   });
 
-  it("returns loaded + buffer when known <= loaded", () => {
-    expect(computeOptimisticCount(100, 100, 200, 5000)).toBe(300);
+  it("returns loaded when known equals loaded (no phantom buffer)", () => {
+    expect(computeOptimisticCount(100, 100)).toBe(100);
   });
 
-  it("caps at maxLimit", () => {
-    expect(computeOptimisticCount(100, 4900, 200, 5000)).toBe(5000);
+  it("returns loaded when known is 0 but loaded > 0", () => {
+    expect(computeOptimisticCount(0, 50)).toBe(50);
+  });
+
+  it("suppresses count before first batch loads to avoid empty-list jump", () => {
+    expect(computeOptimisticCount(50, 0)).toBe(0);
   });
 
   it("returns 0 when both known and loaded are 0", () => {
-    expect(computeOptimisticCount(0, 0, 200, 5000)).toBe(0);
-  });
-
-  it("returns loaded + buffer when known is 0 but loaded > 0", () => {
-    expect(computeOptimisticCount(0, 50, 200, 5000)).toBe(250);
+    expect(computeOptimisticCount(0, 0)).toBe(0);
   });
 });

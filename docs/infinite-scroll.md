@@ -105,7 +105,7 @@ onRangeChange(range)
 
 `onNearEnd` in `main.ts` handles two cases:
 
-1. **ArticleWindow exists** — First optimistically expands the virtual list height via `computeOptimisticCount(totalKnown, loadedCount, PREFETCH_BUFFER, MAX_OPTIMISTIC_LIMIT)` so the user never hits the bottom while the async fetch is in flight: if `totalKnown > loadedCount`, uses `totalKnown`; otherwise caps at `min(loadedCount + PREFETCH_BUFFER, MAX_OPTIMISTIC_LIMIT)`. Then calls `aw.ensureRange(range.start, range.end + PREFETCH_BUFFER)`. When the promise resolves, `onWindowChange` fires, which updates the list height to `max(totalKnown, loadedCount)` — but never below the previous count (see "Scroll Headroom" below).
+1. **ArticleWindow exists** — First optimistically expands the virtual list height via `computeOptimisticCount(totalKnown, loadedCount)` so the user never hits the bottom while the async fetch is in flight: returns `max(totalKnown, loadedCount)` — the best-known total, with no phantom buffer added (the `nearEndThreshold` already triggers `onNearEnd` before the user reaches the bottom). Special case: when `loadedCount` is 0 (before the first batch loads), returns 0 to suppress empty-list jumps — showing scroll headroom before any articles are rendered would create an empty list that jumps once the first batch arrives. Then calls `aw.ensureRange(range.start, range.end + PREFETCH_BUFFER)`. When the promise resolves, `onWindowChange` fires, which updates the list height to `max(totalKnown, loadedCount)` — but never below the previous count (see "Scroll Headroom" below).
 
 2. **No ArticleWindow yet** — Dispatches `expandInfiniteScroll` to the state machine, which increments `infiniteScrollLimit` by `INFINITE_SCROLL_STEP` (200) and emits a `requery` effect.
 
@@ -113,7 +113,6 @@ onRangeChange(range)
 
 - `nearEndThreshold = 100` — trigger distance from the end (items)
 - `PREFETCH_BUFFER = 200` — extra articles to prefetch beyond the visible range end
-- `MAX_OPTIMISTIC_LIMIT = 5000` — upper bound for optimistic scroll expansion when `totalKnown` is unknown
 - `INFINITE_SCROLL_INITIAL = 200` — articles loaded on first entry into infinite scroll
 - `INFINITE_SCROLL_STEP = 200` — articles added per expansion
 - `windowSize = 1000` — max articles in memory before eviction
@@ -164,7 +163,7 @@ Three mechanisms prevent this:
 
 1. **Optimistic initial height** — `renderInfiniteScrollDOM()` sets `totalCount = max(loadedCount, articles.length, infiniteScrollLimit)`, so the virtual list starts tall enough to cover the scroll-pause transition even before the ArticleWindow has fetched data.
 
-2. **Optimistic expansion on near-end** — When `onNearEnd` fires and an ArticleWindow exists, `computeOptimisticCount` immediately expands the list height _before_ the async `ensureRange()` call. If `totalKnown > loadedCount`, uses `totalKnown`; otherwise caps at `min(loadedCount + PREFETCH_BUFFER, MAX_OPTIMISTIC_LIMIT)`. This gives the user scroll space while tiles load.
+2. **Optimistic expansion on near-end** — When `onNearEnd` fires and an ArticleWindow exists, `computeOptimisticCount(totalKnown, loadedCount)` immediately expands the list height _before_ the async `ensureRange()` call. Returns `max(totalKnown, loadedCount)` — no phantom buffer is added, since the `nearEndThreshold` already triggers expansion before the user reaches the bottom. When `loadedCount` is 0 (before the first batch), returns 0 instead — this suppresses empty-list jumps before any articles are rendered. This gives the user scroll space while tiles load.
 
 3. **`totalKnown` in `onWindowChange`** — When tiles finish loading, the callback uses `max(totalKnown, loadedCount)` rather than just `loadedCount`. Since `totalKnown` reflects all articles across loaded tiles (not just the contiguous fetched window), this provides headroom for the next scroll burst. The callback also enforces a **never-shrink invariant**: `lastScrollCount` tracks the high-water mark, and `update()` always receives `max(lastScrollCount, realCount)`. This prevents scroll jumps when the optimistic count overshoots reality (e.g., the user is scrolled to position 100 but only 80 articles ultimately load). The high-water mark resets on `resetArticleWindow` (new position or query).
 
