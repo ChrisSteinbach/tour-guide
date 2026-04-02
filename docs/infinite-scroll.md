@@ -91,7 +91,7 @@ ArticleWindow
     → sort by distance, slice [start, end)
 ```
 
-The `TileRadiusProvider` expands rings until it has enough articles to satisfy the request or runs out of tiles. Ring 0 is the user's tile; ring 1 is the 8 surrounding tiles; and so on. Tiles already loaded by the state machine are reused (not re-fetched).
+The `TileRadiusProvider` expands rings until it has enough articles to satisfy the request or reaches `MAX_RING` (the point where the entire grid is covered). Expansion continues past empty rings — a ring that loads no new tiles does not stop the search. Ring 0 is the user's tile; ring 1 is the 8 surrounding tiles; and so on. Tiles already loaded by the state machine are reused (not re-fetched).
 
 ## Near-End Detection and Expansion
 

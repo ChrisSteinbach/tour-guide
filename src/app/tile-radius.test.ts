@@ -2,6 +2,7 @@ import {
   tilesAtRing,
   tilesWithinRadius,
   createTileRadiusProvider,
+  MAX_RING,
 } from "./tile-radius";
 import type { TileEntry } from "../tiles";
 import { tileId } from "../tiles";
@@ -150,24 +151,128 @@ describe("createTileRadiusProvider", () => {
     expect(result.articles.length).toBe(12);
   });
 
-  it("stops expanding when no new tiles are available", async () => {
-    let loadAttempts = 0;
+  it("continues past empty rings to find articles in later rings", async () => {
+    let lastRing = -1;
 
     const provider = createTileRadiusProvider({
-      queryAllTiles: async () => [
-        { title: "Only one", lat: 0, lon: 0, distanceM: 100 },
-      ],
-      loadRing: async () => {
-        loadAttempts++;
-        return loadAttempts <= 1; // only first ring has tiles
+      queryAllTiles: async () => {
+        // No articles until ring 3 is loaded
+        if (lastRing < 3) return [];
+        return [{ title: "Coastal", lat: 0, lon: 0, distanceM: 8000 }];
+      },
+      loadRing: async (ring) => {
+        lastRing = ring;
+        return ring >= 3; // rings 0–2 are empty ocean, ring 3 has tiles
       },
       centerRow: 18,
       centerCol: 36,
     });
 
-    const result = await provider.fetchRange(0, 100);
+    const result = await provider.fetchRange(0, 1);
 
-    expect(result.articles.length).toBe(1);
-    expect(result.totalAvailable).toBe(1);
+    expect(lastRing).toBe(3); // expanded through rings 0, 1, 2, 3
+    expect(result.articles).toEqual([
+      { title: "Coastal", lat: 0, lon: 0, distanceM: 8000 },
+    ]);
+  });
+
+  it("stops expanding at MAX_RING when grid is exhausted", async () => {
+    let lastRing = -1;
+
+    const provider = createTileRadiusProvider({
+      queryAllTiles: async () => [],
+      loadRing: async (ring) => {
+        lastRing = ring;
+        return false; // no tiles anywhere
+      },
+      centerRow: 18,
+      centerCol: 36,
+    });
+
+    const result = await provider.fetchRange(0, 10);
+
+    expect(lastRing).toBe(MAX_RING);
+    expect(result.articles).toEqual([]);
+  });
+
+  it("returns partial results sorted by distance when grid exhausts before satisfying range", async () => {
+    const sparseArticles: NearbyArticle[] = [
+      { title: "Lighthouse", lat: 1, lon: 1, distanceM: 9000 },
+      { title: "Reef", lat: 0.5, lon: 0.5, distanceM: 3000 },
+      { title: "Buoy", lat: 0.2, lon: 0.2, distanceM: 500 },
+    ];
+    let lastRing = -1;
+
+    const provider = createTileRadiusProvider({
+      queryAllTiles: async () => sparseArticles,
+      loadRing: async (ring) => {
+        lastRing = ring;
+        return ring === 0; // only ring 0 has tiles
+      },
+      centerRow: 18,
+      centerCol: 36,
+    });
+
+    const result = await provider.fetchRange(0, 10);
+
+    expect(lastRing).toBe(MAX_RING);
+    expect(result.articles).toEqual([
+      { title: "Buoy", lat: 0.2, lon: 0.2, distanceM: 500 },
+      { title: "Reef", lat: 0.5, lon: 0.5, distanceM: 3000 },
+      { title: "Lighthouse", lat: 1, lon: 1, distanceM: 9000 },
+    ]);
+    expect(result.totalAvailable).toBe(3);
+  });
+
+  it("does not re-load rings already loaded by a previous call", async () => {
+    const ringsLoaded: number[] = [];
+
+    const provider = createTileRadiusProvider({
+      queryAllTiles: async () => {
+        // Each ring adds 5 articles
+        return Array.from({ length: ringsLoaded.length * 5 }, (_, i) => ({
+          title: `Article ${i}`,
+          lat: 0,
+          lon: 0,
+          distanceM: i * 100,
+        }));
+      },
+      loadRing: async (ring) => {
+        ringsLoaded.push(ring);
+        return true;
+      },
+      centerRow: 18,
+      centerCol: 36,
+    });
+
+    // First call: needs 12 articles → loads rings 0, 1, 2 (5, 10, 15 articles)
+    await provider.fetchRange(0, 12);
+    expect(ringsLoaded).toEqual([0, 1, 2]);
+
+    // Second call: needs 20 articles → should continue from ring 3, not re-load 0-2
+    await provider.fetchRange(0, 20);
+    expect(ringsLoaded).toEqual([0, 1, 2, 3]);
+  });
+
+  it("returns the correct slice for a non-zero start parameter", async () => {
+    const articles: NearbyArticle[] = [
+      { title: "A", lat: 0, lon: 0, distanceM: 100 },
+      { title: "B", lat: 0, lon: 0, distanceM: 200 },
+      { title: "C", lat: 0, lon: 0, distanceM: 300 },
+      { title: "D", lat: 0, lon: 0, distanceM: 400 },
+      { title: "E", lat: 0, lon: 0, distanceM: 500 },
+    ];
+
+    const provider = createTileRadiusProvider({
+      queryAllTiles: async () => articles,
+      loadRing: async () => true,
+      centerRow: 18,
+      centerCol: 36,
+    });
+
+    const result = await provider.fetchRange(2, 4);
+
+    expect(result.articles.map((a) => a.title)).toEqual(["C", "D"]);
+    expect(result.totalAvailable).toBe(5);
   });
 });
