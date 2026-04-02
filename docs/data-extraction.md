@@ -100,7 +100,8 @@ To add a new language:
 2. Add canary landmarks for the new language in `src/pipeline/canary.ts` (the `LANDMARKS` record). The `Record<Lang, ...>` type requires this — TypeScript will report a type error after step 1 until this step is done. Without canary landmarks, extraction will succeed but data integrity won't be validated.
 3. Run extraction: `npm run extract -- --lang=xx`
 4. Run the pipeline: `npm run pipeline -- --lang=xx`
-5. Add the language to the CI matrix in `.github/workflows/pipeline.yml` so it's included in monthly rebuilds.
+
+The CI pipeline (`.github/workflows/pipeline.yml`) reads `SUPPORTED_LANGS` from `src/lang.ts` dynamically — no manual workflow edit is needed. Monthly rebuilds will automatically include the new language after step 1.
 
 No special parsing is needed — the SQL dump format is identical across all Wikipedia languages. CJK titles (Japanese, Chinese, Korean) are handled transparently via UTF-8.
 
