@@ -80,9 +80,6 @@ const PREFETCH_BUFFER = 200;
 /** Scroll-near-end detection threshold (items from bottom). */
 const NEAR_END_THRESHOLD = 100;
 
-// Safety cap — well above realistic scroll depth, well below browser scroll-height limits
-const MAX_OPTIMISTIC_LIMIT = 5000;
-
 /** Compute how many articles fill the viewport, plus a few extra for scroll trigger. */
 const viewportFillCount = Math.max(
   DEFAULT_VIEWPORT_FILL,
@@ -363,8 +360,6 @@ const infiniteScroll = createInfiniteScrollLifecycle({
       const optimistic = computeOptimisticCount(
         aw.totalKnown(),
         aw.loadedCount(),
-        PREFETCH_BUFFER,
-        MAX_OPTIMISTIC_LIMIT,
       );
       lifecycle.applyOptimisticCount(optimistic);
 
@@ -500,15 +495,21 @@ function renderInfiniteScrollDOM(): void {
     infiniteScroll.destroy();
   }
 
-  // Use the largest of: loaded articles, viewport articles, or the
-  // infinite-scroll limit. This prevents the virtual list from starting
-  // with a small height that later jumps when the async fetch completes.
-  const loadedCount = lifecycle.currentWindow()?.loadedCount() ?? 0;
-  const totalCount = Math.max(
-    loadedCount,
-    appState.phase.articles.length,
-    appState.phase.infiniteScrollLimit,
-  );
+  // When the ArticleWindow knows the true article count, use it so the
+  // list never extends past the last real article.  Before the first
+  // fetch completes (knownTotal === 0) fall back to the state-machine
+  // limit as a placeholder that will be corrected by onWindowChange.
+  const aw = lifecycle.currentWindow();
+  const loadedCount = aw?.loadedCount() ?? 0;
+  const knownTotal = aw?.totalKnown() ?? 0;
+  const totalCount =
+    knownTotal > 0
+      ? Math.max(loadedCount, knownTotal)
+      : Math.max(
+          loadedCount,
+          appState.phase.articles.length,
+          appState.phase.infiniteScrollLimit,
+        );
 
   if (!infiniteScroll.isActive()) {
     infiniteScroll.init(totalCount);

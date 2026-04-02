@@ -20,18 +20,17 @@ export interface CreateWindowOpts {
 
 /**
  * Compute the optimistic article count for infinite scroll height.
- * Used to expand the list before an async fetch completes so the
- * user never hits the bottom while waiting.
+ * Returns the best-known total: `known` when the provider reports more
+ * articles than are loaded, otherwise `loaded`.  No phantom buffer is
+ * added — the nearEndThreshold in the virtual list already triggers
+ * onNearEnd before the user reaches the bottom.
  */
-export function computeOptimisticCount(
-  known: number,
-  loaded: number,
-  buffer: number,
-  maxLimit: number,
-): number {
-  if (known > loaded) return known;
+export function computeOptimisticCount(known: number, loaded: number): number {
+  // When nothing is loaded yet we can't estimate a count — return 0 even if
+  // known > 0, because showing scroll headroom before any articles are rendered
+  // would create an empty list that jumps once the first batch arrives.
   if (loaded === 0) return 0;
-  return Math.min(loaded + buffer, maxLimit);
+  return Math.max(known, loaded);
 }
 
 export interface ArticleWindowLifecycleDeps {
