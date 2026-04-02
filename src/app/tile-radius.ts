@@ -101,11 +101,11 @@ export function createTileRadiusProvider(
         }
       }
 
-      // Sort once after loop, then return the requested slice
-      articles.sort((a, b) => a.distanceM - b.distanceM);
+      // Defensive copy — don't mutate the array returned by queryAllTiles
+      const sorted = [...articles].sort((a, b) => a.distanceM - b.distanceM);
       return {
-        articles: articles.slice(start, Math.min(end, articles.length)),
-        totalAvailable: articles.length,
+        articles: sorted.slice(start, Math.min(end, sorted.length)),
+        totalAvailable: sorted.length,
       };
     },
   };
