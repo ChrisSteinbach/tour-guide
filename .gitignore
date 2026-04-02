@@ -14,3 +14,4 @@ coverage/
 *.db
 .prep-pr/
 .restory/
+.dispatch/
