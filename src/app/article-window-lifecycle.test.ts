@@ -83,7 +83,7 @@ function makeDeps(
 }
 
 describe("createArticleWindowLifecycle", () => {
-  it("ensureArticleRange follows reset→create→ensureRange→render sequence", () => {
+  it("ensureArticleRange follows reset→create→ensureRange→render on position change", () => {
     const callOrder: string[] = [];
     const aw = stubArticleWindow({
       reset: vi.fn(() => callOrder.push("reset")),
@@ -102,13 +102,37 @@ describe("createArticleWindowLifecycle", () => {
     const lifecycle = createArticleWindowLifecycle(deps);
 
     // First call: no existing window, so no reset step
-    lifecycle.ensureArticleRange(200);
+    lifecycle.ensureArticleRange(pos, 200);
     expect(callOrder).toEqual(["create", "ensureRange", "render"]);
 
-    // Second call: existing window is reset first
+    // Second call with different position: resets first
     callOrder.length = 0;
-    lifecycle.ensureArticleRange(200);
+    lifecycle.ensureArticleRange({ lat: 60.0, lon: 19.0 }, 200);
     expect(callOrder[0]).toBe("reset");
+  });
+
+  it("ensureArticleRange skips reset when position unchanged (tile-load requery)", () => {
+    const aw = stubArticleWindow({
+      reset: vi.fn(),
+      ensureRange: vi.fn(async () => {}),
+    });
+    const deps = makeDeps({
+      createArticleWindow: vi.fn(() => aw),
+    });
+
+    const lifecycle = createArticleWindowLifecycle(deps);
+
+    // First call creates the window
+    lifecycle.ensureArticleRange(pos, 200);
+    expect(deps.createArticleWindow).toHaveBeenCalledTimes(1);
+
+    // Second call with same position: reuses window, no reset
+    lifecycle.ensureArticleRange(pos, 400);
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(aw.reset).not.toHaveBeenCalled();
+    expect(deps.createArticleWindow).toHaveBeenCalledTimes(1);
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(aw.ensureRange).toHaveBeenLastCalledWith(0, 400);
   });
 
   it("getOrCreateArticleWindow reuses existing window on second call", () => {

@@ -45,7 +45,7 @@ export interface ArticleWindowLifecycleDeps {
 }
 
 export interface ArticleWindowLifecycle {
-  ensureArticleRange: (count: number) => void;
+  ensureArticleRange: (pos: UserPosition, count: number) => void;
   resetArticleWindow: () => void;
   getOrCreateArticleWindow: () => ArticleWindow;
   getArticleByIndex: (i: number) => NearbyArticle | undefined;
@@ -58,6 +58,7 @@ export function createArticleWindowLifecycle(
 ): ArticleWindowLifecycle {
   let articleWindow: ArticleWindow | null = null;
   let articleWindowAbort: AbortController | null = null;
+  let windowPosition: UserPosition | null = null;
 
   function resetArticleWindow(): void {
     if (articleWindow) {
@@ -68,6 +69,7 @@ export function createArticleWindowLifecycle(
       articleWindowAbort.abort();
       articleWindowAbort = null;
     }
+    windowPosition = null;
     lastScrollCount = 0;
   }
 
@@ -162,9 +164,18 @@ export function createArticleWindowLifecycle(
     return undefined;
   }
 
-  function ensureArticleRange(count: number): void {
-    resetArticleWindow();
+  function ensureArticleRange(pos: UserPosition, count: number): void {
+    const posChanged =
+      !windowPosition ||
+      pos.lat !== windowPosition.lat ||
+      pos.lon !== windowPosition.lon;
+
+    if (posChanged) {
+      resetArticleWindow();
+    }
+
     const aw = getOrCreateArticleWindow();
+    windowPosition = pos;
     void aw.ensureRange(0, count);
     deps.renderBrowsingList();
   }
