@@ -1,7 +1,7 @@
 // Progressive tile loading by distance radius.
 // Pure ring geometry + orchestrator that expands rings on demand.
 
-import { ROWS, tileId, wrapCol } from "../tiles";
+import { COLS, ROWS, tileId, wrapCol } from "../tiles";
 import type { TileEntry } from "../tiles";
 import type { NearbyArticle } from "./types";
 import type { ArticleProvider, FetchResult } from "./article-window";
@@ -71,6 +71,15 @@ export interface TileRadiusProviderOptions {
 }
 
 /**
+ * Maximum Chebyshev ring before the grid is fully covered.
+ * ROWS - 1 is the max vertical distance (top-to-bottom of the grid).
+ * Math.floor(COLS / 2) is the max horizontal distance (longitude wraps,
+ * so the farthest column is half the grid away). The larger of the two
+ * determines when every tile has been reached.
+ */
+export const MAX_RING = Math.max(ROWS - 1, Math.floor(COLS / 2));
+
+/**
  * Create an ArticleProvider that expands tile rings on demand
  * to satisfy article range requests.
  */
@@ -79,33 +88,31 @@ export function createTileRadiusProvider(
 ): ArticleProvider {
   const { queryAllTiles, loadRing } = options;
   let currentRing = 0;
-  let noMoreTiles = false;
+  let ring0Loaded = false;
 
   return {
     async fetchRange(start: number, end: number): Promise<FetchResult> {
       // Load ring 0 if not yet loaded
-      if (currentRing === 0) {
-        const loaded = await loadRing(0);
-        if (!loaded) noMoreTiles = true;
+      if (!ring0Loaded) {
+        await loadRing(0);
+        ring0Loaded = true;
       }
 
-      // Expand rings until we have enough articles or run out of tiles
+      // Expand rings until we have enough articles or exhaust the grid
       let articles = await queryAllTiles();
-      while (!noMoreTiles && articles.length < end) {
+      while (articles.length < end && currentRing < MAX_RING) {
         currentRing++;
         const loaded = await loadRing(currentRing);
-        if (!loaded) {
-          noMoreTiles = true;
-        } else {
+        if (loaded) {
           articles = await queryAllTiles();
         }
       }
 
-      // Sort once after loop, then return the requested slice
-      articles.sort((a, b) => a.distanceM - b.distanceM);
+      // Defensive copy — don't mutate the array returned by queryAllTiles
+      const sorted = [...articles].sort((a, b) => a.distanceM - b.distanceM);
       return {
-        articles: articles.slice(start, Math.min(end, articles.length)),
-        totalAvailable: articles.length,
+        articles: sorted.slice(start, Math.min(end, sorted.length)),
+        totalAvailable: sorted.length,
       };
     },
   };
