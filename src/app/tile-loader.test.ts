@@ -1,6 +1,7 @@
 import {
   findNearestTiled,
   tilesForPosition,
+  nearestExistingTiles,
   buildTileMap,
   updateLru,
   MAX_CACHED_TILES,
@@ -227,6 +228,50 @@ describe("tilesForPosition", () => {
     const { primary, adjacent } = tilesForPosition(tileMap, 0.5, 2.5);
     expect(primary).toBe("18-36");
     expect(adjacent).toEqual([]);
+  });
+});
+
+// ---------- nearestExistingTiles ----------
+
+describe("nearestExistingTiles", () => {
+  it("returns empty array for empty tileMap", () => {
+    const tileMap = new Map<string, TileEntry>();
+    const result = nearestExistingTiles(tileMap, 2.5, 2.5);
+    expect(result).toEqual([]);
+  });
+
+  it("returns the tile at ring 0 when it exists", () => {
+    // lat 2.5, lon 2.5 → row 18, col 36 → tile "18-36"
+    const tileMap = makeTileMap(["18-36"]);
+    const result = nearestExistingTiles(tileMap, 2.5, 2.5);
+    expect(result).toEqual(["18-36"]);
+    expect(result).toHaveLength(1);
+  });
+
+  it("expands to ring 1 when ring 0 has no tiles", () => {
+    // Position is in tile "18-36" (lat 2.5, lon 2.5) but that tile doesn't exist.
+    // Tile "18-37" is at ring 1 (one column east).
+    const tileMap = makeTileMap(["18-37"]);
+    const result = nearestExistingTiles(tileMap, 2.5, 2.5);
+    expect(result).toContain("18-37");
+    expect(result).not.toContain("18-36");
+  });
+
+  it("handles column wrapping at the antimeridian", () => {
+    // lat 2.5, lon -179.5 → row 18, col 0. Ring 0 tile "18-00" doesn't exist.
+    // Tile "18-71" is one column west (col -1 wraps to 71), found at ring 1.
+    const tileMap = makeTileMap(["18-71"]);
+    const result = nearestExistingTiles(tileMap, 2.5, -179.5);
+    expect(result).toContain("18-71");
+  });
+
+  it("finds a tile at maximum grid distance (antipodal column, ring 36)", () => {
+    // Position is in tile "18-36" (lat 2.5, lon 2.5).
+    // Tile "18-00" is 36 columns away — the antipodal column, which is
+    // the maximum horizontal distance (MAX_RING = max(ROWS-1, COLS/2) = 36).
+    const tileMap = makeTileMap(["18-00"]);
+    const result = nearestExistingTiles(tileMap, 2.5, 2.5);
+    expect(result).toContain("18-00");
   });
 });
 

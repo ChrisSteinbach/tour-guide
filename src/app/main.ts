@@ -29,6 +29,7 @@ import { idbOpen, idbCleanupOldKeys } from "./idb";
 import {
   tilesForPosition,
   getTileEntry,
+  nearestExistingTiles,
   loadTileIndex,
   loadTile,
   findNearestTiled,
@@ -179,6 +180,7 @@ const executeEffect = createEffectExecutor({
       loadTile(import.meta.env.BASE_URL, lang, entry, signal),
     tilesForPosition,
     getTileEntry,
+    nearestExistingTiles,
   },
   storage: {
     setItem: (k, v) => localStorage.setItem(k, v),

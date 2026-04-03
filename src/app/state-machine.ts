@@ -870,7 +870,15 @@ function handlePickPosition(
     return _exhaustive;
   }
 
-  const result = enterBrowsing(next);
+  // Clear stale tiles and bump loadGeneration so in-flight tile loads
+  // from the previous position are discarded by the generation guard.
+  const cleared: AppState = {
+    ...next,
+    query: { ...state.query, tiles: new Map() },
+    loadingTiles: new Set(),
+    loadGeneration: state.loadGeneration + 1,
+  };
+  const result = enterBrowsing(cleared);
   return {
     next: result.next,
     effects: [

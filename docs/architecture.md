@@ -72,7 +72,7 @@ Float32 vertices give sub-meter precision on Earth. On deserialization, Uint32 i
 The app uses geographic tiling — instead of downloading a monolithic file, it fetches a small tile index and then loads only nearby tiles on demand:
 
 1. **Fetch tile index** — `loadTileIndex()` fetches `tiles/{lang}/index.json` (small manifest of all tiles with content hashes). Cached in IDB for offline use.
-2. **Determine tiles** — `tilesForPosition()` computes the primary tile from the user's GPS position plus adjacent tiles if the user is within 1° of a tile boundary.
+2. **Determine tiles** — `tilesForPosition()` (in `tile-loader.ts`) computes the primary tile from the user's GPS position plus adjacent tiles if the user is within 1° of a tile boundary. If no tiles exist at the position (e.g., open ocean), `loadTilesForPosition()` in `effect-executor.ts` falls back to `nearestExistingTiles()`, which expands outward ring by ring via `tilesAtRing()` up to `MAX_RING` until populated tiles are found.
 3. **Load tiles** — `loadTile()` fetches individual `.bin` files, calls `deserializeBinary()` (Float32→Float64 upcast for math precision, Uint32 views are zero-copy), and caches the result in IDB keyed by `tile-v1-{lang}-{id}` with content hash for freshness.
 4. **IDB cache hit** — Returns instantly (~1ms). Compares the cached tile's hash against the index; only refetches tiles whose hash changed.
 

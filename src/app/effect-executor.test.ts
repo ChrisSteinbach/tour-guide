@@ -150,6 +150,7 @@ function makeData(overrides: Partial<DataDeps> = {}): DataDeps {
     loadTile: vi.fn(async () => stubNearestQuery),
     tilesForPosition: vi.fn(() => ({ primary: "t1", adjacent: [] })),
     getTileEntry: vi.fn(),
+    nearestExistingTiles: vi.fn(() => []),
     ...overrides,
   };
 }
@@ -301,6 +302,29 @@ describe("createEffectExecutor", () => {
   });
 
   // ── Async orchestration: loadTiles ─────────────────────────
+
+  it("loadTiles aborts previous in-flight tile loads on re-pick", async () => {
+    let signalFromFirst: AbortSignal | undefined;
+    const entry = makeTileEntry("t1");
+    const tileMap = new Map([["t1", entry]]);
+    const deps = makeDeps({
+      getState: vi.fn(() => tiledState(tileMap)),
+      data: makeData({
+        tilesForPosition: vi.fn(() => ({ primary: "t1", adjacent: [] })),
+        getTileEntry: vi.fn((_map, id) => (id === "t1" ? entry : undefined)),
+        loadTile: vi.fn(async (_lang, _entry, signal) => {
+          signalFromFirst ??= signal;
+          return stubNearestQuery;
+        }),
+      }),
+    });
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "loadTiles", lang: "en" });
+    exec({ type: "loadTiles", lang: "en" });
+
+    expect(signalFromFirst!.aborted).toBe(true);
+  });
 
   it("loadTiles dispatches tileLoadStarted then tileLoaded", async () => {
     const entry = makeTileEntry("t1");
@@ -518,6 +542,142 @@ describe("createEffectExecutor", () => {
     });
 
     expect(deps.dispatch).not.toHaveBeenCalledWith({ type: "noTilesNearby" });
+  });
+
+  it("loadTiles falls back to nearestExistingTiles when no tiles exist at position", async () => {
+    const entryNearby1 = makeTileEntry("t-nearby1", "h1");
+    const entryNearby2 = makeTileEntry("t-nearby2", "h2");
+    const tileMap = new Map<string, TileEntry>([
+      ["t-nearby1", entryNearby1],
+      ["t-nearby2", entryNearby2],
+    ]);
+
+    // Track load order to verify primary-first behavior
+    const loadOrder: string[] = [];
+    const resolvers: Array<() => void> = [];
+    const deps = makeDeps({
+      getState: vi.fn(() => tiledState(tileMap)),
+      data: makeData({
+        // tilesForPosition returns a tile that doesn't exist in the map
+        tilesForPosition: vi.fn(() => ({
+          primary: "t-nonexistent",
+          adjacent: [],
+        })),
+        // getTileEntry returns undefined for the nonexistent tile,
+        // but returns entries for the fallback tiles
+        getTileEntry: vi.fn((_map, id) => tileMap.get(id as string)),
+        // Ring expansion finds nearby tiles
+        nearestExistingTiles: vi.fn(() => ["t-nearby1", "t-nearby2"]),
+        loadTile: vi.fn((_lang, entry: TileEntry) => {
+          loadOrder.push(entry.id);
+          return new Promise<NearestQuery>((resolve) => {
+            resolvers.push(() => resolve(stubNearestQuery));
+          });
+        }),
+      }),
+    });
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "loadTiles", lang: "en" });
+
+    // nearestExistingTiles should have been called
+    expect(deps.data.nearestExistingTiles).toHaveBeenCalledWith(
+      tileMap,
+      pos.lat,
+      pos.lon,
+    );
+
+    // First fallback tile is primary — loaded first and awaited
+    expect(loadOrder).toEqual(["t-nearby1"]);
+
+    // Resolve the primary tile to unblock the rest
+    resolvers[0]();
+    await vi.waitFor(() => {
+      expect(loadOrder).toHaveLength(2);
+    });
+
+    // Second tile loaded concurrently after primary resolved
+    expect(loadOrder).toEqual(["t-nearby1", "t-nearby2"]);
+
+    // Both tiles dispatched tileLoadStarted
+    expect(deps.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "tileLoadStarted", id: "t-nearby1" }),
+    );
+    expect(deps.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "tileLoadStarted", id: "t-nearby2" }),
+    );
+
+    // Resolve second tile and verify tileLoaded dispatched for both tiles
+    resolvers[1]();
+    await vi.waitFor(() => {
+      expect(deps.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "tileLoaded", id: "t-nearby1" }),
+      );
+      expect(deps.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "tileLoaded", id: "t-nearby2" }),
+      );
+    });
+
+    // Fallback path should NOT dispatch noTilesNearby — tiles were found
+    expect(deps.dispatch).not.toHaveBeenCalledWith({ type: "noTilesNearby" });
+  });
+
+  it("loadTiles skips already-loaded tiles from nearestExistingTiles fallback (GPS into ocean)", async () => {
+    const entryA = makeTileEntry("t-coast1", "h1");
+    const entryB = makeTileEntry("t-coast2", "h2");
+    const tileMap = new Map<string, TileEntry>([
+      ["t-coast1", entryA],
+      ["t-coast2", entryB],
+    ]);
+    // Both fallback tiles are already loaded in query.tiles
+    const existingTiles = new Map<string, NearestQuery>([
+      ["t-coast1", stubNearestQuery],
+      ["t-coast2", stubNearestQuery],
+    ]);
+    const query: QueryState = {
+      mode: "tiled",
+      index: {
+        version: 1,
+        gridDeg: 5,
+        bufferDeg: 0.5,
+        generated: "",
+        tiles: [],
+      },
+      tileMap,
+      tiles: existingTiles,
+    };
+    const deps = makeDeps({
+      getState: vi.fn(() => browsingState({ query })),
+      data: makeData({
+        // Ocean position — no tiles exist here
+        tilesForPosition: vi.fn(() => ({
+          primary: "t-ocean",
+          adjacent: [],
+        })),
+        getTileEntry: vi.fn((_map, id) => tileMap.get(id as string)),
+        // Ring expansion finds the coastal tiles that are already loaded
+        nearestExistingTiles: vi.fn(() => ["t-coast1", "t-coast2"]),
+        loadTile: vi.fn(async () => stubNearestQuery),
+      }),
+    });
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "loadTiles", lang: "en" });
+    // All tiles are skipped synchronously; flush async function completion
+    await Promise.resolve();
+
+    // nearestExistingTiles should have been called (ocean fallback triggered)
+    expect(deps.data.nearestExistingTiles).toHaveBeenCalledWith(
+      tileMap,
+      pos.lat,
+      pos.lon,
+    );
+
+    // Already-loaded tiles should not trigger any fetch
+    expect(deps.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "tileLoadStarted" }),
+    );
+    expect(deps.data.loadTile).not.toHaveBeenCalled();
   });
 
   it("loadTiles dispatches tileLoadFailed when a tile fetch rejects", async () => {

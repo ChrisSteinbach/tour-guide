@@ -316,17 +316,19 @@ describe("tileLoadStarted event", () => {
 describe("pickPosition event", () => {
   const pickedPos: UserPosition = { lat: 48.8584, lon: 2.2945 };
 
-  it("enters browsing with picked position when query ready", () => {
+  it("clears stale tiles and enters loadingTiles when picking new position", () => {
     const state = makeState({ query: sampleQuery });
     const { next, effects } = transition(state, {
       type: "pickPosition",
       position: pickedPos,
     });
-    expect(next.phase.phase).toBe("browsing");
+    expect(next.phase.phase).toBe("loadingTiles");
     expect(next.position).toBe(pickedPos);
+    const tiled = expectTiled(next);
+    expect(tiled.tiles.size).toBe(0);
     expect(effectTypes(effects)).toContain("stopGps");
-    expect(effectTypes(effects)).toContain("requery");
-    expect(effectTypes(effects)).toContain("scrollToTop");
+    expect(effectTypes(effects)).toContain("loadTiles");
+    expect(effectTypes(effects)).toContain("render");
   });
 
   it("enters downloading when no query", () => {
@@ -349,6 +351,144 @@ describe("pickPosition event", () => {
       position: pickedPos,
     });
     expect(effectTypes(effects)).toContain("loadTiles");
+  });
+
+  it("clears stale articles and tiles when picking from active browsing state", () => {
+    const state = browsingState({
+      articles: defaultBrowsingArticles,
+      positionSource: "gps",
+    });
+
+    // Verify preconditions: browsing with populated articles and tiles
+    const browsing = expectBrowsing(state);
+    expect(browsing.articles).toHaveLength(3);
+    const preTiled = expectTiled(state);
+    expect(preTiled.tiles.size).toBe(1);
+
+    const { next, effects } = transition(state, {
+      type: "pickPosition",
+      position: pickedPos,
+    });
+
+    // Phase transitions to loadingTiles — stale articles are gone
+    expect(next.phase.phase).toBe("loadingTiles");
+
+    // Previously loaded tiles are cleared so stale data can't be served
+    const tiled = expectTiled(next);
+    expect(tiled.tiles.size).toBe(0);
+
+    expect(effectTypes(effects)).toContain("loadTiles");
+    expect(effectTypes(effects)).toContain("render");
+  });
+
+  it("transitions from error phase to loadingTiles with cleared tiles", () => {
+    const state = makeState({
+      phase: {
+        phase: "error",
+        error: { code: "POSITION_UNAVAILABLE", message: "No GPS" },
+      },
+      query: makeTiledQuery(),
+    });
+    const { next, effects } = transition(state, {
+      type: "pickPosition",
+      position: pickedPos,
+    });
+    expect(next.phase.phase).toBe("loadingTiles");
+    expect(next.position).toBe(pickedPos);
+    const tiled = expectTiled(next);
+    expect(tiled.tiles.size).toBe(0);
+    expect(effectTypes(effects)).toContain("stopGps");
+    expect(effectTypes(effects)).toContain("loadTiles");
+    expect(effectTypes(effects)).toContain("render");
+  });
+
+  it("transitions from dataUnavailable phase to loadingTiles with cleared tiles", () => {
+    const state = makeState({
+      phase: { phase: "dataUnavailable" },
+      query: makeTiledQuery(),
+    });
+    const { next, effects } = transition(state, {
+      type: "pickPosition",
+      position: pickedPos,
+    });
+    expect(next.phase.phase).toBe("loadingTiles");
+    expect(next.position).toBe(pickedPos);
+    const tiled = expectTiled(next);
+    expect(tiled.tiles.size).toBe(0);
+    expect(effectTypes(effects)).toContain("stopGps");
+    expect(effectTypes(effects)).toContain("loadTiles");
+    expect(effectTypes(effects)).toContain("render");
+  });
+
+  it("re-pick during loadingTiles resets position and reloads tiles", () => {
+    const firstPick: UserPosition = { lat: 40.7128, lon: -74.006 };
+    const secondPick: UserPosition = { lat: 35.6762, lon: 139.6503 };
+
+    // Start in loadingTiles with empty tiles (first pick already in progress)
+    const state = makeState({
+      phase: { phase: "loadingTiles" },
+      query: makeTiledQuery(),
+      position: firstPick,
+      positionSource: "picked",
+    });
+    const preTiled = expectTiled(state);
+    expect(preTiled.tiles.size).toBe(0);
+
+    const { next, effects } = transition(state, {
+      type: "pickPosition",
+      position: secondPick,
+    });
+
+    expect(next.phase.phase).toBe("loadingTiles");
+    expect(next.position).toBe(secondPick);
+    expect(next.positionSource).toBe("picked");
+    const tiled = expectTiled(next);
+    expect(tiled.tiles.size).toBe(0);
+    expect(effectTypes(effects)).toContain("stopGps");
+    expect(effectTypes(effects)).toContain("loadTiles");
+    expect(effectTypes(effects)).toContain("render");
+  });
+
+  it("increments loadGeneration so in-flight tile loads from old position are discarded", () => {
+    const state = makeState({
+      query: sampleQuery,
+      loadGeneration: 5,
+    });
+    const { next } = transition(state, {
+      type: "pickPosition",
+      position: pickedPos,
+    });
+    expect(next.loadGeneration).toBe(6);
+  });
+
+  it("discards tileLoaded from old position after re-pick bumps generation", () => {
+    const state = makeState({
+      phase: { phase: "loadingTiles" },
+      query: makeTiledQuery(),
+      position: pickedPos,
+      positionSource: "picked",
+      loadGeneration: 3,
+    });
+
+    // Re-pick bumps generation to 4
+    const { next: afterPick } = transition(state, {
+      type: "pickPosition",
+      position: { lat: 35.6762, lon: 139.6503 },
+    });
+    expect(afterPick.loadGeneration).toBe(4);
+
+    // Stale tileLoaded from old position arrives with gen 3
+    const { next: afterStale, effects } = transition(afterPick, {
+      type: "tileLoaded",
+      id: "t1",
+      tileQuery: stubNearestQuery,
+      gen: 3,
+    });
+
+    // Should be ignored — no tile added, no phase change
+    const tiled = expectTiled(afterStale);
+    expect(tiled.tiles.size).toBe(0);
+    expect(effects).toEqual([]);
   });
 });
 
@@ -1492,23 +1632,39 @@ describe("computeScrollMode", () => {
 // ── Scroll mode transitions (tour-guide-ove) ─────────────────
 
 describe("scroll mode transitions", () => {
-  it("pickPosition enters infinite scroll mode", () => {
+  it("pickPosition enters infinite scroll after tile loads", () => {
+    // pickPosition clears tiles and bumps loadGeneration → loadingTiles phase
     const state = makeState({ query: sampleQuery });
-    const { next } = transition(state, {
+    const pick = transition(state, {
       type: "pickPosition",
       position: paris,
     });
-    const browsing = expectBrowsing(next);
+    expect(pick.next.phase.phase).toBe("loadingTiles");
+
+    // When the first tile loads with the new generation, enterBrowsing sets infinite scroll
+    const loaded = transition(pick.next, {
+      type: "tileLoaded",
+      id: "27-36",
+      tileQuery: stubNearestQuery,
+      gen: pick.next.loadGeneration,
+    });
+    const browsing = expectBrowsing(loaded.next);
     expect(browsing.scrollMode).toBe("infinite");
   });
 
-  it("pickPosition requeries with INFINITE_SCROLL_INITIAL", () => {
+  it("pickPosition requeries with INFINITE_SCROLL_INITIAL after tile loads", () => {
     const state = makeState({ query: sampleQuery });
-    const { effects } = transition(state, {
+    const pick = transition(state, {
       type: "pickPosition",
       position: paris,
     });
-    const requery = effects.find((e) => e.type === "requery");
+    const loaded = transition(pick.next, {
+      type: "tileLoaded",
+      id: "27-36",
+      tileQuery: stubNearestQuery,
+      gen: pick.next.loadGeneration,
+    });
+    const requery = loaded.effects.find((e) => e.type === "requery");
     expect(requery).toMatchObject({ count: INFINITE_SCROLL_INITIAL });
   });
 
