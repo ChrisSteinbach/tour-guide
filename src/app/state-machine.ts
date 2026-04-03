@@ -862,7 +862,14 @@ function handlePickPosition(
     };
   }
 
-  // mode === "tiled"
+  // After the "none" early-return above, state.query is narrowed to "tiled".
+  // Exhaustive guard: if a third mode is ever added, TypeScript will error
+  // here because the new variant won't be assignable to `never`.
+  if (state.query.mode !== "tiled") {
+    const _exhaustive: never = state.query;
+    return _exhaustive;
+  }
+
   const result = enterBrowsing(next);
   return {
     next: result.next,
