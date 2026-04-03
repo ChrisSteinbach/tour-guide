@@ -10,6 +10,7 @@ import {
   wrapCol,
 } from "../tiles";
 import type { TileEntry, TileIndex } from "../tiles";
+import { tilesAtRing, MAX_RING } from "./tile-radius";
 import { NearestQuery } from "./query";
 import type { QueryResult } from "./query";
 import { idbOpen, idbGetAny, idbPutAny, idbDelete } from "./idb";
@@ -170,6 +171,25 @@ export function tilesForPosition(
   const existing = adjacent.filter((id) => tileExistsInMap(index, id));
 
   return { primary, adjacent: existing };
+}
+
+/**
+ * Find the nearest existing tiles when no tiles exist at the given position.
+ * Expands outward ring by ring from the position's tile until tiles are found.
+ * Returns ALL tiles at the first populated ring (not capped like tilesForPosition)
+ * because every tile at that distance contains "nearest" articles for the user.
+ */
+export function nearestExistingTiles(
+  tileMap: Map<string, TileEntry>,
+  lat: number,
+  lon: number,
+): string[] {
+  const { row, col } = tileFor(lat, lon);
+  for (let ring = 0; ring <= MAX_RING; ring++) {
+    const tiles = tilesAtRing(row, col, ring, tileMap);
+    if (tiles.length > 0) return tiles;
+  }
+  return [];
 }
 
 /** Build a Map<id, TileEntry> from a TileIndex for O(1) lookup. */

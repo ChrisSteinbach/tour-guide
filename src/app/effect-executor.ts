@@ -53,6 +53,11 @@ export interface DataDeps {
     tileMap: Map<string, TileEntry>,
     id: string,
   ) => TileEntry | undefined;
+  nearestExistingTiles: (
+    tileMap: Map<string, TileEntry>,
+    lat: number,
+    lon: number,
+  ) => string[];
 }
 
 export interface StorageDeps {
@@ -145,7 +150,17 @@ export function createEffectExecutor(
       state.position.lon,
     );
 
-    const allTiles = [primary, ...adjacent];
+    let allTiles = [primary, ...adjacent];
+
+    // If no tiles exist at this position, find the nearest ones via ring expansion
+    if (!allTiles.some((id) => deps.data.getTileEntry(tileMap, id))) {
+      allTiles = deps.data.nearestExistingTiles(
+        tileMap,
+        state.position.lat,
+        state.position.lon,
+      );
+    }
+
     let anyStarted = false;
     for (const id of allTiles) {
       if (signal.aborted) return;
@@ -160,7 +175,7 @@ export function createEffectExecutor(
       if (!entry) continue;
 
       anyStarted = true;
-      const isPrimary = id === primary;
+      const isPrimary = id === allTiles[0];
       deps.dispatch({ type: "tileLoadStarted", id });
 
       const loadOne = deps.data
@@ -236,6 +251,8 @@ export function createEffectExecutor(
         loadLanguageData(effect.lang, loadController.signal);
         break;
       case "loadTiles":
+        loadController.abort();
+        loadController = new AbortController();
         void loadTilesForPosition(
           effect.lang,
           deps.getState().loadGeneration,

@@ -862,8 +862,23 @@ function handlePickPosition(
     };
   }
 
-  // mode === "tiled"
-  const result = enterBrowsing(next);
+  // After the "none" early-return above, state.query is narrowed to "tiled".
+  // Exhaustive guard: if a third mode is ever added, TypeScript will error
+  // here because the new variant won't be assignable to `never`.
+  if (state.query.mode !== "tiled") {
+    const _exhaustive: never = state.query;
+    return _exhaustive;
+  }
+
+  // Clear stale tiles and bump loadGeneration so in-flight tile loads
+  // from the previous position are discarded by the generation guard.
+  const cleared: AppState = {
+    ...next,
+    query: { ...state.query, tiles: new Map() },
+    loadingTiles: new Set(),
+    loadGeneration: state.loadGeneration + 1,
+  };
+  const result = enterBrowsing(cleared);
   return {
     next: result.next,
     effects: [

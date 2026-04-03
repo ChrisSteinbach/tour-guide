@@ -137,9 +137,9 @@ stateDiagram-v2
     loadingTiles --> browsing : tileLoadFailed [all failed]
     loadingTiles --> browsing : noTilesNearby
 
-    error --> browsing : pickPosition (query=tiled)
+    error --> loadingTiles : pickPosition (query=tiled)
     error --> downloading : pickPosition (query=none)
-    dataUnavailable --> browsing : pickPosition (query=tiled)
+    dataUnavailable --> loadingTiles : pickPosition (query=tiled)
     dataUnavailable --> downloading : pickPosition (query=none)
 
     browsing --> detail : selectArticle
@@ -155,7 +155,7 @@ stateDiagram-v2
     }
 
     note right of browsing
-        pickPosition → browsing (infinite) or downloading
+        pickPosition → loadingTiles or downloading
         useGps → browsing (viewport)
     end note
 
@@ -188,7 +188,7 @@ The `start` event branches based on two conditions — whether tile data is read
 | `downloading`       | `tileIndexLoaded`      | has index, no geolocation   | `error`                      | render                                                              |
 | `downloading`       | `tileIndexLoaded`      | null index                  | `dataUnavailable`            | render                                                              |
 | any                 | `pickPosition`         | query=none                  | `downloading`                | stopGps, render                                                     |
-| any                 | `pickPosition`         | query=tiled                 | `browsing` (infinite scroll) | stopGps, loadTiles, requery, scrollToTop                            |
+| any                 | `pickPosition`         | query=tiled                 | `loadingTiles`               | stopGps, loadTiles, render                                          |
 | `locating`          | `position`             | tiled, no tiles loaded      | `loadingTiles`               | loadTiles, render                                                   |
 | `locating`          | `position`             | tiles available             | `browsing`                   | loadTiles, requery, scrollToTop                                     |
 | `locating`          | `gpsError`             | —                           | `error`                      | render                                                              |
@@ -225,6 +225,17 @@ The `start` event branches based on two conditions — whether tile data is read
 | `locating`          | `gpsError`             | —                           | `error`                      | render                                                              |
 
 Events not listed for a given phase (e.g. `selectArticle` during `downloading`) are no-ops — the transition returns the current state with no effects.
+
+### GPS vs pick: different browsing entry behavior
+
+How `loadingTiles` is entered determines the browsing mode when the first tile loads:
+
+| Entry route                   | Scroll mode on browsing entry | Requery count             |
+| ----------------------------- | ----------------------------- | ------------------------- |
+| GPS (`locating` → `position`) | `viewport`                    | `viewportFillCount`       |
+| `pickPosition` (any phase)    | `infinite`                    | `INFINITE_SCROLL_INITIAL` |
+
+GPS-originated entry uses viewport mode because the position is live and will update as the user moves — a small, distance-sorted list is appropriate. Pick-originated entry uses infinite scroll because the position is static and the user likely wants to browse a larger set of results.
 
 ## Key Design Decisions
 
