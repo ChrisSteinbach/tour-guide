@@ -13,6 +13,10 @@ vi.mock("leaflet", () => {
     setView: vi.fn().mockReturnThis(),
     fitBounds: vi.fn(),
     remove: vi.fn(),
+    on: vi.fn(),
+    off: vi.fn(),
+    getBoundsZoom: vi.fn(() => 2),
+    setMinZoom: vi.fn(),
   };
   const mockCircleMarker = {
     setLatLng: vi.fn().mockReturnThis(),
@@ -60,6 +64,7 @@ const mocks = (L as any)._mocks as {
     setView: ReturnType<typeof vi.fn>;
     fitBounds: ReturnType<typeof vi.fn>;
     remove: ReturnType<typeof vi.fn>;
+    off: ReturnType<typeof vi.fn>;
   };
   mockCircleMarker: {
     setLatLng: ReturnType<typeof vi.fn>;
@@ -362,6 +367,19 @@ describe("createBrowseMap", () => {
       const handle = createBrowseMap(container, pos(48, 2), [], vi.fn());
       handle.destroy();
       expect(mocks.mockMap.remove).toHaveBeenCalled();
+    });
+
+    it("removes resize listener before removing map", () => {
+      const handle = createBrowseMap(container, pos(48, 2), [], vi.fn());
+      handle.destroy();
+      expect(mocks.mockMap.off).toHaveBeenCalledWith(
+        "resize",
+        expect.any(Function),
+      );
+      // off must be called before remove
+      const offOrder = mocks.mockMap.off.mock.invocationCallOrder[0];
+      const removeOrder = mocks.mockMap.remove.mock.invocationCallOrder[0];
+      expect(offOrder).toBeLessThan(removeOrder);
     });
   });
 });

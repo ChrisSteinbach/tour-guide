@@ -53,10 +53,18 @@ export function createBrowseMap(
   articles: NearbyArticle[],
   onSelectArticle: (article: NearbyArticle) => void,
 ): BrowseMapHandle {
-  const map = L.map(container, { zoomControl: false }).setView(
-    [position.lat, position.lon],
-    13,
-  );
+  const worldBounds = L.latLngBounds([-90, -180], [90, 180]);
+  const map = L.map(container, {
+    zoomControl: false,
+    maxBounds: worldBounds,
+    maxBoundsViscosity: 1.0,
+  }).setView([position.lat, position.lon], 13);
+
+  function updateMinZoom() {
+    map.setMinZoom(map.getBoundsZoom(worldBounds, true));
+  }
+  updateMinZoom();
+  map.on("resize", updateMinZoom);
 
   L.control.zoom({ position: "topright" }).addTo(map);
 
@@ -64,6 +72,7 @@ export function createBrowseMap(
     attribution:
       '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     maxZoom: 19,
+    noWrap: true,
   }).addTo(map);
 
   const userMarker = L.circleMarker([position.lat, position.lon], {
@@ -140,6 +149,7 @@ export function createBrowseMap(
       map.invalidateSize();
     },
     destroy() {
+      map.off("resize", updateMinZoom);
       map.remove();
     },
   };

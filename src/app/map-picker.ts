@@ -18,12 +18,23 @@ export function createMapPicker(
     ? [center.lat, center.lon]
     : [30, 10];
   const initialZoom = center ? 13 : 3;
-  const map = L.map(container).setView(initialView, initialZoom);
+  const worldBounds = L.latLngBounds([-90, -180], [90, 180]);
+  const map = L.map(container, {
+    maxBounds: worldBounds,
+    maxBoundsViscosity: 1.0,
+  }).setView(initialView, initialZoom);
+
+  function updateMinZoom() {
+    map.setMinZoom(map.getBoundsZoom(worldBounds, true));
+  }
+  updateMinZoom();
+  map.on("resize", updateMinZoom);
 
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution:
       '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     maxZoom: 19,
+    noWrap: true,
   }).addTo(map);
 
   let marker: L.CircleMarker | null = null;
@@ -62,6 +73,7 @@ export function createMapPicker(
   return {
     destroy() {
       confirmBtn?.remove();
+      map.off("resize", updateMinZoom);
       map.remove();
     },
   };

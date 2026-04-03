@@ -20,7 +20,15 @@ const mockMap = {
   on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
     if (event === "click") clickHandler = handler;
   }),
+  off: vi.fn(),
   remove: vi.fn(),
+  getBoundsZoom: vi.fn(() => 2),
+  setMinZoom: vi.fn(),
+};
+
+const mockBounds = {
+  _southWest: { lat: -90, lng: -180 },
+  _northEast: { lat: 90, lng: 180 },
 };
 
 vi.mock("leaflet", () => ({
@@ -28,6 +36,7 @@ vi.mock("leaflet", () => ({
     map: vi.fn(() => mockMap),
     tileLayer: vi.fn(() => mockTileLayer),
     circleMarker: vi.fn(() => mockMarker),
+    latLngBounds: vi.fn(() => mockBounds),
   },
 }));
 
@@ -70,7 +79,10 @@ describe("createMapPicker", () => {
   it("initializes a Leaflet map on the container with default view", async () => {
     const L = (await import("leaflet")).default;
     const handle = createMapPicker(container, { onPick: vi.fn() });
-    expect(L.map).toHaveBeenCalledWith(container);
+    expect(L.map).toHaveBeenCalledWith(container, {
+      maxBounds: mockBounds,
+      maxBoundsViscosity: 1.0,
+    });
     expect(mockMap.setView).toHaveBeenCalledWith([30, 10], 3);
     expect(L.tileLayer).toHaveBeenCalled();
     expect(mockTileLayer.addTo).toHaveBeenCalledWith(mockMap);
@@ -183,6 +195,16 @@ describe("createMapPicker", () => {
     const handle = createMapPicker(container, { onPick: vi.fn() });
     handle.destroy();
     expect(mockMap.remove).toHaveBeenCalled();
+  });
+
+  it("destroy() removes resize listener before removing map", () => {
+    const handle = createMapPicker(container, { onPick: vi.fn() });
+    handle.destroy();
+    expect(mockMap.off).toHaveBeenCalledWith("resize", expect.any(Function));
+    // off must be called before remove
+    const offOrder = mockMap.off.mock.invocationCallOrder[0];
+    const removeOrder = mockMap.remove.mock.invocationCallOrder[0];
+    expect(offOrder).toBeLessThan(removeOrder);
   });
 
   it("destroy() works even if no click occurred", () => {
