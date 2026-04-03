@@ -11,14 +11,12 @@ const mockMarker = {
 
 const mockTileLayer = { addTo: vi.fn() };
 
-let clickHandler:
-  | ((e: { latlng: { lat: number; lng: number } }) => void)
-  | null = null;
+const handlers: Record<string, ((...args: unknown[]) => void)[]> = {};
 
 const mockMap = {
   setView: vi.fn().mockReturnThis(),
   on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
-    if (event === "click") clickHandler = handler;
+    (handlers[event] ??= []).push(handler);
   }),
   off: vi.fn(),
   remove: vi.fn(),
@@ -47,7 +45,11 @@ import { createMapPicker } from "./map-picker";
 // ── Helpers ─────────────────────────────────────────────────
 
 function simulateClick(lat: number, lng: number) {
-  clickHandler!({ latlng: { lat, lng } });
+  handlers.click?.[0]?.({ latlng: { lat, lng } });
+}
+
+function simulateResize() {
+  handlers.resize?.forEach((h) => h());
 }
 
 // ── Tests ───────────────────────────────────────────────────
@@ -61,7 +63,7 @@ describe("createMapPicker", () => {
     container = document.createElement("div");
     wrapper.appendChild(container);
     document.body.appendChild(wrapper);
-    clickHandler = null;
+    for (const key of Object.keys(handlers)) delete handlers[key];
     vi.clearAllMocks();
   });
 
@@ -211,5 +213,26 @@ describe("createMapPicker", () => {
     const handle = createMapPicker(container, { onPick: vi.fn() });
     expect(() => handle.destroy()).not.toThrow();
     expect(mockMap.remove).toHaveBeenCalled();
+  });
+
+  it("adds tile layer with noWrap: true", async () => {
+    const L = (await import("leaflet")).default;
+    const handle = createMapPicker(container, { onPick: vi.fn() });
+    expect(L.tileLayer).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ noWrap: true }),
+    );
+    handle.destroy();
+  });
+
+  it("recalculates min zoom on resize", () => {
+    const handle = createMapPicker(container, { onPick: vi.fn() });
+
+    mockMap.getBoundsZoom.mockReturnValue(5);
+    mockMap.setMinZoom.mockClear();
+    simulateResize();
+
+    expect(mockMap.setMinZoom).toHaveBeenCalledWith(5);
+    handle.destroy();
   });
 });

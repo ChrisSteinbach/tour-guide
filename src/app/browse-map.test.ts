@@ -100,15 +100,27 @@ describe("createBrowseMap", () => {
   it("creates a Leaflet map centered on the user position", () => {
     const handle = createBrowseMap(container, pos(48.8, 2.35), [], vi.fn());
 
-    expect(L.map).toHaveBeenCalledWith(container, expect.any(Object));
+    expect(L.map).toHaveBeenCalledWith(
+      container,
+      expect.objectContaining({
+        zoomControl: false,
+        maxBoundsViscosity: 1.0,
+      }),
+    );
+    // maxBounds must be present (the worldBounds object)
+    const opts = (L.map as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(opts).toHaveProperty("maxBounds");
     expect(mocks.mockMap.setView).toHaveBeenCalledWith([48.8, 2.35], 13);
     handle.destroy();
   });
 
-  it("adds a tile layer and zoom control", () => {
+  it("adds a tile layer with noWrap and zoom control", () => {
     const handle = createBrowseMap(container, pos(0, 0), [], vi.fn());
 
-    expect(L.tileLayer).toHaveBeenCalled();
+    expect(L.tileLayer).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ noWrap: true }),
+    );
     expect(L.control.zoom).toHaveBeenCalled();
     handle.destroy();
   });
