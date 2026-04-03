@@ -1,5 +1,6 @@
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { worldZoomBounds } from "./map-bounds";
 import type { NearbyArticle, UserPosition } from "./types";
 
 export interface BrowseMapHandle {
@@ -53,18 +54,13 @@ export function createBrowseMap(
   articles: NearbyArticle[],
   onSelectArticle: (article: NearbyArticle) => void,
 ): BrowseMapHandle {
-  const worldBounds = L.latLngBounds([-90, -180], [90, 180]);
+  const wb = worldZoomBounds();
   const map = L.map(container, {
     zoomControl: false,
-    maxBounds: worldBounds,
-    maxBoundsViscosity: 1.0,
+    ...wb.mapOptions,
   }).setView([position.lat, position.lon], 13);
 
-  function updateMinZoom() {
-    map.setMinZoom(map.getBoundsZoom(worldBounds, true));
-  }
-  updateMinZoom();
-  map.on("resize", updateMinZoom);
+  const removeResizeHandler = wb.install(map);
 
   L.control.zoom({ position: "topright" }).addTo(map);
 
@@ -72,7 +68,7 @@ export function createBrowseMap(
     attribution:
       '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     maxZoom: 19,
-    noWrap: true,
+    ...wb.tileOptions,
   }).addTo(map);
 
   const userMarker = L.circleMarker([position.lat, position.lon], {
@@ -149,7 +145,7 @@ export function createBrowseMap(
       map.invalidateSize();
     },
     destroy() {
-      map.off("resize", updateMinZoom);
+      removeResizeHandler();
       map.remove();
     },
   };

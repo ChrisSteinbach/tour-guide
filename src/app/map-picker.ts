@@ -1,5 +1,6 @@
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { worldZoomBounds } from "./map-bounds";
 
 export interface MapPickerHandle {
   destroy(): void;
@@ -18,23 +19,18 @@ export function createMapPicker(
     ? [center.lat, center.lon]
     : [30, 10];
   const initialZoom = center ? 13 : 3;
-  const worldBounds = L.latLngBounds([-90, -180], [90, 180]);
+  const wb = worldZoomBounds();
   const map = L.map(container, {
-    maxBounds: worldBounds,
-    maxBoundsViscosity: 1.0,
+    ...wb.mapOptions,
   }).setView(initialView, initialZoom);
 
-  function updateMinZoom() {
-    map.setMinZoom(map.getBoundsZoom(worldBounds, true));
-  }
-  updateMinZoom();
-  map.on("resize", updateMinZoom);
+  const removeResizeHandler = wb.install(map);
 
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution:
       '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     maxZoom: 19,
-    noWrap: true,
+    ...wb.tileOptions,
   }).addTo(map);
 
   let marker: L.CircleMarker | null = null;
@@ -73,7 +69,7 @@ export function createMapPicker(
   return {
     destroy() {
       confirmBtn?.remove();
-      map.off("resize", updateMinZoom);
+      removeResizeHandler();
       map.remove();
     },
   };
