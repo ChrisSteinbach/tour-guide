@@ -47,7 +47,13 @@ export function createMapPicker(
       confirmBtn = document.createElement("button");
       confirmBtn.className = "map-picker-confirm";
       confirmBtn.textContent = "Use this location";
-      container.appendChild(confirmBtn);
+      const parent = container.parentElement;
+      if (!parent) {
+        throw new Error(
+          "Map picker container must have a parent element for confirm button placement",
+        );
+      }
+      parent.appendChild(confirmBtn);
     }
 
     confirmBtn.onclick = () => onPick(lat, lng);

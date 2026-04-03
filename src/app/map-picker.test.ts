@@ -44,17 +44,20 @@ function simulateClick(lat: number, lng: number) {
 // ── Tests ───────────────────────────────────────────────────
 
 describe("createMapPicker", () => {
+  let wrapper: HTMLDivElement;
   let container: HTMLDivElement;
 
   beforeEach(() => {
+    wrapper = document.createElement("div");
     container = document.createElement("div");
-    document.body.appendChild(container);
+    wrapper.appendChild(container);
+    document.body.appendChild(wrapper);
     clickHandler = null;
     vi.clearAllMocks();
   });
 
   afterEach(() => {
-    container.remove();
+    wrapper.remove();
   });
 
   it("returns a handle with a destroy method", () => {
@@ -113,11 +116,11 @@ describe("createMapPicker", () => {
   it("shows confirm button after first click", () => {
     const handle = createMapPicker(container, { onPick: vi.fn() });
 
-    expect(container.querySelector(".map-picker-confirm")).toBeNull();
+    expect(wrapper.querySelector(".map-picker-confirm")).toBeNull();
 
     simulateClick(48.8, 2.35);
 
-    const btn = container.querySelector(".map-picker-confirm");
+    const btn = wrapper.querySelector(".map-picker-confirm");
     expect(btn).not.toBeNull();
     expect(btn!.textContent).toBe("Use this location");
     handle.destroy();
@@ -129,7 +132,7 @@ describe("createMapPicker", () => {
     simulateClick(48.8, 2.35);
     simulateClick(51.5, -0.12);
 
-    const buttons = container.querySelectorAll(".map-picker-confirm");
+    const buttons = wrapper.querySelectorAll(".map-picker-confirm");
     expect(buttons).toHaveLength(1);
     handle.destroy();
   });
@@ -140,7 +143,7 @@ describe("createMapPicker", () => {
 
     simulateClick(48.8, 2.35);
 
-    const btn = container.querySelector(
+    const btn = wrapper.querySelector(
       ".map-picker-confirm",
     ) as HTMLButtonElement;
     btn.click();
@@ -156,7 +159,7 @@ describe("createMapPicker", () => {
     simulateClick(48.8, 2.35);
     simulateClick(51.5, -0.12);
 
-    const btn = container.querySelector(
+    const btn = wrapper.querySelector(
       ".map-picker-confirm",
     ) as HTMLButtonElement;
     btn.click();
@@ -170,10 +173,10 @@ describe("createMapPicker", () => {
     const handle = createMapPicker(container, { onPick: vi.fn() });
 
     simulateClick(48.8, 2.35);
-    expect(container.querySelector(".map-picker-confirm")).not.toBeNull();
+    expect(wrapper.querySelector(".map-picker-confirm")).not.toBeNull();
 
     handle.destroy();
-    expect(container.querySelector(".map-picker-confirm")).toBeNull();
+    expect(wrapper.querySelector(".map-picker-confirm")).toBeNull();
   });
 
   it("destroy() removes the Leaflet map", () => {
