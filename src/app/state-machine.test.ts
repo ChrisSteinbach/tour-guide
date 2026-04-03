@@ -124,6 +124,18 @@ function expectDetail(state: AppState) {
   return state.phase as Extract<Phase, { phase: "detail" }>;
 }
 
+/** Assert query mode is "tiled" and return the narrowed type. */
+function expectTiled(state: AppState) {
+  expect(state.query.mode).toBe("tiled");
+  return state.query as Extract<QueryState, { mode: "tiled" }>;
+}
+
+/** Assert phase matches and return the narrowed type. */
+function expectPhase<P extends Phase["phase"]>(state: AppState, phase: P) {
+  expect(state.phase.phase).toBe(phase);
+  return state.phase as Extract<Phase, { phase: P }>;
+}
+
 function browsingState(
   overrides: Partial<AppState> & {
     articles?: NearbyArticle[];
@@ -936,9 +948,8 @@ describe("downloadProgress event", () => {
       gen: 0,
     });
     expect(next.downloadProgress).toBe(0.5);
-    if (next.phase.phase === "downloading") {
-      expect(next.phase.progress).toBe(0.5);
-    }
+    const downloading = expectPhase(next, "downloading");
+    expect(downloading.progress).toBe(0.5);
     expect(effectTypes(effects)).toContain("render");
   });
 
@@ -981,11 +992,9 @@ describe("tileIndexLoaded event", () => {
       lang: "en",
       gen: 0,
     });
-    expect(next.query.mode).toBe("tiled");
-    if (next.query.mode === "tiled") {
-      expect(next.query.index).toBe(tileIndex);
-      expect(next.query.tiles.size).toBe(0);
-    }
+    const tiled = expectTiled(next);
+    expect(tiled.index).toBe(tileIndex);
+    expect(tiled.tiles.size).toBe(0);
   });
 
   it("triggers loadTiles when position known", () => {
@@ -1068,10 +1077,8 @@ describe("tileIndexLoaded event", () => {
       lang: "en",
       gen: 0,
     });
-    expect(next.phase.phase).toBe("error");
-    if (next.phase.phase === "error") {
-      expect(next.phase.error.code).toBe("POSITION_UNAVAILABLE");
-    }
+    const error = expectPhase(next, "error");
+    expect(error.error.code).toBe("POSITION_UNAVAILABLE");
     expect(effectTypes(effects)).toContain("render");
   });
 });
@@ -1096,9 +1103,8 @@ describe("tileLoaded event", () => {
     });
     expect(next.phase.phase).toBe("browsing");
     expect(next.loadingTiles.has("27-36")).toBe(false);
-    if (next.query.mode === "tiled") {
-      expect(next.query.tiles.has("27-36")).toBe(true);
-    }
+    const tiled = expectTiled(next);
+    expect(tiled.tiles.has("27-36")).toBe(true);
     expect(effectTypes(effects)).toContain("requery");
     expect(effectTypes(effects)).toContain("scrollToTop");
   });
@@ -1114,9 +1120,8 @@ describe("tileLoaded event", () => {
     });
     expect(next.phase.phase).toBe("browsing");
     expect(next.loadingTiles.has("28-37")).toBe(false);
-    if (next.query.mode === "tiled") {
-      expect(next.query.tiles.has("28-37")).toBe(true);
-    }
+    const tiled = expectTiled(next);
+    expect(tiled.tiles.has("28-37")).toBe(true);
     expect(effectTypes(effects)).toContain("requery");
   });
 
@@ -1136,9 +1141,8 @@ describe("tileLoaded event", () => {
     });
     expect(next.phase.phase).toBe("detail");
     expect(next.loadingTiles.has("28-37")).toBe(false);
-    if (next.query.mode === "tiled") {
-      expect(next.query.tiles.has("28-37")).toBe(true);
-    }
+    const tiled = expectTiled(next);
+    expect(tiled.tiles.has("28-37")).toBe(true);
     expect(effectTypes(effects)).not.toContain("requery");
   });
 
