@@ -11,16 +11,22 @@ const mockMarker = {
 
 const mockTileLayer = { addTo: vi.fn() };
 
-let clickHandler:
-  | ((e: { latlng: { lat: number; lng: number } }) => void)
-  | null = null;
+const handlers: Record<string, ((...args: unknown[]) => void)[]> = {};
 
 const mockMap = {
   setView: vi.fn().mockReturnThis(),
   on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
-    if (event === "click") clickHandler = handler;
+    (handlers[event] ??= []).push(handler);
   }),
+  off: vi.fn(),
   remove: vi.fn(),
+  getBoundsZoom: vi.fn(() => 2),
+  setMinZoom: vi.fn(),
+};
+
+const mockBounds = {
+  _southWest: { lat: -90, lng: -180 },
+  _northEast: { lat: 90, lng: 180 },
 };
 
 vi.mock("leaflet", () => ({
@@ -28,6 +34,7 @@ vi.mock("leaflet", () => ({
     map: vi.fn(() => mockMap),
     tileLayer: vi.fn(() => mockTileLayer),
     circleMarker: vi.fn(() => mockMarker),
+    latLngBounds: vi.fn(() => mockBounds),
   },
 }));
 
@@ -38,23 +45,30 @@ import { createMapPicker } from "./map-picker";
 // ── Helpers ─────────────────────────────────────────────────
 
 function simulateClick(lat: number, lng: number) {
-  clickHandler!({ latlng: { lat, lng } });
+  handlers.click?.[0]?.({ latlng: { lat, lng } });
+}
+
+function simulateResize() {
+  handlers.resize?.forEach((h) => h());
 }
 
 // ── Tests ───────────────────────────────────────────────────
 
 describe("createMapPicker", () => {
+  let wrapper: HTMLDivElement;
   let container: HTMLDivElement;
 
   beforeEach(() => {
+    wrapper = document.createElement("div");
     container = document.createElement("div");
-    document.body.appendChild(container);
-    clickHandler = null;
+    wrapper.appendChild(container);
+    document.body.appendChild(wrapper);
+    for (const key of Object.keys(handlers)) delete handlers[key];
     vi.clearAllMocks();
   });
 
   afterEach(() => {
-    container.remove();
+    wrapper.remove();
   });
 
   it("returns a handle with a destroy method", () => {
@@ -67,7 +81,10 @@ describe("createMapPicker", () => {
   it("initializes a Leaflet map on the container with default view", async () => {
     const L = (await import("leaflet")).default;
     const handle = createMapPicker(container, { onPick: vi.fn() });
-    expect(L.map).toHaveBeenCalledWith(container);
+    expect(L.map).toHaveBeenCalledWith(container, {
+      maxBounds: mockBounds,
+      maxBoundsViscosity: 1.0,
+    });
     expect(mockMap.setView).toHaveBeenCalledWith([30, 10], 3);
     expect(L.tileLayer).toHaveBeenCalled();
     expect(mockTileLayer.addTo).toHaveBeenCalledWith(mockMap);
@@ -113,11 +130,11 @@ describe("createMapPicker", () => {
   it("shows confirm button after first click", () => {
     const handle = createMapPicker(container, { onPick: vi.fn() });
 
-    expect(container.querySelector(".map-picker-confirm")).toBeNull();
+    expect(wrapper.querySelector(".map-picker-confirm")).toBeNull();
 
     simulateClick(48.8, 2.35);
 
-    const btn = container.querySelector(".map-picker-confirm");
+    const btn = wrapper.querySelector(".map-picker-confirm");
     expect(btn).not.toBeNull();
     expect(btn!.textContent).toBe("Use this location");
     handle.destroy();
@@ -129,7 +146,7 @@ describe("createMapPicker", () => {
     simulateClick(48.8, 2.35);
     simulateClick(51.5, -0.12);
 
-    const buttons = container.querySelectorAll(".map-picker-confirm");
+    const buttons = wrapper.querySelectorAll(".map-picker-confirm");
     expect(buttons).toHaveLength(1);
     handle.destroy();
   });
@@ -140,7 +157,7 @@ describe("createMapPicker", () => {
 
     simulateClick(48.8, 2.35);
 
-    const btn = container.querySelector(
+    const btn = wrapper.querySelector(
       ".map-picker-confirm",
     ) as HTMLButtonElement;
     btn.click();
@@ -156,7 +173,7 @@ describe("createMapPicker", () => {
     simulateClick(48.8, 2.35);
     simulateClick(51.5, -0.12);
 
-    const btn = container.querySelector(
+    const btn = wrapper.querySelector(
       ".map-picker-confirm",
     ) as HTMLButtonElement;
     btn.click();
@@ -170,10 +187,10 @@ describe("createMapPicker", () => {
     const handle = createMapPicker(container, { onPick: vi.fn() });
 
     simulateClick(48.8, 2.35);
-    expect(container.querySelector(".map-picker-confirm")).not.toBeNull();
+    expect(wrapper.querySelector(".map-picker-confirm")).not.toBeNull();
 
     handle.destroy();
-    expect(container.querySelector(".map-picker-confirm")).toBeNull();
+    expect(wrapper.querySelector(".map-picker-confirm")).toBeNull();
   });
 
   it("destroy() removes the Leaflet map", () => {
@@ -182,9 +199,40 @@ describe("createMapPicker", () => {
     expect(mockMap.remove).toHaveBeenCalled();
   });
 
+  it("destroy() removes resize listener before removing map", () => {
+    const handle = createMapPicker(container, { onPick: vi.fn() });
+    handle.destroy();
+    expect(mockMap.off).toHaveBeenCalledWith("resize", expect.any(Function));
+    // off must be called before remove
+    const offOrder = mockMap.off.mock.invocationCallOrder[0];
+    const removeOrder = mockMap.remove.mock.invocationCallOrder[0];
+    expect(offOrder).toBeLessThan(removeOrder);
+  });
+
   it("destroy() works even if no click occurred", () => {
     const handle = createMapPicker(container, { onPick: vi.fn() });
     expect(() => handle.destroy()).not.toThrow();
     expect(mockMap.remove).toHaveBeenCalled();
+  });
+
+  it("adds tile layer with noWrap: true", async () => {
+    const L = (await import("leaflet")).default;
+    const handle = createMapPicker(container, { onPick: vi.fn() });
+    expect(L.tileLayer).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ noWrap: true }),
+    );
+    handle.destroy();
+  });
+
+  it("recalculates min zoom on resize", () => {
+    const handle = createMapPicker(container, { onPick: vi.fn() });
+
+    mockMap.getBoundsZoom.mockReturnValue(5);
+    mockMap.setMinZoom.mockClear();
+    simulateResize();
+
+    expect(mockMap.setMinZoom).toHaveBeenCalledWith(5);
+    handle.destroy();
   });
 });

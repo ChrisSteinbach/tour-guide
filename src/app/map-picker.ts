@@ -1,5 +1,6 @@
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { worldZoomBounds } from "./map-bounds";
 
 export interface MapPickerHandle {
   destroy(): void;
@@ -18,12 +19,18 @@ export function createMapPicker(
     ? [center.lat, center.lon]
     : [30, 10];
   const initialZoom = center ? 13 : 3;
-  const map = L.map(container).setView(initialView, initialZoom);
+  const wb = worldZoomBounds();
+  const map = L.map(container, {
+    ...wb.mapOptions,
+  }).setView(initialView, initialZoom);
+
+  const removeResizeHandler = wb.install(map);
 
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution:
       '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     maxZoom: 19,
+    ...wb.tileOptions,
   }).addTo(map);
 
   let marker: L.CircleMarker | null = null;
@@ -47,7 +54,13 @@ export function createMapPicker(
       confirmBtn = document.createElement("button");
       confirmBtn.className = "map-picker-confirm";
       confirmBtn.textContent = "Use this location";
-      container.appendChild(confirmBtn);
+      const parent = container.parentElement;
+      if (!parent) {
+        throw new Error(
+          "Map picker container must have a parent element for confirm button placement",
+        );
+      }
+      parent.appendChild(confirmBtn);
     }
 
     confirmBtn.onclick = () => onPick(lat, lng);
@@ -56,6 +69,7 @@ export function createMapPicker(
   return {
     destroy() {
       confirmBtn?.remove();
+      removeResizeHandler();
       map.remove();
     },
   };

@@ -13,6 +13,10 @@ vi.mock("leaflet", () => {
     setView: vi.fn().mockReturnThis(),
     fitBounds: vi.fn(),
     remove: vi.fn(),
+    on: vi.fn(),
+    off: vi.fn(),
+    getBoundsZoom: vi.fn(() => 2),
+    setMinZoom: vi.fn(),
   };
   const mockCircleMarker = {
     setLatLng: vi.fn().mockReturnThis(),
@@ -60,6 +64,7 @@ const mocks = (L as any)._mocks as {
     setView: ReturnType<typeof vi.fn>;
     fitBounds: ReturnType<typeof vi.fn>;
     remove: ReturnType<typeof vi.fn>;
+    off: ReturnType<typeof vi.fn>;
   };
   mockCircleMarker: {
     setLatLng: ReturnType<typeof vi.fn>;
@@ -95,15 +100,27 @@ describe("createBrowseMap", () => {
   it("creates a Leaflet map centered on the user position", () => {
     const handle = createBrowseMap(container, pos(48.8, 2.35), [], vi.fn());
 
-    expect(L.map).toHaveBeenCalledWith(container, expect.any(Object));
+    expect(L.map).toHaveBeenCalledWith(
+      container,
+      expect.objectContaining({
+        zoomControl: false,
+        maxBoundsViscosity: 1.0,
+      }),
+    );
+    // maxBounds must be present (the worldBounds object)
+    const opts = (L.map as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(opts).toHaveProperty("maxBounds");
     expect(mocks.mockMap.setView).toHaveBeenCalledWith([48.8, 2.35], 13);
     handle.destroy();
   });
 
-  it("adds a tile layer and zoom control", () => {
+  it("adds a tile layer with noWrap and zoom control", () => {
     const handle = createBrowseMap(container, pos(0, 0), [], vi.fn());
 
-    expect(L.tileLayer).toHaveBeenCalled();
+    expect(L.tileLayer).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ noWrap: true }),
+    );
     expect(L.control.zoom).toHaveBeenCalled();
     handle.destroy();
   });
@@ -362,6 +379,19 @@ describe("createBrowseMap", () => {
       const handle = createBrowseMap(container, pos(48, 2), [], vi.fn());
       handle.destroy();
       expect(mocks.mockMap.remove).toHaveBeenCalled();
+    });
+
+    it("removes resize listener before removing map", () => {
+      const handle = createBrowseMap(container, pos(48, 2), [], vi.fn());
+      handle.destroy();
+      expect(mocks.mockMap.off).toHaveBeenCalledWith(
+        "resize",
+        expect.any(Function),
+      );
+      // off must be called before remove
+      const offOrder = mocks.mockMap.off.mock.invocationCallOrder[0];
+      const removeOrder = mocks.mockMap.remove.mock.invocationCallOrder[0];
+      expect(offOrder).toBeLessThan(removeOrder);
     });
   });
 });
