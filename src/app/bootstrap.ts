@@ -37,9 +37,11 @@ export function createBootstrap(deps: BootstrapDeps): Bootstrap {
     // Only attach the listener when a service worker is already controlling
     // this page. On the very first page load (before any SW has claimed
     // clients) navigator.serviceWorker.controller is null and we intentionally
-    // skip attachment — there is no in-flight update to react to, and the
-    // next navigation will hit this path with a controller present. This
-    // looks like a bug at a glance, but is the intended semantics.
+    // skip attachment — there is no in-flight update to react to. This is a
+    // silent no-op on first visit: the user must reload at least once (so a
+    // controller is present at run() time) before the update banner can
+    // become possible in a given tab. Looks like a bug at a glance, but is
+    // the intended semantics.
     const initialController = navigator.serviceWorker.controller;
     if (!initialController) return;
     swTarget = navigator.serviceWorker;
