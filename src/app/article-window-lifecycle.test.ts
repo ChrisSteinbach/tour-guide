@@ -128,10 +128,8 @@ describe("createArticleWindowLifecycle", () => {
 
     // Second call with same position: reuses window, no reset
     lifecycle.ensureArticleRange(pos, 400);
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(aw.reset).not.toHaveBeenCalled();
     expect(deps.createArticleWindow).toHaveBeenCalledTimes(1);
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(aw.ensureRange).toHaveBeenLastCalledWith(0, 400);
   });
 
@@ -179,7 +177,6 @@ describe("createArticleWindowLifecycle", () => {
     expect(capturedSignal!.aborted).toBe(false);
     lifecycle.resetArticleWindow();
     expect(capturedSignal!.aborted).toBe(true);
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(aw.reset).toHaveBeenCalled();
   });
 });

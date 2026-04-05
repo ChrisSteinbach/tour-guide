@@ -71,7 +71,6 @@ describe("BrowseMapLifecycle", () => {
       // Second update should reuse existing handle
       lifecycle.update({ lat: 52, lon: 1 }, []);
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(deps.lastHandle.update).toHaveBeenCalledWith(
         { lat: 52, lon: 1 },
         [],
@@ -142,7 +141,6 @@ describe("BrowseMapLifecycle", () => {
 
       lifecycle.highlight("Some Article");
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(deps.lastHandle.highlight).toHaveBeenCalledWith("Some Article");
     });
 
@@ -159,7 +157,6 @@ describe("BrowseMapLifecycle", () => {
       lifecycle.highlight("Deferred Article");
       await flushImportAndRaf();
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(deps.lastHandle.highlight).toHaveBeenCalledWith(
         "Deferred Article",
       );
@@ -174,7 +171,6 @@ describe("BrowseMapLifecycle", () => {
       lifecycle.highlight(null);
       await flushImportAndRaf();
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(deps.lastHandle.highlight).toHaveBeenCalledWith(null);
     });
   });
@@ -189,7 +185,6 @@ describe("BrowseMapLifecycle", () => {
 
       lifecycle.resize();
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(deps.lastHandle.resize).toHaveBeenCalled();
     });
 
@@ -210,7 +205,6 @@ describe("BrowseMapLifecycle", () => {
       lifecycle.destroy();
 
       expect(deps.container.querySelector(".browse-map")).toBeNull();
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(deps.lastHandle.destroy).toHaveBeenCalled();
     });
 
