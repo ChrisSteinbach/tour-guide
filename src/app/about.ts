@@ -70,7 +70,33 @@ export function showAbout(onClose?: () => void): void {
   osmAttr.append("Map data \u00a9 ", osmLink, " contributors.");
 
   section.append(attrHeading, wikiAttr, osmAttr);
-  dialog.append(close, title, tagline, section);
+
+  const privacySection = document.createElement("div");
+  privacySection.className = "about-section";
+
+  const privacyHeading = document.createElement("h3");
+  privacyHeading.textContent = "Privacy";
+
+  const privacyWhat = document.createElement("p");
+  privacyWhat.textContent =
+    "If you allow it, your device shares your GPS coordinates with this app to find nearby Wikipedia articles. Your location stays on your device — it is never sent to any server.";
+
+  const privacyRetention = document.createElement("p");
+  privacyRetention.textContent =
+    "Coordinates are held only in memory while the app is open and are discarded when you close it. Your chosen language is saved in your browser; no other personal data is stored.";
+
+  const privacyRevoke = document.createElement("p");
+  privacyRevoke.textContent =
+    "You can revoke location access at any time through your browser's site settings.";
+
+  privacySection.append(
+    privacyHeading,
+    privacyWhat,
+    privacyRetention,
+    privacyRevoke,
+  );
+
+  dialog.append(close, title, tagline, section, privacySection);
   document.body.appendChild(dialog);
   dialog.showModal();
 
