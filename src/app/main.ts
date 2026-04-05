@@ -51,10 +51,8 @@ import {
   STARTED_TTL_MS,
 } from "./effect-executor";
 import { createInfiniteScrollLifecycle } from "./infinite-scroll-lifecycle";
-import { createBrowseMapLifecycle } from "./browse-map-lifecycle";
-import { createMapPickerLifecycle } from "./map-picker-lifecycle";
-import { createMapDrawer } from "./map-drawer";
-import { createRenderer } from "./renderer";
+import { createMapPanelLifecycle } from "./map-panel-lifecycle";
+import { createRenderer, type Renderer } from "./renderer";
 
 const app =
   document.getElementById("app") ??
@@ -217,50 +215,35 @@ function ensureArticleRange(pos: UserPosition, count: number): void {
 
 // ── Lifecycle managers ───────────────────────────────────────
 
-const desktopQuery = window.matchMedia("(min-width: 1024px)");
-desktopQuery.addEventListener("change", () => {
-  if (appState.phase.phase === "browsing") {
-    if (desktopQuery.matches) {
-      drawer.open();
-    } else {
-      drawer.close();
-    }
-    renderer.renderBrowsingList();
-  }
-});
+// eslint-disable-next-line prefer-const -- initialized after createMapPanelLifecycle returns
+let renderer: Renderer;
 
-const drawer = createMapDrawer(document.body);
-
-const drawerPanel = drawer.panel;
-drawerPanel.addEventListener("transitionend", (e: TransitionEvent) => {
-  if (e.propertyName === "transform" && drawer.isOpen()) browseMap.resize();
-});
-
-drawerPanel.setAttribute("hidden", "");
-
-const onHoverArticle = (title: string | null) => browseMap.highlight(title);
-
-const browseMap = createBrowseMapLifecycle({
-  container: drawer.element,
-  onSelectArticle: (article) =>
-    dispatch({
-      type: "selectArticle",
-      article,
-      firstVisibleIndex: Math.floor(
-        getScrollContainer().scrollTop / VIRTUAL_ITEM_HEIGHT,
-      ),
-    }),
-  importBrowseMap: () => import("./browse-map"),
-});
-
-const mapPicker = createMapPickerLifecycle({
-  container: app,
+const mapPanel = createMapPanelLifecycle({
+  getState: () => appState,
+  dispatch: (event) => dispatch(event),
+  app,
+  getScrollContainer,
+  itemHeight: VIRTUAL_ITEM_HEIGHT,
   appName: APP_NAME,
-  getPosition: () => appState.position,
-  onPick: (lat, lon) =>
-    dispatch({ type: "pickPosition", position: { lat, lon } }),
-  importMapPicker: () => import("./map-picker"),
+  renderBrowsingList: () => renderer.renderBrowsingList(),
 });
+const {
+  drawer,
+  drawerPanel,
+  desktopQuery,
+  browseMap,
+  mapPicker,
+  onHoverArticle,
+} = mapPanel;
+
+// Release the window-level listeners owned by the map panel when the module
+// is disposed (HMR in dev).  Without this, editing any file imported by
+// main.ts would leak a new pair of listeners on every reload.
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    mapPanel.destroy();
+  });
+}
 
 // ── Infinite scroll lifecycle ─────────────────────────────────
 
@@ -391,7 +374,7 @@ lifecycle = createArticleWindowLifecycle({
 
 const SCROLL_PAUSE_THRESHOLD = VIRTUAL_ITEM_HEIGHT * 2;
 
-const renderer = createRenderer({
+renderer = createRenderer({
   getState: () => appState,
   dispatch: (event) => dispatch(event),
   app,
