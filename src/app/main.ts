@@ -1,13 +1,7 @@
 import "./style.css";
 import { hideAbout, showAbout } from "./about";
 import { APP_NAME } from "./config";
-import {
-  renderNearbyHeader,
-  createArticleItemContent,
-  applyEnrichment,
-  updateNearbyDistances,
-  enrichArticleItem,
-} from "./render";
+import { updateNearbyDistances, enrichArticleItem } from "./render";
 import type { NearbyArticle, UserPosition } from "./types";
 import { renderWelcome } from "./status";
 import { watchLocation } from "./location";
@@ -32,7 +26,6 @@ import { tilesAtRing } from "./tile-radius";
 import { createArticleWindowFactory } from "./article-window-factory";
 import {
   createArticleWindowLifecycle,
-  computeOptimisticCount,
   type ArticleWindowLifecycle,
 } from "./article-window-lifecycle";
 import { DEFAULT_LANG, SUPPORTED_LANGS } from "../lang";
@@ -50,7 +43,7 @@ import {
   STARTED_STORAGE_KEY,
   STARTED_TTL_MS,
 } from "./effect-executor";
-import { createInfiniteScrollLifecycle } from "./infinite-scroll-lifecycle";
+import { createInfiniteScrollWiring } from "./infinite-scroll-wiring";
 import { createMapPanelLifecycle } from "./map-panel-lifecycle";
 import { createRenderer, type Renderer } from "./renderer";
 
@@ -64,12 +57,6 @@ const app =
 
 /** Item height for virtual scroll (px). Matches .nearby-item (64px) + gap (4px). */
 const VIRTUAL_ITEM_HEIGHT = 68;
-
-/** Extra articles to prefetch beyond the visible range end. */
-const PREFETCH_BUFFER = 200;
-
-/** Scroll-near-end detection threshold (items from bottom). */
-const NEAR_END_THRESHOLD = 100;
 
 /** Compute how many articles fill the viewport, plus a few extra for scroll trigger. */
 const viewportFillCount = Math.max(
@@ -247,104 +234,18 @@ if (import.meta.hot) {
 
 // ── Infinite scroll lifecycle ─────────────────────────────────
 
-const infiniteScroll = createInfiniteScrollLifecycle({
-  container: app,
+const infiniteScroll = createInfiniteScrollWiring({
+  getState: () => appState,
+  dispatch: (event) => dispatch(event),
+  app,
   itemHeight: VIRTUAL_ITEM_HEIGHT,
-  overscan: 5,
-  nearEndThreshold: NEAR_END_THRESHOLD,
-  enrichSettleMs: 300,
-  mapSyncSettleMs: 150,
-  getTitle: (i) => {
-    return getArticleByIndex(i)?.title ?? null;
-  },
-  enrich: (title) => summaryLoader.request(title, appState.currentLang),
-  cancelEnrich: () => summaryLoader.cancel(),
-  getVisibleArticles: (range) => {
-    if (appState.phase.phase !== "browsing" || !appState.position) return null;
-    const result: NearbyArticle[] = [];
-    for (let i = range.start; i < range.end; i++) {
-      const a = getArticleByIndex(i);
-      if (a) result.push(a);
-    }
-    return result;
-  },
-  syncMapMarkers: (articles) => {
-    if (appState.position) {
-      browseMap.update(appState.position, articles as NearbyArticle[]);
-    }
-  },
-  renderItem: (i) => {
-    if (appState.phase.phase !== "browsing") return null;
-    const article = getArticleByIndex(i);
-    if (!article) return null;
-    const onSelect = (a: NearbyArticle) =>
-      dispatch({
-        type: "selectArticle",
-        article: a,
-        firstVisibleIndex: Math.floor(
-          getScrollContainer().scrollTop / VIRTUAL_ITEM_HEIGHT,
-        ),
-      });
-    const el = createArticleItemContent(article, onSelect, onHoverArticle);
-    const cached = summaryLoader.get(article.title);
-    if (cached) applyEnrichment(el, cached);
-    return el;
-  },
-  renderHeader: () => {
-    if (appState.phase.phase !== "browsing") {
-      const h = document.createElement("header");
-      h.className = "app-header";
-      return h;
-    }
-    const { paused, pauseReason } = appState.phase;
-    const articleCount =
-      lifecycle.currentWindow()?.totalKnown() || appState.phase.articles.length;
-    const isGps = appState.positionSource !== "picked";
-    return renderNearbyHeader({
-      articleCount,
-      currentLang: appState.currentLang,
-      onLangChange: (lang: Lang) => dispatch({ type: "langChanged", lang }),
-      paused,
-      pauseReason,
-      onTogglePause: isGps
-        ? () => dispatch({ type: "togglePause" })
-        : undefined,
-      positionSource: appState.positionSource ?? "gps",
-      onPickLocation: () => dispatch({ type: "showMapPicker" }),
-      onUseGps: () => dispatch({ type: "useGps" }),
-      gpsSignalLost: appState.gpsSignalLost,
-      onShowAbout: () => dispatch({ type: "showAbout" }),
-    });
-  },
-  initBrowseMap: () => {
-    if (appState.position) {
-      browseMap.update(appState.position, []);
-    }
-  },
-  destroyBrowseMap: () => browseMap.destroy(),
-  onNearEnd: () => {
-    const aw = lifecycle.currentWindow();
-    if (aw) {
-      const vl = infiniteScroll.virtualList();
-      if (!vl) return;
-      const range = vl.visibleRange();
-
-      // Optimistically expand the list height so the user never hits
-      // the bottom while the async fetch is in progress.  Route through
-      // the lifecycle ratchet so onWindowChange can't shrink below this.
-      const optimistic = computeOptimisticCount(
-        aw.totalKnown(),
-        aw.loadedCount(),
-      );
-      lifecycle.applyOptimisticCount(optimistic);
-
-      // onWindowChange fires when the fetch completes, updating the
-      // height to the real value — no .then() callback needed.
-      void aw.ensureRange(range.start, range.end + PREFETCH_BUFFER);
-    } else {
-      dispatch({ type: "expandInfiniteScroll" });
-    }
-  },
+  browseMap,
+  summaryLoader,
+  onHoverArticle,
+  getArticleByIndex,
+  getScrollContainer,
+  getCurrentWindow: () => lifecycle.currentWindow(),
+  applyOptimisticCount: (count) => lifecycle.applyOptimisticCount(count),
 });
 
 // ── Initialize ArticleWindow lifecycle ────────────────────────
