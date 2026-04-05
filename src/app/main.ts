@@ -2,7 +2,6 @@ import "./style.css";
 import { hideAbout, showAbout } from "./about";
 import { APP_NAME } from "./config";
 import {
-  renderNearbyList,
   renderNearbyHeader,
   createArticleItemContent,
   applyEnrichment,
@@ -10,13 +9,7 @@ import {
   enrichArticleItem,
 } from "./render";
 import type { NearbyArticle, UserPosition } from "./types";
-import {
-  renderLoading,
-  renderLoadingProgress,
-  renderError,
-  renderDataUnavailable,
-  renderWelcome,
-} from "./status";
+import { renderWelcome } from "./status";
 import { watchLocation } from "./location";
 import { fetchArticleSummary } from "./wiki-api";
 import { createSummaryLoader } from "./summary-loader";
@@ -57,12 +50,11 @@ import {
   STARTED_STORAGE_KEY,
   STARTED_TTL_MS,
 } from "./effect-executor";
-import { createScrollPauseDetector } from "./scroll-pause-detector";
-import type { ScrollPauseDetector } from "./scroll-pause-detector";
 import { createInfiniteScrollLifecycle } from "./infinite-scroll-lifecycle";
 import { createBrowseMapLifecycle } from "./browse-map-lifecycle";
 import { createMapPickerLifecycle } from "./map-picker-lifecycle";
 import { createMapDrawer } from "./map-drawer";
+import { createRenderer } from "./renderer";
 
 const app =
   document.getElementById("app") ??
@@ -132,9 +124,9 @@ const executeEffect = createEffectExecutor({
   ensureArticleRange,
   summaryLoader,
   ui: {
-    render: renderPhase,
-    renderBrowsingList: renderBrowsingListDOM,
-    renderBrowsingHeader: renderBrowsingHeaderDOM,
+    render: () => renderer.renderPhase(),
+    renderBrowsingList: () => renderer.renderBrowsingList(),
+    renderBrowsingHeader: () => renderer.renderBrowsingHeader(),
     updateDistances: (articles) => updateNearbyDistances(app, articles),
     showAbout,
     hideAbout,
@@ -157,13 +149,12 @@ const executeEffect = createEffectExecutor({
         origin ?? undefined,
       );
     },
-    renderAppUpdateBanner,
+    renderAppUpdateBanner: () => renderer.renderAppUpdateBanner(),
     showMapPicker: () => {
-      mapPicker.destroy();
-      browseMap.destroy();
-      drawerPanel.setAttribute("hidden", "");
-      drawer.close();
-      drawerInitialized = false;
+      // resetDrawerForMapPicker() destroys the prior mapPicker/browseMap;
+      // mapPicker.show() re-initializes it. The destroy-then-show sequence
+      // is intentional — see Renderer.resetDrawerForMapPicker.
+      renderer.resetDrawerForMapPicker();
       mapPicker.show();
     },
     scrollToTop: () => {
@@ -227,7 +218,6 @@ function ensureArticleRange(pos: UserPosition, count: number): void {
 // ── Lifecycle managers ───────────────────────────────────────
 
 const desktopQuery = window.matchMedia("(min-width: 1024px)");
-let drawerInitialized = false;
 desktopQuery.addEventListener("change", () => {
   if (appState.phase.phase === "browsing") {
     if (desktopQuery.matches) {
@@ -235,7 +225,7 @@ desktopQuery.addEventListener("change", () => {
     } else {
       drawer.close();
     }
-    renderBrowsingListDOM();
+    renderer.renderBrowsingList();
   }
 });
 
@@ -390,218 +380,36 @@ lifecycle = createArticleWindowLifecycle({
     });
     return result.articleWindow;
   },
-  renderBrowsingList: renderBrowsingListDOM,
+  renderBrowsingList: () => renderer.renderBrowsingList(),
   infiniteScroll: {
     isActive: () => infiniteScroll.isActive(),
     update: (count, loadedCount) => infiniteScroll.update(count, loadedCount),
   },
 });
 
-// ── DOM rendering ────────────────────────────────────────────
+// ── DOM renderer ─────────────────────────────────────────────
 
-function renderBrowsingHeaderDOM(): void {
-  if (appState.phase.phase !== "browsing") return;
-  if (infiniteScroll.isActive()) {
-    infiniteScroll.updateHeader();
-  }
-}
-
-function renderBrowsingListDOM(): void {
-  if (appState.phase.phase !== "browsing" || !appState.position) return;
-
-  drawerPanel.removeAttribute("hidden");
-  if (!drawerInitialized) {
-    drawerInitialized = true;
-    if (desktopQuery.matches) {
-      drawer.open();
-      // No CSS transition fires when going from hidden to visible,
-      // so transitionend never triggers browseMap.resize(). Schedule
-      // it manually so Leaflet picks up the correct container size.
-      requestAnimationFrame(() => browseMap.resize());
-    } else {
-      drawer.close();
-    }
-  }
-
-  if (appState.phase.scrollMode === "infinite") {
-    renderInfiniteScrollDOM();
-  } else {
-    resetArticleWindow();
-    infiniteScroll.destroy();
-    renderViewportListDOM();
-  }
-}
-
-/** Dead zone for scroll-pause detection (px). */
 const SCROLL_PAUSE_THRESHOLD = VIRTUAL_ITEM_HEIGHT * 2;
 
-let scrollPauseDetector: ScrollPauseDetector | null = null;
-
-function setupScrollPauseListener(): void {
-  teardownScrollPauseListener();
-  scrollPauseDetector = createScrollPauseDetector({
-    threshold: SCROLL_PAUSE_THRESHOLD,
-    onPause: () => {
-      scrollPauseDetector = null;
-      dispatch({ type: "scrollPause" });
-    },
-    container: getScrollContainer(),
-  });
-}
-
-function teardownScrollPauseListener(): void {
-  if (scrollPauseDetector) {
-    scrollPauseDetector.destroy();
-    scrollPauseDetector = null;
-  }
-}
-
-function renderViewportListDOM(): void {
-  if (appState.phase.phase !== "browsing" || !appState.position) return;
-  const isGps = appState.positionSource !== "picked";
-  renderNearbyList(app, appState.phase.articles, {
-    onSelectArticle: (article) =>
-      dispatch({
-        type: "selectArticle",
-        article,
-        firstVisibleIndex: Math.floor(
-          getScrollContainer().scrollTop / VIRTUAL_ITEM_HEIGHT,
-        ),
-      }),
-    onHoverArticle,
-    currentLang: appState.currentLang,
-    onLangChange: (lang) => dispatch({ type: "langChanged", lang }),
-    paused: appState.phase.paused,
-    pauseReason: appState.phase.pauseReason,
-    onTogglePause: isGps ? () => dispatch({ type: "togglePause" }) : undefined,
-    positionSource: appState.positionSource ?? "gps",
-    onUseGps: () => dispatch({ type: "useGps" }),
-    onPickLocation: () => dispatch({ type: "showMapPicker" }),
-    gpsSignalLost: appState.gpsSignalLost,
-    onShowAbout: () => dispatch({ type: "showAbout" }),
-  });
-  browseMap.update(appState.position, appState.phase.articles);
-  if (isGps && !appState.phase.paused) {
-    setupScrollPauseListener();
-  }
-}
-
-function renderInfiniteScrollDOM(): void {
-  if (appState.phase.phase !== "browsing" || !appState.position) return;
-  teardownScrollPauseListener();
-
-  if (
-    infiniteScroll.isActive() &&
-    !app.querySelector(".virtual-scroll-container")
-  ) {
-    infiniteScroll.destroy();
-  }
-
-  // When the ArticleWindow knows the true article count, use it so the
-  // list never extends past the last real article.  Before the first
-  // fetch completes (knownTotal === 0) fall back to the state-machine
-  // limit as a placeholder that will be corrected by onWindowChange.
-  const aw = lifecycle.currentWindow();
-  const loadedCount = aw?.loadedCount() ?? 0;
-  const knownTotal = aw?.totalKnown() ?? 0;
-  const totalCount =
-    knownTotal > 0
-      ? Math.max(loadedCount, knownTotal)
-      : Math.max(
-          loadedCount,
-          appState.phase.articles.length,
-          appState.phase.infiniteScrollLimit,
-        );
-
-  if (!infiniteScroll.isActive()) {
-    infiniteScroll.init(totalCount);
-  } else {
-    infiniteScroll.update(totalCount);
-
-    if (appState.position) {
-      const vl = infiniteScroll.virtualList();
-      if (vl) {
-        const range = vl.visibleRange();
-        const visible: NearbyArticle[] = [];
-        for (let i = range.start; i < range.end; i++) {
-          const a = getArticleByIndex(i);
-          if (a) visible.push(a);
-        }
-        browseMap.update(appState.position, visible);
-      }
-    }
-  }
-}
-
-function renderPhase(): void {
-  resetArticleWindow();
-  infiniteScroll.destroy();
-  teardownScrollPauseListener();
-  mapPicker.destroy();
-  browseMap.destroy();
-  drawerPanel.setAttribute("hidden", "");
-  drawer.close();
-  drawerInitialized = false;
-  switch (appState.phase.phase) {
-    case "welcome":
-      renderWelcome(app, {
-        onStart: () =>
-          dispatch({ type: "start", hasGeolocation: !!navigator.geolocation }),
-        onPickLocation: () => dispatch({ type: "showMapPicker" }),
-        currentLang: appState.currentLang,
-        onLangChange: (lang) => dispatch({ type: "langChanged", lang }),
-        onShowAbout: () => dispatch({ type: "showAbout" }),
-      });
-      return;
-    case "downloading":
-      renderLoadingProgress(app, appState.phase.progress);
-      return;
-    case "locating":
-      renderLoading(app);
-      return;
-    case "loadingTiles":
-      renderLoading(app, "Loading articles\u2026");
-      return;
-    case "dataUnavailable":
-      renderDataUnavailable(app, appState.currentLang, (lang) =>
-        dispatch({ type: "langChanged", lang }),
-      );
-      return;
-    case "error":
-      renderError(app, appState.phase.error, () =>
-        dispatch({ type: "showMapPicker" }),
-      );
-      return;
-    case "detail":
-    case "browsing":
-    case "mapPicker":
-      return;
-  }
-}
-
-function renderAppUpdateBanner(): void {
-  if (document.getElementById("app-update-banner")) return;
-  const banner = document.createElement("div");
-  banner.id = "app-update-banner";
-  banner.className = "update-banner";
-  const text = document.createElement("span");
-  text.className = "update-banner-text";
-  text.textContent = "App update available";
-
-  const actions = document.createElement("div");
-  actions.className = "update-banner-actions";
-
-  const reloadBtn = document.createElement("button");
-  reloadBtn.className = "update-banner-btn update-banner-accept";
-  reloadBtn.textContent = "Reload";
-  reloadBtn.addEventListener("click", () => {
-    window.location.reload();
-  });
-
-  actions.appendChild(reloadBtn);
-  banner.append(text, actions);
-  document.body.appendChild(banner);
-}
+const renderer = createRenderer({
+  getState: () => appState,
+  dispatch: (event) => dispatch(event),
+  app,
+  infiniteScroll,
+  drawer,
+  drawerPanel,
+  desktopQuery,
+  browseMap,
+  mapPicker,
+  resetArticleWindow,
+  getCurrentWindow: () => lifecycle.currentWindow(),
+  getArticleByIndex,
+  getScrollContainer,
+  onHoverArticle,
+  itemHeight: VIRTUAL_ITEM_HEIGHT,
+  scrollPauseThreshold: SCROLL_PAUSE_THRESHOLD,
+  hasGeolocation: !!navigator.geolocation,
+});
 
 function listenForSwUpdate(): void {
   if (!("serviceWorker" in navigator)) return;
