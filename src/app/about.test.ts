@@ -174,6 +174,31 @@ describe("showAbout", () => {
       }
     });
   });
+
+  describe("privacy content", () => {
+    it("includes a Privacy heading", () => {
+      showAbout();
+      const headings = document.querySelectorAll(".about-section h3");
+      const texts = Array.from(headings).map((h) => h.textContent);
+      expect(texts).toContain("Privacy");
+    });
+
+    it("discloses that GPS coordinates are collected and stay on-device", () => {
+      showAbout();
+      const text =
+        document.querySelector("dialog.about-dialog")?.textContent ?? "";
+      expect(text).toMatch(/GPS coordinates/i);
+      expect(text).toMatch(/never sent to any server/i);
+    });
+
+    it("discloses retention and how to revoke access", () => {
+      showAbout();
+      const text =
+        document.querySelector("dialog.about-dialog")?.textContent ?? "";
+      expect(text).toMatch(/held only in memory/i);
+      expect(text).toMatch(/revoke location access/i);
+    });
+  });
 });
 
 describe("hideAbout", () => {
