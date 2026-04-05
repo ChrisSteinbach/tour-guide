@@ -103,7 +103,7 @@ onRangeChange(range)
     → onNearEnd()
 ```
 
-`onNearEnd` in `main.ts` handles two cases:
+`onNearEnd` in `infinite-scroll-wiring.ts` handles two cases:
 
 1. **ArticleWindow exists** — First optimistically expands the virtual list height via `computeOptimisticCount(totalKnown, loadedCount)` so the user never hits the bottom while the async fetch is in flight: returns `max(totalKnown, loadedCount)` — the best-known total, with no phantom buffer added (the `nearEndThreshold` already triggers `onNearEnd` before the user reaches the bottom). Special case: when `loadedCount` is 0 (before the first batch loads), returns 0 to suppress empty-list jumps — showing scroll headroom before any articles are rendered would create an empty list that jumps once the first batch arrives. Then calls `aw.ensureRange(range.start, range.end + PREFETCH_BUFFER)`. When the promise resolves, `onWindowChange` fires, which updates the list height to `max(totalKnown, loadedCount)` — but never below the previous count (see "Scroll Headroom" below).
 

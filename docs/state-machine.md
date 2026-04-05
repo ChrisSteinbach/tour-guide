@@ -8,7 +8,7 @@ transition(state, event) → { next, effects }
 
 The transition function has **no side effects** — it takes the current state and an event, returns the next state and a list of effects to execute. This makes the machine easy to test (extensive test suite, ~1,400 lines) and reason about.
 
-`main.ts` hosts the dispatch loop and effect executor that wire the pure machine to the real world (DOM, GPS, network, storage).
+`main.ts` is the composition root that wires the pure machine to the real world (DOM, GPS, network, storage). It instantiates lifecycle modules — the renderer, effect executor, map panel, infinite scroll, article window, and bootstrap — and threads shared dependencies (state getter, dispatch, app element) between them.
 
 ## States
 
@@ -87,7 +87,7 @@ The `loadGeneration` counter prevents stale async results from corrupting state.
 
 ## Effects
 
-Effects are the machine's way of requesting side effects. The transition function never performs I/O — it returns a list of effects, and the executor in `main.ts` interprets them:
+Effects are the machine's way of requesting side effects. The transition function never performs I/O — it returns a list of effects, and the effect executor (`src/app/effect-executor.ts`) interprets them:
 
 | Effect                 | What the executor does                                                            |
 | ---------------------- | --------------------------------------------------------------------------------- |
@@ -269,7 +269,7 @@ Separating the transition logic from side effects yields several benefits:
 
 ## Dispatch Loop
 
-The runtime in `main.ts` is minimal. The following is a simplified sketch — the actual implementation includes error handling and guard logic:
+`main.ts` defines the dispatch loop and wires it to the effect executor created in `effect-executor.ts`. The loop itself is minimal — the composition root delegates actual rendering and side effects to the lifecycle modules it wires up. The following is a simplified sketch — the actual implementation includes error handling and guard logic:
 
 ```typescript
 function dispatch(event: Event): void {
@@ -285,7 +285,7 @@ External inputs feed into `dispatch`: GPS callbacks, DOM event listeners, async 
 
 ## Bootstrap Sequence
 
-On page load, `main.ts` runs:
+On page load, the bootstrap module (`src/app/bootstrap.ts`, via `createBootstrap`) runs:
 
 1. **Clean up IDB** — Remove orphaned keys from old schema versions.
 2. **Listen for SW updates** — Wire `controllerchange` to dispatch `swUpdateAvailable`.

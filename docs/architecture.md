@@ -261,7 +261,11 @@ src/geometry/
   predicates.ts        Robust orient3D (Shewchuk)
 
 src/app/
-  main.ts              Bootstrap, language switching, wires lifecycles together
+  main.ts              Thin composition root; constructs executor and wires modules together
+  bootstrap.ts         Startup sequence, window-level event listeners (popstate, SW update), welcome-or-restore
+  renderer.ts          DOM renderer factory; translates app state into DOM updates
+  infinite-scroll-wiring.ts Configures the infinite-scroll lifecycle (per-item render, header, map sync, enrichment, near-end)
+  map-panel-lifecycle.ts Owns drawer and browse/picker map lifecycles, keeps them in sync
   state-machine.ts     Pure state machine (phase/event/effect)
   effect-executor.ts   Executes state machine effects (I/O bridge between pure state and side effects)
   query.ts             NearestQuery class (flat typed-array walks)
