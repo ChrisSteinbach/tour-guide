@@ -3,7 +3,6 @@ import { hideAbout, showAbout } from "./about";
 import { APP_NAME } from "./config";
 import { updateNearbyDistances, enrichArticleItem } from "./render";
 import type { NearbyArticle, UserPosition } from "./types";
-import { renderWelcome } from "./status";
 import { watchLocation } from "./location";
 import { fetchArticleSummary } from "./wiki-api";
 import { createSummaryLoader } from "./summary-loader";
@@ -12,7 +11,6 @@ import {
   renderDetailReady,
   renderDetailError,
 } from "./detail";
-import { idbOpen, idbCleanupOldKeys } from "./idb";
 import {
   tilesForPosition,
   getTileEntry,
@@ -37,15 +35,11 @@ import {
   type AppState,
   type Event,
 } from "./state-machine";
-import {
-  createEffectExecutor,
-  LANG_STORAGE_KEY,
-  STARTED_STORAGE_KEY,
-  STARTED_TTL_MS,
-} from "./effect-executor";
+import { createEffectExecutor, LANG_STORAGE_KEY } from "./effect-executor";
 import { createInfiniteScrollWiring } from "./infinite-scroll-wiring";
 import { createMapPanelLifecycle } from "./map-panel-lifecycle";
 import { createRenderer, type Renderer } from "./renderer";
+import { createBootstrap } from "./bootstrap";
 
 const app =
   document.getElementById("app") ??
@@ -295,41 +289,18 @@ renderer = createRenderer({
   hasGeolocation: !!navigator.geolocation,
 });
 
-function listenForSwUpdate(): void {
-  if (!("serviceWorker" in navigator)) return;
-  const initialController = navigator.serviceWorker.controller;
-  navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (!initialController) return;
-    dispatch({ type: "swUpdateAvailable" });
-  });
-}
-
-// ── Popstate handler ─────────────────────────────────────────
-
-window.addEventListener("popstate", () => {
-  dispatch({ type: "back" });
-});
-
 // ── Bootstrap ────────────────────────────────────────────────
 
-void idbOpen().then((db) => {
-  if (!db) return;
-  idbCleanupOldKeys(db).catch(() => {});
+const bootstrap = createBootstrap({
+  dispatch: (event) => dispatch(event),
+  app,
+  getCurrentLang: () => appState.currentLang,
 });
+bootstrap.run();
 
-listenForSwUpdate();
-dispatch({ type: "langChanged", lang: appState.currentLang });
-
-const startedAt = Number(localStorage.getItem(STARTED_STORAGE_KEY));
-if (startedAt && Date.now() - startedAt < STARTED_TTL_MS) {
-  dispatch({ type: "start", hasGeolocation: !!navigator.geolocation });
-} else {
-  renderWelcome(app, {
-    onStart: () =>
-      dispatch({ type: "start", hasGeolocation: !!navigator.geolocation }),
-    onPickLocation: () => dispatch({ type: "showMapPicker" }),
-    currentLang: appState.currentLang,
-    onLangChange: (lang) => dispatch({ type: "langChanged", lang }),
-    onShowAbout: () => dispatch({ type: "showAbout" }),
+// Release window-level listeners owned by bootstrap on HMR dispose.
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    bootstrap.destroy();
   });
 }
