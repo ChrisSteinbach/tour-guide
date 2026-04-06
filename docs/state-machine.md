@@ -44,6 +44,7 @@ interface AppState {
   hasGeolocation: boolean; // Whether the Geolocation API is available
   gpsSignalLost: boolean; // True when GPS signal is lost mid-session (cleared on next position)
   viewportFillCount: number; // How many articles to show in the initial viewport-filling view
+  aboutOpen: boolean; // Whether the About dialog is currently open
 }
 ```
 
@@ -80,6 +81,8 @@ All inputs to the machine are modeled as a single `Event` union:
 | `queryResult`          | `articles`, `queryPos`, `count` | Nearest-neighbor query completed                   |
 | `noTilesNearby`        | —                               | Effect executor: no tiles exist near user position |
 | `swUpdateAvailable`    | —                               | Service worker controller change                   |
+| `showAbout`            | —                               | User taps the About link                           |
+| `closeAbout`           | —                               | User dismisses the About dialog                    |
 
 ### Generation tracking
 
@@ -95,6 +98,7 @@ Effects are the machine's way of requesting side effects. The transition functio
 | `renderBrowsingList`   | Re-renders article list and rebuilds header (skipped when dropdown is open)       |
 | `renderBrowsingHeader` | Re-renders only the browsing header (e.g. blink GPS indicator while paused)       |
 | `updateDistances`      | Patches only distance badges in-place (no DOM rebuild)                            |
+| `showAbout`            | Opens the About dialog and wires its close handler to dispatch `closeAbout`       |
 | `hideAbout`            | Dismisses the About dialog when leaving an ABOUT_PHASES phase (welcome, browsing) |
 | `startGps`             | Calls `watchLocation()`, wires callbacks to dispatch                              |
 | `stopGps`              | Stops the GPS watcher                                                             |
