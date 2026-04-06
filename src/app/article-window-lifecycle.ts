@@ -58,12 +58,15 @@ export interface ArticleWindowLifecycle {
   currentWindow: () => ArticleWindow | null;
   applyOptimisticCount: (count: number) => void;
   /**
-   * Set the observer that receives scroll-count updates. Callers wire
+   * Attach the observer that receives scroll-count updates. Callers wire
    * this to their scroll surface (e.g. infinite-scroll.update) after
    * both the lifecycle and the scroll surface have been constructed —
    * breaking the mutual-initialization cycle between the two.
+   *
+   * Throws if an observer is already attached — detach first by passing
+   * `null`.  There is exactly one subscriber, so silent overwrite is a bug.
    */
-  setScrollCountObserver: (observer: ScrollCountObserver | null) => void;
+  attachScrollCountObserver: (observer: ScrollCountObserver | null) => void;
 }
 
 export function createArticleWindowLifecycle(
@@ -189,7 +192,12 @@ export function createArticleWindowLifecycle(
     deps.renderBrowsingList();
   }
 
-  function setScrollCountObserver(observer: ScrollCountObserver | null): void {
+  function attachScrollCountObserver(
+    observer: ScrollCountObserver | null,
+  ): void {
+    if (observer !== null && scrollCountObserver !== null) {
+      throw new Error("scrollCountObserver already attached — detach first");
+    }
     scrollCountObserver = observer;
   }
 
@@ -200,6 +208,6 @@ export function createArticleWindowLifecycle(
     getArticleByIndex,
     currentWindow: () => articleWindow,
     applyOptimisticCount,
-    setScrollCountObserver,
+    attachScrollCountObserver,
   };
 }

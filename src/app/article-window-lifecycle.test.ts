@@ -264,7 +264,7 @@ describe("scroll count observer", () => {
 
     const observer = vi.fn();
     const lifecycle = createArticleWindowLifecycle(deps);
-    lifecycle.setScrollCountObserver(observer);
+    lifecycle.attachScrollCountObserver(observer);
     lifecycle.getOrCreateArticleWindow();
     capturedOnWindowChange!();
 
@@ -286,7 +286,7 @@ describe("scroll count observer", () => {
 
     const observer = vi.fn();
     const lifecycle = createArticleWindowLifecycle(deps);
-    lifecycle.setScrollCountObserver(observer);
+    lifecycle.attachScrollCountObserver(observer);
     lifecycle.getOrCreateArticleWindow();
     capturedOnWindowChange!();
 
@@ -307,7 +307,7 @@ describe("scroll count observer", () => {
 
     const observer = vi.fn();
     const lifecycle = createArticleWindowLifecycle(deps);
-    lifecycle.setScrollCountObserver(observer);
+    lifecycle.attachScrollCountObserver(observer);
     lifecycle.getOrCreateArticleWindow();
 
     // First callback: count goes up to 500
@@ -335,7 +335,7 @@ describe("scroll count observer", () => {
 
     const observer = vi.fn();
     const lifecycle = createArticleWindowLifecycle(deps);
-    lifecycle.setScrollCountObserver(observer);
+    lifecycle.attachScrollCountObserver(observer);
     lifecycle.getOrCreateArticleWindow();
 
     // Push count to 500
@@ -367,7 +367,7 @@ describe("scroll count observer", () => {
 
     const observer = vi.fn();
     const lifecycle = createArticleWindowLifecycle(deps);
-    lifecycle.setScrollCountObserver(observer);
+    lifecycle.attachScrollCountObserver(observer);
     lifecycle.getOrCreateArticleWindow();
 
     // Simulate onNearEnd: optimistic count = 300
@@ -386,10 +386,27 @@ describe("scroll count observer", () => {
   it("applyOptimisticCount passes undefined loadedCount when no ArticleWindow exists", () => {
     const observer = vi.fn();
     const lifecycle = createArticleWindowLifecycle(makeDeps());
-    lifecycle.setScrollCountObserver(observer);
+    lifecycle.attachScrollCountObserver(observer);
     lifecycle.applyOptimisticCount(300);
 
     expect(observer).toHaveBeenCalledWith(300, undefined);
+  });
+
+  it("throws on double-attach", () => {
+    const deps = makeDeps();
+    const lifecycle = createArticleWindowLifecycle(deps);
+    lifecycle.attachScrollCountObserver(() => {});
+    expect(() => lifecycle.attachScrollCountObserver(() => {})).toThrow(
+      /already attached/,
+    );
+  });
+
+  it("allows re-attach after detach", () => {
+    const deps = makeDeps();
+    const lifecycle = createArticleWindowLifecycle(deps);
+    lifecycle.attachScrollCountObserver(() => {});
+    lifecycle.attachScrollCountObserver(null);
+    expect(() => lifecycle.attachScrollCountObserver(() => {})).not.toThrow();
   });
 });
 

@@ -172,7 +172,9 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
   // Now that infiniteScroll exists, wire the lifecycle's scroll-count
   // observer.  createScrollCountForwarder guards against forwarding
   // to a destroyed virtual list (see its doc comment).
-  lifecycle.setScrollCountObserver(createScrollCountForwarder(infiniteScroll));
+  lifecycle.attachScrollCountObserver(
+    createScrollCountForwarder(infiniteScroll),
+  );
 
   // ── DOM renderer ──
   const renderer = createRenderer({
