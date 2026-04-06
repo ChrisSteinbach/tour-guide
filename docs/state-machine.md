@@ -44,7 +44,7 @@ interface AppState {
   hasGeolocation: boolean; // Whether the Geolocation API is available
   gpsSignalLost: boolean; // True when GPS signal is lost mid-session (cleared on next position)
   viewportFillCount: number; // How many articles to show in the initial viewport-filling view
-  aboutOpen: boolean; // Whether the About dialog is currently open
+  aboutOpen: boolean; // About dialog — in AppState because the state machine auto-closes it on phase transitions (language change, article selection)
 }
 ```
 
