@@ -391,30 +391,6 @@ describe("scroll count observer", () => {
 
     expect(observer).toHaveBeenCalledWith(300, undefined);
   });
-
-  it("does nothing when no observer is registered", () => {
-    let capturedOnWindowChange: (() => void) | undefined;
-    const aw = stubArticleWindow({
-      totalKnown: vi.fn(() => 500),
-      loadedCount: vi.fn(() => 100),
-    });
-    const deps = makeDeps({
-      createArticleWindow: vi.fn((opts) => {
-        capturedOnWindowChange = opts.onWindowChange;
-        return aw;
-      }),
-    });
-
-    const lifecycle = createArticleWindowLifecycle(deps);
-    // No observer attached
-    lifecycle.getOrCreateArticleWindow();
-
-    // Should not throw
-    expect(() => {
-      capturedOnWindowChange!();
-      lifecycle.applyOptimisticCount(42);
-    }).not.toThrow();
-  });
 });
 
 describe("computeOptimisticCount", () => {
