@@ -8,7 +8,7 @@ transition(state, event) → { next, effects }
 
 The transition function has **no side effects** — it takes the current state and an event, returns the next state and a list of effects to execute. This makes the machine easy to test (extensive test suite, ~1,400 lines) and reason about.
 
-`main.ts` is the composition root that wires the pure machine to the real world (DOM, GPS, network, storage). It instantiates lifecycle modules — the renderer, effect executor, map panel, infinite scroll, article window, and bootstrap — and threads shared dependencies (state getter, dispatch, app element) between them.
+`main.ts` holds the mutable `appState` and the dispatch loop. It delegates the wiring of lifecycle modules — the renderer, effect executor, map panel, infinite scroll, article window, and bootstrap — to `compose-app.ts`, which threads shared dependencies (state getter, dispatch, app element) between them.
 
 ## States
 
@@ -273,7 +273,7 @@ Separating the transition logic from side effects yields several benefits:
 
 ## Dispatch Loop
 
-`main.ts` defines the dispatch loop and wires it to the effect executor created in `effect-executor.ts`. The loop itself is minimal — the composition root delegates actual rendering and side effects to the lifecycle modules it wires up. The following is a simplified sketch — the actual implementation includes error handling and guard logic:
+`main.ts` defines the dispatch loop and receives the `executeEffect` closure from `composeApp` (in `compose-app.ts`). The loop itself is minimal — the composition root delegates actual rendering and side effects to the lifecycle modules it wires up:
 
 ```typescript
 function dispatch(event: Event): void {

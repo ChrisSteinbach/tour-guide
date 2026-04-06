@@ -261,13 +261,16 @@ src/geometry/
   predicates.ts        Robust orient3D (Shewchuk)
 
 src/app/
-  main.ts              Thin composition root; constructs executor and wires modules together
+  main.ts              Entry point: creates state, dispatch loop, and invokes composeApp
+  compose-app.ts       Composition root; constructs factories and wires modules together
+  stored-lang.ts       Reads the user's preferred language from localStorage (with fallback)
   bootstrap.ts         Startup sequence, window-level event listeners (popstate, SW update), welcome-or-restore
   renderer.ts          DOM renderer factory; translates app state into DOM updates
   infinite-scroll-wiring.ts Configures the infinite-scroll lifecycle (per-item render, header, map sync, enrichment, near-end)
   map-panel-lifecycle.ts Owns drawer and browse/picker map lifecycles, keeps them in sync
   state-machine.ts     Pure state machine (phase/event/effect)
   effect-executor.ts   Executes state machine effects (I/O bridge between pure state and side effects)
+  effect-ui-adapter.ts Translates effect executor's `ui` callbacks into renderer/mapPicker/detail calls
   query.ts             NearestQuery class (flat typed-array walks)
   tile-loader.ts       Tile index + tile fetching, IDB cache, LRU eviction
   idb.ts               IndexedDB helpers, versioned key prefixes
