@@ -35,7 +35,7 @@ let appState: AppState = {
   query: { mode: "none" },
   position: null,
   positionSource: null,
-  currentLang: getStoredLang(),
+  currentLang: getStoredLang(localStorage),
   loadGeneration: 0,
   loadingTiles: new Set(),
   downloadProgress: -1,

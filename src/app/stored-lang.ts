@@ -10,9 +10,7 @@ export const LANG_STORAGE_KEY = "tour-guide-lang";
  *
  * Extracted from main.ts so it can be tested without booting composeApp.
  */
-export function getStoredLang(
-  storage: Pick<Storage, "getItem"> = localStorage,
-): Lang {
+export function getStoredLang(storage: Pick<Storage, "getItem">): Lang {
   const stored = storage.getItem(LANG_STORAGE_KEY);
   if (stored && (SUPPORTED_LANGS as readonly string[]).includes(stored)) {
     return stored as Lang;
