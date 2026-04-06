@@ -48,6 +48,35 @@ export interface ComposedApp {
   destroy: () => void;
 }
 
+/**
+ * Resolve the scroll container using a three-tier fallback:
+ * infinite-scroll element → `.app-scroll` wrapper → app root.
+ */
+export function resolveScrollContainer(
+  scrollProvider: { scrollElement(): HTMLElement | null },
+  app: HTMLElement,
+): HTMLElement {
+  return (
+    scrollProvider.scrollElement() ??
+    app.querySelector<HTMLElement>(".app-scroll") ??
+    app
+  );
+}
+
+/**
+ * Create a scroll-count observer that only forwards updates
+ * while the infinite scroll is active — updating a destroyed
+ * virtual list is a no-op at best.
+ */
+export function createScrollCountForwarder(infiniteScroll: {
+  isActive(): boolean;
+  update(count: number, loadedCount: number | undefined): void;
+}): (count: number, loadedCount: number | undefined) => void {
+  return (count, loadedCount) => {
+    if (infiniteScroll.isActive()) infiniteScroll.update(count, loadedCount);
+  };
+}
+
 export function composeApp(deps: ComposeAppDeps): ComposedApp {
   const { app, getState, dispatch, itemHeight, scrollPauseThreshold } = deps;
 
@@ -57,13 +86,10 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
   });
 
   // ── Scroll container resolution ──
-  // Prefers (in order) the infinite-scroll wrapper, the viewport-mode
-  // wrapper, then #app.  infiniteScroll is referenced here via the
-  // outer `const` below — resolved lazily by the time this runs.
+  // infiniteScroll is referenced lazily — resolved by the time
+  // getScrollContainer is first called (after line ~160).
   const getScrollContainer = (): HTMLElement =>
-    infiniteScroll.scrollElement() ??
-    app.querySelector<HTMLElement>(".app-scroll") ??
-    app;
+    resolveScrollContainer(infiniteScroll, app);
 
   // ── Map panel lifecycle ──
   // Owns the drawer, desktop media query, browse map, and map picker.
@@ -144,13 +170,9 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
   });
 
   // Now that infiniteScroll exists, wire the lifecycle's scroll-count
-  // observer to it.  Only forward updates while infiniteScroll is
-  // active — `onWindowChange` can fire after the user navigates away
-  // from a browsing phase, and updating a destroyed virtual list is
-  // a no-op-at-best.
-  lifecycle.setScrollCountObserver((count, loadedCount) => {
-    if (infiniteScroll.isActive()) infiniteScroll.update(count, loadedCount);
-  });
+  // observer.  createScrollCountForwarder guards against forwarding
+  // to a destroyed virtual list (see its doc comment).
+  lifecycle.setScrollCountObserver(createScrollCountForwarder(infiniteScroll));
 
   // ── DOM renderer ──
   const renderer = createRenderer({
