@@ -8,11 +8,8 @@ import type {
   StorageDeps,
 } from "./effect-executor";
 import type { TileEntry } from "../tiles";
-import {
-  createEffectExecutor,
-  LANG_STORAGE_KEY,
-  STARTED_STORAGE_KEY,
-} from "./effect-executor";
+import { createEffectExecutor, STARTED_STORAGE_KEY } from "./effect-executor";
+import { LANG_STORAGE_KEY } from "./stored-lang";
 import type { SummaryLoader } from "./summary-loader";
 import { NearestQuery } from "./query";
 
