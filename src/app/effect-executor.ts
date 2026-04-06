@@ -10,8 +10,8 @@ import type { TileEntry, TileIndex } from "../tiles";
 import type { Lang } from "../lang";
 import type { AppState, Effect, Event, QueryState } from "./state-machine";
 import type { SummaryLoader } from "./summary-loader";
+import { LANG_STORAGE_KEY } from "./stored-lang";
 
-export const LANG_STORAGE_KEY = "tour-guide-lang";
 export const STARTED_STORAGE_KEY = "tour-guide-started";
 /** How long a stored "started" timestamp remains valid (1 hour). */
 export const STARTED_TTL_MS = 60 * 60 * 1000;
