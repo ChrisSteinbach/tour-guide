@@ -33,14 +33,21 @@ export function computeOptimisticCount(known: number, loaded: number): number {
   return Math.max(known, loaded);
 }
 
+/**
+ * Notified whenever the lifecycle's tracked scroll count changes —
+ * either from an async fetch completing (onWindowChange) or from an
+ * optimistic pre-fetch (applyOptimisticCount). The caller decides
+ * whether to forward the update to a live scroll surface.
+ */
+export type ScrollCountObserver = (
+  count: number,
+  loadedCount: number | undefined,
+) => void;
+
 export interface ArticleWindowLifecycleDeps {
   getState: () => AppState;
   createArticleWindow: (opts: CreateWindowOpts) => ArticleWindow;
   renderBrowsingList: () => void;
-  infiniteScroll: {
-    isActive: () => boolean;
-    update: (count: number, loadedCount?: number) => void;
-  };
 }
 
 export interface ArticleWindowLifecycle {
@@ -50,6 +57,13 @@ export interface ArticleWindowLifecycle {
   getArticleByIndex: (i: number) => NearbyArticle | undefined;
   currentWindow: () => ArticleWindow | null;
   applyOptimisticCount: (count: number) => void;
+  /**
+   * Set the observer that receives scroll-count updates. Callers wire
+   * this to their scroll surface (e.g. infinite-scroll.update) after
+   * both the lifecycle and the scroll surface have been constructed —
+   * breaking the mutual-initialization cycle between the two.
+   */
+  setScrollCountObserver: (observer: ScrollCountObserver | null) => void;
 }
 
 export function createArticleWindowLifecycle(
@@ -58,6 +72,8 @@ export function createArticleWindowLifecycle(
   let articleWindow: ArticleWindow | null = null;
   let articleWindowAbort: AbortController | null = null;
   let windowPosition: UserPosition | null = null;
+  let lastScrollCount = 0;
+  let scrollCountObserver: ScrollCountObserver | null = null;
 
   function resetArticleWindow(): void {
     if (articleWindow) {
@@ -95,32 +111,26 @@ export function createArticleWindowLifecycle(
         return new Map();
       },
       onWindowChange: () => {
-        if (articleWindow && deps.infiniteScroll.isActive()) {
-          // Use totalKnown (all articles from loaded tiles) rather than
-          // loadedCount to provide scroll headroom beyond the fetched range.
-          // Never shrink — reducing the count while the user is scrolled
-          // deep causes the same scroll jump this fix exists to prevent.
-          const realCount = Math.max(
-            articleWindow.totalKnown(),
-            articleWindow.loadedCount(),
-          );
-          lastScrollCount = Math.max(lastScrollCount, realCount);
-          deps.infiniteScroll.update(
-            lastScrollCount,
-            articleWindow.loadedCount(),
-          );
-        }
+        if (!articleWindow) return;
+        // Use totalKnown (all articles from loaded tiles) rather than
+        // loadedCount to provide scroll headroom beyond the fetched range.
+        // Never shrink — reducing the count while the user is scrolled
+        // deep causes the same scroll jump this fix exists to prevent.
+        const realCount = Math.max(
+          articleWindow.totalKnown(),
+          articleWindow.loadedCount(),
+        );
+        lastScrollCount = Math.max(lastScrollCount, realCount);
+        scrollCountObserver?.(lastScrollCount, articleWindow.loadedCount());
       },
     });
 
     return articleWindow;
   }
 
-  let lastScrollCount = 0;
-
   function applyOptimisticCount(count: number): void {
     lastScrollCount = Math.max(lastScrollCount, count);
-    deps.infiniteScroll.update(lastScrollCount, articleWindow?.loadedCount());
+    scrollCountObserver?.(lastScrollCount, articleWindow?.loadedCount());
   }
 
   let prefixInvariantChecked = false;
@@ -179,6 +189,10 @@ export function createArticleWindowLifecycle(
     deps.renderBrowsingList();
   }
 
+  function setScrollCountObserver(observer: ScrollCountObserver | null): void {
+    scrollCountObserver = observer;
+  }
+
   return {
     ensureArticleRange,
     resetArticleWindow,
@@ -186,5 +200,6 @@ export function createArticleWindowLifecycle(
     getArticleByIndex,
     currentWindow: () => articleWindow,
     applyOptimisticCount,
+    setScrollCountObserver,
   };
 }

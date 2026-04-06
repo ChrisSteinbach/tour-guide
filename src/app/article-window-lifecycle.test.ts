@@ -74,41 +74,42 @@ function makeDeps(
     getState: vi.fn(() => tiledAppState()),
     createArticleWindow: vi.fn(() => stubArticleWindow()),
     renderBrowsingList: vi.fn(),
-    infiniteScroll: {
-      isActive: vi.fn(() => true),
-      update: vi.fn(),
-    },
     ...overrides,
   };
 }
 
 describe("createArticleWindowLifecycle", () => {
-  it("ensureArticleRange follows reset→create→ensureRange→render on position change", () => {
-    const callOrder: string[] = [];
-    const aw = stubArticleWindow({
-      reset: vi.fn(() => callOrder.push("reset")),
-      ensureRange: vi.fn(async () => {
-        callOrder.push("ensureRange");
-      }),
-    });
+  it("ensureArticleRange on first invocation creates a window, fetches the range, renders, and does not reset", () => {
+    const aw = stubArticleWindow();
     const deps = makeDeps({
-      createArticleWindow: vi.fn(() => {
-        callOrder.push("create");
-        return aw;
-      }),
-      renderBrowsingList: vi.fn(() => callOrder.push("render")),
+      createArticleWindow: vi.fn(() => aw),
     });
 
     const lifecycle = createArticleWindowLifecycle(deps);
 
-    // First call: no existing window, so no reset step
     lifecycle.ensureArticleRange(pos, 200);
-    expect(callOrder).toEqual(["create", "ensureRange", "render"]);
 
-    // Second call with different position: resets first
-    callOrder.length = 0;
+    expect(deps.createArticleWindow).toHaveBeenCalledTimes(1);
+    expect(aw.ensureRange).toHaveBeenCalledWith(0, 200);
+    expect(deps.renderBrowsingList).toHaveBeenCalled();
+    expect(aw.reset).not.toHaveBeenCalled();
+  });
+
+  it("ensureArticleRange resets the existing window when called again with a different position", () => {
+    const aw = stubArticleWindow();
+    const deps = makeDeps({
+      createArticleWindow: vi.fn(() => aw),
+    });
+
+    const lifecycle = createArticleWindowLifecycle(deps);
+
+    // Prime the lifecycle so an existing window exists
+    lifecycle.ensureArticleRange(pos, 200);
+    expect(aw.reset).not.toHaveBeenCalled();
+
     lifecycle.ensureArticleRange({ lat: 60.0, lon: 19.0 }, 200);
-    expect(callOrder[0]).toBe("reset");
+
+    expect(aw.reset).toHaveBeenCalled();
   });
 
   it("ensureArticleRange skips reset when position unchanged (tile-load requery)", () => {
@@ -247,8 +248,8 @@ describe("getArticleByIndex", () => {
   });
 });
 
-describe("onWindowChange", () => {
-  it("updates infinite scroll with totalKnown when it exceeds loadedCount", () => {
+describe("scroll count observer", () => {
+  it("notifies observer with totalKnown when it exceeds loadedCount", () => {
     let capturedOnWindowChange: (() => void) | undefined;
     const aw = stubArticleWindow({
       totalKnown: vi.fn(() => 500),
@@ -259,20 +260,18 @@ describe("onWindowChange", () => {
         capturedOnWindowChange = opts.onWindowChange;
         return aw;
       }),
-      infiniteScroll: {
-        isActive: vi.fn(() => true),
-        update: vi.fn(),
-      },
     });
 
+    const observer = vi.fn();
     const lifecycle = createArticleWindowLifecycle(deps);
+    lifecycle.setScrollCountObserver(observer);
     lifecycle.getOrCreateArticleWindow();
     capturedOnWindowChange!();
 
-    expect(deps.infiniteScroll.update).toHaveBeenCalledWith(500, 100);
+    expect(observer).toHaveBeenCalledWith(500, 100);
   });
 
-  it("updates infinite scroll with loadedCount when totalKnown is not larger", () => {
+  it("notifies observer with loadedCount when totalKnown is not larger", () => {
     let capturedOnWindowChange: (() => void) | undefined;
     const aw = stubArticleWindow({
       totalKnown: vi.fn(() => 50),
@@ -283,17 +282,15 @@ describe("onWindowChange", () => {
         capturedOnWindowChange = opts.onWindowChange;
         return aw;
       }),
-      infiniteScroll: {
-        isActive: vi.fn(() => true),
-        update: vi.fn(),
-      },
     });
 
+    const observer = vi.fn();
     const lifecycle = createArticleWindowLifecycle(deps);
+    lifecycle.setScrollCountObserver(observer);
     lifecycle.getOrCreateArticleWindow();
     capturedOnWindowChange!();
 
-    expect(deps.infiniteScroll.update).toHaveBeenCalledWith(100, 100);
+    expect(observer).toHaveBeenCalledWith(100, 100);
   });
 
   it("never shrinks the scroll count below a previous update", () => {
@@ -306,24 +303,22 @@ describe("onWindowChange", () => {
         capturedOnWindowChange = opts.onWindowChange;
         return aw;
       }),
-      infiniteScroll: {
-        isActive: vi.fn(() => true),
-        update: vi.fn(),
-      },
     });
 
+    const observer = vi.fn();
     const lifecycle = createArticleWindowLifecycle(deps);
+    lifecycle.setScrollCountObserver(observer);
     lifecycle.getOrCreateArticleWindow();
 
     // First callback: count goes up to 500
     capturedOnWindowChange!();
-    expect(deps.infiniteScroll.update).toHaveBeenLastCalledWith(500, 100);
+    expect(observer).toHaveBeenLastCalledWith(500, 100);
 
     // Second callback with lower values: scroll count stays at 500
     totalKnown.mockReturnValue(30);
     loadedCount.mockReturnValue(30);
     capturedOnWindowChange!();
-    expect(deps.infiniteScroll.update).toHaveBeenLastCalledWith(500, 30);
+    expect(observer).toHaveBeenLastCalledWith(500, 30);
   });
 
   it("resets scroll count floor after resetArticleWindow", () => {
@@ -336,18 +331,16 @@ describe("onWindowChange", () => {
         capturedOnWindowChange = opts.onWindowChange;
         return aw;
       }),
-      infiniteScroll: {
-        isActive: vi.fn(() => true),
-        update: vi.fn(),
-      },
     });
 
+    const observer = vi.fn();
     const lifecycle = createArticleWindowLifecycle(deps);
+    lifecycle.setScrollCountObserver(observer);
     lifecycle.getOrCreateArticleWindow();
 
     // Push count to 500
     capturedOnWindowChange!();
-    expect(deps.infiniteScroll.update).toHaveBeenLastCalledWith(500, 100);
+    expect(observer).toHaveBeenLastCalledWith(500, 100);
 
     // Reset clears the floor
     lifecycle.resetArticleWindow();
@@ -357,7 +350,7 @@ describe("onWindowChange", () => {
     loadedCount.mockReturnValue(30);
     lifecycle.getOrCreateArticleWindow();
     capturedOnWindowChange!();
-    expect(deps.infiniteScroll.update).toHaveBeenLastCalledWith(30, 30);
+    expect(observer).toHaveBeenLastCalledWith(30, 30);
   });
 
   it("never shrinks below an optimistic count set via applyOptimisticCount", () => {
@@ -370,18 +363,16 @@ describe("onWindowChange", () => {
         capturedOnWindowChange = opts.onWindowChange;
         return aw;
       }),
-      infiniteScroll: {
-        isActive: vi.fn(() => true),
-        update: vi.fn(),
-      },
     });
 
+    const observer = vi.fn();
     const lifecycle = createArticleWindowLifecycle(deps);
+    lifecycle.setScrollCountObserver(observer);
     lifecycle.getOrCreateArticleWindow();
 
     // Simulate onNearEnd: optimistic count = 300
     lifecycle.applyOptimisticCount(300);
-    expect(deps.infiniteScroll.update).toHaveBeenLastCalledWith(300, 100);
+    expect(observer).toHaveBeenLastCalledWith(300, 100);
 
     // Simulate onWindowChange after fetch: realCount = 250 < 300
     totalKnown.mockReturnValue(250);
@@ -389,24 +380,19 @@ describe("onWindowChange", () => {
     capturedOnWindowChange!();
 
     // Scroll count must NOT shrink from 300 to 250, but loadedCount reflects reality
-    expect(deps.infiniteScroll.update).toHaveBeenLastCalledWith(300, 200);
+    expect(observer).toHaveBeenLastCalledWith(300, 200);
   });
 
   it("applyOptimisticCount passes undefined loadedCount when no ArticleWindow exists", () => {
-    const deps = makeDeps({
-      infiniteScroll: {
-        isActive: vi.fn(() => true),
-        update: vi.fn(),
-      },
-    });
-
-    const lifecycle = createArticleWindowLifecycle(deps);
+    const observer = vi.fn();
+    const lifecycle = createArticleWindowLifecycle(makeDeps());
+    lifecycle.setScrollCountObserver(observer);
     lifecycle.applyOptimisticCount(300);
 
-    expect(deps.infiniteScroll.update).toHaveBeenCalledWith(300, undefined);
+    expect(observer).toHaveBeenCalledWith(300, undefined);
   });
 
-  it("does not update infinite scroll when it is not active", () => {
+  it("does nothing when no observer is registered", () => {
     let capturedOnWindowChange: (() => void) | undefined;
     const aw = stubArticleWindow({
       totalKnown: vi.fn(() => 500),
@@ -417,17 +403,17 @@ describe("onWindowChange", () => {
         capturedOnWindowChange = opts.onWindowChange;
         return aw;
       }),
-      infiniteScroll: {
-        isActive: vi.fn(() => false),
-        update: vi.fn(),
-      },
     });
 
     const lifecycle = createArticleWindowLifecycle(deps);
+    // No observer attached
     lifecycle.getOrCreateArticleWindow();
-    capturedOnWindowChange!();
 
-    expect(deps.infiniteScroll.update).not.toHaveBeenCalled();
+    // Should not throw
+    expect(() => {
+      capturedOnWindowChange!();
+      lifecycle.applyOptimisticCount(42);
+    }).not.toThrow();
   });
 });
 
