@@ -172,6 +172,12 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
   // Now that infiniteScroll exists, wire the lifecycle's scroll-count
   // observer.  createScrollCountForwarder guards against forwarding
   // to a destroyed virtual list (see its doc comment).
+  //
+  // The isActive() gate applies to ALL paths that fire through
+  // this observer — both onWindowChange and applyOptimisticCount.
+  // This is safe because applyOptimisticCount is only called from
+  // infinite-scroll-wiring's onNearEnd, which by construction only
+  // fires while the infinite scroll lifecycle is active.
   lifecycle.attachScrollCountObserver(
     createScrollCountForwarder(infiniteScroll),
   );
@@ -238,7 +244,10 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
     getCurrentLang: () => getState().currentLang,
   });
 
+  let destroyed = false;
   function destroy(): void {
+    if (destroyed) return;
+    destroyed = true;
     mapPanel.destroy();
     bootstrap.destroy();
   }
