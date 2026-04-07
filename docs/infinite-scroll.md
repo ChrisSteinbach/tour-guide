@@ -1,6 +1,6 @@
 # Infinite Scroll
 
-The app uses virtual infinite scroll to display articles sorted by distance. Instead of the old tier-based "Show more" button, articles load progressively as the user scrolls, with tiles fetched on demand in expanding rings around the user's position.
+The app uses virtual infinite scroll to display articles sorted by distance. Articles load progressively as the user scrolls, with tiles fetched on demand in expanding rings around the user's position.
 
 The system spans eight modules, each handling one concern:
 
