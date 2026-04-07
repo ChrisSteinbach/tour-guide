@@ -43,6 +43,10 @@ export function createEffectUIAdapter(deps: EffectUIAdapterDeps): RenderDeps {
   // needs the value more than once.
   const pickedOrigin = (): { lat: number; lon: number } | undefined => {
     const state = deps.getState();
+    console.assert(
+      state.positionSource !== "picked" || state.position !== null,
+      "pickedOrigin: positionSource is 'picked' but position is null — state-machine invariant violation",
+    );
     return state.positionSource === "picked" && state.position
       ? state.position
       : undefined;
