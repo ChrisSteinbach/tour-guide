@@ -6,7 +6,7 @@
 import { APP_NAME } from "./config";
 import { enrichArticleItem } from "./render";
 import { watchLocation } from "./location";
-import { fetchArticleSummary } from "./wiki-api";
+import { createWikiApi } from "./wiki-api";
 import { createSummaryLoader } from "./summary-loader";
 import {
   tilesForPosition,
@@ -80,8 +80,10 @@ export function createScrollCountForwarder(infiniteScroll: {
 export function composeApp(deps: ComposeAppDeps): ComposedApp {
   const { app, getState, dispatch, itemHeight, scrollPauseThreshold } = deps;
 
+  const wikiApi = createWikiApi({ fetch: globalThis.fetch.bind(globalThis) });
+
   const summaryLoader = createSummaryLoader({
-    fetch: fetchArticleSummary,
+    fetch: wikiApi.fetchArticleSummary,
     onSummary: (title, summary) => enrichArticleItem(app, title, summary),
   });
 
@@ -216,7 +218,7 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
     dispatch,
     watchLocation,
     pushState: (data, title) => history.pushState(data, title),
-    fetchArticleSummary,
+    fetchArticleSummary: wikiApi.fetchArticleSummary,
     getNearby,
     ensureArticleRange: (pos, count) =>
       lifecycle.ensureArticleRange(pos, count),
