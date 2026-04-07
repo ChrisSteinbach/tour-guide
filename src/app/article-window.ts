@@ -30,6 +30,8 @@ export interface ArticleWindow {
   totalKnown(): number;
   /** The exclusive end of the contiguous loaded range. */
   loadedCount(): number;
+  /** Return articles from index 0 up to loadedEnd as a contiguous array. */
+  getLoadedArticles(): NearbyArticle[];
   /** Clear all loaded data. */
   reset(): void;
 }
@@ -123,6 +125,15 @@ export function createArticleWindow(
 
     loadedCount() {
       return loadedEnd;
+    },
+
+    getLoadedArticles() {
+      const result: NearbyArticle[] = [];
+      for (let i = 0; i < loadedEnd; i++) {
+        const article = articles.get(i);
+        if (article) result.push(article);
+      }
+      return result;
     },
 
     reset() {

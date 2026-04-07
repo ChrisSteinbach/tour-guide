@@ -230,6 +230,42 @@ describe("ArticleWindow", () => {
     expect(callCount).toBe(1);
   });
 
+  // ── getLoadedArticles ──────────────────────────────────────
+
+  it("returns empty array before any data is loaded", () => {
+    const window = createArticleWindow(fakeProvider([]), {
+      windowSize: 100,
+    });
+    expect(window.getLoadedArticles()).toEqual([]);
+  });
+
+  it("returns loaded articles after ensureRange", async () => {
+    const articles = Array.from({ length: 20 }, (_, i) => makeArticle(i));
+    const window = createArticleWindow(fakeProvider(articles), {
+      windowSize: 100,
+    });
+
+    await window.ensureRange(0, 5);
+
+    const loaded = window.getLoadedArticles();
+    expect(loaded).toHaveLength(5);
+    expect(loaded[0].title).toBe("Article 0");
+    expect(loaded[4].title).toBe("Article 4");
+  });
+
+  it("returns articles up to loadedEnd, not beyond", async () => {
+    const articles = Array.from({ length: 20 }, (_, i) => makeArticle(i));
+    const window = createArticleWindow(fakeProvider(articles), {
+      windowSize: 100,
+    });
+
+    await window.ensureRange(0, 10);
+
+    const loaded = window.getLoadedArticles();
+    expect(loaded).toHaveLength(10);
+    expect(loaded.every((a) => a.distanceM < 1000)).toBe(true);
+  });
+
   // ── Edge cases ─────────────────────────────────────────────
 
   it("handles request beyond available data gracefully", async () => {
