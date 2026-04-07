@@ -89,6 +89,7 @@ describe("createEffectUIAdapter", () => {
   });
 
   it("renderDetailReady forwards picked position as origin when source is picked", () => {
+    const assertSpy = vi.spyOn(console, "assert");
     const app = document.createElement("div");
     const container = document.createElement("div");
     const renderer = stubRenderer();
@@ -113,9 +114,12 @@ describe("createEffectUIAdapter", () => {
     expect(call[2]).toBe(summary);
     // call[3] is goBack (function); call[4] is origin
     expect(call[4]).toEqual(pos);
+    expect(assertSpy).toHaveBeenCalledWith(true, expect.any(String));
+    assertSpy.mockRestore();
   });
 
   it("renderDetailReady passes undefined origin when position source is gps", () => {
+    const assertSpy = vi.spyOn(console, "assert");
     const app = document.createElement("div");
     const renderer = stubRenderer();
     const state = makeState({ position: pos, positionSource: "gps" });
@@ -133,9 +137,12 @@ describe("createEffectUIAdapter", () => {
 
     const call = (renderDetailReady as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(call[4]).toBeUndefined();
+    expect(assertSpy).toHaveBeenCalledWith(true, expect.any(String));
+    assertSpy.mockRestore();
   });
 
   it("renderDetailReady passes undefined origin when source is picked but position is null", () => {
+    const assertSpy = vi.spyOn(console, "assert");
     const app = document.createElement("div");
     const state = makeState({ position: null, positionSource: "picked" });
 
@@ -152,6 +159,11 @@ describe("createEffectUIAdapter", () => {
 
     const call = (renderDetailReady as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(call[4]).toBeUndefined();
+    expect(assertSpy).toHaveBeenCalledWith(
+      false,
+      expect.stringContaining("state-machine invariant violation"),
+    );
+    assertSpy.mockRestore();
   });
 
   it("renderDetailError reuses the picked-origin resolution", () => {
