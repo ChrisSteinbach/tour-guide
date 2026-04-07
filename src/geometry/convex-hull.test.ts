@@ -292,8 +292,8 @@ describe("convexHull", () => {
     });
 
     it("includes all unit-sphere points (none dropped as interior)", () => {
-      // Octahedron vertices plus a nearby sphere point that would previously
-      // be dropped as "interior" due to perturbation pushing it inward
+      // Octahedron vertices plus a nearby sphere point close enough to be
+      // mis-classified as "interior" by perturbation pushing it inward
       const extra: Point3D = [
         Math.sqrt(1 / 3),
         Math.sqrt(1 / 3),

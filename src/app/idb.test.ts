@@ -108,7 +108,7 @@ function fakeDbWithKeys(keys: string[]): {
 describe("idbCleanupOldKeys", () => {
   it("deletes keys with old version prefixes", async () => {
     const { db, deleted } = fakeDbWithKeys([
-      "triangulation-v3-en", // old (monolithic removed)
+      "triangulation-v3-en", // old
       "triangulation-v2-en", // old
       "triangulation-v1-en", // old
       "tile-v1-en-42", // current
