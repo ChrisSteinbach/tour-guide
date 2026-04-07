@@ -44,6 +44,13 @@ export type ScrollCountObserver = (
   loadedCount: number | undefined,
 ) => void;
 
+/**
+ * Notified whenever the ArticleWindow's loaded articles change.
+ * The caller wires this to the state machine so it can sync
+ * `state.phase.articles` with the ArticleWindow's ordering.
+ */
+export type ArticlesObserver = (articles: NearbyArticle[]) => void;
+
 export interface ArticleWindowLifecycleDeps {
   getState: () => AppState;
   createArticleWindow: (opts: CreateWindowOpts) => ArticleWindow;
@@ -67,6 +74,12 @@ export interface ArticleWindowLifecycle {
    * `null`.  There is exactly one subscriber, so silent overwrite is a bug.
    */
   attachScrollCountObserver: (observer: ScrollCountObserver | null) => void;
+  /**
+   * Attach the observer that receives article-list updates when the
+   * ArticleWindow loads new tiles and re-sorts. Follows the same
+   * attach/detach contract as scrollCountObserver.
+   */
+  attachArticlesObserver: (observer: ArticlesObserver | null) => void;
 }
 
 export function createArticleWindowLifecycle(
@@ -77,6 +90,7 @@ export function createArticleWindowLifecycle(
   let windowPosition: UserPosition | null = null;
   let lastScrollCount = 0;
   let scrollCountObserver: ScrollCountObserver | null = null;
+  let articlesObserver: ArticlesObserver | null = null;
 
   function resetArticleWindow(): void {
     if (articleWindow) {
@@ -125,6 +139,11 @@ export function createArticleWindowLifecycle(
         );
         lastScrollCount = Math.max(lastScrollCount, realCount);
         scrollCountObserver?.(lastScrollCount, articleWindow.loadedCount());
+
+        const loadedArticles = articleWindow.getLoadedArticles();
+        if (loadedArticles.length > 0) {
+          articlesObserver?.(loadedArticles);
+        }
       },
     });
 
@@ -136,41 +155,16 @@ export function createArticleWindowLifecycle(
     scrollCountObserver?.(lastScrollCount, articleWindow?.loadedCount());
   }
 
-  let prefixInvariantChecked = false;
-
   function getArticleByIndex(i: number): NearbyArticle | undefined {
     if (articleWindow) {
       const article = articleWindow.getArticle(i);
-      if (article) {
-        // Dev-mode assertion: verify viewport articles are a prefix of
-        // ArticleWindow results. Fires at most once per lifecycle.
-        if (import.meta.env.DEV && !prefixInvariantChecked) {
-          const state = deps.getState();
-          if (
-            state.phase.phase === "browsing" &&
-            state.phase.articles.length > 0
-          ) {
-            prefixInvariantChecked = true;
-            for (let j = 0; j < state.phase.articles.length; j++) {
-              const awArticle = articleWindow.getArticle(j);
-              if (!awArticle) break;
-              if (state.phase.articles[j].title !== awArticle.title) {
-                console.assert(
-                  false,
-                  `Prefix invariant violated at index ${j}: viewport has "${state.phase.articles[j].title}" but ArticleWindow has "${awArticle.title}"`,
-                );
-                break;
-              }
-            }
-          }
-        }
-        return article;
-      }
+      if (article) return article;
     }
-    // Fallback: use viewport articles while ArticleWindow is loading.
-    // This is only safe when the viewport articles are a prefix of the
-    // eventual ArticleWindow results. If that invariant breaks, index i
-    // may refer to a different article.
+    // Fallback: use viewport articles before the ArticleWindow's first
+    // onWindowChange fires (i.e. during the brief window between
+    // ensureRange and the first tile load completing). Once
+    // onWindowChange fires, articlesObserver syncs the state machine's
+    // articles from the ArticleWindow, so the two stay in sync.
     const state = deps.getState();
     if (state.phase.phase === "browsing") return state.phase.articles[i];
     return undefined;
@@ -201,6 +195,13 @@ export function createArticleWindowLifecycle(
     scrollCountObserver = observer;
   }
 
+  function attachArticlesObserver(observer: ArticlesObserver | null): void {
+    if (observer !== null && articlesObserver !== null) {
+      throw new Error("articlesObserver already attached — detach first");
+    }
+    articlesObserver = observer;
+  }
+
   return {
     ensureArticleRange,
     resetArticleWindow,
@@ -209,5 +210,6 @@ export function createArticleWindowLifecycle(
     currentWindow: () => articleWindow,
     applyOptimisticCount,
     attachScrollCountObserver,
+    attachArticlesObserver,
   };
 }

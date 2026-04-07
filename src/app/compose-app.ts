@@ -182,6 +182,12 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
     createScrollCountForwarder(infiniteScroll),
   );
 
+  // Sync ArticleWindow's loaded articles to the state machine so
+  // state.phase.articles stays in sync after tile loads re-sort.
+  lifecycle.attachArticlesObserver((articles) => {
+    dispatch({ type: "articlesSync", articles });
+  });
+
   // ── DOM renderer ──
   const renderer = createRenderer({
     getState,

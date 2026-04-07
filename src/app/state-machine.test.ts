@@ -1536,6 +1536,77 @@ describe("queryResult event", () => {
   });
 });
 
+// ── articlesSync event ────────────────────────────────────
+
+describe("articlesSync event", () => {
+  it("replaces articles and renders list when articles change", () => {
+    const state = browsingState();
+    const newArticles: NearbyArticle[] = [
+      { title: "New Place", lat: 48.86, lon: 2.35, distanceM: 100 },
+    ];
+    const { next, effects } = transition(state, {
+      type: "articlesSync",
+      articles: newArticles,
+    });
+    const browsing = expectBrowsing(next);
+    expect(browsing.articles).toBe(newArticles);
+    expect(effectTypes(effects)).toContain("renderBrowsingList");
+    expect(effectTypes(effects)).toContain("fetchListSummaries");
+  });
+
+  it("is a no-op when article titles are unchanged", () => {
+    const state = browsingState();
+    const browsing = expectBrowsing(state);
+    const sameArticles = browsing.articles.map((a) => ({ ...a }));
+    const { next, effects } = transition(state, {
+      type: "articlesSync",
+      articles: sameArticles,
+    });
+    expect(next).toBe(state);
+    expect(effects).toEqual([]);
+  });
+
+  it("skips fetchListSummaries in infinite mode", () => {
+    const state = browsingState({ scrollMode: "infinite" });
+    const newArticles: NearbyArticle[] = [
+      { title: "New Place", lat: 48.86, lon: 2.35, distanceM: 100 },
+    ];
+    const { effects } = transition(state, {
+      type: "articlesSync",
+      articles: newArticles,
+    });
+    expect(effectTypes(effects)).toContain("renderBrowsingList");
+    expect(effectTypes(effects)).not.toContain("fetchListSummaries");
+  });
+
+  it("ignores when not in browsing phase", () => {
+    const state = makeState({ phase: { phase: "locating" } });
+    const articles: NearbyArticle[] = [
+      { title: "Test", lat: 0, lon: 0, distanceM: 0 },
+    ];
+    const { next, effects } = transition(state, {
+      type: "articlesSync",
+      articles,
+    });
+    expect(next).toBe(state);
+    expect(effects).toEqual([]);
+  });
+
+  it("preserves nearbyCount and lastQueryPos", () => {
+    const state = browsingState({ nearbyCount: 25 });
+    const newArticles: NearbyArticle[] = [
+      { title: "New Place", lat: 48.86, lon: 2.35, distanceM: 100 },
+    ];
+    const { next } = transition(state, {
+      type: "articlesSync",
+      articles: newArticles,
+    });
+    const browsing = expectBrowsing(next);
+    expect(browsing.nearbyCount).toBe(25);
+    expect(browsing.lastQueryPos).toBe(paris);
+  });
+});
+
 // ── Map picker phase ──────────────────────────────────────────
 
 describe("showMapPicker event", () => {

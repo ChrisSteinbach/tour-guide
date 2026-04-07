@@ -151,6 +151,7 @@ export type Event =
     }
   | { type: "noTilesNearby" }
   | { type: "swUpdateAvailable" }
+  | { type: "articlesSync"; articles: NearbyArticle[] }
   | { type: "showAbout" }
   | { type: "closeAbout" };
 
@@ -522,6 +523,29 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
         effects: same
           ? [{ type: "updateDistances" }]
           : p.scrollMode === "infinite"
+            ? [{ type: "renderBrowsingList" }]
+            : [{ type: "renderBrowsingList" }, { type: "fetchListSummaries" }],
+      };
+    }
+
+    // ── Articles sync (from ArticleWindow reloads) ──────────
+
+    case "articlesSync": {
+      if (state.phase.phase !== "browsing") {
+        return { next: state, effects: [] };
+      }
+      const sp = state.phase;
+      const same =
+        event.articles.length === sp.articles.length &&
+        event.articles.every((a, i) => a.title === sp.articles[i].title);
+      if (same) return { next: state, effects: [] };
+      return {
+        next: {
+          ...state,
+          phase: { ...sp, articles: event.articles },
+        },
+        effects:
+          sp.scrollMode === "infinite"
             ? [{ type: "renderBrowsingList" }]
             : [{ type: "renderBrowsingList" }, { type: "fetchListSummaries" }],
       };
