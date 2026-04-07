@@ -99,6 +99,7 @@ function stubArticleWindow(
     ensureRange: vi.fn(async () => {}),
     totalKnown: vi.fn(() => 0),
     loadedCount: vi.fn(() => 0),
+    getLoadedArticles: vi.fn(() => []),
     reset: vi.fn(),
     ...overrides,
   };
