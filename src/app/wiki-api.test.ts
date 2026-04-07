@@ -1,4 +1,4 @@
-import { summaryUrl, fetchArticleSummary, clearCache } from "./wiki-api";
+import { summaryUrl, createWikiApi } from "./wiki-api";
 
 describe("summaryUrl", () => {
   it("encodes spaces as underscores", () => {
@@ -31,23 +31,12 @@ describe("summaryUrl", () => {
 });
 
 describe("fetchArticleSummary", () => {
-  beforeEach(() => {
-    clearCache();
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
   function mockFetch(response: { status: number; body?: unknown }) {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: response.status >= 200 && response.status < 300,
-        status: response.status,
-        json: () => Promise.resolve(response.body),
-      }),
-    );
+    return vi.fn().mockResolvedValue({
+      ok: response.status >= 200 && response.status < 300,
+      status: response.status,
+      json: () => Promise.resolve(response.body),
+    }) as unknown as typeof globalThis.fetch;
   }
 
   const fullResponse = {
@@ -65,7 +54,8 @@ describe("fetchArticleSummary", () => {
   };
 
   it("parses a successful response", async () => {
-    mockFetch({ status: 200, body: fullResponse });
+    const fetch = mockFetch({ status: 200, body: fullResponse });
+    const { fetchArticleSummary } = createWikiApi({ fetch });
 
     const summary = await fetchArticleSummary("Eiffel Tower");
 
@@ -81,7 +71,8 @@ describe("fetchArticleSummary", () => {
   });
 
   it("throws on 404", async () => {
-    mockFetch({ status: 404 });
+    const fetch = mockFetch({ status: 404 });
+    const { fetchArticleSummary } = createWikiApi({ fetch });
 
     await expect(fetchArticleSummary("Nonexistent")).rejects.toThrow(
       "Article not found",
@@ -89,7 +80,8 @@ describe("fetchArticleSummary", () => {
   });
 
   it("throws on 500", async () => {
-    mockFetch({ status: 500 });
+    const fetch = mockFetch({ status: 500 });
+    const { fetchArticleSummary } = createWikiApi({ fetch });
 
     await expect(fetchArticleSummary("Anything")).rejects.toThrow(
       "Wikipedia API error: 500",
@@ -97,10 +89,12 @@ describe("fetchArticleSummary", () => {
   });
 
   it("throws on network failure", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockRejectedValue(new TypeError("Failed to fetch")),
-    );
+    const fetch = vi
+      .fn()
+      .mockRejectedValue(
+        new TypeError("Failed to fetch"),
+      ) as unknown as typeof globalThis.fetch;
+    const { fetchArticleSummary } = createWikiApi({ fetch });
 
     await expect(fetchArticleSummary("Anything")).rejects.toThrow(
       "Failed to fetch",
@@ -108,10 +102,11 @@ describe("fetchArticleSummary", () => {
   });
 
   it("handles missing thumbnail gracefully", async () => {
-    mockFetch({
+    const fetch = mockFetch({
       status: 200,
       body: { ...fullResponse, thumbnail: undefined },
     });
+    const { fetchArticleSummary } = createWikiApi({ fetch });
 
     const summary = await fetchArticleSummary("No Thumb");
 
@@ -121,10 +116,11 @@ describe("fetchArticleSummary", () => {
   });
 
   it("handles missing description gracefully", async () => {
-    mockFetch({
+    const fetch = mockFetch({
       status: 200,
       body: { ...fullResponse, description: undefined },
     });
+    const { fetchArticleSummary } = createWikiApi({ fetch });
 
     const summary = await fetchArticleSummary("No Desc");
 
@@ -132,11 +128,12 @@ describe("fetchArticleSummary", () => {
   });
 
   it("uses specified language for API URL", async () => {
-    mockFetch({ status: 200, body: fullResponse });
+    const fetch = mockFetch({ status: 200, body: fullResponse });
+    const { fetchArticleSummary } = createWikiApi({ fetch });
 
     await fetchArticleSummary("Test", "sv");
 
-    expect(globalThis.fetch).toHaveBeenCalledWith(
+    expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining("sv.wikipedia.org"),
       expect.objectContaining({
         headers: expect.objectContaining({
@@ -147,13 +144,14 @@ describe("fetchArticleSummary", () => {
   });
 
   it("caches separately per language for the same title", async () => {
-    mockFetch({ status: 200, body: fullResponse });
+    const fetch = mockFetch({ status: 200, body: fullResponse });
+    const { fetchArticleSummary } = createWikiApi({ fetch });
 
     await fetchArticleSummary("A", "en");
     await fetchArticleSummary("A", "sv");
 
-    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
-    expect(globalThis.fetch).toHaveBeenCalledWith(
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining("en.wikipedia.org"),
       expect.objectContaining({
         headers: expect.objectContaining({
@@ -161,7 +159,7 @@ describe("fetchArticleSummary", () => {
         }),
       }),
     );
-    expect(globalThis.fetch).toHaveBeenCalledWith(
+    expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining("sv.wikipedia.org"),
       expect.objectContaining({
         headers: expect.objectContaining({
