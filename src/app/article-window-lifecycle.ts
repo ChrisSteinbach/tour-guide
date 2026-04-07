@@ -129,11 +129,11 @@ export function createArticleWindowLifecycle(
       },
       onWindowChange: () => {
         if (!articleWindow) return;
-        // Use totalKnown (all articles from loaded tiles) rather than
-        // loadedCount to provide scroll headroom beyond the fetched range.
+        // Route through computeOptimisticCount so the loaded===0 guard
+        // applies here too — prevents empty-list-with-headroom jumps.
         // Never shrink — reducing the count while the user is scrolled
         // deep causes the same scroll jump this fix exists to prevent.
-        const realCount = Math.max(
+        const realCount = computeOptimisticCount(
           articleWindow.totalKnown(),
           articleWindow.loadedCount(),
         );
