@@ -262,6 +262,10 @@ export async function loadTileIndex(
 
     const index = (await response.json()) as TileIndex;
 
+    if (!index || typeof index !== "object" || !Array.isArray(index.tiles)) {
+      return null;
+    }
+
     // Cache for offline use
     if (db) {
       deps

@@ -498,6 +498,27 @@ describe("loadTileIndex", () => {
     expect(result).toBeNull();
   });
 
+  it("returns null and skips caching when response has no tiles array", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ error: "cdn error page" }),
+      }),
+    );
+
+    const store = new Map<string, unknown>();
+    const result = await loadTileIndex(
+      "/base/",
+      "en",
+      undefined,
+      makeDeps(store),
+    );
+    expect(result).toBeNull();
+    expect(store.has("tile-index-v1-en")).toBe(false);
+  });
+
   it("returns null when IDB read itself throws", async () => {
     vi.stubGlobal(
       "fetch",
