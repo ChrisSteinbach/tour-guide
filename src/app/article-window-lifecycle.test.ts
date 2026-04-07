@@ -411,6 +411,73 @@ describe("scroll count observer", () => {
   });
 });
 
+describe("articles observer", () => {
+  it("notifies observer with loaded articles on window change", () => {
+    let capturedOnWindowChange: (() => void) | undefined;
+    const loadedArticles: NearbyArticle[] = [
+      { title: "A", lat: 1, lon: 2, distanceM: 10 },
+      { title: "B", lat: 3, lon: 4, distanceM: 20 },
+    ];
+    const aw = stubArticleWindow({
+      totalKnown: vi.fn(() => 100),
+      loadedCount: vi.fn(() => 2),
+      getLoadedArticles: vi.fn(() => loadedArticles),
+    });
+    const deps = makeDeps({
+      createArticleWindow: vi.fn((opts) => {
+        capturedOnWindowChange = opts.onWindowChange;
+        return aw;
+      }),
+    });
+
+    const observer = vi.fn();
+    const lifecycle = createArticleWindowLifecycle(deps);
+    lifecycle.attachArticlesObserver(observer);
+    lifecycle.getOrCreateArticleWindow();
+    capturedOnWindowChange!();
+
+    expect(observer).toHaveBeenCalledWith(loadedArticles);
+  });
+
+  it("does not notify when no articles are loaded", () => {
+    let capturedOnWindowChange: (() => void) | undefined;
+    const aw = stubArticleWindow({
+      totalKnown: vi.fn(() => 0),
+      loadedCount: vi.fn(() => 0),
+      getLoadedArticles: vi.fn(() => []),
+    });
+    const deps = makeDeps({
+      createArticleWindow: vi.fn((opts) => {
+        capturedOnWindowChange = opts.onWindowChange;
+        return aw;
+      }),
+    });
+
+    const observer = vi.fn();
+    const lifecycle = createArticleWindowLifecycle(deps);
+    lifecycle.attachArticlesObserver(observer);
+    lifecycle.getOrCreateArticleWindow();
+    capturedOnWindowChange!();
+
+    expect(observer).not.toHaveBeenCalled();
+  });
+
+  it("throws on double-attach", () => {
+    const lifecycle = createArticleWindowLifecycle(makeDeps());
+    lifecycle.attachArticlesObserver(() => {});
+    expect(() => lifecycle.attachArticlesObserver(() => {})).toThrow(
+      /already attached/,
+    );
+  });
+
+  it("allows re-attach after detach", () => {
+    const lifecycle = createArticleWindowLifecycle(makeDeps());
+    lifecycle.attachArticlesObserver(() => {});
+    lifecycle.attachArticlesObserver(null);
+    expect(() => lifecycle.attachArticlesObserver(() => {})).not.toThrow();
+  });
+});
+
 describe("computeOptimisticCount", () => {
   it("returns known when known > loaded", () => {
     expect(computeOptimisticCount(500, 100)).toBe(500);
