@@ -384,6 +384,31 @@ describe("scroll count observer", () => {
     expect(observer).toHaveBeenLastCalledWith(300, 200);
   });
 
+  it("suppresses scroll count when onWindowChange fires with loadedCount 0 and totalKnown > 0", () => {
+    let capturedOnWindowChange: (() => void) | undefined;
+    const aw = stubArticleWindow({
+      totalKnown: vi.fn(() => 200),
+      loadedCount: vi.fn(() => 0),
+      getLoadedArticles: vi.fn(() => []),
+    });
+    const deps = makeDeps({
+      createArticleWindow: vi.fn((opts) => {
+        capturedOnWindowChange = opts.onWindowChange;
+        return aw;
+      }),
+    });
+
+    const observer = vi.fn();
+    const lifecycle = createArticleWindowLifecycle(deps);
+    lifecycle.attachScrollCountObserver(observer);
+    lifecycle.getOrCreateArticleWindow();
+    capturedOnWindowChange!();
+
+    // Should suppress count (return 0) to avoid empty-list jump,
+    // matching computeOptimisticCount's loaded===0 guard.
+    expect(observer).toHaveBeenCalledWith(0, 0);
+  });
+
   it("applyOptimisticCount passes undefined loadedCount when no ArticleWindow exists", () => {
     const observer = vi.fn();
     const lifecycle = createArticleWindowLifecycle(makeDeps());
