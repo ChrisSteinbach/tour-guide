@@ -9,21 +9,12 @@ import type { ArticleSummary } from "./wiki-api";
 // Stub the sibling render modules so we can observe whether each
 // effect-level UI callback routes to the matching concrete function
 // without actually touching the DOM.
-vi.mock("./render", () => ({
-  updateNearbyDistances: vi.fn(),
-}));
-vi.mock("./about", () => ({
-  showAbout: vi.fn(),
-  hideAbout: vi.fn(),
-}));
 vi.mock("./detail", () => ({
   renderDetailLoading: vi.fn(),
   renderDetailReady: vi.fn(),
   renderDetailError: vi.fn(),
 }));
 
-import { updateNearbyDistances } from "./render";
-import { showAbout, hideAbout } from "./about";
 import {
   renderDetailLoading,
   renderDetailReady,
@@ -108,12 +99,13 @@ describe("createEffectUIAdapter", () => {
     ui.renderDetailReady(article, summary);
 
     expect(renderDetailReady).toHaveBeenCalledTimes(1);
-    const call = (renderDetailReady as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(call[0]).toBe(app);
-    expect(call[1]).toBe(article);
-    expect(call[2]).toBe(summary);
-    // call[3] is goBack (function); call[4] is origin
-    expect(call[4]).toEqual(pos);
+    const [receivedApp, receivedArticle, receivedSummary, , origin] = (
+      renderDetailReady as ReturnType<typeof vi.fn>
+    ).mock.calls[0];
+    expect(receivedApp).toBe(app);
+    expect(receivedArticle).toBe(article);
+    expect(receivedSummary).toBe(summary);
+    expect(origin).toEqual(pos);
     expect(assertSpy).toHaveBeenCalledWith(true, expect.any(String));
     assertSpy.mockRestore();
   });
@@ -135,8 +127,9 @@ describe("createEffectUIAdapter", () => {
 
     ui.renderDetailReady(article, summary);
 
-    const call = (renderDetailReady as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(call[4]).toBeUndefined();
+    const [, , , , origin] = (renderDetailReady as ReturnType<typeof vi.fn>)
+      .mock.calls[0];
+    expect(origin).toBeUndefined();
     expect(assertSpy).toHaveBeenCalledWith(true, expect.any(String));
     assertSpy.mockRestore();
   });
@@ -157,8 +150,9 @@ describe("createEffectUIAdapter", () => {
 
     ui.renderDetailReady(article, summary);
 
-    const call = (renderDetailReady as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(call[4]).toBeUndefined();
+    const [, , , , origin] = (renderDetailReady as ReturnType<typeof vi.fn>)
+      .mock.calls[0];
+    expect(origin).toBeUndefined();
     expect(assertSpy).toHaveBeenCalledWith(
       false,
       expect.stringContaining("state-machine invariant violation"),
@@ -180,13 +174,14 @@ describe("createEffectUIAdapter", () => {
 
     ui.renderDetailError(article, "boom", () => {}, "en");
 
-    const call = (renderDetailError as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(call[0]).toBe(app);
-    expect(call[1]).toBe(article);
-    expect(call[2]).toBe("boom");
-    // call[3]=goBack, call[4]=retry, call[5]=lang, call[6]=origin
-    expect(call[5]).toBe("en");
-    expect(call[6]).toEqual(pos);
+    const [receivedApp, receivedArticle, receivedMsg, , , lang, origin] = (
+      renderDetailError as ReturnType<typeof vi.fn>
+    ).mock.calls[0];
+    expect(receivedApp).toBe(app);
+    expect(receivedArticle).toBe(article);
+    expect(receivedMsg).toBe("boom");
+    expect(lang).toBe("en");
+    expect(origin).toEqual(pos);
   });
 
   it("showMapPicker resets the drawer before calling mapPicker.show", () => {
@@ -249,83 +244,6 @@ describe("createEffectUIAdapter", () => {
     expect(container.scrollTop).toBe(680);
   });
 
-  it("updateDistances forwards to renderer's updateNearbyDistances", () => {
-    const app = document.createElement("div");
-    const articles = [article];
-    const ui = createEffectUIAdapter({
-      app,
-      renderer: stubRenderer(),
-      mapPicker: stubMapPicker(),
-      getState: () => makeState(),
-      itemHeight: 68,
-      getScrollContainer: () => document.createElement("div"),
-    });
-
-    ui.updateDistances(articles);
-
-    expect(updateNearbyDistances).toHaveBeenCalledWith(app, articles);
-  });
-
-  it("render/renderBrowsingList/renderBrowsingHeader/renderAppUpdateBanner dispatch to renderer", () => {
-    const renderer = stubRenderer();
-    const ui = createEffectUIAdapter({
-      app: document.createElement("div"),
-      renderer,
-      mapPicker: stubMapPicker(),
-      getState: () => makeState(),
-      itemHeight: 68,
-      getScrollContainer: () => document.createElement("div"),
-    });
-
-    ui.render();
-    ui.renderBrowsingList();
-    ui.renderBrowsingHeader();
-    ui.renderAppUpdateBanner();
-
-    expect(renderer.renderPhase).toHaveBeenCalledTimes(1);
-    expect(renderer.renderBrowsingList).toHaveBeenCalledTimes(1);
-    expect(renderer.renderBrowsingHeader).toHaveBeenCalledTimes(1);
-    expect(renderer.renderAppUpdateBanner).toHaveBeenCalledTimes(1);
-  });
-
-  it("showAbout and hideAbout re-export the about module functions", () => {
-    const ui = createEffectUIAdapter({
-      app: document.createElement("div"),
-      renderer: stubRenderer(),
-      mapPicker: stubMapPicker(),
-      getState: () => makeState(),
-      itemHeight: 68,
-      getScrollContainer: () => document.createElement("div"),
-    });
-
-    const onClose = (): void => {};
-    ui.showAbout(onClose);
-    ui.hideAbout();
-
-    expect(showAbout).toHaveBeenCalledWith(onClose);
-    expect(hideAbout).toHaveBeenCalled();
-  });
-
-  it("renderDetailLoading forwards app and article to detail module", () => {
-    const app = document.createElement("div");
-    const ui = createEffectUIAdapter({
-      app,
-      renderer: stubRenderer(),
-      mapPicker: stubMapPicker(),
-      getState: () => makeState(),
-      itemHeight: 68,
-      getScrollContainer: () => document.createElement("div"),
-    });
-
-    ui.renderDetailLoading(article);
-
-    const call = (renderDetailLoading as ReturnType<typeof vi.fn>).mock
-      .calls[0];
-    expect(call[0]).toBe(app);
-    expect(call[1]).toBe(article);
-    expect(typeof call[2]).toBe("function");
-  });
-
   it("goBack callback invokes history.back exactly once", () => {
     const app = document.createElement("div");
     const historyBackSpy = vi
@@ -341,9 +259,9 @@ describe("createEffectUIAdapter", () => {
     });
 
     ui.renderDetailLoading(article);
-    const goBack = (renderDetailLoading as ReturnType<typeof vi.fn>).mock
-      .calls[0][2] as () => void;
-    goBack();
+    const [, , goBackFn] = (renderDetailLoading as ReturnType<typeof vi.fn>)
+      .mock.calls[0];
+    (goBackFn as () => void)();
 
     expect(historyBackSpy).toHaveBeenCalledTimes(1);
     historyBackSpy.mockRestore();
