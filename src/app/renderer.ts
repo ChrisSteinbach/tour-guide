@@ -39,6 +39,8 @@ export interface RendererDeps {
   getArticleByIndex: (i: number) => NearbyArticle | undefined;
   getScrollContainer: () => HTMLElement;
   onHoverArticle: (title: string | null) => void;
+  /** Push a scroll count through the lifecycle's monotonicity floor. */
+  updateScrollCount: (count: number) => void;
   itemHeight: number;
   scrollPauseThreshold: number;
   hasGeolocation: boolean;
@@ -182,7 +184,7 @@ export function createRenderer(deps: RendererDeps): Renderer {
     if (!deps.infiniteScroll.isActive()) {
       deps.infiniteScroll.init(totalCount);
     } else {
-      deps.infiniteScroll.update(totalCount);
+      deps.updateScrollCount(totalCount);
 
       if (state.position) {
         const vl = deps.infiniteScroll.virtualList();
