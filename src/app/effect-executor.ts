@@ -152,8 +152,10 @@ export function createEffectExecutor(
 
     let allTiles = [primary, ...adjacent];
 
-    // If no tiles exist at this position, find the nearest ones via ring expansion
-    if (!allTiles.some((id) => deps.data.getTileEntry(tileMap, id))) {
+    // If the primary tile doesn't exist, fall back to ring expansion so that
+    // allTiles[0] is always a tile present in tileMap (guaranteeing the
+    // isPrimary await fires for the nearest existing tile).
+    if (!deps.data.getTileEntry(tileMap, primary)) {
       allTiles = deps.data.nearestExistingTiles(
         tileMap,
         state.position.lat,
