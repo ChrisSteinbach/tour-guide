@@ -58,6 +58,20 @@ export function getNearby(
 
 // ── Phase (discriminated union for the UI state) ─────────────
 
+/** Fields shared by browsing and detail phases — the "live session" context
+ *  that must survive transitions between the two views. */
+export type BrowsingContext = {
+  articles: NearbyArticle[];
+  nearbyCount: number;
+  paused: boolean;
+  /** Why the view is paused: 'manual' (user clicked pause), 'scroll' (auto-paused by scrolling), or null (not paused). */
+  pauseReason: "manual" | "scroll" | null;
+  lastQueryPos: UserPosition;
+  scrollMode: "infinite" | "viewport";
+  /** Current lazy limit for infinite scroll queries; grows on demand. */
+  infiniteScrollLimit: number;
+};
+
 export type Phase =
   | { phase: "welcome" }
   | { phase: "downloading"; progress: number }
@@ -65,31 +79,13 @@ export type Phase =
   | { phase: "loadingTiles" }
   | { phase: "error"; error: LocationError }
   | { phase: "dataUnavailable" }
-  | {
-      phase: "browsing";
-      articles: NearbyArticle[];
-      nearbyCount: number;
-      paused: boolean;
-      /** Why the view is paused: 'manual' (user clicked pause), 'scroll' (auto-paused by scrolling), or null (not paused). */
-      pauseReason: "manual" | "scroll" | null;
-      lastQueryPos: UserPosition;
-      scrollMode: "infinite" | "viewport";
-      /** Current lazy limit for infinite scroll queries; grows on demand. */
-      infiniteScrollLimit: number;
-    }
-  | {
+  | ({ phase: "browsing" } & BrowsingContext)
+  | ({
       phase: "detail";
       article: NearbyArticle;
-      articles: NearbyArticle[];
-      nearbyCount: number;
-      paused: boolean;
-      pauseReason: "manual" | "scroll" | null;
-      lastQueryPos: UserPosition;
-      scrollMode: "infinite" | "viewport";
-      infiniteScrollLimit: number;
       /** Index of the first visible article in the browse list, saved on entry to restore on back. */
       savedFirstVisibleIndex: number;
-    }
+    } & BrowsingContext)
   | { phase: "mapPicker"; returnPhase: Phase };
 
 // ── AppState ─────────────────────────────────────────────────
@@ -557,28 +553,14 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
       if (state.phase.phase !== "browsing") {
         return { next: state, effects: [] };
       }
-      const {
-        articles,
-        nearbyCount,
-        paused,
-        pauseReason,
-        lastQueryPos,
-        scrollMode,
-        infiniteScrollLimit,
-      } = state.phase;
+      const { phase: _, ...context } = state.phase;
       return {
         next: {
           ...state,
           phase: {
             phase: "detail",
+            ...context,
             article: event.article,
-            articles,
-            nearbyCount,
-            paused,
-            pauseReason,
-            lastQueryPos,
-            scrollMode,
-            infiniteScrollLimit,
             savedFirstVisibleIndex: event.firstVisibleIndex,
           },
         },
@@ -605,21 +587,17 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
         return { next: state, effects: [] };
       }
       const {
-        articles,
-        nearbyCount,
-        paused,
-        pauseReason: detailPauseReason,
-        lastQueryPos,
-        scrollMode: detailScrollMode,
-        infiniteScrollLimit,
+        phase: _,
+        article: __,
         savedFirstVisibleIndex,
+        ...context
       } = state.phase;
       const effects: Effect[] = [{ type: "renderBrowsingList" }];
       // In non-infinite mode, eagerly fetch all summaries. In infinite mode,
       // the enrichment scheduler handles viewport-based fetching — calling
       // load() with the full (potentially 14k+) article list would overwhelm
       // the Wikipedia API with requests.
-      if (detailScrollMode !== "infinite") {
+      if (context.scrollMode !== "infinite") {
         effects.push({ type: "fetchListSummaries" });
       }
       if (savedFirstVisibleIndex > 0) {
@@ -631,16 +609,7 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
       return {
         next: {
           ...state,
-          phase: {
-            phase: "browsing",
-            articles,
-            nearbyCount,
-            paused,
-            pauseReason: detailPauseReason,
-            lastQueryPos,
-            scrollMode: detailScrollMode,
-            infiniteScrollLimit,
-          },
+          phase: { phase: "browsing", ...context },
         },
         effects,
       };
