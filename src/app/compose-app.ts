@@ -204,6 +204,7 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
     resetArticleWindow: () => lifecycle.resetArticleWindow(),
     getCurrentWindow: () => lifecycle.currentWindow(),
     getArticleByIndex: (i) => lifecycle.getArticleByIndex(i),
+    updateScrollCount: (count) => lifecycle.applyOptimisticCount(count),
     getScrollContainer,
     onHoverArticle,
     itemHeight,
