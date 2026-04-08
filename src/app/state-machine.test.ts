@@ -9,6 +9,7 @@ import {
   type AppState,
   type QueryState,
   type Phase,
+  type BrowsingContext,
   type Effect,
 } from "./state-machine";
 import type { NearbyArticle, UserPosition } from "./types";
@@ -137,16 +138,10 @@ function expectPhase<P extends Phase["phase"]>(state: AppState, phase: P) {
 }
 
 function browsingState(
-  overrides: Partial<AppState> & {
-    articles?: NearbyArticle[];
-    nearbyCount?: number;
-    paused?: boolean;
-    pauseReason?: "manual" | "scroll" | null;
-    lastQueryPos?: UserPosition;
-    positionSource?: "gps" | "picked" | null;
-    scrollMode?: "infinite" | "viewport";
-    infiniteScrollLimit?: number;
-  } = {},
+  overrides: Partial<AppState> &
+    Partial<BrowsingContext> & {
+      positionSource?: "gps" | "picked" | null;
+    } = {},
 ): AppState {
   const {
     articles: arts,
