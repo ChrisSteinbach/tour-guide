@@ -619,6 +619,58 @@ describe("createEffectExecutor", () => {
     expect(deps.dispatch).not.toHaveBeenCalledWith({ type: "noTilesNearby" });
   });
 
+  it("loadTiles falls back to ring expansion when primary tile is absent but adjacent exists", async () => {
+    const entryAdj = makeTileEntry("t-adj", "h1");
+    const entryRing = makeTileEntry("t-ring", "h2");
+    const tileMap = new Map<string, TileEntry>([
+      ["t-adj", entryAdj],
+      ["t-ring", entryRing],
+    ]);
+
+    const loadOrder: string[] = [];
+    const resolvers: Array<() => void> = [];
+    const deps = makeDeps({
+      getState: vi.fn(() => tiledState(tileMap)),
+      data: makeData({
+        // Primary tile doesn't exist, but adjacent does
+        tilesForPosition: vi.fn(() => ({
+          primary: "t-empty",
+          adjacent: ["t-adj"],
+        })),
+        getTileEntry: vi.fn((_map, id) => tileMap.get(id as string)),
+        // Ring expansion returns the nearest existing tiles
+        nearestExistingTiles: vi.fn(() => ["t-ring", "t-adj"]),
+        loadTile: vi.fn((_lang, entry: TileEntry) => {
+          loadOrder.push(entry.id);
+          return new Promise<NearestQuery>((resolve) => {
+            resolvers.push(() => resolve(stubNearestQuery));
+          });
+        }),
+      }),
+    });
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "loadTiles", lang: "en" });
+
+    // Fallback should trigger even though adjacent tile exists
+    expect(deps.data.nearestExistingTiles).toHaveBeenCalledWith(
+      tileMap,
+      pos.lat,
+      pos.lon,
+    );
+
+    // First ring-expansion tile is primary — loaded first and awaited
+    expect(loadOrder).toEqual(["t-ring"]);
+
+    // Resolve the primary to unblock adjacent tiles
+    resolvers[0]();
+    await vi.waitFor(() => {
+      expect(loadOrder).toHaveLength(2);
+    });
+
+    expect(loadOrder).toEqual(["t-ring", "t-adj"]);
+  });
+
   it("loadTiles skips already-loaded tiles from nearestExistingTiles fallback (GPS into ocean)", async () => {
     const entryA = makeTileEntry("t-coast1", "h1");
     const entryB = makeTileEntry("t-coast2", "h2");
