@@ -808,6 +808,45 @@ describe("loadTile", () => {
     expect(result).toBeInstanceOf(NearestQuery);
   });
 
+  it("falls through to network when cached TypedArrays are plain arrays", async () => {
+    vi.mocked(deserializeBinary).mockReturnValueOnce({
+      fd: fakeFd,
+      articles: fakeArticles,
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+      }),
+    );
+
+    // Matching hash, valid articles, but TypedArray fields are plain number[]
+    // — would not throw but would produce silently wrong query results.
+    const plainArrayCache = {
+      vertexPoints: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+      vertexTriangles: [0, 0, 0],
+      triangleVertices: [0, 1, 2],
+      triangleNeighbors: [0, 0, 0],
+      articles: ["A", "B", "C"],
+      hash: "abc123",
+    };
+    const store = new Map<string, unknown>([
+      ["tile-v1-en-18-36", plainArrayCache],
+    ]);
+    const result = await loadTile(
+      "/base/",
+      "en",
+      entry,
+      undefined,
+      makeDeps(store),
+    );
+    expect(result).toBeInstanceOf(NearestQuery);
+    expect(fetch).toHaveBeenCalled();
+  });
+
   it("propagates abort instead of returning stale cache", async () => {
     vi.stubGlobal(
       "fetch",

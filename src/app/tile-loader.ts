@@ -318,6 +318,10 @@ export async function loadTile(
       if (
         cached &&
         cached.hash === entry.hash &&
+        cached.vertexPoints instanceof Float64Array &&
+        cached.vertexTriangles instanceof Uint32Array &&
+        cached.triangleVertices instanceof Uint32Array &&
+        cached.triangleNeighbors instanceof Uint32Array &&
         Array.isArray(cached.articles) &&
         cached.articles.every((a) => typeof a === "string")
       ) {
