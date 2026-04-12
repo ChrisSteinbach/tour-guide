@@ -431,6 +431,118 @@ describe("InfiniteScrollLifecycle", () => {
       expect(called).toBeGreaterThan(0);
     });
 
+    it("does not fire onNearEnd in compressed mode even when mapped range exceeds loadedCount", () => {
+      // In compressed mode, computeVisibleRange maps scrollTop proportionally
+      // onto [0, totalCount], so range.end lives in virtual-index space and
+      // can sit arbitrarily far above currentLoadedCount. The near-end check
+      // must not interpret those mapped indices as progress through loaded
+      // data — otherwise it fires on every scroll event.
+      let called = 0;
+      // 200_000 * 68 = 13.6M > MAX_SAFE_SCROLL_HEIGHT (10M) → compressed mode
+      const hugeTotal = 200_000;
+      const lifecycle = createInfiniteScrollLifecycle(
+        makeDeps({
+          itemHeight: 68,
+          onNearEnd: () => called++,
+          nearEndThreshold: 50,
+        }),
+      );
+
+      // Init with a small loadedCount but a totalCount large enough to
+      // trigger compressed mode in the virtual list.
+      lifecycle.init(hugeTotal, 500);
+      // In direct mode this would fire (range.end spans huge mapped indices
+      // vs. currentLoadedCount=500); compressed mode must suppress it.
+      expect(called).toBe(0);
+    });
+
+    // XOR rationale — do not "simplify" the dispatch in
+    // infinite-scroll-lifecycle.ts back into parallel onNearEnd +
+    // onVisibleRangeChange calls. onNearEnd issues
+    // ensureRange(start, end + PREFETCH_BUFFER), which is a superset of
+    // onVisibleRangeChange's ensureRange(start, end); firing both would
+    // queue a redundant unbuffered fetch behind the prefetch (both
+    // serialize via pendingFetch). The next two tests pin that exactly
+    // one of the two callbacks fires per range event.
+    it("skips onVisibleRangeChange when onNearEnd fires (consolidated fetch)", () => {
+      const visibleRangeCalls: Array<{ start: number; end: number }> = [];
+      let nearEndCalls = 0;
+      const lifecycle = createInfiniteScrollLifecycle(
+        makeDeps({
+          onNearEnd: () => nearEndCalls++,
+          onVisibleRangeChange: (range) => visibleRangeCalls.push(range),
+          nearEndThreshold: 5,
+        }),
+      );
+
+      // loadedCount=3, threshold=5 → any visible range hits near-end.
+      // onNearEnd should fire; onVisibleRangeChange should NOT.
+      lifecycle.init(3);
+
+      expect(nearEndCalls).toBeGreaterThan(0);
+      expect(visibleRangeCalls).toEqual([]);
+    });
+
+    it("still fires onVisibleRangeChange for non-near-end scrolls", () => {
+      const visibleRangeCalls: Array<{ start: number; end: number }> = [];
+      let nearEndCalls = 0;
+      const lifecycle = createInfiniteScrollLifecycle(
+        makeDeps({
+          onNearEnd: () => nearEndCalls++,
+          onVisibleRangeChange: (range) => visibleRangeCalls.push(range),
+          nearEndThreshold: 2,
+        }),
+      );
+
+      // 1000 items, threshold=2 → initial top-of-list render is nowhere
+      // near the end, so onVisibleRangeChange fires normally and onNearEnd
+      // does not.
+      lifecycle.init(1000);
+
+      expect(nearEndCalls).toBe(0);
+      expect(visibleRangeCalls.length).toBeGreaterThan(0);
+    });
+
+    it("fires onVisibleRangeChange in compressed mode even at high indices", () => {
+      // Compressed mode suppresses near-end detection (mapped indices are
+      // not progress through loaded data), so onVisibleRangeChange must
+      // still run — it is the only ensureRange trigger in that mode.
+      //
+      // jsdom elements have clientHeight=0, so we need to mock it to get a
+      // non-empty visible range (compressed mode has no overscan buffer).
+      const desc = Object.getOwnPropertyDescriptor(
+        HTMLElement.prototype,
+        "clientHeight",
+      );
+      Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+        get() {
+          return 800;
+        },
+        configurable: true,
+      });
+
+      const visibleRangeCalls: Array<{ start: number; end: number }> = [];
+      let nearEndCalls = 0;
+      const hugeTotal = 200_000;
+      const lifecycle = createInfiniteScrollLifecycle(
+        makeDeps({
+          itemHeight: 68,
+          onNearEnd: () => nearEndCalls++,
+          onVisibleRangeChange: (range) => visibleRangeCalls.push(range),
+          nearEndThreshold: 50,
+        }),
+      );
+
+      lifecycle.init(hugeTotal, 500);
+
+      expect(nearEndCalls).toBe(0);
+      expect(visibleRangeCalls.length).toBeGreaterThan(0);
+
+      if (desc) {
+        Object.defineProperty(HTMLElement.prototype, "clientHeight", desc);
+      }
+    });
+
     it("does not fire onNearEnd when loadedCount is large despite small totalCount", () => {
       let called = 0;
       const lifecycle = createInfiniteScrollLifecycle(
