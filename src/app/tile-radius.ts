@@ -90,6 +90,9 @@ export const MAX_RING = Math.max(ROWS - 1, Math.floor(COLS / 2));
  * Articles in the tail may be re-ordered when new-ring articles interleave
  * with them (Chebyshev tile distance ≠ great-circle article distance).
  * Articles before the tail are finalized and never re-sorted.
+ *
+ * @internal Exported only so tests can pin the tail size — not part of the
+ * public API. No production caller should need to read or override this.
  */
 export const MERGE_TAIL_SIZE = 500;
 

@@ -92,6 +92,7 @@ export function createArticleWindowFactory(
         if (!entry) continue;
         try {
           const tileQuery = await loadTile("", lang, entry, signal);
+          if (signal.aborted) return newlyLoaded;
           providerTiles.set(id, tileQuery);
           newlyLoaded.push(id);
         } catch {

@@ -116,11 +116,15 @@ describe("createArticleWindowFactory", () => {
       }),
     });
 
-    const { articleWindow } = createArticleWindowFactory(deps);
+    const { articleWindow, providerTiles } = createArticleWindowFactory(deps);
     await articleWindow.ensureRange(0, 10);
 
     // Only the first tile should have been loaded before abort stopped the loop
     expect(loadCount).toBe(1);
+    // The in-flight tile resolved after the abort — its data must not be
+    // recorded in providerTiles, or downstream queries would include a tile
+    // the caller explicitly abandoned.
+    expect([...providerTiles.keys()]).toEqual([]);
   });
 
   it("skips loading tiles already in state machine but reports them for querying", async () => {
