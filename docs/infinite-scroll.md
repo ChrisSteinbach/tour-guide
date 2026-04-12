@@ -59,12 +59,15 @@ The virtual list (`virtual-scroll.ts`) renders only the items visible in the vie
 </div>
 ```
 
-**Scroll connection** (`connectScroll`): Listens to `scroll` events on `window`. Throttled via `requestAnimationFrame` — at most one `refresh()` per frame.
+**Scroll connection** (`connectScroll`): Listens to `scroll` events on the scroll container element (the `.app-scroll` wrapper), not `window`. Throttled via `requestAnimationFrame` — at most one `refresh()` per frame.
+
+**Compressed mode:** For very large lists whose natural height (`totalCount * itemHeight`) exceeds browser scroll-height limits, the virtual list switches to compressed mode. The container height is capped at `MAX_SAFE_SCROLL_HEIGHT` (10,000,000 px — safely below Chrome's ~33M and Firefox's ~17.8M limits), and scroll position is mapped proportionally to a virtual index: `exactIndex = (scrollTop / MAX_SAFE_SCROLL_HEIGHT) * totalCount`. Items are positioned at natural spacing (`itemHeight` apart) anchored to the current scroll position, so scrolling remains visually smooth with no frame-to-frame jumps at index boundaries. In direct mode (small lists), items use absolute positioning at `i * itemHeight`.
 
 **Constants:**
 
 - `VIRTUAL_ITEM_HEIGHT = 68px`
 - `overscan = 5` items above and below the viewport
+- `MAX_SAFE_SCROLL_HEIGHT = 10,000,000px` — threshold for compressed mode
 
 On each refresh, if the visible range changed, `onRangeChange` fires, which drives enrichment, map sync, and near-end detection.
 
@@ -87,11 +90,15 @@ On each refresh, if the visible range changed, `onRangeChange` fires, which driv
 ArticleWindow
   → TileRadiusProvider.fetchRange(start, end)
     → loadRing(ring)          // fetch tiles at Chebyshev distance `ring`
-    → queryAllTiles()         // merge all loaded tiles, findNearestTiled(99999) (effectively unlimited)
-    → sort by distance, slice [start, end)
+    → queryTiles(newTileIds)  // query only newly loaded tiles (not all tiles)
+    → dedup against seenTitles set
+    → mergeInto(fresh)        // merge fresh articles into cumulative sorted list
+    → slice [start, end) from cumulative list
 ```
 
-The `TileRadiusProvider` expands rings until it has enough articles to satisfy the request or reaches `MAX_RING` (the point where the entire grid is covered). Expansion continues past empty rings — a ring that loads no new tiles does not stop the search. Ring 0 is the user's tile; ring 1 is the 8 surrounding tiles; and so on. Tiles already loaded by the state machine are reused (not re-fetched).
+The `TileRadiusProvider` is **resumable**: it maintains a cumulative sorted list of all discovered articles and a `seenTitles` set for cross-ring deduplication. When a new ring is loaded, only its newly loaded tiles are queried (via `queryTiles(tileIds)`), and the results are deduped and merged into the existing list via a **merge tail** of `MERGE_TAIL_SIZE` (500) articles. Articles before the tail are finalized and never re-sorted; only the tail is re-sorted with incoming articles, handling the Chebyshev-vs-great-circle distance interleaving at ring boundaries.
+
+The provider expands rings until it has enough articles to satisfy the request or reaches `MAX_RING` (the point where the entire grid is covered). Expansion continues past empty rings — a ring that loads no new tiles does not stop the search. Ring 0 is the user's tile; ring 1 is the 8 surrounding tiles; and so on. Tiles already loaded by the state machine are reused (not re-fetched).
 
 ## Near-End Detection and Expansion
 
@@ -103,9 +110,11 @@ onRangeChange(range)
     → onNearEnd()
 ```
 
+**Re-fetch on range change:** Every visible-range change triggers `onVisibleRangeChange`, which calls `ensureRange(range.start, range.end)` on the ArticleWindow. This re-fetches articles that were evicted from the ArticleWindow when the user scrolled away (the window has a bounded `windowSize` of 1000). The call is a no-op when the range is already loaded, so it is cheap on normal forward scrolls.
+
 `onNearEnd` in `infinite-scroll-wiring.ts` handles two cases:
 
-1. **ArticleWindow exists** — First optimistically expands the virtual list height via `computeOptimisticCount(totalKnown, loadedCount)` so the user never hits the bottom while the async fetch is in flight: returns `max(totalKnown, loadedCount)` — the best-known total, with no phantom buffer added (the `nearEndThreshold` already triggers `onNearEnd` before the user reaches the bottom). Special case: when `loadedCount` is 0 (before the first batch loads), returns 0 to suppress empty-list jumps — showing scroll headroom before any articles are rendered would create an empty list that jumps once the first batch arrives. Then calls `aw.ensureRange(range.start, range.end + PREFETCH_BUFFER)`. When the promise resolves, `onWindowChange` fires, which updates the list height to `max(totalKnown, loadedCount)` — but never below the previous count (see "Scroll Headroom" below).
+1. **ArticleWindow exists** — First optimistically expands the virtual list height via `computeOptimisticCount(loadedCount)` so the user never hits the bottom while the async fetch is in flight: returns `loadedCount` — the actual number of articles available — so the list never extends past the last real article. The `nearEndThreshold` triggers `onNearEnd` before the user reaches the bottom, keeping the list growing ahead of scroll. Special case: when `loadedCount` is 0 (before the first batch loads), returns 0 to suppress empty-list jumps — showing scroll headroom before any articles are rendered would create an empty list that jumps once the first batch arrives. The optimistic count is routed through `applyOptimisticCount`, which enforces a never-shrink ratchet so the list height doesn't decrease while async fetches are in flight. Then calls `aw.ensureRange(range.start, range.end + PREFETCH_BUFFER)`. When the promise resolves, `onWindowChange` fires, which updates the list height to the real `loadedCount` (via `computeOptimisticCount`) — `onWindowChange` does not ratchet, allowing the count to settle to the real total so the list never extends past the last actual article.
 
 2. **No ArticleWindow yet** — Dispatches `expandInfiniteScroll` to the state machine, which increments `infiniteScrollLimit` by `INFINITE_SCROLL_STEP` (200) and emits a `requery` effect.
 
@@ -121,7 +130,7 @@ onRangeChange(range)
 
 Two debounced side effects run on `onRangeChange`:
 
-**Enrichment** (`enrich-scheduler.ts`): After the visible range settles for 300ms, fetches Wikipedia summaries for visible articles. Tracks already-enriched titles to avoid duplicate requests. Resets on position change. The actual fetching is handled by `SummaryLoader` (`summary-loader.ts`), which manages a concurrency-limited queue (default 3 concurrent requests) with per-item callbacks, cancellation support, and priority boosting for viewport-visible items via `request()`.
+**Enrichment** (`enrich-scheduler.ts`): After the visible range settles for 300ms, enqueues visible articles for enrichment. In-flight requests are allowed to finish across range changes — the debounce already suppresses _new_ requests during active scrolling, and aborting mid-flight on slow networks just guarantees summaries never load. The `SummaryLoader`'s in-memory cache handles dedup, so previously fetched summaries return instantly on revisit without any local `enrichedSet` tracking. Resets on position change. The actual fetching is handled by `SummaryLoader` (`summary-loader.ts`), which manages a concurrency-limited queue (default 3 concurrent requests) with per-item callbacks, cancellation support, and priority boosting for viewport-visible items via `request()`.
 
 **`SummaryLoader.request()` semantics:** When the title is already pending (queued by a prior `load()`), `request()` moves it to the **front** of the queue so viewport items beat off-screen items still waiting their turn. This is the core integration between the enrich scheduler and the loader — the scheduler doesn't reorder anything itself, it just prods `request()` for whatever is currently visible. When the title is a **cache hit**, `request()` is a no-op: it does NOT invoke `onSummary`. Callers that want the cached value must use `get()` explicitly. This stops scroll-settle from re-firing DOM patches over already-delivered items, which would otherwise reset hover state and re-run reconciliation on every scroll quiet point.
 
@@ -138,7 +147,7 @@ The `InfiniteScrollLifecycle` (`infinite-scroll-lifecycle.ts`) bundles the virtu
 - **`updateHeader()`** — Replaces only the header element. Used by `renderBrowsingHeaderDOM` when GPS updates arrive while scroll-paused (avoids rebuilding the list, which would destroy hover states).
 - **`destroy()`** — Tears down all sub-components and listeners.
 
-The `ArticleWindowLifecycle` (`article-window-lifecycle.ts`) manages the ArticleWindow instance and its AbortController. It delegates construction to `ArticleWindowFactory` (`article-window-factory.ts`), which wires up the `TileRadiusProvider` with tile-merging logic and returns a ready-to-use `ArticleWindow`. This factory/lifecycle separation keeps the provider wiring (pure construction) independent from the reset/create orchestration and state machine integration. The lifecycle's `onWindowChange` callback connects the data model to the DOM: when articles load, it updates the list height to `max(totalKnown, loadedCount)` but never below the previous count (never-shrink invariant), using the larger of `totalKnown` (all articles from loaded tiles) and `loadedCount` (contiguous fetched range) to provide scroll headroom. The lifecycle's `getArticleByIndex` falls back to viewport articles when the ArticleWindow hasn't loaded the requested index yet, ensuring smooth content during the transition to infinite scroll.
+The `ArticleWindowLifecycle` (`article-window-lifecycle.ts`) manages the ArticleWindow instance and its AbortController. It delegates construction to `ArticleWindowFactory` (`article-window-factory.ts`), which wires up the `TileRadiusProvider` with tile-merging logic and returns a ready-to-use `ArticleWindow`. This factory/lifecycle separation keeps the provider wiring (pure construction) independent from the reset/create orchestration and state machine integration. The lifecycle's `onWindowChange` callback connects the data model to the DOM: when articles load, it updates the list height to `loadedCount` (via `computeOptimisticCount`), allowing the count to settle to the real total so the list never extends past the last actual article. The separate `applyOptimisticCount` path enforces the never-shrink ratchet for pre-fetch headroom. The lifecycle's `getArticleByIndex` falls back to viewport articles when the ArticleWindow hasn't loaded the requested index yet, ensuring smooth content during the transition to infinite scroll.
 
 ## Scroll Mode Transitions
 
@@ -163,11 +172,11 @@ When transitioning from viewport mode to infinite scroll (e.g., the user scrolls
 
 Three mechanisms prevent this:
 
-1. **Optimistic initial height** — `renderInfiniteScrollDOM()` sets `totalCount = max(loadedCount, articles.length, infiniteScrollLimit)`, so the virtual list starts tall enough to cover the scroll-pause transition even before the ArticleWindow has fetched data.
+1. **Optimistic initial height** — `renderInfiniteScrollDOM()` sets `totalCount = loadedCount > 0 ? loadedCount : articles.length`, so the virtual list starts with a reasonable height from the first batch of data, avoiding the empty-list jump.
 
-2. **Optimistic expansion on near-end** — When `onNearEnd` fires and an ArticleWindow exists, `computeOptimisticCount(totalKnown, loadedCount)` immediately expands the list height _before_ the async `ensureRange()` call. Returns `max(totalKnown, loadedCount)` — no phantom buffer is added, since the `nearEndThreshold` already triggers expansion before the user reaches the bottom. When `loadedCount` is 0 (before the first batch), returns 0 instead — this suppresses empty-list jumps before any articles are rendered. This gives the user scroll space while tiles load.
+2. **Optimistic expansion on near-end** — When `onNearEnd` fires and an ArticleWindow exists, `computeOptimisticCount(loadedCount)` immediately expands the list height _before_ the async `ensureRange()` call. Returns `loadedCount` — the actual number of articles available — so the list never extends past the last real article. The `nearEndThreshold` triggers expansion before the user reaches the bottom, keeping the list growing ahead of scroll. When `loadedCount` is 0 (before the first batch), returns 0 instead — this suppresses empty-list jumps before any articles are rendered. The optimistic count is routed through `applyOptimisticCount`, which enforces a **never-shrink ratchet**: `lastScrollCount` tracks the high-water mark, preventing the list from shrinking while async fetches are in flight. This gives the user scroll space while tiles load.
 
-3. **`totalKnown` in `onWindowChange`** — When tiles finish loading, the callback uses `max(totalKnown, loadedCount)` rather than just `loadedCount`. Since `totalKnown` reflects all articles across loaded tiles (not just the contiguous fetched window), this provides headroom for the next scroll burst. The callback also enforces a **never-shrink invariant**: `lastScrollCount` tracks the high-water mark, and `update()` always receives `max(lastScrollCount, realCount)`. This prevents scroll jumps when the optimistic count overshoots reality (e.g., the user is scrolled to position 100 but only 80 articles ultimately load). The high-water mark resets on `resetArticleWindow` (new position or query).
+3. **`loadedCount` in `onWindowChange`** — When tiles finish loading, the callback uses `computeOptimisticCount`, which returns `loadedCount` — the contiguous fetched range. Unlike `applyOptimisticCount`, `onWindowChange` does _not_ ratchet: it sets `lastScrollCount = realCount` directly, allowing the count to settle to the real total so the list never extends past the last actual article. Since `totalKnown` and `loadedCount` only grow as more tiles are discovered, `realCount` is monotonically non-decreasing — no scroll-jump risk. The high-water mark resets on `resetArticleWindow` (new position or query).
 
 ## See Also
 

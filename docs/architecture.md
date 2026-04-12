@@ -294,7 +294,7 @@ src/app/
   article-window-factory.ts   Wires ArticleWindow to TileRadiusProvider and state machine tiles
   article-window-lifecycle.ts Manages ArticleWindow instance, AbortController, reset/create/render orchestration
   tile-radius.ts              Progressive tile loading by Chebyshev ring distance; implements ArticleProvider
-  virtual-scroll.ts           Pure viewport math (computeVisibleRange) + thin DOM adapter (VirtualList)
+  virtual-scroll.ts           Pure viewport math (computeVisibleRange) + thin DOM adapter (VirtualList); includes compressed mode for lists exceeding MAX_SAFE_SCROLL_HEIGHT
   enrich-scheduler.ts         Debounced enrichment trigger — fires after articles settle in viewport
   summary-loader.ts           Concurrency-limited, cancellable batch fetcher for article summaries
   scroll-pause-detector.ts    Fires callback when scroll passes a pixel threshold (window + container)

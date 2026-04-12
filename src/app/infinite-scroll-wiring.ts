@@ -39,6 +39,18 @@ export function createInfiniteScrollWiring(
   /** Extra articles to prefetch beyond the visible range end. */
   const PREFETCH_BUFFER = 200;
 
+  /** Extra articles to prefetch before the visible range start on backward scroll. */
+  const BACKWARD_PREFETCH_BUFFER = 200;
+
+  // Remembers the last visible start so onVisibleRangeChange can detect
+  // backward scrolls and prefetch ahead of the viewport in that direction.
+  // Reset whenever a new ArticleWindow becomes active (tracked via
+  // lastSeenWindow below) — otherwise the fresh window's first range event
+  // at start ≈ 0 would be compared against the previous window's last start
+  // and misread as a backward scroll.
+  let lastVisibleStart: number | null = null;
+  let lastSeenWindow: ArticleWindow | null = null;
+
   /** Scroll-near-end detection threshold (items from bottom). */
   const NEAR_END_THRESHOLD = 100;
 
@@ -138,6 +150,31 @@ export function createInfiniteScrollWiring(
         }
       },
       destroyBrowseMap: () => deps.browseMap.destroy(),
+      onVisibleRangeChange: (range) => {
+        // Re-fetch articles that were evicted from the ArticleWindow
+        // when the user scrolled away. ensureRange is a no-op when the
+        // range is already loaded, so this is cheap on normal scrolls.
+        //
+        // Forward scrolls rely on onNearEnd (PREFETCH_BUFFER past the end)
+        // to stay ahead of the viewport. Backward scrolls have no such
+        // trigger, so on a fast upward sweep into evicted territory we'd
+        // re-fetch exactly the viewport range on every event. Detect
+        // direction from the last seen start and pad the backward side.
+        const aw = deps.getCurrentWindow();
+        if (aw !== lastSeenWindow) {
+          lastVisibleStart = null;
+          lastSeenWindow = aw;
+        }
+        const scrollingBackward =
+          lastVisibleStart !== null && range.start < lastVisibleStart;
+        lastVisibleStart = range.start;
+        if (aw) {
+          const fetchStart = scrollingBackward
+            ? Math.max(0, range.start - BACKWARD_PREFETCH_BUFFER)
+            : range.start;
+          void aw.ensureRange(fetchStart, range.end);
+        }
+      },
       onNearEnd: () => {
         const aw = deps.getCurrentWindow();
         if (aw) {
