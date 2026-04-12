@@ -165,21 +165,17 @@ export function createRenderer(deps: RendererDeps): Renderer {
       deps.infiniteScroll.destroy();
     }
 
-    // When the ArticleWindow knows the true article count, use it so the
-    // list never extends past the last real article.  Before the first
-    // fetch completes (knownTotal === 0) fall back to the state-machine
-    // limit as a placeholder that will be corrected by onWindowChange.
+    // Use loadedCount — the number of articles actually available in the
+    // ArticleWindow — so the list never extends past the last real
+    // article.  The provider may know about far more articles (totalKnown)
+    // from ring loading, but those aren't in the window yet.  The
+    // onNearEnd mechanism loads more as the user scrolls, growing the
+    // list organically.  Before the first fetch completes (loadedCount 0)
+    // fall back to the state-machine articles as a placeholder.
     const aw = deps.getCurrentWindow();
     const loadedCount = aw?.loadedCount() ?? 0;
-    const knownTotal = aw?.totalKnown() ?? 0;
     const totalCount =
-      knownTotal > 0
-        ? Math.max(loadedCount, knownTotal)
-        : Math.max(
-            loadedCount,
-            state.phase.articles.length,
-            state.phase.infiniteScrollLimit,
-          );
+      loadedCount > 0 ? loadedCount : state.phase.articles.length;
 
     if (!deps.infiniteScroll.isActive()) {
       deps.infiniteScroll.init(totalCount);

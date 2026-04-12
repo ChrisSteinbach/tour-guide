@@ -8,7 +8,6 @@ import {
   createArticleItemContent,
   applyEnrichment,
 } from "./render";
-import { computeOptimisticCount } from "./article-window-lifecycle";
 import {
   createInfiniteScrollLifecycle,
   type InfiniteScrollLifecycle,
@@ -149,11 +148,7 @@ export function createInfiniteScrollWiring(
           // Optimistically expand the list height so the user never hits
           // the bottom while the async fetch is in progress.  Route through
           // the lifecycle ratchet so onWindowChange can't shrink below this.
-          const optimistic = computeOptimisticCount(
-            aw.totalKnown(),
-            aw.loadedCount(),
-          );
-          deps.applyOptimisticCount(optimistic);
+          deps.applyOptimisticCount(aw.loadedCount());
 
           // onWindowChange fires when the fetch completes, updating the
           // height to the real value — no .then() callback needed.

@@ -549,8 +549,8 @@ describe("createInfiniteScrollWiring", () => {
 
       capturedDeps!.onNearEnd!();
 
-      // optimistic = max(300, 120) = 300 (loadedCount is 120, not zero)
-      expect(applyOptimisticCount).toHaveBeenCalledWith(300);
+      // optimistic = loaded = 120 (uses loadedCount, not totalKnown)
+      expect(applyOptimisticCount).toHaveBeenCalledWith(120);
       expect(aw.ensureRange).toHaveBeenCalledWith(50, 100 + 200);
       expect(dispatch).not.toHaveBeenCalled();
     });
