@@ -150,8 +150,8 @@ Both are created during `infiniteScroll.init()` and destroyed with the lifecycle
 
 The `InfiniteScrollLifecycle` (`infinite-scroll-lifecycle.ts`) bundles the virtual list, enrichment scheduler, map sync, and scroll listener as a single init/update/destroy lifecycle.
 
-- **`init(totalCount)`** — Clears the container, renders the header, creates the virtual list and sub-components, connects scroll events.
-- **`update(totalCount)`** — Refreshes the header and virtual list with new data. Called when `loadedCount` changes (articles fetched) or when the article list changes (requery).
+- **`init(totalCount, loadedCount?)`** — Clears the container, renders the header, creates the virtual list and sub-components, connects scroll events. The optional `loadedCount` seeds the near-end gate (see below); when omitted it defaults to 0.
+- **`update(totalCount, loadedCount?)`** — Refreshes the header and virtual list with new data. Called when `loadedCount` changes (articles fetched) or when the article list changes (requery). The optional `loadedCount` is forwarded from the scroll-count observer so the lifecycle's internal `currentLoadedCount` — the comparand in the near-end threshold check — tracks the real contiguous fetched range rather than the optimistic list height.
 - **`updateHeader()`** — Replaces only the header element. Used by `renderBrowsingHeaderDOM` when GPS updates arrive while scroll-paused (avoids rebuilding the list, which would destroy hover states).
 - **`destroy()`** — Tears down all sub-components and listeners.
 
