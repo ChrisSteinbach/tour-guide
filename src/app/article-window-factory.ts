@@ -64,33 +64,41 @@ export function createArticleWindowFactory(
   const providerTiles = new Map<string, NearestQuery>();
 
   const radiusProvider = createTileRadiusProvider({
-    queryAllTiles: () => {
-      const allTiles = new Map<string, NearestQuery>();
-      for (const [id, query] of getStateMachineTiles()) allTiles.set(id, query);
-      for (const [id, query] of providerTiles) allTiles.set(id, query);
+    queryTiles: (tileIds) => {
+      const tiles = new Map<string, NearestQuery>();
+      const smTiles = getStateMachineTiles();
+      for (const id of tileIds) {
+        const q = providerTiles.get(id) ?? smTiles.get(id);
+        if (q) tiles.set(id, q);
+      }
       return Promise.resolve(
-        findNearestTiled(allTiles, position.lat, position.lon, 99999),
+        findNearestTiled(tiles, position.lat, position.lon, 99999),
       );
     },
     loadRing: async (ring) => {
       const ids = tilesAtRing(row, col, ring, tileMap);
-      if (ids.length === 0) return false;
+      if (ids.length === 0) return [];
 
+      const newlyLoaded: string[] = [];
       for (const id of ids) {
-        if (signal.aborted) return false;
+        if (signal.aborted) return newlyLoaded;
         if (providerTiles.has(id)) continue;
         const smTiles = getStateMachineTiles();
-        if (smTiles.has(id)) continue;
+        if (smTiles.has(id)) {
+          newlyLoaded.push(id);
+          continue;
+        }
         const entry = getTileEntry(tileMap, id);
         if (!entry) continue;
         try {
           const tileQuery = await loadTile("", lang, entry, signal);
           providerTiles.set(id, tileQuery);
+          newlyLoaded.push(id);
         } catch {
           // Tile load failure is non-fatal
         }
       }
-      return true;
+      return newlyLoaded;
     },
     centerRow: row,
     centerCol: col,
