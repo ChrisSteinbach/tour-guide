@@ -129,7 +129,8 @@ export interface VirtualList {
    * user lands at the *tail* of the new, shorter list — not the top.
    * Callers that want a top-of-list landing on shrink (for example a
    * data reset triggered by a new query) must explicitly scroll the
-   * container to 0 before — or alongside — the update call.
+   * container to 0 *before* the update call. Setting scrollTop after
+   * the height rewrite is too late — the clamp has already fired.
    *
    * This matters most for direct→compressed→direct round-trips: a list
    * that was compressed with scrollTop deep inside the virtual range

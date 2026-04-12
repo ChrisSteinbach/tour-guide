@@ -115,7 +115,7 @@ export function createArticleWindowLifecycle(
       onWindowChange: () => {
         if (!articleWindow) return;
         lastScrollCount = articleWindow.loadedCount();
-        scrollCountObserver?.(lastScrollCount, articleWindow.loadedCount());
+        scrollCountObserver?.(lastScrollCount, lastScrollCount);
 
         const loadedArticles = articleWindow.getLoadedArticles();
         if (loadedArticles.length > 0) {
