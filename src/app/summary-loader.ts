@@ -14,7 +14,13 @@ const DEFAULT_CONCURRENCY = 3;
 export interface SummaryLoader {
   /** Start fetching summaries for articles. Cancels any previous batch. */
   load: (titles: string[], lang: Lang) => void;
-  /** Request a single summary (e.g. from IntersectionObserver). No-op if already fetched/queued. */
+  /**
+   * Request a single summary (e.g. from IntersectionObserver). No-op if
+   * already fetched/queued. Does NOT invoke `onSummary` for cache hits —
+   * callers that want the cached value should use `get()` explicitly.
+   * This keeps scroll-settle callbacks from re-firing DOM patches over
+   * items whose summaries have already been delivered.
+   */
   request: (title: string, lang: Lang) => void;
   /** Get a previously fetched summary, or undefined. */
   get: (title: string) => ArticleSummary | undefined;
@@ -93,10 +99,7 @@ export function createSummaryLoader(
 
   function request(title: string, lang: Lang): void {
     const key = cacheKey(title, lang);
-    if (cache.has(key)) {
-      deps.onSummary(title, cache.get(key)!);
-      return;
-    }
+    if (cache.has(key)) return;
     activeLang = lang;
     if (pending.has(title)) {
       // Already queued (e.g. from load()) — move to front so viewport items

@@ -116,7 +116,7 @@ describe("createSummaryLoader", () => {
     expect(deps.fetch).toHaveBeenCalledTimes(15);
   });
 
-  it("request() returns cached summary immediately via callback", async () => {
+  it("request() does not re-fire onSummary on cache hit", async () => {
     const results: string[] = [];
     const deps: SummaryLoaderDeps = {
       fetch: vi.fn(async (title) => makeSummary(title)),
@@ -127,11 +127,33 @@ describe("createSummaryLoader", () => {
     loader.load(["A"], "en");
     await vi.waitFor(() => expect(results).toHaveLength(1));
 
-    // Request same article again — should hit cache
+    // Request same article again — cache hit must not re-fire the
+    // callback. Callers that need the cached value use get() explicitly.
     results.length = 0;
     loader.request("A", "en");
-    expect(results).toEqual(["A"]);
+    expect(results).toEqual([]);
     expect(deps.fetch).toHaveBeenCalledTimes(1); // no extra fetch
+    expect(loader.get("A")).toEqual(makeSummary("A"));
+  });
+
+  it("repeated request() over an already-enriched range fires zero extra callbacks", async () => {
+    const results: string[] = [];
+    const deps: SummaryLoaderDeps = {
+      fetch: vi.fn(async (title) => makeSummary(title)),
+      onSummary: (title) => results.push(title),
+    };
+    const loader = createSummaryLoader(deps);
+
+    const titles = ["A", "B", "C", "D", "E"];
+    loader.load(titles, "en");
+    await vi.waitFor(() => expect(results).toHaveLength(titles.length));
+
+    // Simulate a second scroll settle over the same visible range:
+    // every title is already cached, and none should re-enter onSummary.
+    const before = results.length;
+    for (const t of titles) loader.request(t, "en");
+    expect(results.length - before).toBe(0);
+    expect(deps.fetch).toHaveBeenCalledTimes(titles.length);
   });
 
   it("get() returns cached summary or undefined", async () => {
@@ -181,6 +203,45 @@ describe("createSummaryLoader", () => {
     await new Promise((r) => setTimeout(r, 10));
 
     expect(deps.onSummary).not.toHaveBeenCalled();
+  });
+
+  it("request() re-enqueues a title after cancel races fetch resolution", async () => {
+    // Regression: if cancel() interleaves between fetch resolution and the
+    // runFetch continuation microtask, an early-return on signal.aborted
+    // must not leave the title stranded in `pending`. A subsequent
+    // request() for the same title must still schedule a fresh fetch.
+    const gate1 = deferred<ArticleSummary>();
+    const gate2 = deferred<ArticleSummary>();
+    let callIdx = 0;
+    const deps: SummaryLoaderDeps = {
+      fetch: vi.fn(() => {
+        const idx = callIdx++;
+        return idx === 0 ? gate1.promise : gate2.promise;
+      }),
+      onSummary: vi.fn(),
+    };
+    const loader = createSummaryLoader(deps);
+
+    loader.load(["A"], "en");
+    await vi.waitFor(() => expect(deps.fetch).toHaveBeenCalledTimes(1));
+
+    // Resolve the first fetch and cancel before the continuation runs.
+    // cancel() executes synchronously before the awaited continuation,
+    // so the runFetch will observe signal.aborted === true.
+    gate1.resolve(makeSummary("A"));
+    loader.cancel();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Fresh request for the same title must schedule a new fetch — not
+    // silently no-op because "A" is still considered pending.
+    loader.request("A", "en");
+    await vi.waitFor(() => expect(deps.fetch).toHaveBeenCalledTimes(2));
+
+    gate2.resolve(makeSummary("A"));
+    await vi.waitFor(() =>
+      expect(deps.onSummary).toHaveBeenCalledWith("A", makeSummary("A")),
+    );
   });
 
   it("does not duplicate fetches for the same title in a batch", async () => {
