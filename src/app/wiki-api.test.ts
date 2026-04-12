@@ -1,4 +1,4 @@
-import { summaryUrl, createWikiApi } from "./wiki-api";
+import { summaryUrl, createWikiApi, RateLimitError } from "./wiki-api";
 
 describe("summaryUrl", () => {
   it("encodes spaces as underscores", () => {
@@ -31,10 +31,23 @@ describe("summaryUrl", () => {
 });
 
 describe("fetchArticleSummary", () => {
-  function mockFetch(response: { status: number; body?: unknown }) {
+  function mockFetch(response: {
+    status: number;
+    body?: unknown;
+    headers?: Record<string, string>;
+  }) {
+    const headerMap = new Map(
+      Object.entries(response.headers ?? {}).map(([k, v]) => [
+        k.toLowerCase(),
+        v,
+      ]),
+    );
     return vi.fn().mockResolvedValue({
       ok: response.status >= 200 && response.status < 300,
       status: response.status,
+      headers: {
+        get: (name: string) => headerMap.get(name.toLowerCase()) ?? null,
+      },
       json: () => Promise.resolve(response.body),
     }) as unknown as typeof globalThis.fetch;
   }
@@ -77,6 +90,34 @@ describe("fetchArticleSummary", () => {
     await expect(fetchArticleSummary("Nonexistent")).rejects.toThrow(
       "Article not found",
     );
+  });
+
+  it("throws RateLimitError with parsed Retry-After on 429", async () => {
+    const fetch = mockFetch({
+      status: 429,
+      headers: { "Retry-After": "1602" },
+    });
+    const { fetchArticleSummary } = createWikiApi({ fetch });
+
+    await expect(fetchArticleSummary("Anything")).rejects.toBeInstanceOf(
+      RateLimitError,
+    );
+    const err: unknown = await fetchArticleSummary("Anything").catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(RateLimitError);
+    expect((err as RateLimitError).retryAfterMs).toBe(1602 * 1000);
+  });
+
+  it("falls back to the ~30-min Envoy window when 429 omits Retry-After", async () => {
+    const fetch = mockFetch({ status: 429 });
+    const { fetchArticleSummary } = createWikiApi({ fetch });
+
+    const err: unknown = await fetchArticleSummary("Anything").catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(RateLimitError);
+    expect((err as RateLimitError).retryAfterMs).toBe(30 * 60 * 1000);
   });
 
   it("throws on 500", async () => {

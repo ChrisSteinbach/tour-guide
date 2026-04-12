@@ -1,12 +1,16 @@
 // Concurrency-limited, cancellable batch fetcher for article summaries.
 // Fetches summaries for a list of articles, calling back per-item as they arrive.
 
-import type { ArticleSummary } from "./wiki-api";
+import { RateLimitError, type ArticleSummary } from "./wiki-api";
 import type { Lang } from "../lang";
 
 export interface SummaryLoaderDeps {
   fetch: (title: string, lang: Lang) => Promise<ArticleSummary>;
   onSummary: (title: string, summary: ArticleSummary) => void;
+  /**
+   * Injectable clock for deterministic tests. Defaults to Date.now.
+   */
+  now?: () => number;
 }
 
 const DEFAULT_CONCURRENCY = 3;
@@ -32,6 +36,7 @@ export function createSummaryLoader(
   deps: SummaryLoaderDeps,
   concurrency = DEFAULT_CONCURRENCY,
 ): SummaryLoader {
+  const now = deps.now ?? (() => Date.now());
   const cache = new Map<string, ArticleSummary>();
   let controller: AbortController | null = null;
   let queue: string[] = [];
@@ -39,13 +44,37 @@ export function createSummaryLoader(
   let activeCount = 0;
   const pending = new Set<string>();
 
+  // Global circuit breaker: when Wikipedia returns 429, pause the entire
+  // queue until Retry-After elapses. The rate limit is per-client across
+  // the whole endpoint, so retrying any title inside the window just
+  // burns requests against an already-blocked wall.
+  let rateLimitUntil = 0;
+  let resumeTimer: ReturnType<typeof setTimeout> | null = null;
+
   function cacheKey(title: string, lang: Lang): string {
     return `${lang}:${title}`;
+  }
+
+  function scheduleResume(): void {
+    if (resumeTimer !== null) return;
+    const delay = Math.max(0, rateLimitUntil - now());
+    resumeTimer = setTimeout(() => {
+      resumeTimer = null;
+      // Do not clear rateLimitUntil here: a concurrent 429 may have
+      // extended the window. drain() checks the current value and will
+      // reschedule the timer if we still need to wait.
+      drain();
+    }, delay);
   }
 
   function drain(): void {
     if (!controller) return;
     const signal = controller.signal;
+
+    if (rateLimitUntil > now()) {
+      scheduleResume();
+      return;
+    }
 
     while (activeCount < concurrency && queue.length > 0) {
       const title = queue.shift()!;
@@ -57,23 +86,42 @@ export function createSummaryLoader(
       }
 
       activeCount++;
-      deps
-        .fetch(title, activeLang)
-        .then((summary) => {
-          if (signal.aborted) return;
-          cache.set(key, summary);
-          deps.onSummary(title, summary);
-        })
-        .catch(() => {
-          // Graceful degradation: item stays rendered with title+distance
-        })
-        .finally(() => {
-          pending.delete(title);
-          if (!signal.aborted) {
-            activeCount--;
-            drain();
-          }
-        });
+      void runFetch(title, signal);
+    }
+  }
+
+  async function runFetch(title: string, signal: AbortSignal): Promise<void> {
+    const key = cacheKey(title, activeLang);
+    try {
+      const summary = await deps.fetch(title, activeLang);
+      // Clear pending before the abort check: a cancel() or load() that
+      // interleaves between fetch resolution and this continuation must
+      // not leave the title stuck in `pending`, or a later request() would
+      // see it as "already queued" and silently no-op.
+      pending.delete(title);
+      if (signal.aborted) return;
+      cache.set(key, summary);
+      deps.onSummary(title, summary);
+    } catch (err) {
+      if (err instanceof RateLimitError) {
+        rateLimitUntil = Math.max(rateLimitUntil, now() + err.retryAfterMs);
+        // Keep title in `pending` and re-queue so it retries once the
+        // window reopens. Guard with `includes` because an overlapping
+        // load() can start a second runFetch for the same title while
+        // this (now-stale) one is still resolving; both would otherwise
+        // re-push. A fresh load() or cancel() clears pending+queue.
+        if (!queue.includes(title)) {
+          queue.push(title);
+        }
+      } else {
+        // Graceful degradation: item stays rendered with title+distance.
+        pending.delete(title);
+      }
+    } finally {
+      if (!signal.aborted) {
+        activeCount--;
+        drain();
+      }
     }
   }
 
@@ -129,6 +177,13 @@ export function createSummaryLoader(
     queue = [];
     activeCount = 0;
     pending.clear();
+    if (resumeTimer !== null) {
+      clearTimeout(resumeTimer);
+      resumeTimer = null;
+    }
+    // Deliberately do NOT reset rateLimitUntil: the rate limit is
+    // remote-server state and outlives any local batch. A subsequent
+    // load() or request() will re-schedule the resume timer.
   }
 
   return { load, request, get, cancel };
