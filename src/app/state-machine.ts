@@ -469,27 +469,39 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
       if (state.phase.phase !== "browsing" && state.phase.phase !== "detail") {
         return { next: state, effects: [] };
       }
-      // Switch to GPS → viewport mode (GPS + not paused = viewport)
-      const updatedPhase =
-        state.phase.phase === "browsing" || state.phase.phase === "detail"
-          ? { ...state.phase, scrollMode: "viewport" as const }
-          : state.phase;
+      // Switch to GPS — viewport mode, unpaused.
+      const updatedPhase = {
+        ...state.phase,
+        scrollMode: "viewport" as const,
+        paused: false,
+        pauseReason: null as "manual" | "scroll" | null,
+      };
+
+      // When switching away from a picked position, clear the stale
+      // coordinates so that nothing (scrollPause, ensureArticleRange,
+      // renderViewportListDOM) can act on the old location before GPS
+      // provides the real one via handlePosition → forceRequery.
+      const hasGpsPosition = state.positionSource === "gps" && state.position;
       const next: AppState = {
         ...state,
         positionSource: "gps",
+        position: hasGpsPosition ? state.position : null,
         phase: updatedPhase,
       };
       const effects: Effect[] = [{ type: "startGps" }];
-      // If we already have a GPS position, requery immediately so the
-      // list updates without waiting for the next 15 m GPS movement.
-      if (state.position) {
+
+      if (next.position) {
+        // Already on GPS with a valid position — requery and scroll to top.
         const rq = forceRequery(next);
         return {
           next: rq.next,
           effects: [...effects, ...rq.effects, { type: "scrollToTop" }],
         };
       }
-      effects.push({ type: "renderBrowsingList" });
+
+      // No valid GPS position yet — scroll to top and wait for GPS.
+      // The existing DOM stays visible until handlePosition fires.
+      effects.push({ type: "scrollToTop" });
       return { next, effects };
     }
 

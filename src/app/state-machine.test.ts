@@ -832,18 +832,46 @@ describe("positionSource tracking", () => {
 // ── useGps event ─────────────────────────────────────────────
 
 describe("useGps event", () => {
-  it("sets positionSource to gps and switches to viewport mode from browsing", () => {
+  it("clears stale position when switching from picked mode", () => {
     const state = browsingState({
       positionSource: "picked",
       scrollMode: "infinite",
     });
     const { next, effects } = transition(state, { type: "useGps" });
     expect(next.positionSource).toBe("gps");
+    expect(next.position).toBeNull();
     const browsing = expectBrowsing(next);
     expect(browsing.scrollMode).toBe("viewport");
+    expect(browsing.paused).toBe(false);
+    expect(effectTypes(effects)).toContain("startGps");
+    expect(effectTypes(effects)).toContain("scrollToTop");
+    expect(effectTypes(effects)).not.toContain("requery");
+  });
+
+  it("requeries at current position when already on GPS", () => {
+    const state = browsingState({
+      positionSource: "gps",
+      scrollMode: "viewport",
+    });
+    const { next, effects } = transition(state, { type: "useGps" });
+    expect(next.positionSource).toBe("gps");
+    expect(next.position).toEqual(paris);
     expect(effectTypes(effects)).toContain("startGps");
     expect(effectTypes(effects)).toContain("requery");
     expect(effectTypes(effects)).toContain("scrollToTop");
+  });
+
+  it("clears paused state when switching to GPS", () => {
+    const state = browsingState({
+      positionSource: "picked",
+      scrollMode: "infinite",
+      paused: true,
+      pauseReason: "scroll",
+    });
+    const { next } = transition(state, { type: "useGps" });
+    const browsing = expectBrowsing(next);
+    expect(browsing.paused).toBe(false);
+    expect(browsing.pauseReason).toBeNull();
   });
 
   it("does not requery when no position is known", () => {
@@ -852,7 +880,7 @@ describe("useGps event", () => {
     const { effects } = transition(noPos, { type: "useGps" });
     expect(effectTypes(effects)).not.toContain("requery");
     expect(effectTypes(effects)).toContain("startGps");
-    expect(effectTypes(effects)).toContain("renderBrowsingList");
+    expect(effectTypes(effects)).toContain("scrollToTop");
   });
 
   it("works from detail phase", () => {
@@ -1807,7 +1835,7 @@ describe("scroll mode transitions", () => {
     expect(requery).toMatchObject({ count: 600 });
   });
 
-  it("useGps from infinite switches to viewport and requeries", () => {
+  it("useGps from picked/infinite clears position and skips requery", () => {
     const state = browsingState({
       positionSource: "picked",
       scrollMode: "infinite",
@@ -1815,6 +1843,22 @@ describe("scroll mode transitions", () => {
     });
     const { next, effects } = transition(state, { type: "useGps" });
     expect(next.positionSource).toBe("gps");
+    expect(next.position).toBeNull();
+    const browsing = expectBrowsing(next);
+    expect(browsing.scrollMode).toBe("viewport");
+    expect(effectTypes(effects)).not.toContain("requery");
+    expect(effectTypes(effects)).toContain("scrollToTop");
+  });
+
+  it("useGps from GPS/infinite switches to viewport and requeries", () => {
+    const state = browsingState({
+      positionSource: "gps",
+      scrollMode: "infinite",
+      nearbyCount: 20,
+    });
+    const { next, effects } = transition(state, { type: "useGps" });
+    expect(next.positionSource).toBe("gps");
+    expect(next.position).toEqual(paris);
     const browsing = expectBrowsing(next);
     expect(browsing.scrollMode).toBe("viewport");
     const requery = effects.find((e) => e.type === "requery");
