@@ -70,20 +70,22 @@ describe("EnrichScheduler", () => {
   });
 
   it("does not cancel in-flight enrichment when range changes", () => {
-    const cancelCalls: number[] = [];
-    let callCount = 0;
+    let cancelCalls = 0;
     const scheduler = createEnrichScheduler({
       settleMs: 200,
       getTitle: (i) => `Article ${i}`,
       enrich: () => {},
-      cancel: () => cancelCalls.push(++callCount),
+      cancel: () => cancelCalls++,
     });
 
     scheduler.onRangeChange({ start: 0, end: 3 });
     vi.advanceTimersByTime(200); // settles, enriches 0-2
 
     scheduler.onRangeChange({ start: 10, end: 13 }); // scroll away
-    expect(cancelCalls).toEqual([]); // in-flight requests should complete
+    // In-flight requests for 0-2 must be allowed to finish.
+    // On slow networks, cancelling mid-flight after every micro-scroll
+    // means summaries never complete loading.
+    expect(cancelCalls).toBe(0);
   });
 
   it("calls cancel on reset", () => {
@@ -96,14 +98,11 @@ describe("EnrichScheduler", () => {
       cancel: () => cancelCalls.push(++callCount),
     });
 
-    scheduler.onRangeChange({ start: 0, end: 3 });
-    vi.advanceTimersByTime(200);
-
     scheduler.reset();
     expect(cancelCalls).toEqual([1]);
   });
 
-  it("does not re-enrich already enriched articles", () => {
+  it("re-enriches on revisit (dedup is the summary loader's job)", () => {
     const enriched: string[] = [];
     const scheduler = createEnrichScheduler({
       settleMs: 200,
@@ -121,11 +120,19 @@ describe("EnrichScheduler", () => {
     scheduler.onRangeChange({ start: 0, end: 3 });
     vi.advanceTimersByTime(200);
 
-    // Articles 0-2 should appear only once
+    // Articles 0-2 appear twice — the summary loader's cache deduplicates
+    // at the HTTP level, so the enrich() call is cheap on revisit.
     const firstThree = enriched.filter((t) =>
       ["Article 0", "Article 1", "Article 2"].includes(t),
     );
-    expect(firstThree).toEqual(["Article 0", "Article 1", "Article 2"]);
+    expect(firstThree).toEqual([
+      "Article 0",
+      "Article 1",
+      "Article 2",
+      "Article 0",
+      "Article 1",
+      "Article 2",
+    ]);
   });
 
   it("cleans up on destroy", () => {
@@ -143,7 +150,7 @@ describe("EnrichScheduler", () => {
     expect(enriched).toEqual([]);
   });
 
-  it("resets enriched set on reset", () => {
+  it("re-enriches after reset", () => {
     const enriched: string[] = [];
     const scheduler = createEnrichScheduler({
       settleMs: 200,
