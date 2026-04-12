@@ -79,6 +79,7 @@ All inputs to the machine are modeled as a single `Event` union:
 | `expandInfiniteScroll` | —                               | Scroll sentinel enters viewport                    |
 | `showMapPicker`        | —                               | User taps "Pick location" button                   |
 | `queryResult`          | `articles`, `queryPos`, `count` | Nearest-neighbor query completed                   |
+| `articlesSync`         | `articles`                      | ArticleWindow observer after tile-load re-sort     |
 | `noTilesNearby`        | —                               | Effect executor: no tiles exist near user position |
 | `swUpdateAvailable`    | —                               | Service worker controller change                   |
 | `showAbout`            | —                               | User taps the About link                           |
@@ -217,6 +218,9 @@ The `start` event branches based on two conditions — whether tile data is read
 | `browsing`          | `queryResult`          | articles changed, infinite  | `browsing`                   | renderBrowsingList                                                  |
 | `browsing`          | `queryResult`          | articles changed, viewport  | `browsing`                   | renderBrowsingList, fetchListSummaries                              |
 | `browsing`          | `queryResult`          | same articles               | `browsing`                   | updateDistances                                                     |
+| `browsing`          | `articlesSync`         | articles identical          | `browsing`                   | (none)                                                              |
+| `browsing`          | `articlesSync`         | articles changed, infinite  | `browsing`                   | renderBrowsingList                                                  |
+| `browsing`          | `articlesSync`         | articles changed, viewport  | `browsing`                   | renderBrowsingList, fetchListSummaries                              |
 | `detail`            | `back`                 | not infinite scroll         | `browsing`                   | renderBrowsingList, fetchListSummaries, restoreScrollTop (if saved) |
 | `detail`            | `back`                 | infinite scroll             | `browsing`                   | renderBrowsingList, restoreScrollTop (if saved)                     |
 | `detail`            | `position`             | —                           | `detail`                     | loadTiles, render                                                   |
