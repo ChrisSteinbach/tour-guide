@@ -133,11 +133,7 @@ function stubVirtualList(range: { start: number; end: number }): VirtualList {
   return {
     update: vi.fn(),
     refresh: vi.fn(),
-    visibleRange: () => ({
-      start: range.start,
-      end: range.end,
-      viewportHeight: 400,
-    }),
+    visibleRange: () => ({ start: range.start, end: range.end }),
     totalCount: vi.fn(() => 0),
     isCompressed: vi.fn(() => false),
     destroy: vi.fn(),
