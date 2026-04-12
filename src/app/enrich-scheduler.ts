@@ -30,9 +30,6 @@ export function createEnrichScheduler(
   const { settleMs, getTitle, enrich, cancel } = options;
 
   let timer: ReturnType<typeof setTimeout> | null = null;
-  // Tracks already-enriched titles to avoid duplicate requests.
-  // Cleared on reset() (position changes), so bounded by articles per position.
-  let enrichedSet = new Set<string>();
   let destroyed = false;
 
   function clearTimer(): void {
@@ -45,16 +42,17 @@ export function createEnrichScheduler(
   function onRangeChange(range: VisibleRange): void {
     if (destroyed) return;
 
+    // Let in-flight requests finish. The debounce already suppresses
+    // *new* requests during active scrolling, and the summary loader
+    // caches completed ones — aborting them mid-flight on slow networks
+    // only guarantees summaries never load.
     clearTimer();
 
     timer = setTimeout(() => {
       if (destroyed) return;
       for (let i = range.start; i < range.end; i++) {
         const title = getTitle(i);
-        if (title && !enrichedSet.has(title)) {
-          enrichedSet.add(title);
-          enrich(title);
-        }
+        if (title) enrich(title);
       }
     }, settleMs);
   }
@@ -65,7 +63,6 @@ export function createEnrichScheduler(
     reset() {
       clearTimer();
       cancel?.();
-      enrichedSet = new Set();
     },
 
     destroy() {
