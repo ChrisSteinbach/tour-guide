@@ -2,6 +2,8 @@
 
 import {
   computeVisibleRange,
+  connectScroll,
+  containerScrollState,
   createVirtualList,
   type VisibleRange,
 } from "./virtual-scroll";
@@ -325,5 +327,197 @@ describe("createVirtualList", () => {
     expect(items[1].classList.contains("virtual-placeholder")).toBe(true);
     expect(items[0].querySelector("div")!.dataset.index).toBe("0");
     list.destroy();
+  });
+});
+
+// ── connectScroll ────────────────────────────────────────────
+
+describe("connectScroll", () => {
+  it("refreshes the list after a scroll event is flushed", () => {
+    const frames: Array<() => void> = [];
+    const rafSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((cb) => {
+        frames.push(() => cb(0));
+        return frames.length;
+      });
+
+    const scrollSource = document.createElement("div");
+    let refreshes = 0;
+    const cleanup = connectScroll({ refresh: () => refreshes++ }, scrollSource);
+
+    scrollSource.dispatchEvent(new Event("scroll"));
+    expect(refreshes).toBe(0); // not yet — waiting for frame
+    frames.forEach((f) => f());
+    expect(refreshes).toBe(1);
+
+    cleanup();
+    rafSpy.mockRestore();
+  });
+
+  it("coalesces rapid scroll events into a single refresh per frame", () => {
+    const frames: Array<() => void> = [];
+    const rafSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((cb) => {
+        frames.push(() => cb(0));
+        return frames.length;
+      });
+
+    const scrollSource = document.createElement("div");
+    let refreshes = 0;
+    const cleanup = connectScroll({ refresh: () => refreshes++ }, scrollSource);
+
+    scrollSource.dispatchEvent(new Event("scroll"));
+    scrollSource.dispatchEvent(new Event("scroll"));
+    scrollSource.dispatchEvent(new Event("scroll"));
+    expect(frames.length).toBe(1); // only one frame scheduled
+
+    frames[0]();
+    expect(refreshes).toBe(1);
+
+    // After the frame fires, the next scroll re-arms
+    scrollSource.dispatchEvent(new Event("scroll"));
+    expect(frames.length).toBe(2);
+    frames[1]();
+    expect(refreshes).toBe(2);
+
+    cleanup();
+    rafSpy.mockRestore();
+  });
+
+  it("stops refreshing after cleanup is called", () => {
+    const frames: Array<() => void> = [];
+    const rafSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((cb) => {
+        frames.push(() => cb(0));
+        return frames.length;
+      });
+
+    const scrollSource = document.createElement("div");
+    let refreshes = 0;
+    const cleanup = connectScroll({ refresh: () => refreshes++ }, scrollSource);
+
+    cleanup();
+    scrollSource.dispatchEvent(new Event("scroll"));
+    frames.forEach((f) => f());
+    expect(refreshes).toBe(0);
+
+    rafSpy.mockRestore();
+  });
+
+  it("cancels a pending frame on cleanup", () => {
+    const frames: Array<() => void> = [];
+    const cancelled: number[] = [];
+    const rafSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((cb) => {
+        frames.push(() => cb(0));
+        return frames.length;
+      });
+    const cafSpy = vi
+      .spyOn(window, "cancelAnimationFrame")
+      .mockImplementation((id) => {
+        cancelled.push(id);
+      });
+
+    const scrollSource = document.createElement("div");
+    const cleanup = connectScroll({ refresh: () => {} }, scrollSource);
+
+    scrollSource.dispatchEvent(new Event("scroll"));
+    cleanup();
+
+    expect(cancelled).toEqual([1]);
+
+    rafSpy.mockRestore();
+    cafSpy.mockRestore();
+  });
+});
+
+// ── containerScrollState ─────────────────────────────────────
+
+describe("containerScrollState", () => {
+  it("reports scrollTop and clientHeight from the scroll element", () => {
+    const scrollEl = document.createElement("div");
+    const listEl = document.createElement("div");
+    scrollEl.appendChild(listEl);
+
+    Object.defineProperty(scrollEl, "scrollTop", {
+      value: 250,
+      configurable: true,
+    });
+    Object.defineProperty(scrollEl, "clientHeight", {
+      value: 600,
+      configurable: true,
+    });
+
+    const getState = containerScrollState(scrollEl, listEl);
+    expect(getState()).toEqual({ scrollTop: 250, viewportHeight: 600 });
+  });
+
+  it("subtracts the list's offsetTop so scroll is relative to the list", () => {
+    const scrollEl = document.createElement("div");
+    const listEl = document.createElement("div");
+    scrollEl.appendChild(listEl);
+
+    Object.defineProperty(scrollEl, "scrollTop", {
+      value: 500,
+      configurable: true,
+    });
+    Object.defineProperty(scrollEl, "clientHeight", {
+      value: 400,
+      configurable: true,
+    });
+    Object.defineProperty(listEl, "offsetTop", {
+      value: 120,
+      configurable: true,
+    });
+
+    const getState = containerScrollState(scrollEl, listEl);
+    expect(getState().scrollTop).toBe(380); // 500 - 120
+  });
+
+  it("clamps scrollTop to zero when the list header is still on-screen", () => {
+    const scrollEl = document.createElement("div");
+    const listEl = document.createElement("div");
+    scrollEl.appendChild(listEl);
+
+    Object.defineProperty(scrollEl, "scrollTop", {
+      value: 50,
+      configurable: true,
+    });
+    Object.defineProperty(scrollEl, "clientHeight", {
+      value: 400,
+      configurable: true,
+    });
+    Object.defineProperty(listEl, "offsetTop", {
+      value: 200,
+      configurable: true,
+    });
+
+    const getState = containerScrollState(scrollEl, listEl);
+    expect(getState().scrollTop).toBe(0);
+  });
+
+  it("reflects live updates to scrollTop on each call", () => {
+    const scrollEl = document.createElement("div");
+    const listEl = document.createElement("div");
+    scrollEl.appendChild(listEl);
+
+    let live = 0;
+    Object.defineProperty(scrollEl, "scrollTop", {
+      get: () => live,
+      configurable: true,
+    });
+    Object.defineProperty(scrollEl, "clientHeight", {
+      value: 400,
+      configurable: true,
+    });
+
+    const getState = containerScrollState(scrollEl, listEl);
+    expect(getState().scrollTop).toBe(0);
+    live = 900;
+    expect(getState().scrollTop).toBe(900);
   });
 });
