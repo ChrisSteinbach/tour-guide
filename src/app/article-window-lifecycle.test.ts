@@ -3,7 +3,6 @@ import type { NearbyArticle, UserPosition } from "./types";
 import type { AppState, QueryState } from "./state-machine";
 import {
   createArticleWindowLifecycle,
-  computeOptimisticCount,
   type ArticleWindowLifecycleDeps,
 } from "./article-window-lifecycle";
 
@@ -250,7 +249,7 @@ describe("getArticleByIndex", () => {
 });
 
 describe("scroll count observer", () => {
-  it("notifies observer with totalKnown when it exceeds loadedCount", () => {
+  it("notifies observer with loadedCount (not totalKnown) to avoid empty space", () => {
     let capturedOnWindowChange: (() => void) | undefined;
     const aw = stubArticleWindow({
       totalKnown: vi.fn(() => 500),
@@ -269,7 +268,7 @@ describe("scroll count observer", () => {
     lifecycle.getOrCreateArticleWindow();
     capturedOnWindowChange!();
 
-    expect(observer).toHaveBeenCalledWith(500, 100);
+    expect(observer).toHaveBeenCalledWith(100, 100);
   });
 
   it("notifies observer with loadedCount when totalKnown is not larger", () => {
@@ -294,7 +293,7 @@ describe("scroll count observer", () => {
     expect(observer).toHaveBeenCalledWith(100, 100);
   });
 
-  it("never shrinks the scroll count below a previous update", () => {
+  it("settles scroll count to loadedCount on each onWindowChange", () => {
     let capturedOnWindowChange: (() => void) | undefined;
     const totalKnown = vi.fn(() => 500);
     const loadedCount = vi.fn(() => 100);
@@ -311,15 +310,15 @@ describe("scroll count observer", () => {
     lifecycle.attachScrollCountObserver(observer);
     lifecycle.getOrCreateArticleWindow();
 
-    // First callback: count goes up to 500
+    // First callback: count matches loadedCount, not totalKnown
     capturedOnWindowChange!();
-    expect(observer).toHaveBeenLastCalledWith(500, 100);
+    expect(observer).toHaveBeenLastCalledWith(100, 100);
 
-    // Second callback with lower values: scroll count stays at 500
-    totalKnown.mockReturnValue(30);
-    loadedCount.mockReturnValue(30);
+    // More data loaded — count grows with it
+    totalKnown.mockReturnValue(500);
+    loadedCount.mockReturnValue(300);
     capturedOnWindowChange!();
-    expect(observer).toHaveBeenLastCalledWith(500, 30);
+    expect(observer).toHaveBeenLastCalledWith(300, 300);
   });
 
   it("resets scroll count floor after resetArticleWindow", () => {
@@ -339,9 +338,9 @@ describe("scroll count observer", () => {
     lifecycle.attachScrollCountObserver(observer);
     lifecycle.getOrCreateArticleWindow();
 
-    // Push count to 500
+    // Count reflects loadedCount (100), not totalKnown (500)
     capturedOnWindowChange!();
-    expect(observer).toHaveBeenLastCalledWith(500, 100);
+    expect(observer).toHaveBeenLastCalledWith(100, 100);
 
     // Reset clears the floor
     lifecycle.resetArticleWindow();
@@ -354,7 +353,7 @@ describe("scroll count observer", () => {
     expect(observer).toHaveBeenLastCalledWith(30, 30);
   });
 
-  it("never shrinks below an optimistic count set via applyOptimisticCount", () => {
+  it("settles below an optimistic count once real data arrives", () => {
     let capturedOnWindowChange: (() => void) | undefined;
     const totalKnown = vi.fn(() => 0);
     const loadedCount = vi.fn(() => 100);
@@ -380,8 +379,8 @@ describe("scroll count observer", () => {
     loadedCount.mockReturnValue(200);
     capturedOnWindowChange!();
 
-    // Scroll count must NOT shrink from 300 to 250, but loadedCount reflects reality
-    expect(observer).toHaveBeenLastCalledWith(300, 200);
+    // Scroll count settles to loadedCount, not the stale optimistic one
+    expect(observer).toHaveBeenLastCalledWith(200, 200);
   });
 
   it("suppresses scroll count when onWindowChange fires with loadedCount 0 and totalKnown > 0", () => {
@@ -404,8 +403,7 @@ describe("scroll count observer", () => {
     lifecycle.getOrCreateArticleWindow();
     capturedOnWindowChange!();
 
-    // Should suppress count (return 0) to avoid empty-list jump,
-    // matching computeOptimisticCount's loaded===0 guard.
+    // loadedCount is 0, so the observer sees 0 — no empty-list jump.
     expect(observer).toHaveBeenCalledWith(0, 0);
   });
 
@@ -500,27 +498,5 @@ describe("articles observer", () => {
     lifecycle.attachArticlesObserver(() => {});
     lifecycle.attachArticlesObserver(null);
     expect(() => lifecycle.attachArticlesObserver(() => {})).not.toThrow();
-  });
-});
-
-describe("computeOptimisticCount", () => {
-  it("returns known when known > loaded", () => {
-    expect(computeOptimisticCount(500, 100)).toBe(500);
-  });
-
-  it("returns loaded when known equals loaded (no phantom buffer)", () => {
-    expect(computeOptimisticCount(100, 100)).toBe(100);
-  });
-
-  it("returns loaded when known is 0 but loaded > 0", () => {
-    expect(computeOptimisticCount(0, 50)).toBe(50);
-  });
-
-  it("suppresses count before first batch loads to avoid empty-list jump", () => {
-    expect(computeOptimisticCount(50, 0)).toBe(0);
-  });
-
-  it("returns 0 when both known and loaded are 0", () => {
-    expect(computeOptimisticCount(0, 0)).toBe(0);
   });
 });
