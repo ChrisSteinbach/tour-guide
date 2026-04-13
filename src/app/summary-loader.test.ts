@@ -1,4 +1,4 @@
-import type { ArticleSummary } from "./wiki-api";
+import { RateLimitError, type ArticleSummary } from "./wiki-api";
 import type { SummaryLoaderDeps } from "./summary-loader";
 import { createSummaryLoader } from "./summary-loader";
 
@@ -339,6 +339,326 @@ describe("createSummaryLoader", () => {
     gates.get("A")!.resolve(makeSummary("A"));
     await vi.waitFor(() => expect(fetchOrder).toHaveLength(2));
     expect(fetchOrder[1]).toBe("X");
+  });
+
+  describe("rate-limit circuit breaker", () => {
+    it("pauses the queue on RateLimitError for retryAfterMs", async () => {
+      vi.useFakeTimers();
+      try {
+        let now = 0;
+        const fetch = vi.fn(async (title: string) => {
+          if (title === "A") {
+            throw new RateLimitError(10_000);
+          }
+          return makeSummary(title);
+        });
+        const deps: SummaryLoaderDeps = {
+          fetch,
+          onSummary: vi.fn(),
+          now: () => now,
+        };
+        const loader = createSummaryLoader(deps, 1);
+
+        loader.load(["A", "B", "C"], "en");
+        // A is attempted, throws RateLimitError, pauses the queue
+        await vi.waitFor(() => expect(fetch).toHaveBeenCalledWith("A", "en"));
+        // Let microtasks resolve the rejected fetch
+        await Promise.resolve();
+        await Promise.resolve();
+
+        // Queue should be paused — B and C not fetched yet
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(fetch).not.toHaveBeenCalledWith("B", "en");
+
+        // Advance halfway through the window — still paused
+        now = 5_000;
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(fetch).toHaveBeenCalledTimes(1);
+
+        // Advance past the window — resume and drain
+        now = 10_001;
+        await vi.advanceTimersByTimeAsync(5_001);
+
+        // B and C (and re-queued A) should now be fetched
+        await vi.waitFor(() => expect(fetch).toHaveBeenCalledWith("B", "en"));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not fire new requests while rate-limited, even on request()", async () => {
+      vi.useFakeTimers();
+      try {
+        let now = 0;
+        const fetch = vi.fn(async (title: string) => {
+          if (title === "A") throw new RateLimitError(10_000);
+          return makeSummary(title);
+        });
+        const loader = createSummaryLoader(
+          {
+            fetch,
+            onSummary: vi.fn(),
+            now: () => now,
+          },
+          1,
+        );
+
+        loader.load(["A"], "en");
+        await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+        await Promise.resolve();
+        await Promise.resolve();
+
+        // While paused, a viewport settle triggers request() for new titles
+        loader.request("X", "en");
+        loader.request("Y", "en");
+        await Promise.resolve();
+
+        // Nothing new should fire
+        expect(fetch).toHaveBeenCalledTimes(1);
+
+        // After the window, the re-queued titles should drain
+        now = 10_001;
+        await vi.advanceTimersByTimeAsync(10_001);
+        await vi.waitFor(() => expect(fetch).toHaveBeenCalledWith("X", "en"));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("extends the pause when a later 429 has a bigger retryAfter", async () => {
+      vi.useFakeTimers();
+      try {
+        let now = 0;
+        // Two titles both rate-limited with different retry windows
+        const fetch = vi.fn(async (title: string) => {
+          if (title === "A") throw new RateLimitError(5_000);
+          if (title === "B") throw new RateLimitError(20_000);
+          return makeSummary(title);
+        });
+        const loader = createSummaryLoader(
+          {
+            fetch,
+            onSummary: vi.fn(),
+            now: () => now,
+          },
+          2,
+        );
+
+        loader.load(["A", "B", "C"], "en");
+        await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+        await Promise.resolve();
+        await Promise.resolve();
+
+        // After 10s (past A's window, before B's), still paused
+        now = 10_001;
+        await vi.advanceTimersByTimeAsync(10_001);
+        // Only the original 2 attempts
+        expect(fetch.mock.calls.filter(([t]) => t === "C").length).toBe(0);
+
+        // After B's window, resume
+        now = 20_001;
+        await vi.advanceTimersByTimeAsync(10_000);
+        await vi.waitFor(() => expect(fetch).toHaveBeenCalledWith("C", "en"));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not duplicate re-queued titles when load() overlaps a stalled 429 retry", async () => {
+      vi.useFakeTimers();
+      try {
+        let now = 0;
+        const stallGate = deferred<void>();
+        let firstCall = true;
+        let violation = false;
+        const inFlight = new Set<string>();
+        const fetch = vi.fn(async (title: string) => {
+          // Flag any moment where two concurrent fetches exist for the
+          // same title — the observable symptom of a duplicated queue
+          // entry being drained within a single concurrency window.
+          if (inFlight.has(title)) violation = true;
+          inFlight.add(title);
+          if (firstCall) {
+            firstCall = false;
+            await stallGate.promise;
+          } else {
+            await Promise.resolve();
+          }
+          inFlight.delete(title);
+          throw new RateLimitError(5_000);
+        });
+        const loader = createSummaryLoader(
+          { fetch, onSummary: vi.fn(), now: () => now },
+          5,
+        );
+
+        // First batch fills all five slots. "A" stalls on the gate while
+        // the other four 429 immediately and schedule the retry timer.
+        loader.load(["A", "B", "C", "D", "E"], "en");
+        await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(5));
+        // Let the four non-stalled catches settle before the second load.
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        // Overlapping load re-queues the same titles under a new
+        // controller. The still-stalled runFetch("A") is now orphaned
+        // on the aborted signal but will still execute its catch block.
+        loader.load(["A", "B", "C", "D", "E"], "en");
+
+        // Release the orphaned fetch. Its catch tries to re-queue "A",
+        // which the new load has already placed in the queue — dedup
+        // must prevent a duplicate entry.
+        stallGate.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        // First retry window: drain pops the five queued titles, each
+        // 429s again and re-enqueues. Without dedup the queue now holds
+        // [A, A, B, C, D, E] because runFetch("A")'s re-push lands next
+        // to the leftover duplicate from the orphaned fetch.
+        now = 5_000;
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        // Second retry window: drain pops five items in one synchronous
+        // sweep. If the queue had duplicate "A" entries, two concurrent
+        // fetch("A") calls run back-to-back and the inFlight guard trips.
+        now = 10_000;
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        expect(violation).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("orphan 429 from aborted controller does not leak into new queue", async () => {
+      // Regression: an in-flight runFetch on a previous controller can
+      // resolve with RateLimitError after load()/cancel() replaced the
+      // controller. Without a signal.aborted guard, the catch block would
+      // re-push the orphan title into the new live queue.
+      vi.useFakeTimers();
+      try {
+        let now = 0;
+        const stallGate = deferred<void>();
+        let firstCall = true;
+        const fetch = vi.fn(async (title: string) => {
+          if (firstCall && title === "A") {
+            firstCall = false;
+            await stallGate.promise;
+            throw new RateLimitError(5_000);
+          }
+          return makeSummary(title);
+        });
+        const loader = createSummaryLoader(
+          { fetch, onSummary: vi.fn(), now: () => now },
+          1,
+        );
+
+        // First batch: "A" stalls in the gated fetch.
+        loader.load(["A"], "en");
+        await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+
+        // Replace controller with a fresh batch that does NOT include "A".
+        loader.load(["B"], "en");
+        await vi.waitFor(() => expect(fetch).toHaveBeenCalledWith("B", "en"));
+
+        // Release the orphaned fetch — its catch runs against an aborted
+        // signal and must not push "A" back into the live queue.
+        stallGate.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        // Trigger downstream drain activity past the rate-limit window:
+        // request a different title and advance time. If the orphan leaked
+        // "A" into the queue, the drain triggered by request() (or by the
+        // resume timer if rateLimitUntil was set) would re-fetch it.
+        now = 5_001;
+        await vi.advanceTimersByTimeAsync(5_001);
+        loader.request("C", "en");
+        await vi.waitFor(() => expect(fetch).toHaveBeenCalledWith("C", "en"));
+
+        const aFetches = fetch.mock.calls.filter(
+          ([title]) => title === "A",
+        ).length;
+        expect(aFetches).toBe(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not pause on non-rate-limit errors", async () => {
+      const fetch = vi.fn(async (title: string) => {
+        if (title === "A") throw new Error("network boom");
+        return makeSummary(title);
+      });
+      const onSummary = vi.fn();
+      const loader = createSummaryLoader({ fetch, onSummary }, 1);
+
+      loader.load(["A", "B"], "en");
+      // B should proceed even though A failed
+      await vi.waitFor(() => expect(onSummary).toHaveBeenCalledTimes(1));
+      expect(fetch).toHaveBeenCalledWith("A", "en");
+      expect(fetch).toHaveBeenCalledWith("B", "en");
+    });
+  });
+
+  it("orphan success-path runFetch does not wipe pending entry from a fresh request", async () => {
+    // Regression for tour-guide-pyv7. Sequence:
+    //   1. load(["A"]) starts runFetch1. pending = {A}.
+    //   2. cancel() clears pending and aborts runFetch1's signal.
+    //   3. request("A") creates a fresh controller, adds "A" to pending,
+    //      and starts runFetch2 with a separate signal.
+    //   4. runFetch1's awaited fetch resolves. The OLD success path called
+    //      pending.delete("A") BEFORE checking signal.aborted, wiping the
+    //      live entry that runFetch2 owns.
+    //   5. A second request("A") then sees pending.has("A") === false and
+    //      starts runFetch3 — TWO concurrent fetches for the same title.
+    //
+    // The fetch in step 1 and step 3 deliberately overlap (that's the setup
+    // for the bug), so a generic "no concurrent fetches" violation flag would
+    // trip on the intended setup. Instead, assert the directly observable
+    // outcome: after step 5, fetch must have been called exactly twice. With
+    // the bug, the third request starts runFetch3 and the count is 3.
+    const gates = [
+      deferred<ArticleSummary>(),
+      deferred<ArticleSummary>(),
+      deferred<ArticleSummary>(),
+    ];
+    let callIdx = 0;
+    const fetch = vi.fn(() => gates[callIdx++].promise);
+    const loader = createSummaryLoader({ fetch, onSummary: vi.fn() });
+
+    // Step 1: start runFetch1 for "A".
+    loader.load(["A"], "en");
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+
+    // Step 2: cancel — runFetch1's signal is aborted, pending cleared.
+    loader.cancel();
+
+    // Step 3: fresh request creates a new controller and starts runFetch2.
+    loader.request("A", "en");
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+
+    // Step 4: resolve runFetch1's fetch. The continuation runs against the
+    // aborted signal — with the bug it deletes "A" from pending before the
+    // abort check, wiping runFetch2's entry.
+    gates[0].resolve(makeSummary("A"));
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Step 5: a second request for the same title. With the bug, pending no
+    // longer contains "A", so request() schedules runFetch3 — a third call
+    // to fetch. With the fix, pending still has "A" and request() no-ops.
+    loader.request("A", "en");
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 
   it("does not serve cached summary from a different language", async () => {
