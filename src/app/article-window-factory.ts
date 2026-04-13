@@ -1,11 +1,22 @@
-import type { NearbyArticle, UserPosition } from "./types";
+import type { UserPosition } from "./types";
 import type { NearestQuery } from "./query";
 import type { TileEntry } from "../tiles";
 import type { Lang } from "../lang";
 import type { ArticleWindow } from "./article-window";
 import { createArticleWindow } from "./article-window";
-import { createTileRadiusProvider } from "./tile-radius";
+import { createTileRadiusProvider, tilesAtRing } from "./tile-radius";
+import { findNearestTiled, getTileEntry } from "./tile-loader";
+import { tileFor } from "../tiles";
 
+/**
+ * The runtime opts that compose-app passes through from the lifecycle, plus
+ * the single impure dep (`loadTile`) that needs to be injected for tests so
+ * they can avoid hitting the network. The pure tile-grid helpers (tilesAtRing,
+ * tileFor, findNearestTiled, getTileEntry) used to be injected too, but the
+ * test setup grew so unwieldy that the injections obscured the actual
+ * behavior under test. They are now imported directly — tests run sociably
+ * against the real geometry.
+ */
 export interface ArticleWindowFactoryDeps {
   position: UserPosition;
   tileMap: Map<string, TileEntry>;
@@ -18,23 +29,6 @@ export interface ArticleWindowFactoryDeps {
     entry: TileEntry,
     signal: AbortSignal,
   ) => Promise<NearestQuery>;
-  getTileEntry: (
-    tileMap: Map<string, TileEntry>,
-    id: string,
-  ) => TileEntry | undefined;
-  findNearestTiled: (
-    tiles: ReadonlyMap<string, NearestQuery>,
-    lat: number,
-    lon: number,
-    count: number,
-  ) => NearbyArticle[];
-  tilesAtRing: (
-    row: number,
-    col: number,
-    ring: number,
-    tileMap: Map<string, TileEntry>,
-  ) => string[];
-  tileFor: (lat: number, lon: number) => { row: number; col: number };
   onWindowChange?: () => void;
 }
 
@@ -46,18 +40,8 @@ export interface ArticleWindowFactoryResult {
 export function createArticleWindowFactory(
   deps: ArticleWindowFactoryDeps,
 ): ArticleWindowFactoryResult {
-  const {
-    position,
-    tileMap,
-    lang,
-    signal,
-    getStateMachineTiles,
-    loadTile,
-    getTileEntry,
-    findNearestTiled,
-    tilesAtRing,
-    tileFor,
-  } = deps;
+  const { position, tileMap, lang, signal, getStateMachineTiles, loadTile } =
+    deps;
 
   const { row, col } = tileFor(position.lat, position.lon);
 
