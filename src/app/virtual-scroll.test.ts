@@ -677,6 +677,105 @@ describe("createVirtualList — direct→compressed→direct round-trip", () => 
   });
 });
 
+// ── compressed mode fine-scroll re-render ────────────────────
+
+describe("createVirtualList — compressed mode re-renders on fine scroll", () => {
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+  });
+
+  afterEach(() => {
+    container.remove();
+  });
+
+  function makeItem(index: number): HTMLElement {
+    const el = document.createElement("div");
+    el.textContent = `Item ${index}`;
+    el.dataset.index = String(index);
+    return el;
+  }
+
+  it("repositions items on fine scroll within a stable visible-index range", () => {
+    // Use the test constants from the bead: itemHeight=68, viewportHeight=800,
+    // totalCount=200_000 (200K × 68 = 13.6M > 10M threshold → compressed mode).
+    //
+    // At scrollTop=0 and scrollTop=30, both map to exactIndex < 1 (since
+    // fraction = 30 / (10_000_000 − 800) is tiny). The visible range stays
+    // {start: 0, end: 12}. But compressed-mode items are anchored to
+    // scrollTop − subPixelOffset, so item tops should differ between the
+    // two refreshes. The old render gate only re-rendered on range change,
+    // so items would hold their original document position and slide off
+    // the viewport until the next range tick.
+    let scrollTop = 0;
+    const list = createVirtualList({
+      container,
+      itemHeight: 68,
+      overscan: 0,
+      getScrollState: () => ({ scrollTop, viewportHeight: 800 }),
+    });
+    list.update(200_000, makeItem);
+
+    const topAtZero = parseFloat(container.querySelectorAll("li")[0].style.top);
+
+    scrollTop = 30;
+    list.refresh();
+    const topAtThirty = parseFloat(
+      container.querySelectorAll("li")[0].style.top,
+    );
+
+    // Same range, but items must have been repositioned. The exact delta
+    // depends on the compressed-mode anchor math (scrollTop − subPixelOffset),
+    // where subPixelOffset tracks the fractional virtual index. The load-
+    // bearing assertion is just that the DOM top is no longer the same —
+    // the old render gate would have left it frozen.
+    expect(list.visibleRange()).toEqual({ start: 0, end: 12 });
+    expect(topAtThirty).not.toBe(topAtZero);
+
+    list.destroy();
+  });
+
+  it("does not re-render direct-mode items on fine scroll within a stable range", () => {
+    // Sanity check: direct mode should NOT re-render on scrollTop deltas
+    // within a stable range — items live at fixed i*itemHeight offsets.
+    // This pins the documented optimization so the compressed-mode fix
+    // doesn't accidentally force direct-mode rebuilds.
+    //
+    // With viewportHeight=200 and itemHeight=50, end = ceil((s+200)/50).
+    // That ticks at s=0 → end=4, and s=1..50 → end=5. So the first refresh
+    // after update(100) (at scrollTop=10) moves the range to {0,5}. A
+    // second refresh at scrollTop=20 keeps the range at {0,5}, and direct
+    // mode must preserve DOM nodes.
+    let scrollTop = 10;
+    const list = createVirtualList({
+      container,
+      itemHeight: 50,
+      overscan: 0,
+      getScrollState: () => ({ scrollTop, viewportHeight: 200 }),
+    });
+    list.update(100, makeItem);
+
+    const range1 = list.visibleRange();
+    const firstNode = container.querySelectorAll("li")[0];
+
+    scrollTop = 20;
+    list.refresh();
+    const range2 = list.visibleRange();
+
+    // Range should be stable between the two scrollTops.
+    expect(range1).toEqual(range2);
+
+    // DOM node should be the same — direct mode preserves nodes when
+    // the range doesn't change.
+    const nodeAfter = container.querySelectorAll("li")[0];
+    expect(nodeAfter).toBe(firstNode);
+
+    list.destroy();
+  });
+});
+
 // ── isCompressed ────────────────────────────────────────────
 
 describe("createVirtualList — isCompressed", () => {

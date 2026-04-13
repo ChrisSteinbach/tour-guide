@@ -163,6 +163,14 @@ export function createVirtualList(options: VirtualListOptions): VirtualList {
   let renderItem: (index: number) => HTMLElement | null = () => null;
   let lastRange: VisibleRange = { start: 0, end: 0 };
   let lastCompressed = false;
+  // Compressed-mode items are anchored to scrollTop − subPixelOffset, so they
+  // move with every scroll event even while range.start/end stay stable
+  // between index ticks. Re-rendering only on range change would leave items
+  // frozen in document coordinates and visually sliding off the viewport.
+  // Track the last exactIndex so fine scroll within a stable range still
+  // triggers a reposition. Direct mode keeps the range-only gate because
+  // items live at fixed i*itemHeight offsets.
+  let lastExactIndex: number | null = null;
 
   function ensureList(): HTMLUListElement {
     if (!ul) {
@@ -231,11 +239,20 @@ export function createVirtualList(options: VirtualListOptions): VirtualList {
     });
     lastCompressed = exactIndex !== null;
 
-    const changed =
+    const rangeChanged =
       range.start !== lastRange.start || range.end !== lastRange.end;
-    lastRange = range;
+    // Compressed-mode fine scroll moves items even when the index range
+    // stays stable, so include exactIndex in the render predicate. Direct
+    // mode does not need this because items sit at fixed i*itemHeight
+    // offsets and the browser handles scroll-into-view natively.
+    const compressedScrollChanged =
+      exactIndex !== null && exactIndex !== lastExactIndex;
+    const shouldRender = rangeChanged || compressedScrollChanged;
 
-    if (changed || force) {
+    lastRange = range;
+    lastExactIndex = exactIndex;
+
+    if (shouldRender || force) {
       if (exactIndex !== null) {
         renderCompressed(range, scrollTop, exactIndex);
       } else {
@@ -243,7 +260,7 @@ export function createVirtualList(options: VirtualListOptions): VirtualList {
       }
     }
 
-    if (changed && onRangeChange) {
+    if (rangeChanged && onRangeChange) {
       onRangeChange(range);
     }
   }
@@ -285,6 +302,7 @@ export function createVirtualList(options: VirtualListOptions): VirtualList {
       lastRange = { start: 0, end: 0 };
       totalCount = 0;
       lastCompressed = false;
+      lastExactIndex = null;
     },
   };
 }
