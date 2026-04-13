@@ -123,6 +123,8 @@ Two debounced side effects run on `onRangeChange`:
 
 **Enrichment** (`enrich-scheduler.ts`): After the visible range settles for 300ms, fetches Wikipedia summaries for visible articles. Tracks already-enriched titles to avoid duplicate requests. Resets on position change. The actual fetching is handled by `SummaryLoader` (`summary-loader.ts`), which manages a concurrency-limited queue (default 3 concurrent requests) with per-item callbacks, cancellation support, and priority boosting for viewport-visible items via `request()`.
 
+**`SummaryLoader.request()` semantics:** When the title is already pending (queued by a prior `load()`), `request()` moves it to the **front** of the queue so viewport items beat off-screen items still waiting their turn. This is the core integration between the enrich scheduler and the loader — the scheduler doesn't reorder anything itself, it just prods `request()` for whatever is currently visible. When the title is a **cache hit**, `request()` is a no-op: it does NOT invoke `onSummary`. Callers that want the cached value must use `get()` explicitly. This stops scroll-settle from re-firing DOM patches over already-delivered items, which would otherwise reset hover state and re-run reconciliation on every scroll quiet point.
+
 **Map sync** (`debounced-map-sync.ts`): After 150ms of scroll settle, syncs browse-map markers with the currently visible articles (rendered in the map drawer).
 
 Both are created during `infiniteScroll.init()` and destroyed with the lifecycle.

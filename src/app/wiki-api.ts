@@ -5,6 +5,29 @@ const WIKI_HEADERS = {
   "Api-User-Agent": USER_AGENT,
 };
 
+/**
+ * Fallback pause when a 429 omits Retry-After. Matches Wikimedia's ~30-min
+ * sliding window (see RateLimitError) so we don't keep retrying inside an
+ * already-blocked window.
+ */
+const DEFAULT_RETRY_AFTER_MS = 30 * 60 * 1000;
+
+/**
+ * Thrown when Wikipedia's REST API returns 429. Carries the Retry-After
+ * value so the caller can pause its queue for the full window instead of
+ * hammering an already-blocked endpoint. Wikimedia's Envoy rate limiter
+ * uses a sliding window (~30 min) and will return 429 for every uncached
+ * article until the window expires — per-request retries are pointless.
+ */
+export class RateLimitError extends Error {
+  readonly retryAfterMs: number;
+  constructor(retryAfterMs: number) {
+    super(`Wikipedia API rate limited; retry after ${retryAfterMs}ms`);
+    this.name = "RateLimitError";
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
 /** Shape of the Wikipedia REST API /page/summary response (subset we use). */
 interface WikiSummaryResponse {
   title?: string;
@@ -28,6 +51,13 @@ export interface ArticleSummary {
 export function summaryUrl(title: string, lang: Lang = "en"): string {
   const slug = encodeURIComponent(title.replace(/ /g, "_"));
   return `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${slug}`;
+}
+
+function parseRetryAfterMs(value: string | null): number {
+  if (!value) return DEFAULT_RETRY_AFTER_MS;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds > 0) return seconds * 1000;
+  return DEFAULT_RETRY_AFTER_MS;
 }
 
 export interface WikiApiDeps {
@@ -63,6 +93,11 @@ export function createWikiApi(deps: WikiApiDeps): WikiApi {
       headers: WIKI_HEADERS,
     });
     if (res.status === 404) throw new Error("Article not found");
+    if (res.status === 429) {
+      throw new RateLimitError(
+        parseRetryAfterMs(res.headers.get("Retry-After")),
+      );
+    }
     if (!res.ok) throw new Error(`Wikipedia API error: ${res.status}`);
 
     const data = (await res.json()) as WikiSummaryResponse;
