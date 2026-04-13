@@ -31,8 +31,6 @@ export interface InfiniteScrollDeps {
   getTitle: (index: number) => string | null;
   /** Request enrichment for an article by title. */
   enrich: (title: string) => void;
-  /** Cancel in-flight enrichment requests. */
-  cancelEnrich: () => void;
 
   /** Return visible articles for map sync, or null to skip. */
   getVisibleArticles: (range: {
@@ -133,7 +131,6 @@ export function createInfiniteScrollLifecycle(
       settleMs: deps.enrichSettleMs,
       getTitle: deps.getTitle,
       enrich: deps.enrich,
-      cancel: deps.cancelEnrich,
     });
 
     const getScrollState = containerScrollState(scrollWrapper, listContainer);

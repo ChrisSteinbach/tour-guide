@@ -76,7 +76,6 @@ export function createInfiniteScrollWiring(
       },
       enrich: (title) =>
         deps.summaryLoader.request(title, deps.getState().currentLang),
-      cancelEnrich: () => deps.summaryLoader.cancel(),
       getVisibleArticles: (range) => {
         const state = deps.getState();
         if (state.phase.phase !== "browsing" || !state.position) return null;

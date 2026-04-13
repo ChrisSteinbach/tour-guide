@@ -22,7 +22,6 @@ function makeDeps(
     mapSyncSettleMs: 150,
     getTitle: (i) => `Article ${i}`,
     enrich: () => {},
-    cancelEnrich: () => {},
     getVisibleArticles: () => null,
     syncMapMarkers: () => {},
     renderItem: () => {
