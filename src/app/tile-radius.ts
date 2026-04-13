@@ -157,6 +157,8 @@ export function createTileRadiusProvider(
     }
 
     let tailStart = discoveredArticles.length - MERGE_TAIL_SIZE;
+    // Safe to read [tailStart - 1]: the outer branch guaranteed
+    // length > MERGE_TAIL_SIZE, so tailStart = length - MERGE_TAIL_SIZE >= 1.
     if (discoveredArticles[tailStart - 1].distanceM > minFresh) {
       // Binary-search the finalized prefix for the first index whose distance
       // exceeds minFresh. Everything from that index onward must be re-sorted.
