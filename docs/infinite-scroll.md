@@ -110,15 +110,25 @@ The provider expands rings until it has enough articles to satisfy the request o
 
 ## Near-End Detection and Expansion
 
-The infinite scroll lifecycle detects when the user approaches the end of loaded content:
+The infinite scroll lifecycle (`infinite-scroll-lifecycle.ts`) detects when the user approaches the end of loaded content:
 
 ```
 onRangeChange(range)
-  → if range.end >= currentTotalCount - nearEndThreshold (100)
+  → if !compressed
+       && currentLoadedCount > 0
+       && range.end >= currentLoadedCount - nearEndThreshold (100)
     → onNearEnd()
+  → else
+    → onVisibleRangeChange(range)
 ```
 
-**Re-fetch on range change:** Every visible-range change triggers `onVisibleRangeChange`, which calls `ensureRange(range.start, range.end)` on the ArticleWindow. This re-fetches articles that were evicted from the ArticleWindow when the user scrolled away (the window has a bounded `windowSize` of 1000). The call is a no-op when the range is already loaded, so it is cheap on normal forward scrolls.
+The gate compares `range.end` to **`currentLoadedCount`** (the real contiguous fetched range tracked by the lifecycle), not to the optimistic virtual-list height. The lifecycle's `update()` accepts an optional `loadedCount` argument that's forwarded from the scroll-count observer; when the optimistic count grows past the real loaded count, the gate stays anchored to the smaller value so near-end fires at the right moment.
+
+**Compressed-mode skip:** In compressed mode the visible range lives in virtual-index space (mapped proportionally onto a capped scroll height), so `range.end` can sit arbitrarily far above `currentLoadedCount` and would fire near-end on every scroll event. The check is gated on `!virtualList.isCompressed()`. `onVisibleRangeChange` still fires in compressed mode and ensures data around the mapped window via `ensureRange`, so the prefetch optimization isn't needed there.
+
+**Re-fetch on range change:** When near-end does NOT fire, `onVisibleRangeChange(range)` calls `ensureRange(start, end)` on the ArticleWindow. This re-fetches articles that were evicted from the ArticleWindow when the user scrolled away (the window has a bounded `windowSize` of 1000). The call is a no-op when the range is already loaded, so it is cheap on normal forward scrolls. When near-end DOES fire, `onVisibleRangeChange` is **skipped** — `onNearEnd`'s `ensureRange(start, end + PREFETCH_BUFFER)` is a strict superset of the unbuffered call, and both serialize on the same `pendingFetch` promise, so firing the unbuffered fetch first would just block the prefetch behind a redundant request.
+
+**Backward-scroll prefetch:** `onVisibleRangeChange` in `infinite-scroll-wiring.ts` tracks `lastVisibleStart` across calls. When `range.start < lastVisibleStart` the user is scrolling backward, and the fetch start is padded by `BACKWARD_PREFETCH_BUFFER` (200): `ensureRange(max(0, range.start - 200), range.end)`. Forward scrolls rely on `onNearEnd`'s `PREFETCH_BUFFER` to stay ahead of the viewport, so they need no symmetric backward pad. The `lastSeenWindow` reference resets `lastVisibleStart` whenever `getCurrentWindow()` flips through `null` (during `resetArticleWindow()` between positions) so the backward heuristic doesn't carry across windows.
 
 `onNearEnd` in `infinite-scroll-wiring.ts` handles two cases:
 
@@ -130,6 +140,7 @@ onRangeChange(range)
 
 - `nearEndThreshold = 100` — trigger distance from the end (items)
 - `PREFETCH_BUFFER = 200` — extra articles to prefetch beyond the visible range end
+- `BACKWARD_PREFETCH_BUFFER = 200` — items to pad the fetch start when scrolling backward into evicted territory
 - `INFINITE_SCROLL_INITIAL = 200` — articles loaded on first entry into infinite scroll
 - `INFINITE_SCROLL_STEP = 200` — articles added per expansion
 - `windowSize = 1000` — max articles in memory before eviction
