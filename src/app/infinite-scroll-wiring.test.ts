@@ -221,8 +221,8 @@ describe("createInfiniteScrollWiring", () => {
     });
   });
 
-  describe("enrich / cancelEnrich", () => {
-    it("enrich delegates to summaryLoader.request with the current language", () => {
+  describe("enrich", () => {
+    it("delegates to summaryLoader.request with the current language", () => {
       const loader = stubSummaryLoader();
       const deps = makeDeps({
         summaryLoader: loader,
@@ -233,16 +233,6 @@ describe("createInfiniteScrollWiring", () => {
       capturedDeps!.enrich("Berlin");
 
       expect(loader.request).toHaveBeenCalledWith("Berlin", "de");
-    });
-
-    it("cancelEnrich delegates to summaryLoader.cancel", () => {
-      const loader = stubSummaryLoader();
-      const deps = makeDeps({ summaryLoader: loader });
-      createInfiniteScrollWiring(deps);
-
-      capturedDeps!.cancelEnrich();
-
-      expect(loader.cancel).toHaveBeenCalled();
     });
   });
 

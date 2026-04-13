@@ -69,39 +69,6 @@ describe("EnrichScheduler", () => {
     expect(enriched).toEqual(["Article 0", "Article 2"]);
   });
 
-  it("does not cancel in-flight enrichment when range changes", () => {
-    let cancelCalls = 0;
-    const scheduler = createEnrichScheduler({
-      settleMs: 200,
-      getTitle: (i) => `Article ${i}`,
-      enrich: () => {},
-      cancel: () => cancelCalls++,
-    });
-
-    scheduler.onRangeChange({ start: 0, end: 3 });
-    vi.advanceTimersByTime(200); // settles, enriches 0-2
-
-    scheduler.onRangeChange({ start: 10, end: 13 }); // scroll away
-    // In-flight requests for 0-2 must be allowed to finish.
-    // On slow networks, cancelling mid-flight after every micro-scroll
-    // means summaries never complete loading.
-    expect(cancelCalls).toBe(0);
-  });
-
-  it("calls cancel on reset", () => {
-    const cancelCalls: number[] = [];
-    let callCount = 0;
-    const scheduler = createEnrichScheduler({
-      settleMs: 200,
-      getTitle: (i) => `Article ${i}`,
-      enrich: () => {},
-      cancel: () => cancelCalls.push(++callCount),
-    });
-
-    scheduler.reset();
-    expect(cancelCalls).toEqual([1]);
-  });
-
   it("re-enriches on revisit (dedup is the summary loader's job)", () => {
     const enriched: string[] = [];
     const scheduler = createEnrichScheduler({
@@ -148,30 +115,5 @@ describe("EnrichScheduler", () => {
     vi.advanceTimersByTime(200);
 
     expect(enriched).toEqual([]);
-  });
-
-  it("re-enriches after reset", () => {
-    const enriched: string[] = [];
-    const scheduler = createEnrichScheduler({
-      settleMs: 200,
-      getTitle: (i) => `Article ${i}`,
-      enrich: (title) => enriched.push(title),
-    });
-
-    scheduler.onRangeChange({ start: 0, end: 2 });
-    vi.advanceTimersByTime(200);
-    expect(enriched).toEqual(["Article 0", "Article 1"]);
-
-    scheduler.reset();
-
-    scheduler.onRangeChange({ start: 0, end: 2 });
-    vi.advanceTimersByTime(200);
-    // Should re-enrich after reset
-    expect(enriched).toEqual([
-      "Article 0",
-      "Article 1",
-      "Article 0",
-      "Article 1",
-    ]);
   });
 });
