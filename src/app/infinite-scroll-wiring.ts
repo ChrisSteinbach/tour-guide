@@ -122,6 +122,9 @@ export function createInfiniteScrollWiring(
           return h;
         }
         const { paused, pauseReason } = state.phase;
+        // Intentional `||` (not `??`): totalKnown() returns 0 before the
+        // article window is populated, and we treat 0 as "not yet populated"
+        // so the header falls back to the synchronous articles.length.
         const articleCount =
           deps.getCurrentWindow()?.totalKnown() || state.phase.articles.length;
         const isGps = state.positionSource !== "picked";
