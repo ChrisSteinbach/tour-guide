@@ -1,14 +1,15 @@
 import { createArticleWindowFactory } from "./article-window-factory";
-import type { ArticleWindowFactoryDeps } from "./article-window-factory";
+import { createTileSource } from "./tile-source";
+import type { CreateTileSourceOpts } from "./tile-source";
 import { NearestQuery, toFlatDelaunay } from "./query";
 import { buildTriangulation, convexHull, serialize } from "../geometry";
 import { GRID_DEG, tileFor, tileId, type TileEntry } from "../tiles";
+import type { UserPosition } from "./types";
 
 /**
  * Build a tile entry at the row/col the production tileFor() helper would
- * pick for (lat, lon). The factory now imports tileFor and tilesAtRing
- * directly, so the test must mirror the real grid layout — its tileMap
- * keys must match the IDs tilesAtRing emits.
+ * pick for (lat, lon). Tests share the real grid so their tileMap keys
+ * line up with what the source's tilesAtRing emits.
  */
 function makeEntryAt(lat: number, lon: number): TileEntry {
   const { row, col } = tileFor(lat, lon);
@@ -52,26 +53,41 @@ function makeNearestQuery(title: string): NearestQuery {
   );
 }
 
-function makeDeps(
-  overrides: Partial<ArticleWindowFactoryDeps> = {},
-): ArticleWindowFactoryDeps {
-  const center = makeEntryAt(1, 2);
-  return {
-    position: { lat: 1, lon: 2 },
+/**
+ * Construct a real TileSource and wire it to a fresh factory. Callers
+ * override tile-loading concerns through `sourceOverrides` (which feed
+ * createTileSource) and abort behavior through `signal`. The single
+ * test seam that matters is `loadTile` — everything else is real.
+ */
+function buildFactory(
+  opts: {
+    position?: UserPosition;
+    signal?: AbortSignal;
+    sourceOverrides?: Partial<CreateTileSourceOpts>;
+  } = {},
+) {
+  const position = opts.position ?? { lat: 1, lon: 2 };
+  const center = makeEntryAt(position.lat, position.lon);
+  const source = createTileSource({
+    position,
     tileMap: new Map([[center.id, center]]),
-    lang: "en",
-    signal: new AbortController().signal,
     getStateMachineTiles: () => new Map(),
     loadTile: vi.fn(async () => makeNearestQuery("default")),
-    ...overrides,
-  };
+    ...opts.sourceOverrides,
+  });
+  const articleWindow = createArticleWindowFactory({
+    position,
+    signal: opts.signal ?? new AbortController().signal,
+    source,
+  });
+  return { source, articleWindow };
 }
 
 describe("createArticleWindowFactory", () => {
   it("skips tiles already in the state machine and only loads the rest", async () => {
     // The state machine already holds smEntry; the factory must not invoke
-    // loadTile for it. The radius provider's queryTiles closure merges
-    // providerTiles + state-machine tiles, so the smEntry is still consumed
+    // loadTile for it. The radius provider's queryTiles closure pulls from
+    // the source's merged loaded() view, so the smEntry is still consumed
     // when computing nearest articles — just without a redundant fetch.
     const centerEntry = makeEntryAt(1, 2);
     const smEntry = makeEntryAt(1, 6);
@@ -88,31 +104,30 @@ describe("createArticleWindowFactory", () => {
     ]);
 
     const loadedIds: string[] = [];
-    const loadTile = vi.fn(async (_base: string, _lang, entry: TileEntry) => {
+    const loadTile = vi.fn(async (entry: TileEntry) => {
       loadedIds.push(entry.id);
       return makeNearestQuery(entry.id);
     });
 
-    const deps = makeDeps({
+    const { source, articleWindow } = buildFactory({
       position: { lat: 1, lon: 2 },
-      tileMap,
-      getStateMachineTiles: () => smTiles,
-      loadTile,
+      sourceOverrides: {
+        tileMap,
+        getStateMachineTiles: () => smTiles,
+        loadTile,
+      },
     });
-
-    const { articleWindow, providerTiles } = createArticleWindowFactory(deps);
     await articleWindow.ensureRange(0, 10);
 
     expect(loadedIds).not.toContain(smEntry.id);
-    // smEntry stays in the state machine map — it was never moved into
-    // providerTiles, so the factory hasn't duplicated it.
-    expect(providerTiles.has(smEntry.id)).toBe(false);
+    // The state-machine tile is visible to queries via the source's merged
+    // view but never duplicated into the source's local cache.
+    expect(source.loaded().has(smEntry.id)).toBe(true);
   });
 
   it("stops loading tiles when signal is aborted mid-ring", async () => {
     const ac = new AbortController();
     const centerEntry = makeEntryAt(1, 2);
-    // Two adjacent tiles in the same column-row pattern so they sit in ring 0/1.
     const tileMap = new Map<string, TileEntry>([
       [centerEntry.id, centerEntry],
       [makeEntryAt(1, 6).id, makeEntryAt(1, 6)],
@@ -122,34 +137,32 @@ describe("createArticleWindowFactory", () => {
     let loadCount = 0;
     const loadTile = vi.fn(async () => {
       loadCount++;
-      // Abort after first tile load.
+      // Abort while the first load is mid-flight.
       ac.abort();
       return makeNearestQuery("loaded");
     });
 
-    const deps = makeDeps({
+    const { source, articleWindow } = buildFactory({
       position: { lat: 1, lon: 2 },
-      tileMap,
       signal: ac.signal,
-      loadTile,
+      sourceOverrides: {
+        tileMap,
+        loadTile,
+      },
     });
-
-    const { articleWindow, providerTiles } = createArticleWindowFactory(deps);
     await articleWindow.ensureRange(0, 10);
 
-    // At most one tile should have been loaded — the abort fires inside the
-    // first loadTile call's continuation, and the loop bails before issuing
-    // any further loads.
+    // At most one tile load was issued before the loop bailed on the abort.
     expect(loadCount).toBeLessThanOrEqual(1);
-    // The in-flight tile resolved after the abort — its data must not be
-    // recorded in providerTiles, or downstream queries would include a tile
-    // the caller explicitly abandoned.
-    expect([...providerTiles.keys()]).toEqual([]);
+    // The in-flight tile resolved after the abort — the source must not
+    // have cached its data, or downstream queries would include a tile the
+    // caller explicitly abandoned.
+    expect([...source.loaded().keys()]).toEqual([]);
   });
 
   it("continues loading remaining tiles after one tile fails to load", async () => {
-    // Three tiles in ring 0 (the center plus two neighbors). Make the second
-    // load throw and assert the third still lands.
+    // Three tiles in ring 0/1; force the middle one to throw and assert
+    // the others still land in the source.
     const t0 = makeEntryAt(1, 2);
     const t1 = makeEntryAt(1, 6);
     const t2 = makeEntryAt(1, 10);
@@ -159,27 +172,22 @@ describe("createArticleWindowFactory", () => {
       [t2.id, t2],
     ]);
 
-    const loadTile = vi.fn(
-      async (_base: string, _lang, entry: TileEntry): Promise<NearestQuery> => {
-        if (entry.id === t1.id) throw new Error("network failure");
-        return makeNearestQuery(entry.id);
-      },
-    );
-
-    const deps = makeDeps({
-      position: { lat: 1, lon: 2 },
-      tileMap,
-      loadTile,
+    const loadTile = vi.fn(async (entry: TileEntry): Promise<NearestQuery> => {
+      if (entry.id === t1.id) throw new Error("network failure");
+      return makeNearestQuery(entry.id);
     });
 
-    const { providerTiles, articleWindow } = createArticleWindowFactory(deps);
-    // Ring 1+ contains 8 more tiles; the radius provider expands until the
-    // requested count is met. With only 3 tiles in the map, the loader will
-    // keep trying t1 but skip past on every retry path.
+    const { source, articleWindow } = buildFactory({
+      position: { lat: 1, lon: 2 },
+      sourceOverrides: {
+        tileMap,
+        loadTile,
+      },
+    });
     await articleWindow.ensureRange(0, 10);
 
-    expect(providerTiles.has(t0.id)).toBe(true);
-    expect(providerTiles.has(t1.id)).toBe(false);
-    expect(providerTiles.has(t2.id)).toBe(true);
+    expect(source.loaded().has(t0.id)).toBe(true);
+    expect(source.loaded().has(t1.id)).toBe(false);
+    expect(source.loaded().has(t2.id)).toBe(true);
   });
 });
