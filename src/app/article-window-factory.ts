@@ -1,58 +1,35 @@
+// Construct an ArticleWindow wired to a TileRadiusProvider that pulls from
+// a TileSource. The factory's job is purely orchestration: given a tile
+// source for some position, build the radius provider and the article
+// window on top of it. All tile-loading concerns (which IDs exist, which
+// are cached, how to fetch the missing ones) live in the TileSource.
+
 import type { UserPosition } from "./types";
-import type { NearestQuery } from "./query";
-import type { TileEntry } from "../tiles";
-import type { Lang } from "../lang";
 import type { ArticleWindow } from "./article-window";
 import { createArticleWindow } from "./article-window";
-import { createTileRadiusProvider, tilesAtRing } from "./tile-radius";
-import { findNearestTiled, getTileEntry } from "./tile-loader";
-import { tileFor } from "../tiles";
+import { createTileRadiusProvider } from "./tile-radius";
+import { findNearestTiled } from "./tile-loader";
+import type { TileSource } from "./tile-source";
 
-/**
- * The runtime opts that compose-app passes through from the lifecycle, plus
- * the single impure dep (`loadTile`) that needs to be injected for tests so
- * they can avoid hitting the network. The pure tile-grid helpers (tilesAtRing,
- * tileFor, findNearestTiled, getTileEntry) used to be injected too, but the
- * test setup grew so unwieldy that the injections obscured the actual
- * behavior under test. They are now imported directly — tests run sociably
- * against the real geometry.
- */
 export interface ArticleWindowFactoryDeps {
   position: UserPosition;
-  tileMap: Map<string, TileEntry>;
-  lang: Lang;
   signal: AbortSignal;
-  getStateMachineTiles: () => ReadonlyMap<string, NearestQuery>;
-  loadTile: (
-    basePath: string,
-    lang: Lang,
-    entry: TileEntry,
-    signal: AbortSignal,
-  ) => Promise<NearestQuery>;
+  source: TileSource;
   onWindowChange?: () => void;
-}
-
-export interface ArticleWindowFactoryResult {
-  articleWindow: ArticleWindow;
-  providerTiles: ReadonlyMap<string, NearestQuery>;
 }
 
 export function createArticleWindowFactory(
   deps: ArticleWindowFactoryDeps,
-): ArticleWindowFactoryResult {
-  const { position, tileMap, lang, signal, getStateMachineTiles, loadTile } =
-    deps;
-
-  const { row, col } = tileFor(position.lat, position.lon);
-
-  const providerTiles = new Map<string, NearestQuery>();
+): ArticleWindow {
+  const { position, signal, source, onWindowChange } = deps;
+  const { row, col } = source.center;
 
   const radiusProvider = createTileRadiusProvider({
     queryTiles: (tileIds) => {
-      const tiles = new Map<string, NearestQuery>();
-      const smTiles = getStateMachineTiles();
+      const all = source.loaded();
+      const tiles = new Map();
       for (const id of tileIds) {
-        const q = providerTiles.get(id) ?? smTiles.get(id);
+        const q = all.get(id);
         if (q) tiles.set(id, q);
       }
       return Promise.resolve(
@@ -60,27 +37,24 @@ export function createArticleWindowFactory(
       );
     },
     loadRing: async (ring) => {
-      const ids = tilesAtRing(row, col, ring, tileMap);
+      const ids = source.idsAtRing(ring);
       if (ids.length === 0) return [];
 
       const newlyLoaded: string[] = [];
       for (const id of ids) {
         if (signal.aborted) return newlyLoaded;
-        if (providerTiles.has(id)) continue;
-        const smTiles = getStateMachineTiles();
-        if (smTiles.has(id)) {
+        if (source.isLoaded(id)) {
           newlyLoaded.push(id);
           continue;
         }
-        const entry = getTileEntry(tileMap, id);
-        if (!entry) continue;
+        if (!source.hasEntry(id)) continue;
         try {
-          const tileQuery = await loadTile("", lang, entry, signal);
+          await source.load(id, signal);
           if (signal.aborted) return newlyLoaded;
-          providerTiles.set(id, tileQuery);
           newlyLoaded.push(id);
         } catch {
-          // Tile load failure is non-fatal
+          // Tile load failure is non-fatal — the ring expansion continues
+          // and the next caller can retry on a fresh fetchRange.
         }
       }
       return newlyLoaded;
@@ -89,10 +63,8 @@ export function createArticleWindowFactory(
     centerCol: col,
   });
 
-  const articleWindow = createArticleWindow(radiusProvider, {
+  return createArticleWindow(radiusProvider, {
     windowSize: 1000,
-    onWindowChange: deps.onWindowChange,
+    onWindowChange,
   });
-
-  return { articleWindow, providerTiles };
 }
