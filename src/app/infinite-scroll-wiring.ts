@@ -163,6 +163,12 @@ export function createInfiniteScrollWiring(
         // re-fetch exactly the viewport range on every event. Detect
         // direction from the last seen start and pad the backward side.
         const aw = deps.getCurrentWindow();
+        // The load-bearing case here is the null-flip:
+        // resetArticleWindow() can transiently null getCurrentWindow()
+        // before the next getOrCreateArticleWindow() call, so the
+        // comparator flickers aw -> null -> aw'. Each null-flip resets
+        // lastVisibleStart so the new window starts fresh and the
+        // backward-direction heuristic doesn't carry across positions.
         if (aw !== lastSeenWindow) {
           lastVisibleStart = null;
           lastSeenWindow = aw;
