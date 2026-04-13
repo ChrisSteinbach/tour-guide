@@ -500,3 +500,81 @@ describe("articles observer", () => {
     expect(() => lifecycle.attachArticlesObserver(() => {})).not.toThrow();
   });
 });
+
+describe("onWindowChange stale-window guard", () => {
+  it("ignores onWindowChange fired from an orphaned AW after the lifecycle replaced it", () => {
+    // Regression for tour-guide-hzqi. The lifecycle's onWindowChange closure
+    // captures `articleWindow` by reference. If a deferred onWindowChange from
+    // an AW that was already replaced fires, the callback would read
+    // loadedCount() / getLoadedArticles() from the NEW AW (which has 0 loaded
+    // immediately after creation) and pipe stale (0, 0) through the observers,
+    // visually nuking the rendered list to the empty state.
+    //
+    // Drive both AWs through the lifecycle so we can fire onWindowChange on
+    // the FIRST AW *after* the second one has taken its place.
+    let firstOnChange: (() => void) | undefined;
+    let secondOnChange: (() => void) | undefined;
+    const firstAw = stubArticleWindow({
+      // The orphaned AW carries real loaded data — if its callback ever
+      // mutates lifecycle state it would push (50, 50) through. We don't
+      // want it to push anything at all.
+      loadedCount: vi.fn(() => 50),
+      getLoadedArticles: vi.fn(() => [
+        { title: "Old", lat: 1, lon: 2, distanceM: 10 },
+      ]),
+    });
+    const secondAw = stubArticleWindow({
+      loadedCount: vi.fn(() => 0),
+      getLoadedArticles: vi.fn(() => []),
+    });
+
+    let createCount = 0;
+    const deps = makeDeps({
+      createArticleWindow: vi.fn((opts) => {
+        createCount++;
+        if (createCount === 1) {
+          firstOnChange = opts.onWindowChange;
+          return firstAw;
+        }
+        secondOnChange = opts.onWindowChange;
+        return secondAw;
+      }),
+    });
+
+    const scrollObserver = vi.fn();
+    const articlesObserver = vi.fn();
+    const lifecycle = createArticleWindowLifecycle(deps);
+    lifecycle.attachScrollCountObserver(scrollObserver);
+    lifecycle.attachArticlesObserver(articlesObserver);
+
+    // Create AW #1 and replace it before its onWindowChange has fired.
+    lifecycle.getOrCreateArticleWindow();
+    lifecycle.resetArticleWindow();
+    lifecycle.getOrCreateArticleWindow();
+
+    // Sanity: the lifecycle has two distinct AWs and two distinct callbacks.
+    expect(createCount).toBe(2);
+    expect(firstOnChange).toBeDefined();
+    expect(secondOnChange).toBeDefined();
+    expect(firstOnChange).not.toBe(secondOnChange);
+
+    // Now fire the orphaned callback. The lifecycle's current AW is the
+    // SECOND one — the orphan's callback must not push the first AW's
+    // (50, [Old]) data, AND must not pipe the second AW's empty (0, []) data
+    // either. Either way is wrong: the only correct behavior is to ignore
+    // the call entirely.
+    scrollObserver.mockClear();
+    articlesObserver.mockClear();
+    firstOnChange!();
+
+    expect(scrollObserver).not.toHaveBeenCalled();
+    expect(articlesObserver).not.toHaveBeenCalled();
+
+    // The second AW's own callback still works — only orphans are ignored.
+    secondOnChange!();
+    expect(scrollObserver).toHaveBeenCalledWith(0, 0);
+    // Empty articles list — articlesObserver should not fire (existing
+    // behavior: notifies only when loadedArticles.length > 0).
+    expect(articlesObserver).not.toHaveBeenCalled();
+  });
+});

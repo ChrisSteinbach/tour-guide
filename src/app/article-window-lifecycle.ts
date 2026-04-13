@@ -102,7 +102,13 @@ export function createArticleWindowLifecycle(
 
     articleWindowAbort = new AbortController();
 
-    articleWindow = deps.createArticleWindow({
+    // Capture a local reference to THIS AW so the onWindowChange closure
+    // only mutates lifecycle state for the AW it was created with. Without
+    // this guard, an orphaned callback firing after resetArticleWindow() +
+    // getOrCreateArticleWindow() would read loadedCount() / getLoadedArticles()
+    // from the NEW AW (which is empty immediately after creation) and pipe
+    // stale (0, 0) through the observers — visually nuking the rendered list.
+    const ownAw = deps.createArticleWindow({
       position: state.position,
       tileMap: state.query.tileMap,
       lang: state.currentLang,
@@ -113,16 +119,17 @@ export function createArticleWindowLifecycle(
         return new Map();
       },
       onWindowChange: () => {
-        if (!articleWindow) return;
-        lastScrollCount = articleWindow.loadedCount();
+        if (articleWindow !== ownAw) return;
+        lastScrollCount = ownAw.loadedCount();
         scrollCountObserver?.(lastScrollCount, lastScrollCount);
 
-        const loadedArticles = articleWindow.getLoadedArticles();
+        const loadedArticles = ownAw.getLoadedArticles();
         if (loadedArticles.length > 0) {
           articlesObserver?.(loadedArticles);
         }
       },
     });
+    articleWindow = ownAw;
 
     return articleWindow;
   }
