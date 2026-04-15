@@ -54,6 +54,8 @@ export interface InfiniteScrollDeps {
   onNearEnd?: () => void;
   /** How many items from the end to trigger onNearEnd (default 50). */
   nearEndThreshold?: number;
+  /** Called on every visible-range change (for re-fetching evicted data). */
+  onVisibleRangeChange?: (range: { start: number; end: number }) => void;
 }
 
 export interface InfiniteScrollLifecycle {
@@ -146,12 +148,27 @@ export function createInfiniteScrollLifecycle(
       onRangeChange: (range) => {
         enrichScheduler!.onRangeChange(range);
         mapSync.sync(range);
-        if (
-          deps.onNearEnd &&
+        // Skip near-end detection in compressed mode: range indices are
+        // proportionally mapped to a capped scroll height, so range.end
+        // lives in virtual-index space and can sit arbitrarily far above
+        // currentLoadedCount — which would make the check fire on every
+        // scroll event. onVisibleRangeChange already ensures data around
+        // the mapped window, so the prefetch optimization isn't needed.
+        const compressed = virtualList!.isCompressed();
+        const nearEnd =
+          !compressed &&
+          deps.onNearEnd !== undefined &&
           currentLoadedCount > 0 &&
-          range.end >= currentLoadedCount - nearEndThreshold
-        ) {
-          deps.onNearEnd();
+          range.end >= currentLoadedCount - nearEndThreshold;
+        if (nearEnd) {
+          // onNearEnd issues ensureRange(start, end + PREFETCH_BUFFER),
+          // which is a superset of the unbuffered onVisibleRangeChange
+          // fetch. Both serialize via pendingFetch, so firing the
+          // unbuffered one here just blocks the prefetch behind a
+          // redundant request. Skip it and let onNearEnd cover both.
+          deps.onNearEnd!();
+        } else {
+          deps.onVisibleRangeChange?.(range);
         }
       },
     });
@@ -175,7 +192,6 @@ export function createInfiniteScrollLifecycle(
     if (loadedCount !== undefined) {
       currentLoadedCount = loadedCount;
     }
-
     updateHeader();
 
     // Update virtual list

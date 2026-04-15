@@ -133,12 +133,9 @@ function stubVirtualList(range: { start: number; end: number }): VirtualList {
   return {
     update: vi.fn(),
     refresh: vi.fn(),
-    visibleRange: () => ({
-      start: range.start,
-      end: range.end,
-      viewportHeight: 400,
-    }),
+    visibleRange: () => ({ start: range.start, end: range.end }),
     totalCount: vi.fn(() => 0),
+    isCompressed: vi.fn(() => false),
     destroy: vi.fn(),
   };
 }
@@ -510,6 +507,95 @@ describe("createInfiniteScrollWiring", () => {
       capturedDeps!.destroyBrowseMap();
 
       expect(browseMap.destroy).toHaveBeenCalled();
+    });
+  });
+
+  describe("onVisibleRangeChange", () => {
+    it("calls ensureRange on the current ArticleWindow with the given range on first event", () => {
+      const aw = stubArticleWindow();
+      const deps = makeDeps({ getCurrentWindow: () => aw });
+      createInfiniteScrollWiring(deps);
+
+      capturedDeps!.onVisibleRangeChange!({ start: 10, end: 25 });
+
+      // First event has no prior direction; no backward buffer applied.
+      expect(aw.ensureRange).toHaveBeenCalledWith(10, 25);
+    });
+
+    it("does not pad on forward scrolls (onNearEnd owns forward prefetch)", () => {
+      const aw = stubArticleWindow();
+      const deps = makeDeps({ getCurrentWindow: () => aw });
+      createInfiniteScrollWiring(deps);
+
+      capturedDeps!.onVisibleRangeChange!({ start: 10, end: 25 });
+      capturedDeps!.onVisibleRangeChange!({ start: 40, end: 55 });
+
+      expect(aw.ensureRange).toHaveBeenLastCalledWith(40, 55);
+    });
+
+    it("prefetches below the visible range on backward scrolls", () => {
+      const aw = stubArticleWindow();
+      const deps = makeDeps({ getCurrentWindow: () => aw });
+      createInfiniteScrollWiring(deps);
+
+      // Forward to establish a baseline, then scroll backward.
+      capturedDeps!.onVisibleRangeChange!({ start: 500, end: 515 });
+      capturedDeps!.onVisibleRangeChange!({ start: 480, end: 495 });
+
+      // 200-article backward prefetch buffer: fetch from 480 - 200 = 280.
+      expect(aw.ensureRange).toHaveBeenLastCalledWith(280, 495);
+    });
+
+    it("clamps the backward prefetch start at zero", () => {
+      const aw = stubArticleWindow();
+      const deps = makeDeps({ getCurrentWindow: () => aw });
+      createInfiniteScrollWiring(deps);
+
+      capturedDeps!.onVisibleRangeChange!({ start: 100, end: 115 });
+      capturedDeps!.onVisibleRangeChange!({ start: 50, end: 65 });
+
+      expect(aw.ensureRange).toHaveBeenLastCalledWith(0, 65);
+    });
+
+    it("is a no-op when no ArticleWindow exists", () => {
+      const deps = makeDeps({ getCurrentWindow: () => null });
+      createInfiniteScrollWiring(deps);
+
+      // Should not throw
+      capturedDeps!.onVisibleRangeChange!({ start: 0, end: 10 });
+
+      // Nothing to assert on — just verifying it doesn't blow up
+      expect(deps.getCurrentWindow()).toBeNull();
+    });
+
+    it("resets direction tracking when a new ArticleWindow becomes active", () => {
+      // The wiring outlives individual ArticleWindows: when the user's
+      // position changes, a fresh window replaces the old one but the
+      // wiring closure stays put. Without a reset, the previous window's
+      // lastVisibleStart leaks into the new window's first range event
+      // and gets misread as a backward scroll.
+      const aw1 = stubArticleWindow();
+      const aw2 = stubArticleWindow();
+      let currentAw: ArticleWindow = aw1;
+      const deps = makeDeps({ getCurrentWindow: () => currentAw });
+      createInfiniteScrollWiring(deps);
+
+      // Forward scroll on window 1 — remembers start=500 as lastVisibleStart.
+      capturedDeps!.onVisibleRangeChange!({ start: 500, end: 515 });
+      expect(aw1.ensureRange).toHaveBeenLastCalledWith(500, 515);
+
+      // Position change: a fresh window replaces the old one.
+      currentAw = aw2;
+
+      // The new window's first range event is at start=100 (well below
+      // the previous 500). Without a reset, this would be misread as a
+      // backward scroll and fetch (max(0, 100-200), 115) = (0, 115). With
+      // a reset, lastVisibleStart is null on this window, so no direction
+      // is inferred and the fetch starts at 100 with no backward buffer.
+      capturedDeps!.onVisibleRangeChange!({ start: 100, end: 115 });
+
+      expect(aw2.ensureRange).toHaveBeenCalledWith(100, 115);
+      expect(aw2.ensureRange).toHaveBeenCalledTimes(1);
     });
   });
 
