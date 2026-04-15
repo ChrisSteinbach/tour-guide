@@ -549,8 +549,15 @@ describe("createInfiniteScrollWiring", () => {
 
       capturedDeps!.onNearEnd!();
 
-      // optimistic = max(300, 120) = 300 (loadedCount is 120, not zero)
-      expect(applyOptimisticCount).toHaveBeenCalledWith(300);
+      // optimistic = loaded = 120 (uses loadedCount, not totalKnown)
+      expect(applyOptimisticCount).toHaveBeenCalledWith(120);
+      // Regression pin: applyOptimisticCount must NOT be called with
+      // totalKnown (300). Removing computeOptimisticCount made this the
+      // only source of truth, and a future refactor back to totalKnown
+      // would silently regress the "list never extends past last real
+      // article" guarantee. toHaveBeenCalledWith(120) would still catch
+      // it today, but this assertion pins intent against numeric drift.
+      expect(applyOptimisticCount).not.toHaveBeenCalledWith(300);
       expect(aw.ensureRange).toHaveBeenCalledWith(50, 100 + 200);
       expect(dispatch).not.toHaveBeenCalled();
     });

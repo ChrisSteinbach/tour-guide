@@ -19,21 +19,6 @@ export interface CreateWindowOpts {
 }
 
 /**
- * Compute the optimistic article count for infinite scroll height.
- * Returns the best-known total: `known` when the provider reports more
- * articles than are loaded, otherwise `loaded`.  No phantom buffer is
- * added — the nearEndThreshold in the virtual list already triggers
- * onNearEnd before the user reaches the bottom.
- */
-export function computeOptimisticCount(known: number, loaded: number): number {
-  // When nothing is loaded yet we can't estimate a count — return 0 even if
-  // known > 0, because showing scroll headroom before any articles are rendered
-  // would create an empty list that jumps once the first batch arrives.
-  if (loaded === 0) return 0;
-  return Math.max(known, loaded);
-}
-
-/**
  * Notified whenever the lifecycle's tracked scroll count changes —
  * either from an async fetch completing (onWindowChange) or from an
  * optimistic pre-fetch (applyOptimisticCount). The caller decides
@@ -135,16 +120,8 @@ export function createArticleWindowLifecycle(
       },
       onWindowChange: () => {
         if (articleWindow !== ownAw) return;
-        // Route through computeOptimisticCount so the loaded===0 guard
-        // applies here too — prevents empty-list-with-headroom jumps.
-        // Never shrink — reducing the count while the user is scrolled
-        // deep causes the same scroll jump this fix exists to prevent.
-        const realCount = computeOptimisticCount(
-          ownAw.totalKnown(),
-          ownAw.loadedCount(),
-        );
-        lastScrollCount = Math.max(lastScrollCount, realCount);
-        scrollCountObserver?.(lastScrollCount, ownAw.loadedCount());
+        lastScrollCount = ownAw.loadedCount();
+        scrollCountObserver?.(lastScrollCount, lastScrollCount);
 
         const loadedArticles = ownAw.getLoadedArticles();
         if (loadedArticles.length > 0) {
