@@ -117,7 +117,13 @@ export function createArticleWindowLifecycle(
 
     articleWindowAbort = new AbortController();
 
-    articleWindow = deps.createArticleWindow({
+    // Capture a local reference to THIS AW so the onWindowChange closure
+    // only mutates lifecycle state for the AW it was created with. Without
+    // this guard, an orphaned callback firing after resetArticleWindow() +
+    // getOrCreateArticleWindow() would read loadedCount() / getLoadedArticles()
+    // from the NEW AW (which is empty immediately after creation) and pipe
+    // stale (0, 0) through the observers — visually nuking the rendered list.
+    const ownAw = deps.createArticleWindow({
       position: state.position,
       tileMap: state.query.tileMap,
       lang: state.currentLang,
@@ -128,24 +134,25 @@ export function createArticleWindowLifecycle(
         return new Map();
       },
       onWindowChange: () => {
-        if (!articleWindow) return;
+        if (articleWindow !== ownAw) return;
         // Route through computeOptimisticCount so the loaded===0 guard
         // applies here too — prevents empty-list-with-headroom jumps.
         // Never shrink — reducing the count while the user is scrolled
         // deep causes the same scroll jump this fix exists to prevent.
         const realCount = computeOptimisticCount(
-          articleWindow.totalKnown(),
-          articleWindow.loadedCount(),
+          ownAw.totalKnown(),
+          ownAw.loadedCount(),
         );
         lastScrollCount = Math.max(lastScrollCount, realCount);
-        scrollCountObserver?.(lastScrollCount, articleWindow.loadedCount());
+        scrollCountObserver?.(lastScrollCount, ownAw.loadedCount());
 
-        const loadedArticles = articleWindow.getLoadedArticles();
+        const loadedArticles = ownAw.getLoadedArticles();
         if (loadedArticles.length > 0) {
           articlesObserver?.(loadedArticles);
         }
       },
     });
+    articleWindow = ownAw;
 
     return articleWindow;
   }
