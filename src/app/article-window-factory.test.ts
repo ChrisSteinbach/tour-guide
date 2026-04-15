@@ -56,12 +56,13 @@ function makeDeps(
 }
 
 describe("createArticleWindowFactory", () => {
-  it("merges state machine tiles and provider tiles in queries", async () => {
+  it("queries both state machine and provider tiles via queryTiles", async () => {
     const smTile = fakeQuery();
     const providerTile = fakeQuery();
 
     const smTiles = new Map<string, NearestQuery>([["sm-t0", smTile]]);
     const tileMap = new Map<string, TileEntry>([
+      ["sm-t0", makeEntry("sm-t0")],
       ["ring-t1", makeEntry("ring-t1")],
     ]);
 
@@ -71,7 +72,7 @@ describe("createArticleWindowFactory", () => {
       tileMap,
       getStateMachineTiles: () => smTiles,
       tilesAtRing: vi.fn((_row, _col, ring) => {
-        if (ring === 0) return ["ring-t1"];
+        if (ring === 0) return ["sm-t0", "ring-t1"];
         return [];
       }),
       loadTile: vi.fn(async () => providerTile),
@@ -85,10 +86,11 @@ describe("createArticleWindowFactory", () => {
     const { articleWindow } = createArticleWindowFactory(deps);
     await articleWindow.ensureRange(0, 10);
 
-    // After loading ring-t1, findNearestTiled should see both sm-t0 and ring-t1
-    const lastSeen = allTilesSeen[allTilesSeen.length - 1];
-    expect(lastSeen.has("sm-t0")).toBe(true);
-    expect(lastSeen.has("ring-t1")).toBe(true);
+    // queryTiles should have been called with both sm-t0 and ring-t1
+    // and findNearestTiled should see both tiles in the query
+    const allSeenIds = allTilesSeen.flatMap((m) => [...m.keys()]);
+    expect(allSeenIds).toContain("sm-t0");
+    expect(allSeenIds).toContain("ring-t1");
   });
 
   it("stops loading tiles when signal is aborted", async () => {
@@ -114,14 +116,18 @@ describe("createArticleWindowFactory", () => {
       }),
     });
 
-    const { articleWindow } = createArticleWindowFactory(deps);
+    const { articleWindow, providerTiles } = createArticleWindowFactory(deps);
     await articleWindow.ensureRange(0, 10);
 
     // Only the first tile should have been loaded before abort stopped the loop
     expect(loadCount).toBe(1);
+    // The in-flight tile resolved after the abort — its data must not be
+    // recorded in providerTiles, or downstream queries would include a tile
+    // the caller explicitly abandoned.
+    expect([...providerTiles.keys()]).toEqual([]);
   });
 
-  it("skips tiles already in state machine or provider map", async () => {
+  it("skips loading tiles already in state machine but reports them for querying", async () => {
     const existingTile = fakeQuery();
     const smTiles = new Map<string, NearestQuery>([["sm-tile", existingTile]]);
     const tileMap = new Map<string, TileEntry>([
@@ -147,7 +153,7 @@ describe("createArticleWindowFactory", () => {
     const { articleWindow } = createArticleWindowFactory(deps);
     await articleWindow.ensureRange(0, 10);
 
-    // sm-tile should be skipped, only new-tile loaded
+    // sm-tile should NOT be loaded (it's already in SM), only new-tile loaded
     expect(loadedIds).toEqual(["new-tile"]);
   });
 

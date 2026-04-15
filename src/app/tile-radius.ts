@@ -1,5 +1,11 @@
 // Progressive tile loading by distance radius.
 // Pure ring geometry + orchestrator that expands rings on demand.
+//
+// The provider is *resumable*: it maintains a cumulative sorted list of
+// discovered articles and a seen-title set for cross-ring deduplication.
+// When a new ring is loaded only its tiles are queried and the results
+// are merged into the existing list via a merge-tail to handle the
+// Chebyshev-vs-great-circle distance interleaving at ring boundaries.
 
 import { COLS, ROWS, tileId, wrapCol } from "../tiles";
 import type { TileEntry } from "../tiles";
@@ -62,10 +68,10 @@ export function tilesWithinRadius(
 // ── Radius provider (orchestrator) ───────────────────────────
 
 export interface TileRadiusProviderOptions {
-  /** Query all currently loaded tiles for nearest articles, sorted by distance. */
-  queryAllTiles: () => Promise<NearbyArticle[]>;
-  /** Load tiles at the given ring. Returns true if new tiles were loaded. */
-  loadRing: (ring: number) => Promise<boolean>;
+  /** Query specific tiles for nearest articles, sorted by distance. */
+  queryTiles: (tileIds: string[]) => Promise<NearbyArticle[]>;
+  /** Load tiles at the given ring. Returns IDs of newly loaded tiles. */
+  loadRing: (ring: number) => Promise<string[]>;
   centerRow: number;
   centerCol: number;
 }
@@ -80,39 +86,137 @@ export interface TileRadiusProviderOptions {
 export const MAX_RING = Math.max(ROWS - 1, Math.floor(COLS / 2));
 
 /**
+ * Number of articles kept as the merge tail when integrating a new ring.
+ * Articles in the tail may be re-ordered when new-ring articles interleave
+ * with them (Chebyshev tile distance ≠ great-circle article distance).
+ * Articles before the tail are finalized and never re-sorted.
+ *
+ * @internal Exported only so tests can pin the tail size — not part of the
+ * public API. No production caller should need to read or override this.
+ */
+export const MERGE_TAIL_SIZE = 500;
+
+/**
  * Create an ArticleProvider that expands tile rings on demand
  * to satisfy article range requests.
+ *
+ * The provider is *resumable*: it keeps a cumulative sorted list of
+ * discovered articles and only queries newly loaded tiles on expansion.
  */
 export function createTileRadiusProvider(
   options: TileRadiusProviderOptions,
 ): ArticleProvider {
-  const { queryAllTiles, loadRing } = options;
+  const { queryTiles, loadRing } = options;
   let currentRing = 0;
   let ring0Loaded = false;
 
+  /** Cumulative sorted list of all discovered articles. */
+  const discoveredArticles: NearbyArticle[] = [];
+  /** Titles already in discoveredArticles — for cross-ring dedup. */
+  const seenTitles = new Set<string>();
+
+  /**
+   * Dedup `incoming` against seenTitles, add survivors to the set.
+   * Keeps the first-seen distance for each title. This is safe because
+   * findNearestTiled computes great-circle distance from the user's
+   * position, which is tile-independent — the same article always
+   * gets the same distance regardless of which tile returned it.
+   */
+  function dedup(incoming: NearbyArticle[]): NearbyArticle[] {
+    const fresh: NearbyArticle[] = [];
+    for (const a of incoming) {
+      if (!seenTitles.has(a.title)) {
+        seenTitles.add(a.title);
+        fresh.push(a);
+      }
+    }
+    return fresh;
+  }
+
+  /** Merge `fresh` articles into discoveredArticles using the tail. */
+  function mergeInto(fresh: NearbyArticle[]): void {
+    if (fresh.length === 0) return;
+
+    if (discoveredArticles.length <= MERGE_TAIL_SIZE) {
+      // Small list — just append and re-sort everything
+      discoveredArticles.push(...fresh);
+      discoveredArticles.sort((a, b) => a.distanceM - b.distanceM);
+      return;
+    }
+
+    // Split: finalized portion stays untouched, tail gets merged with fresh.
+    // Default tail spans the last MERGE_TAIL_SIZE entries, but we may need to
+    // widen it: a ring-(N+1) article can have a smaller great-circle distance
+    // than a ring-N article that already sits in the finalized prefix
+    // (Chebyshev tile distance ≠ great-circle distance). If any such fresh
+    // article exists, we must pull the affected prefix entries back into the
+    // tail so they can be re-sorted alongside the new batch.
+    let minFresh = fresh[0].distanceM;
+    for (let i = 1; i < fresh.length; i++) {
+      if (fresh[i].distanceM < minFresh) minFresh = fresh[i].distanceM;
+    }
+
+    let tailStart = discoveredArticles.length - MERGE_TAIL_SIZE;
+    // Safe to read [tailStart - 1]: the outer branch guaranteed
+    // length > MERGE_TAIL_SIZE, so tailStart = length - MERGE_TAIL_SIZE >= 1.
+    if (discoveredArticles[tailStart - 1].distanceM > minFresh) {
+      // Binary-search the finalized prefix for the first index whose distance
+      // exceeds minFresh. Everything from that index onward must be re-sorted.
+      // The prefix is sorted, so this is O(log N).
+      let lo = 0;
+      let hi = tailStart;
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (discoveredArticles[mid].distanceM > minFresh) hi = mid;
+        else lo = mid + 1;
+      }
+      tailStart = lo;
+    }
+
+    const tail = discoveredArticles.splice(tailStart);
+    tail.push(...fresh);
+    tail.sort((a, b) => a.distanceM - b.distanceM);
+    discoveredArticles.push(...tail);
+  }
+
+  /** Query and merge a batch of newly loaded tiles. */
+  async function ingestTiles(tileIds: string[]): Promise<void> {
+    if (tileIds.length === 0) return;
+    const articles = await queryTiles(tileIds);
+    const fresh = dedup(articles);
+    mergeInto(fresh);
+  }
+
   return {
     async fetchRange(start: number, end: number): Promise<FetchResult> {
+      // Fast path: already have enough articles
+      if (discoveredArticles.length >= end) {
+        return {
+          articles: discoveredArticles.slice(start, end),
+          totalAvailable: discoveredArticles.length,
+        };
+      }
+
       // Load ring 0 if not yet loaded
       if (!ring0Loaded) {
-        await loadRing(0);
+        const ids = await loadRing(0);
         ring0Loaded = true;
+        await ingestTiles(ids);
       }
 
       // Expand rings until we have enough articles or exhaust the grid
-      let articles = await queryAllTiles();
-      while (articles.length < end && currentRing < MAX_RING) {
+      while (discoveredArticles.length < end && currentRing < MAX_RING) {
         currentRing++;
-        const loaded = await loadRing(currentRing);
-        if (loaded) {
-          articles = await queryAllTiles();
-        }
+        const ids = await loadRing(currentRing);
+        await ingestTiles(ids);
       }
 
-      // Defensive copy — don't mutate the array returned by queryAllTiles
-      const sorted = [...articles].sort((a, b) => a.distanceM - b.distanceM);
       return {
-        articles: sorted.slice(start, Math.min(end, sorted.length)),
-        totalAvailable: sorted.length,
+        articles: discoveredArticles.slice(
+          start,
+          Math.min(end, discoveredArticles.length),
+        ),
+        totalAvailable: discoveredArticles.length,
       };
     },
   };
