@@ -38,10 +38,19 @@ export function computeOptimisticCount(known: number, loaded: number): number {
  * either from an async fetch completing (onWindowChange) or from an
  * optimistic pre-fetch (applyOptimisticCount). The caller decides
  * whether to forward the update to a live scroll surface.
+ *
+ * @param listHeight Ratcheted scroll height — the max of the real
+ *   article count and any outstanding optimistic pre-fetch. Used to
+ *   size the virtual list so the user never scrolls past the bottom
+ *   while a fetch is in flight.
+ * @param nearEndAnchor Real loaded-article count (or `undefined` when
+ *   no ArticleWindow exists yet). Separated from `listHeight` so the
+ *   near-end gate fires against actual data rather than the inflated
+ *   optimistic height.
  */
 export type ScrollCountObserver = (
-  count: number,
-  loadedCount: number | undefined,
+  listHeight: number,
+  nearEndAnchor: number | undefined,
 ) => void;
 
 /**

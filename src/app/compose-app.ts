@@ -70,10 +70,11 @@ export function resolveScrollContainer(
  */
 export function createScrollCountForwarder(infiniteScroll: {
   isActive(): boolean;
-  update(count: number, loadedCount: number | undefined): void;
-}): (count: number, loadedCount: number | undefined) => void {
-  return (count, loadedCount) => {
-    if (infiniteScroll.isActive()) infiniteScroll.update(count, loadedCount);
+  update(listHeight: number, nearEndAnchor: number | undefined): void;
+}): (listHeight: number, nearEndAnchor: number | undefined) => void {
+  return (listHeight, nearEndAnchor) => {
+    if (infiniteScroll.isActive())
+      infiniteScroll.update(listHeight, nearEndAnchor);
   };
 }
 

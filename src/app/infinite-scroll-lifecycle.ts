@@ -55,10 +55,29 @@ export interface InfiniteScrollDeps {
 }
 
 export interface InfiniteScrollLifecycle {
-  /** First-time setup: build DOM, create sub-components. */
-  init(totalCount: number, loadedCount?: number): void;
-  /** Update with new data. Refreshes header and virtual list. */
-  update(totalCount: number, loadedCount?: number): void;
+  /**
+   * First-time setup: build DOM, create sub-components.
+   *
+   * @param listHeight Number of items to render in the virtual list —
+   *   may be an optimistic (ratcheted) value ahead of the real loaded
+   *   count to reserve scroll headroom for in-flight fetches.
+   * @param nearEndAnchor Real loaded-article count against which the
+   *   near-end gate fires `onNearEnd`. Defaults to `listHeight` when
+   *   omitted (no ratchet bypass). Separated from `listHeight` so the
+   *   gate tracks actual data, not optimistic headroom.
+   */
+  init(listHeight: number, nearEndAnchor?: number): void;
+  /**
+   * Update with new data. Refreshes header and virtual list.
+   *
+   * @param listHeight See {@link init}. Can exceed `nearEndAnchor` when
+   *   `applyOptimisticCount` has ratcheted the scroll height above the
+   *   real loaded count.
+   * @param nearEndAnchor See {@link init}. When omitted the previous
+   *   anchor is preserved — callers that only know the list height
+   *   (e.g. header-restart paths) should omit it rather than guessing.
+   */
+  update(listHeight: number, nearEndAnchor?: number): void;
   /** Update only the header (e.g. to restart blink animation) without rebuilding the list. */
   updateHeader(): void;
   /** Tear down all sub-components and listeners. */
@@ -79,7 +98,7 @@ export function createInfiniteScrollLifecycle(
   let disconnectScroll: (() => void) | null = null;
   let cancelMapSync: (() => void) | null = null;
   let scrollEl: HTMLElement | null = null;
-  let currentLoadedCount = 0;
+  let nearEndAnchor = 0;
   const nearEndThreshold = deps.nearEndThreshold ?? 50;
 
   function destroy(): void {
@@ -102,7 +121,7 @@ export function createInfiniteScrollLifecycle(
     scrollEl = null;
   }
 
-  function init(totalCount: number, loadedCount?: number): void {
+  function init(listHeight: number, anchor?: number): void {
     destroy();
     deps.destroyBrowseMap();
     deps.container.textContent = "";
@@ -133,7 +152,7 @@ export function createInfiniteScrollLifecycle(
 
     const getScrollState = containerScrollState(scrollWrapper, listContainer);
 
-    currentLoadedCount = loadedCount ?? totalCount;
+    nearEndAnchor = anchor ?? listHeight;
 
     virtualList = createVirtualList({
       container: listContainer,
@@ -145,15 +164,15 @@ export function createInfiniteScrollLifecycle(
         mapSync.sync(range);
         if (
           deps.onNearEnd &&
-          currentLoadedCount > 0 &&
-          range.end >= currentLoadedCount - nearEndThreshold
+          nearEndAnchor > 0 &&
+          range.end >= nearEndAnchor - nearEndThreshold
         ) {
           deps.onNearEnd();
         }
       },
     });
 
-    virtualList.update(totalCount, deps.renderItem);
+    virtualList.update(listHeight, deps.renderItem);
 
     disconnectScroll = connectScroll(virtualList, scrollWrapper);
   }
@@ -167,16 +186,15 @@ export function createInfiniteScrollLifecycle(
     }
   }
 
-  function update(totalCount: number, loadedCount?: number): void {
+  function update(listHeight: number, anchor?: number): void {
     if (!virtualList) return;
-    if (loadedCount !== undefined) {
-      currentLoadedCount = loadedCount;
+    if (anchor !== undefined) {
+      nearEndAnchor = anchor;
     }
 
     updateHeader();
 
-    // Update virtual list
-    virtualList.update(totalCount, deps.renderItem);
+    virtualList.update(listHeight, deps.renderItem);
   }
 
   return {
