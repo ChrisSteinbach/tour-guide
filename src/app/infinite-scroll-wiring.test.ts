@@ -545,6 +545,90 @@ describe("createInfiniteScrollWiring", () => {
       expect(dispatch).not.toHaveBeenCalled();
     });
 
+    it("backs off after ensureRange rejects so repeated near-end fires don't thrash the provider", async () => {
+      const ensureRange = vi.fn(async () => {
+        throw new Error("rate limited");
+      });
+      const aw = stubArticleWindow({
+        totalKnown: vi.fn(() => 300),
+        loadedCount: vi.fn(() => 120),
+        ensureRange,
+      });
+      lifecycleStub = stubLifecycle({
+        virtualList: () => stubVirtualList({ start: 50, end: 100 }),
+      });
+      const deps = makeDeps({
+        getCurrentWindow: () => aw,
+        applyOptimisticCount: vi.fn(),
+      });
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      createInfiniteScrollWiring(deps);
+
+      // Simulate a scroll jiggle: many near-end fires in quick succession.
+      // First fire kicks off ensureRange; remaining fires must be gated:
+      // - while the rejection is pending: nearEndPending blocks them
+      // - after the rejection settles: cooldown blocks them
+      for (let i = 0; i < 20; i++) {
+        capturedDeps!.onNearEnd!();
+        // Drain microtasks so the rejection handler runs and sets cooldown.
+        await Promise.resolve();
+        await Promise.resolve();
+      }
+
+      expect(ensureRange).toHaveBeenCalledTimes(1);
+      warnSpy.mockRestore();
+    });
+
+    it("resumes near-end fetches after a successful resolution clears the gate", async () => {
+      let shouldFail = true;
+      const ensureRange = vi.fn(async () => {
+        if (shouldFail) throw new Error("transient");
+      });
+      const aw = stubArticleWindow({
+        totalKnown: vi.fn(() => 300),
+        loadedCount: vi.fn(() => 120),
+        ensureRange,
+      });
+      lifecycleStub = stubLifecycle({
+        virtualList: () => stubVirtualList({ start: 50, end: 100 }),
+      });
+      const deps = makeDeps({
+        getCurrentWindow: () => aw,
+        applyOptimisticCount: vi.fn(),
+      });
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      createInfiniteScrollWiring(deps);
+
+      // First fire fails and trips the cooldown.
+      capturedDeps!.onNearEnd!();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(ensureRange).toHaveBeenCalledTimes(1);
+
+      // While in cooldown, additional fires are skipped.
+      capturedDeps!.onNearEnd!();
+      expect(ensureRange).toHaveBeenCalledTimes(1);
+
+      // After cooldown elapses, a fresh successful fetch clears the gate
+      // and a subsequent fire is allowed.
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(Date.now() + 10_000);
+        shouldFail = false;
+        capturedDeps!.onNearEnd!();
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(ensureRange).toHaveBeenCalledTimes(2);
+
+        capturedDeps!.onNearEnd!();
+        await Promise.resolve();
+        expect(ensureRange).toHaveBeenCalledTimes(3);
+      } finally {
+        vi.useRealTimers();
+      }
+      warnSpy.mockRestore();
+    });
+
     it("bails out when virtualList is not yet available", () => {
       const aw = stubArticleWindow({
         totalKnown: vi.fn(() => 300),
