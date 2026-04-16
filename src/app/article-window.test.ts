@@ -319,12 +319,41 @@ describe("ArticleWindow", () => {
 
     await expect(window.ensureRange(0, 10)).rejects.toThrow("network blip");
 
-    // Second call must attempt a fresh fetch — not re-await the rejected promise.
     await window.ensureRange(0, 10);
 
     expect(callCount).toBe(2);
     expect(window.getArticle(0)?.title).toBe("Article 0");
     expect(window.getArticle(9)?.title).toBe("Article 9");
+  });
+
+  // ── Non-contiguous state (regression) ─────────────────────
+
+  it("fetches the hole after a backward jump creates a disjoint segment", async () => {
+    const articles = Array.from({ length: 500 }, (_, i) => makeArticle(i));
+    const fetchedRanges: [number, number][] = [];
+    const provider: ArticleProvider = {
+      fetchRange: async (start, end) => {
+        fetchedRanges.push([start, end]);
+        return {
+          articles: articles.slice(start, Math.min(end, articles.length)),
+          totalAvailable: articles.length,
+        };
+      },
+    };
+    const window = createArticleWindow(provider, { windowSize: 50 });
+
+    await window.ensureRange(0, 50);
+    await window.ensureRange(400, 450);
+    expect(window.getArticle(0)).toBeUndefined();
+
+    await window.ensureRange(200, 220);
+
+    fetchedRanges.length = 0;
+    await window.ensureRange(250, 270);
+
+    expect(fetchedRanges).toEqual([[250, 270]]);
+    expect(window.getArticle(250)?.title).toBe("Article 250");
+    expect(window.getArticle(269)?.title).toBe("Article 269");
   });
 
   it("serializes overlapping-but-different concurrent requests", async () => {

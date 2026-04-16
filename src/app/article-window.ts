@@ -28,12 +28,17 @@ export interface ArticleWindow {
   ensureRange(start: number, end: number): Promise<void>;
   /** How many articles are known to exist (from the provider). */
   totalKnown(): number;
-  /** The exclusive end of the contiguous loaded range. */
+  /** The exclusive end of the highest loaded segment. */
   loadedCount(): number;
-  /** Return articles from index 0 up to loadedEnd as a contiguous array. */
+  /** Return articles from index 0 up to loadedCount as a contiguous array. */
   getLoadedArticles(): NearbyArticle[];
   /** Clear all loaded data. */
   reset(): void;
+}
+
+interface Segment {
+  start: number;
+  end: number;
 }
 
 export function createArticleWindow(
@@ -44,28 +49,96 @@ export function createArticleWindow(
 
   // Sparse storage: maps global index → article
   let articles = new Map<number, NearbyArticle>();
-  // The contiguous range we've loaded: [loadedStart, loadedEnd)
-  let loadedStart = 0;
-  let loadedEnd = 0;
+  // Disjoint, sorted-by-start segments of loaded indices. An index `i` is
+  // loaded iff there exists some seg with seg.start <= i < seg.end. Using a
+  // segment list (rather than a single [loadedStart, loadedEnd) pair) lets us
+  // correctly represent the state after a backward jump from a deep scroll,
+  // where the fetched range is disjoint from previously-cached entries.
+  let segments: Segment[] = [];
   let total = 0;
   // Serialization: concurrent ensureRange calls queue behind in-flight fetch
   let pendingFetch: Promise<void> | null = null;
 
+  function isRangeCovered(start: number, end: number): boolean {
+    if (start >= end) return true;
+    for (const seg of segments) {
+      if (seg.start <= start && end <= seg.end) return true;
+      if (seg.start > start) return false;
+    }
+    return false;
+  }
+
+  function firstMissingSubrange(start: number, end: number): Segment | null {
+    if (start >= end) return null;
+    let cursor = start;
+    for (const seg of segments) {
+      if (seg.end <= cursor) continue;
+      if (seg.start > cursor) {
+        return { start: cursor, end: Math.min(seg.start, end) };
+      }
+      cursor = seg.end;
+      if (cursor >= end) return null;
+    }
+    return { start: cursor, end };
+  }
+
+  function addSegment(s: number, e: number): void {
+    if (s >= e) return;
+    const next: Segment[] = [];
+    let merged: Segment = { start: s, end: e };
+    let placed = false;
+    for (const seg of segments) {
+      if (seg.end < merged.start) {
+        next.push(seg);
+      } else if (seg.start > merged.end) {
+        if (!placed) {
+          next.push(merged);
+          placed = true;
+        }
+        next.push(seg);
+      } else {
+        merged = {
+          start: Math.min(merged.start, seg.start),
+          end: Math.max(merged.end, seg.end),
+        };
+      }
+    }
+    if (!placed) next.push(merged);
+    segments = next;
+  }
+
   function evictIfNeeded(requestedStart: number, requestedEnd: number): void {
     if (articles.size <= windowSize) return;
-    const excess = articles.size - windowSize;
-    // Evict from whichever end is farthest from the requested range
-    const distFromStart = requestedStart - loadedStart;
-    const distFromEnd = loadedEnd - requestedEnd;
+    let excess = articles.size - windowSize;
+    if (segments.length === 0) return;
+
+    const firstSeg = segments[0];
+    const lastSeg = segments[segments.length - 1];
+    const distFromStart = requestedStart - firstSeg.start;
+    const distFromEnd = lastSeg.end - requestedEnd;
 
     if (distFromStart >= distFromEnd) {
-      const newStart = loadedStart + excess;
-      for (let i = loadedStart; i < newStart; i++) articles.delete(i);
-      loadedStart = newStart;
+      // Evict from the low-index end
+      while (excess > 0 && segments.length > 0) {
+        const seg = segments[0];
+        const size = seg.end - seg.start;
+        const take = Math.min(excess, size);
+        for (let i = seg.start; i < seg.start + take; i++) articles.delete(i);
+        if (take === size) segments.shift();
+        else seg.start += take;
+        excess -= take;
+      }
     } else {
-      const newEnd = loadedEnd - excess;
-      for (let i = newEnd; i < loadedEnd; i++) articles.delete(i);
-      loadedEnd = newEnd;
+      // Evict from the high-index end
+      while (excess > 0 && segments.length > 0) {
+        const seg = segments[segments.length - 1];
+        const size = seg.end - seg.start;
+        const take = Math.min(excess, size);
+        for (let i = seg.end - take; i < seg.end; i++) articles.delete(i);
+        if (take === size) segments.pop();
+        else seg.end -= take;
+        excess -= take;
+      }
     }
   }
 
@@ -77,48 +150,26 @@ export function createArticleWindow(
     async ensureRange(start, end) {
       if (pendingFetch) await pendingFetch;
 
-      if (articles.size > 0 && start >= loadedStart && end <= loadedEnd) return;
+      if (isRangeCovered(start, end)) return;
 
-      let fetchStart: number;
-      let fetchEnd: number;
-
-      if (articles.size === 0) {
-        fetchStart = start;
-        fetchEnd = end;
-      } else if (end > loadedEnd) {
-        fetchStart = Math.max(start, loadedEnd);
-        fetchEnd = end;
-      } else {
-        fetchStart = start;
-        fetchEnd = Math.min(end, loadedStart);
-      }
+      const missing = firstMissingSubrange(start, end);
+      if (!missing) return;
 
       const doFetch = async () => {
         try {
-          const result = await provider.fetchRange(fetchStart, fetchEnd);
+          const result = await provider.fetchRange(missing.start, missing.end);
           total = result.totalAvailable;
 
           for (let i = 0; i < result.articles.length; i++) {
-            articles.set(fetchStart + i, result.articles[i]);
+            articles.set(missing.start + i, result.articles[i]);
           }
-
-          // First load
-          if (articles.size === result.articles.length && loadedEnd === 0) {
-            loadedStart = fetchStart;
-            loadedEnd = fetchStart + result.articles.length;
-          } else {
-            loadedStart = Math.min(loadedStart, fetchStart);
-            loadedEnd = Math.max(
-              loadedEnd,
-              fetchStart + result.articles.length,
-            );
+          if (result.articles.length > 0) {
+            addSegment(missing.start, missing.start + result.articles.length);
           }
 
           evictIfNeeded(start, end);
           onWindowChange?.();
         } finally {
-          // Always clear pendingFetch — on rejection, leaving it set would
-          // poison every subsequent ensureRange with the rejected promise.
           pendingFetch = null;
         }
       };
@@ -132,12 +183,13 @@ export function createArticleWindow(
     },
 
     loadedCount() {
-      return loadedEnd;
+      return segments.length > 0 ? segments[segments.length - 1].end : 0;
     },
 
     getLoadedArticles() {
       const result: NearbyArticle[] = [];
-      for (let i = 0; i < loadedEnd; i++) {
+      const end = segments.length > 0 ? segments[segments.length - 1].end : 0;
+      for (let i = 0; i < end; i++) {
         const article = articles.get(i);
         if (article) result.push(article);
       }
@@ -146,8 +198,7 @@ export function createArticleWindow(
 
     reset() {
       articles = new Map();
-      loadedStart = 0;
-      loadedEnd = 0;
+      segments = [];
       total = 0;
       pendingFetch = null;
     },
