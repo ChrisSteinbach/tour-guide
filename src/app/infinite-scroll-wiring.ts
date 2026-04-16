@@ -156,7 +156,9 @@ export function createInfiniteScrollWiring(
 
           // onWindowChange fires when the fetch completes, updating the
           // height to the real value — no .then() callback needed.
-          void aw.ensureRange(range.start, range.end + PREFETCH_BUFFER);
+          aw.ensureRange(range.start, range.end + PREFETCH_BUFFER).catch(
+            (err) => console.warn("ensureRange failed:", err),
+          );
         } else {
           deps.dispatch({ type: "expandInfiniteScroll" });
         }
