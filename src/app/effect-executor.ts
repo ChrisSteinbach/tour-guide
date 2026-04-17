@@ -262,7 +262,7 @@ export function createEffectExecutor(
         );
         break;
       case "pushHistory":
-        deps.pushState({ view: "detail" }, "");
+        deps.pushState(effect.state, "");
         break;
       case "fetchSummary":
         fetchAndRenderSummary(effect.article);
