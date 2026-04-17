@@ -120,11 +120,8 @@ export function createInfiniteScrollWiring(
           return h;
         }
         const { paused, pauseReason } = state.phase;
-        const articleCount =
-          deps.getCurrentWindow()?.totalKnown() || state.phase.articles.length;
         const isGps = state.positionSource !== "picked";
         return renderNearbyHeader({
-          articleCount,
           currentLang: state.currentLang,
           onLangChange: (lang: Lang) =>
             deps.dispatch({ type: "langChanged", lang }),

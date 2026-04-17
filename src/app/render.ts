@@ -121,7 +121,6 @@ export function updateNearbyDistances(
 }
 
 export interface RenderNearbyHeaderOptions {
-  articleCount: number;
   currentLang: Lang;
   onLangChange: (lang: Lang) => void;
   paused: boolean;
@@ -139,7 +138,6 @@ export function renderNearbyHeader(
   options: RenderNearbyHeaderOptions,
 ): HTMLElement {
   const {
-    articleCount,
     currentLang,
     onLangChange,
     paused,
@@ -159,10 +157,12 @@ export function renderNearbyHeader(
   const titleGroup = document.createElement("div");
   const h1 = document.createElement("h1");
   h1.textContent = APP_NAME;
-  const subtitle = document.createElement("p");
-  const subtitleText = `${articleCount} attraction${articleCount !== 1 ? "s" : ""}`;
-  subtitle.textContent = paused ? `${subtitleText} · paused` : subtitleText;
-  titleGroup.append(h1, subtitle);
+  titleGroup.appendChild(h1);
+  if (paused) {
+    const subtitle = document.createElement("p");
+    subtitle.textContent = "paused";
+    titleGroup.appendChild(subtitle);
+  }
 
   const headerControls = document.createElement("div");
   headerControls.className = "header-controls";
@@ -404,7 +404,6 @@ export function renderNearbyList(
   } = options;
 
   const headerOpts = {
-    articleCount: articles.length,
     currentLang,
     onLangChange,
     paused: paused ?? false,

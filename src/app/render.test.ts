@@ -21,46 +21,30 @@ afterEach(() => {
 
 describe("renderNearbyHeader", () => {
   afterEach(() => vi.restoreAllMocks());
-  it("renders article count in subtitle", () => {
+  it("omits subtitle when not paused", () => {
     const header = renderNearbyHeader({
       onShowAbout,
-      articleCount: 5,
       currentLang: "en",
       onLangChange: () => {},
       paused: false,
     });
-    const subtitle = header.querySelector("p");
-    expect(subtitle?.textContent).toBe("5 attractions");
-  });
-
-  it("uses singular when count is 1", () => {
-    const header = renderNearbyHeader({
-      onShowAbout,
-      articleCount: 1,
-      currentLang: "en",
-      onLangChange: () => {},
-      paused: false,
-    });
-    const subtitle = header.querySelector("p");
-    expect(subtitle?.textContent).toBe("1 attraction");
+    expect(header.querySelector("p")).toBeNull();
   });
 
   it("shows paused in subtitle when paused", () => {
     const header = renderNearbyHeader({
       onShowAbout,
-      articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
       paused: true,
     });
     const subtitle = header.querySelector("p");
-    expect(subtitle?.textContent).toContain("paused");
+    expect(subtitle?.textContent).toBe("paused");
   });
 
   it("pause button label says Resume when manually paused", () => {
     const header = renderNearbyHeader({
       onShowAbout,
-      articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
       paused: true,
@@ -75,7 +59,6 @@ describe("renderNearbyHeader", () => {
   it("pause button label says paused by scroll when scroll-paused", () => {
     const header = renderNearbyHeader({
       onShowAbout,
-      articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
       paused: true,
@@ -94,7 +77,6 @@ describe("renderNearbyHeader", () => {
   it("adds blink class when scroll-paused", () => {
     const header = renderNearbyHeader({
       onShowAbout,
-      articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
       paused: true,
@@ -108,7 +90,6 @@ describe("renderNearbyHeader", () => {
   it("does not add blink class when manually paused", () => {
     const header = renderNearbyHeader({
       onShowAbout,
-      articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
       paused: true,
@@ -122,7 +103,6 @@ describe("renderNearbyHeader", () => {
   it("pause button label says Pause when unpaused", () => {
     const header = renderNearbyHeader({
       onShowAbout,
-      articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
       paused: false,
@@ -136,7 +116,6 @@ describe("renderNearbyHeader", () => {
   it("omits pause button when no onTogglePause callback", () => {
     const header = renderNearbyHeader({
       onShowAbout,
-      articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
       paused: false,
@@ -147,7 +126,6 @@ describe("renderNearbyHeader", () => {
   it("language selector reflects currentLang", () => {
     const header = renderNearbyHeader({
       onShowAbout,
-      articleCount: 3,
       currentLang: "sv",
       onLangChange: () => {},
       paused: false,
@@ -162,7 +140,6 @@ describe("renderNearbyHeader", () => {
     const onLangChange = vi.fn();
     const header = renderNearbyHeader({
       onShowAbout,
-      articleCount: 3,
       currentLang: "en",
       onLangChange,
       paused: false,
@@ -176,7 +153,6 @@ describe("renderNearbyHeader", () => {
     const onTogglePause = vi.fn();
     const header = renderNearbyHeader({
       onShowAbout,
-      articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
       paused: false,
@@ -192,7 +168,6 @@ describe("renderNearbyHeader", () => {
     const onUseGps = vi.fn();
     const header = renderNearbyHeader({
       onShowAbout,
-      articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
       paused: false,
@@ -221,7 +196,6 @@ describe("renderNearbyHeader", () => {
     const onUseGps = vi.fn();
     const header = renderNearbyHeader({
       onShowAbout,
-      articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
       paused: false,
@@ -246,7 +220,6 @@ describe("renderNearbyHeader", () => {
     vi.spyOn(globalThis, "confirm").mockReturnValue(true);
     const header = renderNearbyHeader({
       onShowAbout,
-      articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
       paused: false,
@@ -270,7 +243,6 @@ describe("renderNearbyHeader", () => {
     vi.spyOn(globalThis, "confirm").mockReturnValue(false);
     const header = renderNearbyHeader({
       onShowAbout,
-      articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
       paused: false,
@@ -289,7 +261,6 @@ describe("renderNearbyHeader", () => {
   it("adds gps-signal-lost class when gpsSignalLost is true", () => {
     const header = renderNearbyHeader({
       onShowAbout,
-      articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
       paused: false,
@@ -305,7 +276,6 @@ describe("renderNearbyHeader", () => {
   it("aria-label reads 'GPS signal lost' when gpsSignalLost is true", () => {
     const header = renderNearbyHeader({
       onShowAbout,
-      articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
       paused: false,
@@ -321,7 +291,6 @@ describe("renderNearbyHeader", () => {
   it("aria-label reads 'Use GPS location' when gpsSignalLost is absent", () => {
     const header = renderNearbyHeader({
       onShowAbout,
-      articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
       paused: false,
@@ -336,7 +305,6 @@ describe("renderNearbyHeader", () => {
   it("omits mode toggle when positionSource not provided", () => {
     const header = renderNearbyHeader({
       onShowAbout,
-      articleCount: 3,
       currentLang: "en",
       onLangChange: () => {},
       paused: false,

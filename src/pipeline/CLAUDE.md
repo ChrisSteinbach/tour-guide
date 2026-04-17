@@ -45,7 +45,7 @@ Output: `data/tiles/{lang}/` (index.json + per-tile .bin files)
 
 ## Local Tile Data
 
-Tile data is pipeline-generated and not checked into git. The app needs tiles in `data/tiles/{lang}/` to display articles for a given language. If tiles are missing for a language, that language will show "0 attractions" in the browser.
+Tile data is pipeline-generated and not checked into git. The app needs tiles in `data/tiles/{lang}/` to display articles for a given language. If tiles are missing for a language, that language will show an empty article list in the browser.
 
 To generate tiles locally for a specific language:
 
