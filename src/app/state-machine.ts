@@ -134,6 +134,7 @@ export type Event =
       firstVisibleIndex: number;
     }
   | { type: "back" }
+  | { type: "forwardToDetail"; title: string }
   | { type: "scrollPause" }
   | { type: "togglePause" }
   | { type: "useGps" }
@@ -166,7 +167,7 @@ export type Effect =
   | { type: "storeStarted" }
   | { type: "loadData"; lang: Lang }
   | { type: "loadTiles"; lang: Lang }
-  | { type: "pushHistory" }
+  | { type: "pushHistory"; state: unknown }
   | { type: "fetchSummary"; article: NearbyArticle }
   | { type: "showMapPicker" }
   | { type: "showAppUpdateBanner" }
@@ -461,7 +462,10 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
           ...state,
           phase: { phase: "mapPicker", returnPhase: state.phase },
         },
-        effects: [{ type: "pushHistory" }, { type: "showMapPicker" }],
+        effects: [
+          { type: "pushHistory", state: { view: "mapPicker" } },
+          { type: "showMapPicker" },
+        ],
       };
     }
 
@@ -577,9 +581,33 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
           },
         },
         effects: [
-          { type: "pushHistory" },
+          {
+            type: "pushHistory",
+            state: { view: "detail", title: event.article.title },
+          },
           { type: "fetchSummary", article: event.article },
         ],
+      };
+    }
+
+    case "forwardToDetail": {
+      if (state.phase.phase !== "browsing") {
+        return { next: state, effects: [] };
+      }
+      const article = state.phase.articles.find((a) => a.title === event.title);
+      if (!article) return { next: state, effects: [] };
+      const { phase: _, ...context } = state.phase;
+      return {
+        next: {
+          ...state,
+          phase: {
+            phase: "detail",
+            ...context,
+            article,
+            savedFirstVisibleIndex: 0,
+          },
+        },
+        effects: [{ type: "fetchSummary", article }],
       };
     }
 

@@ -108,13 +108,45 @@ describe("createBootstrap", () => {
   });
 
   describe("run", () => {
-    it("dispatches back when a popstate event fires", () => {
+    it("dispatches back when popstate fires with no state (navigating back to list)", () => {
       const dispatch = vi.fn();
       const deps = makeDeps({ dispatch });
       const bootstrap = createBootstrap(deps);
 
       bootstrap.run();
       window.dispatchEvent(new PopStateEvent("popstate"));
+
+      expect(dispatch).toHaveBeenCalledWith({ type: "back" });
+    });
+
+    it("dispatches forwardToDetail when popstate fires with a detail state carrying a title", () => {
+      const dispatch = vi.fn();
+      const deps = makeDeps({ dispatch });
+      const bootstrap = createBootstrap(deps);
+
+      bootstrap.run();
+      window.dispatchEvent(
+        new PopStateEvent("popstate", {
+          state: { view: "detail", title: "Eiffel Tower" },
+        }),
+      );
+
+      expect(dispatch).toHaveBeenCalledWith({
+        type: "forwardToDetail",
+        title: "Eiffel Tower",
+      });
+      expect(dispatch).not.toHaveBeenCalledWith({ type: "back" });
+    });
+
+    it("dispatches back when popstate fires with a non-detail state (e.g. map picker)", () => {
+      const dispatch = vi.fn();
+      const deps = makeDeps({ dispatch });
+      const bootstrap = createBootstrap(deps);
+
+      bootstrap.run();
+      window.dispatchEvent(
+        new PopStateEvent("popstate", { state: { view: "mapPicker" } }),
+      );
 
       expect(dispatch).toHaveBeenCalledWith({ type: "back" });
     });

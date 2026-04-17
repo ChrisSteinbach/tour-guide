@@ -22,8 +22,13 @@ export interface Bootstrap {
 }
 
 export function createBootstrap(deps: BootstrapDeps): Bootstrap {
-  const onPopState = (): void => {
-    deps.dispatch({ type: "back" });
+  const onPopState = (e: PopStateEvent): void => {
+    const s = e.state as { view?: unknown; title?: unknown } | null;
+    if (s && s.view === "detail" && typeof s.title === "string") {
+      deps.dispatch({ type: "forwardToDetail", title: s.title });
+    } else {
+      deps.dispatch({ type: "back" });
+    }
   };
 
   const onControllerChange = (): void => {

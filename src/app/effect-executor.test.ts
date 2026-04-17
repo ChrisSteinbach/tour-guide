@@ -1029,12 +1029,18 @@ describe("createEffectExecutor", () => {
     );
   });
 
-  it("pushHistory calls pushState", () => {
+  it("pushHistory calls pushState with the provided state payload", () => {
     const deps = makeDeps();
     const exec = createEffectExecutor(deps);
 
-    exec({ type: "pushHistory" });
-    expect(deps.pushState).toHaveBeenCalledWith({ view: "detail" }, "");
+    exec({
+      type: "pushHistory",
+      state: { view: "detail", title: "Eiffel Tower" },
+    });
+    expect(deps.pushState).toHaveBeenCalledWith(
+      { view: "detail", title: "Eiffel Tower" },
+      "",
+    );
   });
 
   it("fetchListSummaries calls summaryLoader.load with article titles", () => {

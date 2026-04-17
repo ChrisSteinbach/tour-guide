@@ -1033,6 +1033,57 @@ describe("back event", () => {
   });
 });
 
+// ── forwardToDetail event (browser Forward after Back) ──────
+
+describe("forwardToDetail event", () => {
+  it("transitions from browsing to detail and fetches summary without pushing history", () => {
+    const state = browsingState();
+    const browsing = expectBrowsing(state);
+    const target = browsing.articles[0];
+    const { next, effects } = transition(state, {
+      type: "forwardToDetail",
+      title: target.title,
+    });
+    const detail = expectDetail(next);
+    expect(detail.article).toBe(target);
+    expect(effectTypes(effects)).toContain("fetchSummary");
+    expect(effectTypes(effects)).not.toContain("pushHistory");
+  });
+
+  it("preserves browsing context when re-entering detail", () => {
+    const state = browsingState({ nearbyCount: 20, paused: true });
+    const browsing = expectBrowsing(state);
+    const { next } = transition(state, {
+      type: "forwardToDetail",
+      title: browsing.articles[0].title,
+    });
+    const detail = expectDetail(next);
+    expect(detail.articles).toBe(browsing.articles);
+    expect(detail.nearbyCount).toBe(20);
+    expect(detail.paused).toBe(true);
+  });
+
+  it("no-ops when the title is not in the current article list", () => {
+    const state = browsingState();
+    const { next, effects } = transition(state, {
+      type: "forwardToDetail",
+      title: "Unknown Article",
+    });
+    expect(next).toBe(state);
+    expect(effects).toEqual([]);
+  });
+
+  it("no-ops when not browsing", () => {
+    const state = makeState({ phase: { phase: "locating" } });
+    const { next, effects } = transition(state, {
+      type: "forwardToDetail",
+      title: "Anything",
+    });
+    expect(next).toBe(state);
+    expect(effects).toEqual([]);
+  });
+});
+
 // ── swUpdateAvailable event (tour-guide-2lw) ─────────────
 
 describe("swUpdateAvailable event", () => {
@@ -1650,7 +1701,10 @@ describe("showMapPicker event", () => {
       phase: "mapPicker",
       returnPhase: browsingPhase,
     });
-    expect(effects).toContainEqual({ type: "pushHistory" });
+    expect(effects).toContainEqual({
+      type: "pushHistory",
+      state: { view: "mapPicker" },
+    });
     expect(effects).toContainEqual({ type: "showMapPicker" });
   });
 
