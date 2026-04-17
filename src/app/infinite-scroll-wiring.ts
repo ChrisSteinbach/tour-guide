@@ -52,6 +52,15 @@ export function createInfiniteScrollWiring(
   /** Debounce period for map marker sync after scroll (ms). */
   const MAP_SYNC_SETTLE_MS = 150;
 
+  /** Cooldown after a failed ensureRange before another near-end fetch is allowed (ms). */
+  const NEAR_END_FAILURE_COOLDOWN_MS = 5000;
+
+  // Backoff state for onNearEnd. Without these, every scroll jiggle past the
+  // near-end threshold re-fires ensureRange, which thrashes a rate-limited
+  // provider during transient failures.
+  let nearEndPending = false;
+  let nearEndCooldownUntil = 0;
+
   const infiniteScroll: InfiniteScrollLifecycle = createInfiniteScrollLifecycle(
     {
       container: deps.app,
@@ -143,6 +152,15 @@ export function createInfiniteScrollWiring(
         if (aw) {
           const vl = infiniteScroll.virtualList();
           if (!vl) return;
+
+          // Skip if a previous fetch is still in flight, or if a recent
+          // failure put us in cooldown. Otherwise every scroll jiggle past
+          // the near-end threshold re-fires ensureRange — for a rate-limited
+          // provider that's just rejecting, this becomes dozens of failed
+          // requests per second.
+          if (nearEndPending) return;
+          if (Date.now() < nearEndCooldownUntil) return;
+
           const range = vl.visibleRange();
 
           // Optimistically expand the list height so the user never hits
@@ -155,8 +173,20 @@ export function createInfiniteScrollWiring(
           deps.applyOptimisticCount(optimistic);
 
           // onWindowChange fires when the fetch completes, updating the
-          // height to the real value — no .then() callback needed.
-          void aw.ensureRange(range.start, range.end + PREFETCH_BUFFER);
+          // height to the real value — no .then() callback needed for the
+          // success path. We attach handlers only to manage the backoff gate.
+          nearEndPending = true;
+          aw.ensureRange(range.start, range.end + PREFETCH_BUFFER).then(
+            () => {
+              nearEndPending = false;
+              nearEndCooldownUntil = 0;
+            },
+            (err) => {
+              nearEndPending = false;
+              nearEndCooldownUntil = Date.now() + NEAR_END_FAILURE_COOLDOWN_MS;
+              console.warn("ensureRange failed:", err);
+            },
+          );
         } else {
           deps.dispatch({ type: "expandInfiniteScroll" });
         }

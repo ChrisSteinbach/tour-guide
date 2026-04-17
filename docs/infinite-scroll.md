@@ -116,6 +116,18 @@ onRangeChange(range)
 - `INFINITE_SCROLL_INITIAL = 200` — articles loaded on first entry into infinite scroll
 - `INFINITE_SCROLL_STEP = 200` — articles added per expansion
 - `windowSize = 1000` — max articles in memory before eviction
+- `NEAR_END_FAILURE_COOLDOWN_MS = 5000` — wait before retrying after a failed `ensureRange`
+
+### Failure backoff
+
+`onRangeChange` re-fires on every scroll tick, so without a gate `onNearEnd` would re-issue `ensureRange` on every jiggle past the threshold. For a rate-limited provider (the Wikipedia summary endpoint returns 429s), a transient rejection would otherwise cascade into dozens of failed requests per second.
+
+The `onNearEnd` handler in `infinite-scroll-wiring.ts` guards the dispatch with two flags:
+
+- **`nearEndPending`** — set true while an `ensureRange` promise is unresolved. Suppresses redundant fetches while the first one is still in flight (the underlying `ArticleWindow` already serializes concurrent calls, but skipping at the source avoids needless `applyOptimisticCount` work and keeps the failure path single-firing).
+- **`nearEndCooldownUntil`** — a wall-clock timestamp set on rejection. While `Date.now() < nearEndCooldownUntil`, near-end fires are skipped entirely.
+
+A successful `ensureRange` clears both, immediately re-arming near-end fetches. A failure resets `nearEndPending` and arms the cooldown for `NEAR_END_FAILURE_COOLDOWN_MS` (5s). The gate is per-wiring-instance and is implicitly reset when the wiring is torn down (e.g., on lang change or new position).
 
 ## Enrichment and Map Sync
 

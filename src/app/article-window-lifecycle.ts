@@ -182,7 +182,9 @@ export function createArticleWindowLifecycle(
 
     const aw = getOrCreateArticleWindow();
     windowPosition = pos;
-    void aw.ensureRange(0, count);
+    aw.ensureRange(0, count).catch((err) =>
+      console.warn("ensureRange failed:", err),
+    );
     deps.renderBrowsingList();
   }
 

@@ -302,6 +302,31 @@ describe("ArticleWindow", () => {
     expect(window.getArticle(14)?.title).toBe("Article 14");
   });
 
+  it("resets pendingFetch after a rejection so the next call can retry", async () => {
+    const articles = Array.from({ length: 20 }, (_, i) => makeArticle(i));
+    let callCount = 0;
+    const provider: ArticleProvider = {
+      fetchRange: async (start, end) => {
+        callCount++;
+        if (callCount === 1) throw new Error("network blip");
+        return {
+          articles: articles.slice(start, Math.min(end, articles.length)),
+          totalAvailable: articles.length,
+        };
+      },
+    };
+    const window = createArticleWindow(provider, { windowSize: 100 });
+
+    await expect(window.ensureRange(0, 10)).rejects.toThrow("network blip");
+
+    // Second call must attempt a fresh fetch — not re-await the rejected promise.
+    await window.ensureRange(0, 10);
+
+    expect(callCount).toBe(2);
+    expect(window.getArticle(0)?.title).toBe("Article 0");
+    expect(window.getArticle(9)?.title).toBe("Article 9");
+  });
+
   it("serializes overlapping-but-different concurrent requests", async () => {
     const articles = Array.from({ length: 30 }, (_, i) => makeArticle(i));
     const fetchedRanges: [number, number][] = [];

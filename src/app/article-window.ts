@@ -94,25 +94,33 @@ export function createArticleWindow(
       }
 
       const doFetch = async () => {
-        const result = await provider.fetchRange(fetchStart, fetchEnd);
-        total = result.totalAvailable;
+        try {
+          const result = await provider.fetchRange(fetchStart, fetchEnd);
+          total = result.totalAvailable;
 
-        for (let i = 0; i < result.articles.length; i++) {
-          articles.set(fetchStart + i, result.articles[i]);
+          for (let i = 0; i < result.articles.length; i++) {
+            articles.set(fetchStart + i, result.articles[i]);
+          }
+
+          // First load
+          if (articles.size === result.articles.length && loadedEnd === 0) {
+            loadedStart = fetchStart;
+            loadedEnd = fetchStart + result.articles.length;
+          } else {
+            loadedStart = Math.min(loadedStart, fetchStart);
+            loadedEnd = Math.max(
+              loadedEnd,
+              fetchStart + result.articles.length,
+            );
+          }
+
+          evictIfNeeded(start, end);
+          onWindowChange?.();
+        } finally {
+          // Always clear pendingFetch — on rejection, leaving it set would
+          // poison every subsequent ensureRange with the rejected promise.
+          pendingFetch = null;
         }
-
-        // First load
-        if (articles.size === result.articles.length && loadedEnd === 0) {
-          loadedStart = fetchStart;
-          loadedEnd = fetchStart + result.articles.length;
-        } else {
-          loadedStart = Math.min(loadedStart, fetchStart);
-          loadedEnd = Math.max(loadedEnd, fetchStart + result.articles.length);
-        }
-
-        evictIfNeeded(start, end);
-        pendingFetch = null;
-        onWindowChange?.();
       };
 
       pendingFetch = doFetch();
