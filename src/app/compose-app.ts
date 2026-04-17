@@ -14,11 +14,9 @@ import {
   nearestExistingTiles,
   loadTileIndex,
   loadTile,
-  findNearestTiled,
 } from "./tile-loader";
-import { tileFor } from "../tiles";
-import { tilesAtRing } from "./tile-radius";
 import { createArticleWindowFactory } from "./article-window-factory";
+import { createTileSource } from "./tile-source";
 import { createArticleWindowLifecycle } from "./article-window-lifecycle";
 import {
   getNearby,
@@ -143,16 +141,19 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
   const lifecycle = createArticleWindowLifecycle({
     getState,
     createArticleWindow: (opts) => {
-      const result = createArticleWindowFactory({
-        ...opts,
-        loadTile: (_basePath, lang, entry, signal) =>
-          loadTile(import.meta.env.BASE_URL, lang, entry, signal),
-        getTileEntry,
-        findNearestTiled,
-        tilesAtRing,
-        tileFor,
+      const source = createTileSource({
+        position: opts.position,
+        tileMap: opts.tileMap,
+        getStateMachineTiles: opts.getStateMachineTiles,
+        loadTile: (entry, signal) =>
+          loadTile(import.meta.env.BASE_URL, opts.lang, entry, signal),
       });
-      return result.articleWindow;
+      return createArticleWindowFactory({
+        position: opts.position,
+        signal: opts.signal,
+        source,
+        onWindowChange: opts.onWindowChange,
+      });
     },
     renderBrowsingList: () => rendererRef.current?.renderBrowsingList(),
   });

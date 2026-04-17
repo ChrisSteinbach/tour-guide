@@ -1,105 +1,63 @@
-import type { NearbyArticle, UserPosition } from "./types";
-import type { NearestQuery } from "./query";
-import type { TileEntry } from "../tiles";
-import type { Lang } from "../lang";
+// Construct an ArticleWindow wired to a TileRadiusProvider that pulls from
+// a TileSource. The factory's job is purely orchestration: given a tile
+// source for some position, build the radius provider and the article
+// window on top of it. All tile-loading concerns (which IDs exist, which
+// are cached, how to fetch the missing ones) live in the TileSource.
+
+import type { UserPosition } from "./types";
 import type { ArticleWindow } from "./article-window";
 import { createArticleWindow } from "./article-window";
 import { createTileRadiusProvider } from "./tile-radius";
+import { findNearestTiled } from "./tile-loader";
+import type { TileSource } from "./tile-source";
 
 export interface ArticleWindowFactoryDeps {
   position: UserPosition;
-  tileMap: Map<string, TileEntry>;
-  lang: Lang;
   signal: AbortSignal;
-  getStateMachineTiles: () => ReadonlyMap<string, NearestQuery>;
-  loadTile: (
-    basePath: string,
-    lang: Lang,
-    entry: TileEntry,
-    signal: AbortSignal,
-  ) => Promise<NearestQuery>;
-  getTileEntry: (
-    tileMap: Map<string, TileEntry>,
-    id: string,
-  ) => TileEntry | undefined;
-  findNearestTiled: (
-    tiles: ReadonlyMap<string, NearestQuery>,
-    lat: number,
-    lon: number,
-    count: number,
-  ) => NearbyArticle[];
-  tilesAtRing: (
-    row: number,
-    col: number,
-    ring: number,
-    tileMap: Map<string, TileEntry>,
-  ) => string[];
-  tileFor: (lat: number, lon: number) => { row: number; col: number };
+  source: TileSource;
   onWindowChange?: () => void;
-}
-
-export interface ArticleWindowFactoryResult {
-  articleWindow: ArticleWindow;
-  providerTiles: ReadonlyMap<string, NearestQuery>;
 }
 
 export function createArticleWindowFactory(
   deps: ArticleWindowFactoryDeps,
-): ArticleWindowFactoryResult {
-  const {
-    position,
-    tileMap,
-    lang,
-    signal,
-    getStateMachineTiles,
-    loadTile,
-    getTileEntry,
-    findNearestTiled,
-    tilesAtRing,
-    tileFor,
-  } = deps;
-
-  const { row, col } = tileFor(position.lat, position.lon);
-
-  const providerTiles = new Map<string, NearestQuery>();
+): ArticleWindow {
+  const { position, signal, source, onWindowChange } = deps;
+  const { row, col } = source.center;
 
   const radiusProvider = createTileRadiusProvider({
-    queryAllTiles: () => {
-      const allTiles = new Map<string, NearestQuery>();
-      for (const [id, query] of getStateMachineTiles()) allTiles.set(id, query);
-      for (const [id, query] of providerTiles) allTiles.set(id, query);
-      return Promise.resolve(
-        findNearestTiled(allTiles, position.lat, position.lon, 99999),
-      );
-    },
+    queryAllTiles: () =>
+      Promise.resolve(
+        findNearestTiled(source.loaded(), position.lat, position.lon, 99999),
+      ),
     loadRing: async (ring) => {
-      const ids = tilesAtRing(row, col, ring, tileMap);
+      const ids = source.idsAtRing(ring);
       if (ids.length === 0) return false;
 
+      let anyLoaded = false;
       for (const id of ids) {
-        if (signal.aborted) return false;
-        if (providerTiles.has(id)) continue;
-        const smTiles = getStateMachineTiles();
-        if (smTiles.has(id)) continue;
-        const entry = getTileEntry(tileMap, id);
-        if (!entry) continue;
+        if (signal.aborted) return anyLoaded;
+        if (source.isLoaded(id)) {
+          anyLoaded = true;
+          continue;
+        }
+        if (!source.hasEntry(id)) continue;
         try {
-          const tileQuery = await loadTile("", lang, entry, signal);
-          providerTiles.set(id, tileQuery);
+          await source.load(id, signal);
+          if (signal.aborted) return anyLoaded;
+          anyLoaded = true;
         } catch {
-          // Tile load failure is non-fatal
+          // Tile load failure is non-fatal — the ring expansion continues
+          // and the next caller can retry on a fresh fetchRange.
         }
       }
-      return true;
+      return anyLoaded;
     },
     centerRow: row,
     centerCol: col,
   });
 
-  const articleWindow = createArticleWindow(radiusProvider, {
+  return createArticleWindow(radiusProvider, {
     windowSize: 1000,
-    onWindowChange: deps.onWindowChange,
+    onWindowChange,
   });
-
-  return { articleWindow, providerTiles };
 }

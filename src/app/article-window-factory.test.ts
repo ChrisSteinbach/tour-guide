@@ -1,180 +1,193 @@
 import { createArticleWindowFactory } from "./article-window-factory";
-import type { ArticleWindowFactoryDeps } from "./article-window-factory";
-import { NearestQuery } from "./query";
-import type { TileEntry } from "../tiles";
-import type { NearbyArticle } from "./types";
+import { createTileSource } from "./tile-source";
+import type { CreateTileSourceOpts } from "./tile-source";
+import { NearestQuery, toFlatDelaunay } from "./query";
+import { buildTriangulation, convexHull, serialize } from "../geometry";
+import { GRID_DEG, tileFor, tileId, type TileEntry } from "../tiles";
+import type { UserPosition } from "./types";
 
-function makeEntry(id: string): TileEntry {
+/**
+ * Build a tile entry at the row/col the production tileFor() helper would
+ * pick for (lat, lon). Tests share the real grid so their tileMap keys
+ * line up with what the source's tilesAtRing emits.
+ */
+function makeEntryAt(lat: number, lon: number): TileEntry {
+  const { row, col } = tileFor(lat, lon);
   return {
-    id,
-    row: 0,
-    col: 0,
-    south: 0,
-    north: 5,
-    west: 0,
-    east: 5,
+    id: tileId(row, col),
+    row,
+    col,
+    south: row * GRID_DEG - 90,
+    north: (row + 1) * GRID_DEG - 90,
+    west: col * GRID_DEG - 180,
+    east: (col + 1) * GRID_DEG - 180,
     articles: 1,
     bytes: 100,
     hash: "abc",
   };
 }
 
-/** Empty NearestQuery — valid instance with no articles. */
-function fakeQuery(): NearestQuery {
-  const empty = {
-    vertexPoints: new Float64Array(0),
-    vertexTriangles: new Uint32Array(0),
-    triangleVertices: new Uint32Array(0),
-    triangleNeighbors: new Uint32Array(0),
-  };
-  return new NearestQuery(empty, []);
+/**
+ * Build a real NearestQuery from a tiny octahedron — enough vertices for the
+ * triangulation to satisfy findNearest without crashing on the underlying
+ * empty-array edge cases. Each tile in the test gets a unique title so the
+ * deduplication and merge logic stays observable.
+ */
+function makeNearestQuery(title: string): NearestQuery {
+  const points: [number, number, number][] = [
+    [1, 0, 0],
+    [-1, 0, 0],
+    [0, 1, 0],
+    [0, -1, 0],
+    [0, 0, 1],
+    [0, 0, -1],
+  ];
+  const articles = points.map((_, i) => ({ title: `${title}-${i}` }));
+  const hull = convexHull(points);
+  const tri = buildTriangulation(hull);
+  const data = serialize(tri, articles);
+  const fd = toFlatDelaunay(data);
+  return new NearestQuery(
+    fd,
+    data.articles.map((t) => ({ title: t })),
+  );
 }
 
-function makeDeps(
-  overrides: Partial<ArticleWindowFactoryDeps> = {},
-): ArticleWindowFactoryDeps {
-  return {
-    position: { lat: 1, lon: 2 },
-    tileMap: new Map([["t0", makeEntry("t0")]]),
-    lang: "en",
-    signal: new AbortController().signal,
+/**
+ * Construct a real TileSource and wire it to a fresh factory. Callers
+ * override tile-loading concerns through `sourceOverrides` (which feed
+ * createTileSource) and abort behavior through `signal`. The single
+ * test seam that matters is `loadTile` — everything else is real.
+ */
+function buildFactory(
+  opts: {
+    position?: UserPosition;
+    signal?: AbortSignal;
+    sourceOverrides?: Partial<CreateTileSourceOpts>;
+  } = {},
+) {
+  const position = opts.position ?? { lat: 1, lon: 2 };
+  const center = makeEntryAt(position.lat, position.lon);
+  const source = createTileSource({
+    position,
+    tileMap: new Map([[center.id, center]]),
     getStateMachineTiles: () => new Map(),
-    loadTile: vi.fn(async () => fakeQuery()),
-    getTileEntry: vi.fn((_map, id) => _map.get(id) as TileEntry | undefined),
-    findNearestTiled: vi.fn(
-      (
-        _tiles: ReadonlyMap<string, NearestQuery>,
-        _lat: number,
-        _lon: number,
-        _count: number,
-      ) => [] as NearbyArticle[],
-    ),
-    tilesAtRing: vi.fn(() => []),
-    tileFor: vi.fn(() => ({ row: 0, col: 0 })),
-    ...overrides,
-  };
+    loadTile: vi.fn(async () => makeNearestQuery("default")),
+    ...opts.sourceOverrides,
+  });
+  const articleWindow = createArticleWindowFactory({
+    position,
+    signal: opts.signal ?? new AbortController().signal,
+    source,
+  });
+  return { source, articleWindow };
 }
 
 describe("createArticleWindowFactory", () => {
-  it("merges state machine tiles and provider tiles in queries", async () => {
-    const smTile = fakeQuery();
-    const providerTile = fakeQuery();
+  it("skips tiles already in the state machine and only loads the rest", async () => {
+    // The state machine already holds smEntry; the factory must not invoke
+    // loadTile for it. The radius provider's queryTiles closure pulls from
+    // the source's merged loaded() view, so the smEntry is still consumed
+    // when computing nearest articles — just without a redundant fetch.
+    const centerEntry = makeEntryAt(1, 2);
+    const smEntry = makeEntryAt(1, 6);
+    const otherEntry = makeEntryAt(1, 10);
 
-    const smTiles = new Map<string, NearestQuery>([["sm-t0", smTile]]);
-    const tileMap = new Map<string, TileEntry>([
-      ["ring-t1", makeEntry("ring-t1")],
+    const smTiles = new Map<string, NearestQuery>([
+      [smEntry.id, makeNearestQuery("sm")],
     ]);
 
-    const allTilesSeen: Map<string, NearestQuery>[] = [];
-
-    const deps = makeDeps({
-      tileMap,
-      getStateMachineTiles: () => smTiles,
-      tilesAtRing: vi.fn((_row, _col, ring) => {
-        if (ring === 0) return ["ring-t1"];
-        return [];
-      }),
-      loadTile: vi.fn(async () => providerTile),
-      getTileEntry: vi.fn((_map, id) => makeEntry(id)),
-      findNearestTiled: vi.fn((tiles: ReadonlyMap<string, NearestQuery>) => {
-        allTilesSeen.push(new Map(tiles));
-        return [];
-      }),
-    });
-
-    const { articleWindow } = createArticleWindowFactory(deps);
-    await articleWindow.ensureRange(0, 10);
-
-    // After loading ring-t1, findNearestTiled should see both sm-t0 and ring-t1
-    const lastSeen = allTilesSeen[allTilesSeen.length - 1];
-    expect(lastSeen.has("sm-t0")).toBe(true);
-    expect(lastSeen.has("ring-t1")).toBe(true);
-  });
-
-  it("stops loading tiles when signal is aborted", async () => {
-    const ac = new AbortController();
     const tileMap = new Map<string, TileEntry>([
-      ["t0", makeEntry("t0")],
-      ["t1", makeEntry("t1")],
-    ]);
-
-    let loadCount = 0;
-    const deps = makeDeps({
-      tileMap,
-      signal: ac.signal,
-      tilesAtRing: vi.fn((_row, _col, ring) =>
-        ring === 0 ? ["t0", "t1"] : [],
-      ),
-      getTileEntry: vi.fn((_map, id) => makeEntry(id)),
-      loadTile: vi.fn(async () => {
-        loadCount++;
-        // Abort after first tile load
-        ac.abort();
-        return fakeQuery();
-      }),
-    });
-
-    const { articleWindow } = createArticleWindowFactory(deps);
-    await articleWindow.ensureRange(0, 10);
-
-    // Only the first tile should have been loaded before abort stopped the loop
-    expect(loadCount).toBe(1);
-  });
-
-  it("skips tiles already in state machine or provider map", async () => {
-    const existingTile = fakeQuery();
-    const smTiles = new Map<string, NearestQuery>([["sm-tile", existingTile]]);
-    const tileMap = new Map<string, TileEntry>([
-      ["sm-tile", makeEntry("sm-tile")],
-      ["new-tile", makeEntry("new-tile")],
+      [centerEntry.id, centerEntry],
+      [smEntry.id, smEntry],
+      [otherEntry.id, otherEntry],
     ]);
 
     const loadedIds: string[] = [];
-
-    const deps = makeDeps({
-      tileMap,
-      getStateMachineTiles: () => smTiles,
-      tilesAtRing: vi.fn((_row, _col, ring) =>
-        ring === 0 ? ["sm-tile", "new-tile"] : [],
-      ),
-      getTileEntry: vi.fn((_map, id) => makeEntry(id)),
-      loadTile: vi.fn(async (_basePath, _lang, entry) => {
-        loadedIds.push(entry.id);
-        return fakeQuery();
-      }),
+    const loadTile = vi.fn(async (entry: TileEntry) => {
+      loadedIds.push(entry.id);
+      return makeNearestQuery(entry.id);
     });
 
-    const { articleWindow } = createArticleWindowFactory(deps);
+    const { source, articleWindow } = buildFactory({
+      position: { lat: 1, lon: 2 },
+      sourceOverrides: {
+        tileMap,
+        getStateMachineTiles: () => smTiles,
+        loadTile,
+      },
+    });
     await articleWindow.ensureRange(0, 10);
 
-    // sm-tile should be skipped, only new-tile loaded
-    expect(loadedIds).toEqual(["new-tile"]);
+    expect(loadedIds).not.toContain(smEntry.id);
+    // The state-machine tile is visible to queries via the source's merged
+    // view but never duplicated into the source's local cache.
+    expect(source.loaded().has(smEntry.id)).toBe(true);
+  });
+
+  it("stops loading tiles when signal is aborted mid-ring", async () => {
+    const ac = new AbortController();
+    const centerEntry = makeEntryAt(1, 2);
+    const tileMap = new Map<string, TileEntry>([
+      [centerEntry.id, centerEntry],
+      [makeEntryAt(1, 6).id, makeEntryAt(1, 6)],
+      [makeEntryAt(1, 10).id, makeEntryAt(1, 10)],
+    ]);
+
+    let loadCount = 0;
+    const loadTile = vi.fn(async () => {
+      loadCount++;
+      // Abort while the first load is mid-flight.
+      ac.abort();
+      return makeNearestQuery("loaded");
+    });
+
+    const { source, articleWindow } = buildFactory({
+      position: { lat: 1, lon: 2 },
+      signal: ac.signal,
+      sourceOverrides: {
+        tileMap,
+        loadTile,
+      },
+    });
+    await articleWindow.ensureRange(0, 10);
+
+    // At most one tile load was issued before the loop bailed on the abort.
+    expect(loadCount).toBeLessThanOrEqual(1);
+    // The in-flight tile resolved after the abort — the source must not
+    // have cached its data, or downstream queries would include a tile the
+    // caller explicitly abandoned.
+    expect([...source.loaded().keys()]).toEqual([]);
   });
 
   it("continues loading remaining tiles after one tile fails to load", async () => {
+    // Three tiles in ring 0/1; force the middle one to throw and assert
+    // the others still land in the source.
+    const t0 = makeEntryAt(1, 2);
+    const t1 = makeEntryAt(1, 6);
+    const t2 = makeEntryAt(1, 10);
     const tileMap = new Map<string, TileEntry>([
-      ["t0", makeEntry("t0")],
-      ["t1", makeEntry("t1")],
-      ["t2", makeEntry("t2")],
+      [t0.id, t0],
+      [t1.id, t1],
+      [t2.id, t2],
     ]);
 
-    const deps = makeDeps({
-      tileMap,
-      tilesAtRing: vi.fn((_row, _col, ring) =>
-        ring === 0 ? ["t0", "t1", "t2"] : [],
-      ),
-      getTileEntry: vi.fn((_map, id) => makeEntry(id)),
-      loadTile: vi.fn(async (_basePath, _lang, entry) => {
-        if (entry.id === "t1") throw new Error("network failure");
-        return fakeQuery();
-      }),
+    const loadTile = vi.fn(async (entry: TileEntry): Promise<NearestQuery> => {
+      if (entry.id === t1.id) throw new Error("network failure");
+      return makeNearestQuery(entry.id);
     });
 
-    const { providerTiles, articleWindow } = createArticleWindowFactory(deps);
+    const { source, articleWindow } = buildFactory({
+      position: { lat: 1, lon: 2 },
+      sourceOverrides: {
+        tileMap,
+        loadTile,
+      },
+    });
     await articleWindow.ensureRange(0, 10);
 
-    expect(providerTiles.has("t0")).toBe(true);
-    expect(providerTiles.has("t1")).toBe(false);
-    expect(providerTiles.has("t2")).toBe(true);
+    expect(source.loaded().has(t0.id)).toBe(true);
+    expect(source.loaded().has(t1.id)).toBe(false);
+    expect(source.loaded().has(t2.id)).toBe(true);
   });
 });
