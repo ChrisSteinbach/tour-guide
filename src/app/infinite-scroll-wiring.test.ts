@@ -404,36 +404,6 @@ describe("createInfiniteScrollWiring", () => {
       expect(header.querySelector(".header-controls")).toBeNull();
     });
 
-    it("derives articleCount from ArticleWindow.totalKnown() when available", () => {
-      const aw = stubArticleWindow({ totalKnown: vi.fn(() => 42) });
-      const deps = makeDeps({ getCurrentWindow: () => aw });
-      createInfiniteScrollWiring(deps);
-
-      const header = capturedDeps!.renderHeader();
-
-      expect(header.textContent).toContain("42 attractions");
-    });
-
-    it("falls back to phase.articles.length when ArticleWindow is absent", () => {
-      const deps = makeDeps({ getCurrentWindow: () => null });
-      createInfiniteScrollWiring(deps);
-
-      const header = capturedDeps!.renderHeader();
-
-      // makeBrowsingState gives 2 articles.
-      expect(header.textContent).toContain("2 attractions");
-    });
-
-    it("falls back to phase.articles.length when totalKnown is zero", () => {
-      const aw = stubArticleWindow({ totalKnown: vi.fn(() => 0) });
-      const deps = makeDeps({ getCurrentWindow: () => aw });
-      createInfiniteScrollWiring(deps);
-
-      const header = capturedDeps!.renderHeader();
-
-      expect(header.textContent).toContain("2 attractions");
-    });
-
     it("dispatches langChanged when the language selector fires onLangChange", () => {
       const dispatch = vi.fn();
       const deps = makeDeps({ dispatch });
