@@ -11,15 +11,11 @@ export interface EnrichSchedulerOptions {
   getTitle: (index: number) => string | null;
   /** Enrich a single article by title. */
   enrich: (title: string) => void;
-  /** Cancel all in-flight enrichment (optional). */
-  cancel?: () => void;
 }
 
 export interface EnrichScheduler {
   /** Called when the virtual scroll's visible range changes. */
   onRangeChange: (range: VisibleRange) => void;
-  /** Clear enrichment state (e.g., on position change). */
-  reset: () => void;
   /** Stop all timers and clean up. */
   destroy: () => void;
 }
@@ -27,7 +23,7 @@ export interface EnrichScheduler {
 export function createEnrichScheduler(
   options: EnrichSchedulerOptions,
 ): EnrichScheduler {
-  const { settleMs, getTitle, enrich, cancel } = options;
+  const { settleMs, getTitle, enrich } = options;
 
   let timer: ReturnType<typeof setTimeout> | null = null;
   let destroyed = false;
@@ -59,11 +55,6 @@ export function createEnrichScheduler(
 
   return {
     onRangeChange,
-
-    reset() {
-      clearTimer();
-      cancel?.();
-    },
 
     destroy() {
       destroyed = true;
