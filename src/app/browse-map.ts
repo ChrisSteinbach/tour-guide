@@ -2,7 +2,11 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { worldZoomBounds } from "./map-bounds";
 import type { NearbyArticle, UserPosition } from "./types";
-import { wikiPinIcon, wikiPinHighlightIcon } from "./map-icons";
+import {
+  wikiPinIcon,
+  wikiPinHighlightIcon,
+  locationPinIcon,
+} from "./map-icons";
 
 export interface BrowseMapHandle {
   update(position: UserPosition, articles: NearbyArticle[]): void;
@@ -34,11 +38,8 @@ export function createBrowseMap(
     ...wb.tileOptions,
   }).addTo(map);
 
-  const userMarker = L.circleMarker([position.lat, position.lon], {
-    radius: 8,
-    color: "#e84033",
-    fillColor: "#e84033",
-    fillOpacity: 0.8,
+  const userMarker = L.marker([position.lat, position.lon], {
+    icon: locationPinIcon,
   }).addTo(map);
 
   let articleMarkers = new Map<string, L.Marker>();

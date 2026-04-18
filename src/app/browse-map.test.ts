@@ -18,37 +18,29 @@ vi.mock("leaflet", () => {
     getBoundsZoom: vi.fn(() => 2),
     setMinZoom: vi.fn(),
   };
-  const mockCircleMarker = {
-    setLatLng: vi.fn().mockReturnThis(),
-    addTo: vi.fn().mockReturnThis(),
-  };
   const mockTileLayer = { addTo: vi.fn() };
   const mockZoomControl = { addTo: vi.fn() };
   const mockLatLngBounds = { _mock: true };
 
-  const createArticleMarker = () => ({
+  const createMarker = () => ({
     addTo: vi.fn().mockReturnThis(),
     bindTooltip: vi.fn().mockReturnThis(),
     on: vi.fn().mockReturnThis(),
     remove: vi.fn(),
     setIcon: vi.fn(),
     setZIndexOffset: vi.fn(),
+    setLatLng: vi.fn().mockReturnThis(),
   });
 
   return {
     default: {
       map: vi.fn(() => mockMap),
       tileLayer: vi.fn(() => mockTileLayer),
-      circleMarker: vi.fn(() => mockCircleMarker),
-      marker: vi.fn(() => createArticleMarker()),
+      marker: vi.fn(() => createMarker()),
       icon: vi.fn(() => ({ _isMockIcon: true })),
       control: { zoom: vi.fn(() => mockZoomControl) },
       latLngBounds: vi.fn(() => mockLatLngBounds),
-      // Expose mocks for assertions
-      _mocks: {
-        mockMap,
-        mockCircleMarker,
-      },
+      _mocks: { mockMap },
     },
   };
 });
@@ -65,10 +57,6 @@ const mocks = (L as any)._mocks as {
     fitBounds: ReturnType<typeof vi.fn>;
     remove: ReturnType<typeof vi.fn>;
     off: ReturnType<typeof vi.fn>;
-  };
-  mockCircleMarker: {
-    setLatLng: ReturnType<typeof vi.fn>;
-    addTo: ReturnType<typeof vi.fn>;
   };
 };
 
@@ -125,12 +113,12 @@ describe("createBrowseMap", () => {
     handle.destroy();
   });
 
-  it("places a user location dot at the given position", () => {
+  it("places a user location pin at the given position", () => {
     const handle = createBrowseMap(container, pos(51.5, -0.12), [], vi.fn());
 
-    expect(L.circleMarker).toHaveBeenCalledWith(
+    expect(L.marker).toHaveBeenCalledWith(
       [51.5, -0.12],
-      expect.any(Object),
+      expect.objectContaining({ icon: expect.anything() }),
     );
     handle.destroy();
   });
@@ -148,11 +136,12 @@ describe("createBrowseMap", () => {
     );
 
     const markerMock = L.marker as ReturnType<typeof vi.fn>;
-    expect(markerMock).toHaveBeenCalledTimes(2);
+    // 1 user pin + 2 article pins
+    expect(markerMock).toHaveBeenCalledTimes(3);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    const markers = markerMock.mock.results.map((r) => r.value);
-    expect(markers[0].bindTooltip).toHaveBeenCalledWith("Eiffel Tower");
-    expect(markers[1].bindTooltip).toHaveBeenCalledWith("Louvre");
+    const articleMarkers = markerMock.mock.results.slice(1).map((r) => r.value);
+    expect(articleMarkers[0].bindTooltip).toHaveBeenCalledWith("Eiffel Tower");
+    expect(articleMarkers[1].bindTooltip).toHaveBeenCalledWith("Louvre");
     handle.destroy();
   });
 
@@ -162,7 +151,8 @@ describe("createBrowseMap", () => {
     const handle = createBrowseMap(container, pos(48.86, 2.35), [a], onSelect);
 
     const markerMock = L.marker as ReturnType<typeof vi.fn>;
-    const marker = markerMock.mock.results[0].value;
+    // [0] is the user pin; [1] is the first article
+    const marker = markerMock.mock.results[1].value;
     const clickCall = marker.on.mock.calls.find(
       ([event]: [string]) => event === "click",
     )!;
@@ -187,10 +177,12 @@ describe("createBrowseMap", () => {
   });
 
   describe("update()", () => {
-    it("moves the user location dot to the new position", () => {
+    it("moves the user location pin to the new position", () => {
       const handle = createBrowseMap(container, pos(48, 2), [], vi.fn());
+      const markerMock = L.marker as ReturnType<typeof vi.fn>;
+      const userMarker = markerMock.mock.results[0].value;
       handle.update(pos(49, 3), []);
-      expect(mocks.mockCircleMarker.setLatLng).toHaveBeenCalledWith([49, 3]);
+      expect(userMarker.setLatLng).toHaveBeenCalledWith([49, 3]);
       handle.destroy();
     });
 
@@ -202,13 +194,14 @@ describe("createBrowseMap", () => {
         vi.fn(),
       );
       const markerMock = L.marker as ReturnType<typeof vi.fn>;
-      const oldMarker = markerMock.mock.results[0].value;
+      // [0] is the user pin; [1] is the first article
+      const oldMarker = markerMock.mock.results[1].value;
 
       handle.update(pos(48, 2), [article("B", 50, 4)]);
 
       expect(oldMarker.remove).toHaveBeenCalled();
-      // 1 from creation + 1 from update
-      expect(markerMock).toHaveBeenCalledTimes(2);
+      // 2 from creation (user + A) + 1 from update (B)
+      expect(markerMock).toHaveBeenCalledTimes(3);
       handle.destroy();
     });
 
@@ -306,7 +299,8 @@ describe("createBrowseMap", () => {
       );
 
       const markerMock = L.marker as ReturnType<typeof vi.fn>;
-      const marker = markerMock.mock.results[0].value;
+      // [0] is the user pin; [1] is the first article
+      const marker = markerMock.mock.results[1].value;
 
       handle.highlight("Eiffel Tower");
 
@@ -328,8 +322,9 @@ describe("createBrowseMap", () => {
       );
 
       const markerMock = L.marker as ReturnType<typeof vi.fn>;
-      const eiffelMarker = markerMock.mock.results[0].value;
-      const louvreMarker = markerMock.mock.results[1].value;
+      // [0] is the user pin; [1] and [2] are the article markers
+      const eiffelMarker = markerMock.mock.results[1].value;
+      const louvreMarker = markerMock.mock.results[2].value;
 
       handle.highlight("Eiffel Tower");
       handle.highlight("Louvre");
@@ -351,7 +346,8 @@ describe("createBrowseMap", () => {
       );
 
       const markerMock = L.marker as ReturnType<typeof vi.fn>;
-      const marker = markerMock.mock.results[0].value;
+      // [0] is the user pin; [1] is the first article
+      const marker = markerMock.mock.results[1].value;
 
       handle.highlight("Eiffel Tower");
       handle.highlight(null);
