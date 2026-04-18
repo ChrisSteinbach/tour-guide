@@ -42,33 +42,58 @@ export function createPauseIcon(): SVGSVGElement {
 
 export function createSatelliteIcon(): SVGSVGElement {
   const svg = createSvgRoot();
-  const ring = el("circle", {
-    cx: 9,
-    cy: 9,
-    r: 5.5,
-    fill: "none",
-    stroke: "currentColor",
-    "stroke-width": 1.5,
+  // Body (solid square) with a small antenna mast + dish on top,
+  // flanked by outlined solar panels divided into cells. Tilted so the
+  // silhouette reads as "in orbit" rather than a ground-based tower.
+  const group = el("g", { transform: "rotate(-25 9 9)" });
+  const body = el("rect", {
+    x: 6.75,
+    y: 6.75,
+    width: 4.5,
+    height: 4.5,
+    rx: 0.4,
   });
-  const tick = (x1: number, y1: number, x2: number, y2: number) =>
-    el("line", {
-      x1,
-      y1,
-      x2,
-      y2,
+  const panel = (x: number) =>
+    el("rect", {
+      x,
+      y: 7.5,
+      width: 5,
+      height: 3,
+      fill: "none",
       stroke: "currentColor",
-      "stroke-width": 1.5,
-      "stroke-linecap": "round",
+      "stroke-width": 1,
     });
-  const dot = el("circle", { cx: 9, cy: 9, r: 1.5 });
-  svg.append(
-    ring,
-    tick(9, 1, 9, 3),
-    tick(9, 15, 9, 17),
-    tick(1, 9, 3, 9),
-    tick(15, 9, 17, 9),
-    dot,
+  const divider = (x: number) =>
+    el("line", {
+      x1: x,
+      y1: 7.5,
+      x2: x,
+      y2: 10.5,
+      stroke: "currentColor",
+      "stroke-width": 1,
+    });
+  const mast = el("line", {
+    x1: 9,
+    y1: 6.75,
+    x2: 9,
+    y2: 4,
+    stroke: "currentColor",
+    "stroke-width": 1.2,
+    "stroke-linecap": "round",
+  });
+  const dish = el("circle", { cx: 9, cy: 3.25, r: 1.1 });
+  group.append(
+    panel(0.5),
+    divider(2.17),
+    divider(3.83),
+    panel(12.5),
+    divider(14.17),
+    divider(15.83),
+    body,
+    mast,
+    dish,
   );
+  svg.appendChild(group);
   return svg;
 }
 
