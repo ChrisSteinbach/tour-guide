@@ -15,11 +15,11 @@ function el<K extends keyof SVGElementTagNameMap>(
   return node;
 }
 
-function createSvgRoot(): SVGSVGElement {
+function createSvgRoot(viewBox = "0 0 18 18"): SVGSVGElement {
   return el("svg", {
     width: "1em",
     height: "1em",
-    viewBox: "0 0 18 18",
+    viewBox,
     fill: "currentColor",
     "aria-hidden": "true",
   });
@@ -119,5 +119,17 @@ export function createCloseIcon(): SVGSVGElement {
 export function createBackIcon(): SVGSVGElement {
   const svg = createSvgRoot();
   svg.appendChild(el("path", { d: "M3 9L9 3v4h6v4H9v4z" }));
+  return svg;
+}
+
+export function createFoldedMapIcon(): SVGSVGElement {
+  const svg = createSvgRoot("0 0 24 24");
+  // Trifold paper map: three panels alternating fold direction,
+  // based on Material Design's `map` icon.
+  svg.appendChild(
+    el("path", {
+      d: "M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5zM15 19l-6-2.11V5l6 2.11V19z",
+    }),
+  );
   return svg;
 }
