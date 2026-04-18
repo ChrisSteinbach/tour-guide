@@ -50,14 +50,20 @@ export function createMapPanelLifecycle(
 
   const browseMap = createBrowseMapLifecycle({
     container: drawer.element,
-    onSelectArticle: (article) =>
+    onSelectArticle: (article) => {
+      // On mobile the drawer covers the detail view. Dismiss it as the
+      // detail opens; the handle/gesture can still reopen the map.
+      if (!desktopQuery.matches && drawer.isOpen()) {
+        drawer.close();
+      }
       deps.dispatch({
         type: "selectArticle",
         article,
         firstVisibleIndex: Math.floor(
           deps.getScrollContainer().scrollTop / deps.itemHeight,
         ),
-      }),
+      });
+    },
     importBrowseMap: () => import("./browse-map"),
   });
 
