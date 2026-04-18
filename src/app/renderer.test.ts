@@ -429,6 +429,70 @@ describe("renderer renderPhase teardown prefix", () => {
     expect(drawerPanel.hasAttribute("hidden")).toBe(true);
   });
 
+  it("preserves browseMap and drawer state when transitioning to detail", () => {
+    // browsing → detail must not tear down the drawer — on desktop the
+    // map stays visible alongside the article, and on mobile the drawer
+    // must remain constructed so the gesture can reopen it.
+    const browseMapDestroy = vi.fn();
+    const drawerClose = vi.fn();
+    const browseMap = stubBrowseMap({ destroy: browseMapDestroy });
+    const drawer: MapDrawer = { ...stubDrawer(), close: drawerClose };
+    const drawerPanel = document.createElement("div");
+    drawerPanel.removeAttribute("hidden");
+    const deps = makeDeps({
+      getState: vi.fn(() => ({
+        ...tiledBrowsingState(),
+        phase: {
+          phase: "detail" as const,
+          article,
+          savedFirstVisibleIndex: 0,
+          articles: [article],
+          nearbyCount: 15,
+          paused: false,
+          pauseReason: null,
+          lastQueryPos: pos,
+          scrollMode: "infinite" as const,
+          infiniteScrollLimit: 200,
+        },
+      })),
+      browseMap,
+      drawer,
+      drawerPanel,
+    });
+
+    const renderer = createRenderer(deps);
+    renderer.renderPhase();
+
+    expect(browseMapDestroy).not.toHaveBeenCalled();
+    expect(drawerClose).not.toHaveBeenCalled();
+    expect(drawerPanel.hasAttribute("hidden")).toBe(false);
+  });
+
+  it("preserves drawer state across a detail → browsing transition", () => {
+    // After entering detail (drawer preserved), pressing back must not
+    // re-tear down the drawer on the way back to browsing.
+    const drawerClose = vi.fn();
+    const drawer: MapDrawer = { ...stubDrawer(), close: drawerClose };
+    const browseMapDestroy = vi.fn();
+    const browseMap = stubBrowseMap({ destroy: browseMapDestroy });
+    const deps = makeDeps({
+      getState: vi.fn(() => tiledBrowsingState()),
+      drawer,
+      browseMap,
+      desktopQuery: stubDesktopQuery(true),
+    });
+
+    const renderer = createRenderer(deps);
+    renderer.renderBrowsingList();
+    const initialDrawerCloses = drawerClose.mock.calls.length;
+
+    renderer.renderPhase();
+
+    // renderPhase in the browse pair does not add a drawer.close call.
+    expect(drawerClose).toHaveBeenCalledTimes(initialDrawerCloses);
+    expect(browseMapDestroy).not.toHaveBeenCalled();
+  });
+
   it("re-initializes the drawer on the next browsing render after a teardown", () => {
     // drawerInitialized is local state inside the renderer. After
     // renderPhase tears it down (drawerInitialized=false), the next

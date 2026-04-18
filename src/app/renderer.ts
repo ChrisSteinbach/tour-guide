@@ -206,11 +206,18 @@ export function createRenderer(deps: RendererDeps): Renderer {
     deps.infiniteScroll.destroy();
     teardownScrollPauseListener();
     deps.mapPicker.destroy();
-    deps.browseMap.destroy();
-    deps.drawerPanel.setAttribute("hidden", "");
-    deps.drawer.close();
-    drawerInitialized = false;
     const state = deps.getState();
+    // browseMap + drawer persist across browsing↔detail so the map stays
+    // visible while viewing an article. Teardown only fires when the next
+    // phase is outside that pair (welcome, mapPicker, error, etc.).
+    const inBrowsePair =
+      state.phase.phase === "browsing" || state.phase.phase === "detail";
+    if (!inBrowsePair) {
+      deps.browseMap.destroy();
+      deps.drawerPanel.setAttribute("hidden", "");
+      deps.drawer.close();
+      drawerInitialized = false;
+    }
     switch (state.phase.phase) {
       case "welcome":
         renderWelcome(deps.app, {
