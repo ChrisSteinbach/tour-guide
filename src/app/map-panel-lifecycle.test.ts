@@ -12,13 +12,21 @@ import type { UserPosition } from "./types";
 let drawerStub: MapDrawer;
 let browseMapStub: BrowseMapLifecycle;
 let mapPickerStub: MapPickerLifecycle;
+let capturedBrowseMapOnSelect:
+  | ((article: { title: string; lat: number; lon: number }) => void)
+  | null = null;
 
 vi.mock("./map-drawer", () => ({
   createMapDrawer: vi.fn(() => drawerStub),
 }));
 
 vi.mock("./browse-map-lifecycle", () => ({
-  createBrowseMapLifecycle: vi.fn(() => browseMapStub),
+  createBrowseMapLifecycle: vi.fn(
+    (opts: { onSelectArticle: typeof capturedBrowseMapOnSelect }) => {
+      capturedBrowseMapOnSelect = opts.onSelectArticle;
+      return browseMapStub;
+    },
+  ),
 }));
 
 vi.mock("./map-picker-lifecycle", () => ({
@@ -170,6 +178,7 @@ describe("createMapPanelLifecycle", () => {
     drawerStub = makeDrawer(false);
     browseMapStub = makeBrowseMap();
     mapPickerStub = makeMapPicker();
+    capturedBrowseMapOnSelect = null;
     installMockMediaQuery(false);
   });
 
@@ -356,6 +365,56 @@ describe("createMapPanelLifecycle", () => {
       lifecycle.onHoverArticle(null);
 
       expect(browseMapStub.highlight).toHaveBeenCalledWith(null);
+    });
+  });
+
+  describe("browseMap onSelectArticle drawer dismiss", () => {
+    const article = {
+      title: "Stockholm",
+      lat: 59.33,
+      lon: 18.07,
+      distanceM: 0,
+    };
+
+    it("closes the drawer on mobile when a pin is tapped with the drawer open", () => {
+      installMockMediaQuery(false);
+      drawerStub = makeDrawer(true);
+      const dispatch = vi.fn();
+      const deps = makeDeps({ dispatch });
+      createMapPanelLifecycle(deps);
+
+      capturedBrowseMapOnSelect?.(article);
+
+      expect(drawerStub.close).toHaveBeenCalledTimes(1);
+      expect(dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "selectArticle", article }),
+      );
+    });
+
+    it("does not close the drawer on desktop", () => {
+      installMockMediaQuery(true);
+      drawerStub = makeDrawer(true);
+      const dispatch = vi.fn();
+      const deps = makeDeps({ dispatch });
+      createMapPanelLifecycle(deps);
+
+      capturedBrowseMapOnSelect?.(article);
+
+      expect(drawerStub.close).not.toHaveBeenCalled();
+      expect(dispatch).toHaveBeenCalled();
+    });
+
+    it("does not close the drawer on mobile when it is already closed", () => {
+      installMockMediaQuery(false);
+      drawerStub = makeDrawer(false);
+      const dispatch = vi.fn();
+      const deps = makeDeps({ dispatch });
+      createMapPanelLifecycle(deps);
+
+      capturedBrowseMapOnSelect?.(article);
+
+      expect(drawerStub.close).not.toHaveBeenCalled();
+      expect(dispatch).toHaveBeenCalled();
     });
   });
 });
