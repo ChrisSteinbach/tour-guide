@@ -2,6 +2,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { worldZoomBounds } from "./map-bounds";
 import type { NearbyArticle, UserPosition } from "./types";
+import { wikiPinIcon, wikiPinHighlightIcon } from "./map-icons";
 
 export interface BrowseMapHandle {
   update(position: UserPosition, articles: NearbyArticle[]): void;
@@ -9,44 +10,6 @@ export interface BrowseMapHandle {
   resize(): void;
   destroy(): void;
 }
-
-// White teardrop pin with Wikipedia "W" — derived from the app icon (icon.svg).
-// The pin path and W glyph are extracted and rescaled to marker size (30×44).
-// Anchor is at the pin tip (bottom center).
-const WIKI_PIN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="117 52 278 388">
-  <defs>
-    <filter id="s" x="-10%" y="-5%" width="120%" height="115%">
-      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.3"/>
-    </filter>
-  </defs>
-  <path d="M256,440 C256,440 395,272 395,185 C395,108 333,52 256,52 C179,52 117,108 117,185 C117,272 256,440 256,440Z" fill="#fff" filter="url(#s)"/>
-  <g transform="translate(120, 80) scale(2.1)" fill="#1a73e8">
-    <path d="m 8.25,27.96875 -0.21875,0.21875 0,2.15625 c 0,0.592843 0.2822311,0.906321 0.875,0.90625 2.815675,0.296457 4.718439,0.886361 5.71875,1.8125 1.03735,0.889228 2.042538,2.65668 2.96875,5.25 l 29.65625,62 c 0.62979,1.77833 1.482264,2.6875 2.59375,2.6875 1.11142,0 2.040247,-0.90917 2.78125,-2.6875 l 12,-24.875 11.90625,24.875 c 0.62979,1.77833 1.513514,2.6875 2.625,2.6875 1.11142,0 2.008997,-0.90917 2.75,-2.6875 l 29.65625,-61.5 c 0.92615,-2.408078 2.09789,-4.246088 3.46875,-5.46875 1.37072,-1.259575 3.45971,-1.945486 6.3125,-2.09375 0.62975,7.1e-5 0.96868,-0.313407 0.96875,-0.90625 l 0,-2.15625 -0.25,-0.21875 -10.5,0.21875 c -2.96393,7.4e-5 -7.12804,-0.07048 -12.5,-0.21875 l -0.21875,0.21875 0,2.15625 c -4.7e-5,0.592843 0.313429,0.906321 0.90625,0.90625 l 1.8125,0.09375 c 2.29695,0.111215 3.89204,0.636361 4.78125,1.5625 0.92615,0.889229 0.99671,2.368657 0.21875,4.40625 L 82.25,87.15625 l -0.4375,0 L 70.125,64.03125 82.28125,38.8125 c 0.926147,-2.408078 2.066649,-4.246088 3.4375,-5.46875 1.370724,-1.259575 3.49096,-1.945486 6.34375,-2.09375 0.62975,7.1e-5 0.937429,-0.313407 0.9375,-0.90625 l 0,-2.15625 -0.21875,-0.21875 -10.5,0.21875 c -2.963926,7.4e-5 -7.128042,-0.07048 -12.5,-0.21875 l -0.21875,0.21875 0,2.15625 c -4.7e-5,0.592843 0.282179,0.906321 0.875,0.90625 l 1.84375,0.09375 c 2.296945,0.111215 3.892036,0.636361 4.78125,1.5625 0.926153,0.889229 0.996709,2.368657 0.21875,4.40625 L 67.125,58.125 56.1875,36.53125 c -0.629846,-1.704156 -0.629846,-2.870111 0,-3.5 0.666848,-0.666802 2.363753,-1.191947 5.03125,-1.5625 L 63.15625,31.25 c 0.592741,-0.111074 0.874972,-0.424552 0.875,-0.90625 l 0,-2.15625 L 63.8125,27.96875 50.875,28.1875 c -2.963872,7.4e-5 -7.416024,-0.07048 -13.34375,-0.21875 l -0.21875,0.21875 0,2.15625 c 0,0.592843 0.282231,0.906321 0.875,0.90625 2.815675,0.296457 4.718439,0.886361 5.71875,1.8125 1.03735,0.889228 2.042538,2.65668 2.96875,5.25 l 14.8125,30.96875 -8.71875,17.875 -0.4375,0 -25.625,-50.625 c -0.629846,-1.704156 -0.629846,-2.870111 0,-3.5 0.666848,-0.666802 2.332503,-1.191947 5,-1.5625 L 33.875,31.25 c 0.592741,-0.111074 0.874972,-0.424552 0.875,-0.90625 l 0,-2.15625 -0.21875,-0.21875 -12.9375,0.21875 C 18.629878,28.187574 14.177726,28.117017 8.25,27.96875 z"/>
-  </g>
-</svg>`;
-
-const MARKER_WIDTH = 30;
-const MARKER_HEIGHT = 42;
-
-const HIGHLIGHT_WIDTH = 36;
-const HIGHLIGHT_HEIGHT = 50;
-
-function makeWikiPinIcon(fill: string, w: number, h: number): L.Icon {
-  const svg = WIKI_PIN_SVG.replace('fill="#fff"', `fill="${fill}"`);
-  return L.icon({
-    iconUrl: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
-    iconSize: [w, h],
-    iconAnchor: [w / 2, h],
-    tooltipAnchor: [0, -h],
-  });
-}
-
-const wikiPinIcon = makeWikiPinIcon("#fff", MARKER_WIDTH, MARKER_HEIGHT);
-const wikiPinHighlightIcon = makeWikiPinIcon(
-  "#FFC107",
-  HIGHLIGHT_WIDTH,
-  HIGHLIGHT_HEIGHT,
-);
 
 export function createBrowseMap(
   container: HTMLElement,
