@@ -2,6 +2,7 @@ import type { NearbyArticle, UserPosition } from "./types";
 import type { ArticleSummary } from "./wiki-api";
 import { formatDistance, wikipediaUrl, directionsUrl } from "./format";
 import type { Lang } from "../lang";
+import { createBackIcon } from "./icons";
 
 /** Render a detail header with back button, title, and distance. */
 function renderDetailHeader(
@@ -13,7 +14,7 @@ function renderDetailHeader(
 
   const back = document.createElement("button");
   back.className = "detail-back";
-  back.textContent = "\u2190";
+  back.appendChild(createBackIcon());
   back.setAttribute("aria-label", "Back");
   back.addEventListener("click", onBack);
 
