@@ -1,6 +1,7 @@
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { worldZoomBounds } from "./map-bounds";
+import { locationPinIcon } from "./map-icons";
 
 export interface MapPickerHandle {
   destroy(): void;
@@ -33,7 +34,7 @@ export function createMapPicker(
     ...wb.tileOptions,
   }).addTo(map);
 
-  let marker: L.CircleMarker | null = null;
+  let marker: L.Marker | null = null;
   let confirmBtn: HTMLButtonElement | null = null;
 
   map.on("click", (e: L.LeafletMouseEvent) => {
@@ -42,12 +43,7 @@ export function createMapPicker(
     if (marker) {
       marker.setLatLng([lat, lng]);
     } else {
-      marker = L.circleMarker([lat, lng], {
-        radius: 8,
-        color: "#e84033",
-        fillColor: "#e84033",
-        fillOpacity: 0.8,
-      }).addTo(map);
+      marker = L.marker([lat, lng], { icon: locationPinIcon }).addTo(map);
     }
 
     if (!confirmBtn) {

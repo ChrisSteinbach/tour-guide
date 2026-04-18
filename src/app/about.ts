@@ -1,4 +1,5 @@
 import { APP_NAME } from "./config";
+import { createCloseIcon, createInfoIcon } from "./icons";
 
 const CC_BY_SA_URL = "https://creativecommons.org/licenses/by-sa/3.0/";
 const WIKIPEDIA_TOS_URL =
@@ -34,7 +35,7 @@ export function showAbout(onClose?: () => void): void {
   dialog.setAttribute("aria-label", "About");
   const close = document.createElement("button");
   close.className = "about-close";
-  close.textContent = "\u00d7";
+  close.appendChild(createCloseIcon());
   close.setAttribute("aria-label", "Close");
 
   const title = document.createElement("h2");
@@ -152,7 +153,7 @@ export function createAboutButton(
   btn.className = `${className} about-btn`;
   btn.setAttribute("aria-label", "About");
   btn.title = "About";
-  btn.textContent = "\u24d8"; // ⓘ
+  btn.appendChild(createInfoIcon());
   btn.addEventListener("click", onClick);
   return btn;
 }

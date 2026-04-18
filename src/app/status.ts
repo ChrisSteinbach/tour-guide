@@ -2,6 +2,7 @@ import type { LocationError } from "./location";
 import { SUPPORTED_LANGS, LANG_NAMES } from "../lang";
 import type { Lang } from "../lang";
 import { createAppHeader } from "./header";
+import { createSatelliteIcon, createMapIcon } from "./icons";
 
 /** Native `<select>` language picker for status screens (welcome, data-unavailable).
  *  The browsing header uses `createLangDropdown` from `lang-dropdown.ts` instead,
@@ -107,7 +108,7 @@ export function renderWelcome(
 
   const liveIcon = document.createElement("span");
   liveIcon.className = "welcome-choice-icon";
-  liveIcon.textContent = "\uD83D\uDEF0\uFE0F"; // 🛰️
+  liveIcon.appendChild(createSatelliteIcon());
   const liveBtn = document.createElement("button");
   liveBtn.className = "welcome-choice";
   liveBtn.append(liveIcon, " Use my location");
@@ -115,7 +116,7 @@ export function renderWelcome(
 
   const pickIcon = document.createElement("span");
   pickIcon.className = "welcome-choice-icon";
-  pickIcon.textContent = "\uD83D\uDDFA\uFE0F"; // 🗺️
+  pickIcon.appendChild(createMapIcon());
   const pickBtn = document.createElement("button");
   pickBtn.className = "welcome-choice";
   pickBtn.append(pickIcon, " Pick a spot on the map");

@@ -33,7 +33,8 @@ vi.mock("leaflet", () => ({
   default: {
     map: vi.fn(() => mockMap),
     tileLayer: vi.fn(() => mockTileLayer),
-    circleMarker: vi.fn(() => mockMarker),
+    marker: vi.fn(() => mockMarker),
+    icon: vi.fn(() => ({})),
     latLngBounds: vi.fn(() => mockBounds),
   },
 }));
@@ -106,9 +107,9 @@ describe("createMapPicker", () => {
 
     simulateClick(48.8, 2.35);
 
-    expect(L.circleMarker).toHaveBeenCalledWith(
+    expect(L.marker).toHaveBeenCalledWith(
       [48.8, 2.35],
-      expect.objectContaining({ radius: 8 }),
+      expect.objectContaining({ icon: expect.anything() }),
     );
     expect(mockMarker.addTo).toHaveBeenCalledWith(mockMap);
     handle.destroy();
@@ -121,8 +122,8 @@ describe("createMapPicker", () => {
     simulateClick(48.8, 2.35);
     simulateClick(51.5, -0.12);
 
-    // circleMarker created only once
-    expect(L.circleMarker).toHaveBeenCalledTimes(1);
+    // marker created only once
+    expect(L.marker).toHaveBeenCalledTimes(1);
     expect(mockMarker.setLatLng).toHaveBeenCalledWith([51.5, -0.12]);
     handle.destroy();
   });

@@ -2,6 +2,7 @@
 // The drawer hosts the map container (rendered by a separate lifecycle).
 
 import { setupDrawerGesture } from "./drawer-gesture";
+import { createFoldedMapIcon } from "./icons";
 
 export interface MapDrawer {
   open(): void;
@@ -25,22 +26,9 @@ export function createMapDrawer(container: HTMLElement): MapDrawer {
   handle.setAttribute("aria-expanded", "false");
   handle.type = "button";
 
-  // Chevron SVG — points left (open=visible) or right (closed)
-  const ns = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(ns, "svg");
-  svg.setAttribute("class", "map-drawer-chevron");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("width", "18");
-  svg.setAttribute("height", "18");
-  svg.setAttribute("fill", "none");
-  svg.setAttribute("stroke", "currentColor");
-  svg.setAttribute("stroke-width", "2.5");
-  svg.setAttribute("stroke-linecap", "round");
-  svg.setAttribute("stroke-linejoin", "round");
-  const polyline = document.createElementNS(ns, "polyline");
-  polyline.setAttribute("points", "15 18 9 12 15 6");
-  svg.appendChild(polyline);
-  handle.appendChild(svg);
+  const icon = createFoldedMapIcon();
+  icon.setAttribute("class", "map-drawer-icon");
+  handle.appendChild(icon);
 
   const content = document.createElement("div");
   content.className = "map-drawer-content";

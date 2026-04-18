@@ -6,43 +6,12 @@ import { createAppHeader } from "./header";
 import { APP_NAME } from "./config";
 import { createLangDropdown } from "./lang-dropdown";
 import { createAboutButton } from "./about";
-
-// ── SVG icon helpers ─────────────────────────────────────────
-
-const SVG_NS = "http://www.w3.org/2000/svg";
-
-function createSvgRoot(): SVGSVGElement {
-  const svg = document.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("width", "18");
-  svg.setAttribute("height", "18");
-  svg.setAttribute("viewBox", "0 0 18 18");
-  svg.setAttribute("fill", "currentColor");
-  return svg;
-}
-
-function createPlayIcon(): SVGSVGElement {
-  const svg = createSvgRoot();
-  const polygon = document.createElementNS(SVG_NS, "polygon");
-  polygon.setAttribute("points", "4,2 16,9 4,16");
-  svg.appendChild(polygon);
-  return svg;
-}
-
-function createPauseIcon(): SVGSVGElement {
-  const svg = createSvgRoot();
-  const left = document.createElementNS(SVG_NS, "rect");
-  left.setAttribute("x", "3");
-  left.setAttribute("y", "2");
-  left.setAttribute("width", "4");
-  left.setAttribute("height", "14");
-  const right = document.createElementNS(SVG_NS, "rect");
-  right.setAttribute("x", "11");
-  right.setAttribute("y", "2");
-  right.setAttribute("width", "4");
-  right.setAttribute("height", "14");
-  svg.append(left, right);
-  return svg;
-}
+import {
+  createPlayIcon,
+  createPauseIcon,
+  createSatelliteIcon,
+  createMapIcon,
+} from "./icons";
 
 // ── Focus capture / restore ──────────────────────────────────
 
@@ -201,7 +170,7 @@ export function renderNearbyHeader(
     );
     gpsBtn.title = gpsSignalLost ? "GPS signal lost" : "Use GPS location";
     gpsBtn.setAttribute("aria-pressed", String(positionSource === "gps"));
-    gpsBtn.textContent = "\uD83D\uDEF0\uFE0F"; // 🛰️
+    gpsBtn.appendChild(createSatelliteIcon());
     if (positionSource !== "gps") {
       gpsBtn.addEventListener("click", onUseGps);
     }
@@ -215,7 +184,7 @@ export function renderNearbyHeader(
     pinBtn.setAttribute("aria-label", pinLabel);
     pinBtn.title = pinLabel;
     pinBtn.setAttribute("aria-pressed", String(positionSource === "picked"));
-    pinBtn.textContent = "\uD83D\uDDFA\uFE0F"; // 🗺️
+    pinBtn.appendChild(createMapIcon());
     if (positionSource === "picked") {
       pinBtn.addEventListener("click", () => {
         if (confirm("Choose a different location?")) onPickLocation();

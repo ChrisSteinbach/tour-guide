@@ -789,14 +789,9 @@ body:has(.app-scroll) {
   transform: translate(0, -50%);
 }
 
-.map-drawer-chevron {
+.map-drawer-icon {
   display: block;
-  transition: transform 0.3s ease;
-}
-
-/* Flip chevron when drawer is open (points right → "close"; left → "open" when closed) */
-.map-drawer.open .map-drawer-chevron {
-  transform: rotate(180deg);
+  font-size: 1.25rem;
 }
 
 .map-drawer-content {

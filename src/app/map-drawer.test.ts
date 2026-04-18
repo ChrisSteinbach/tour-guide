@@ -46,12 +46,12 @@ describe("createMapDrawer", () => {
     expect(drawer.panel.classList.contains("map-drawer")).toBe(true);
   });
 
-  it("has a handle element with chevron in the DOM", () => {
+  it("has a handle element with map icon in the DOM", () => {
     createMapDrawer(container);
     const handle = container.querySelector(".map-drawer-handle");
     expect(handle).not.toBeNull();
     expect(handle?.tagName).toBe("BUTTON");
-    expect(handle?.querySelector(".map-drawer-chevron")).not.toBeNull();
+    expect(handle?.querySelector(".map-drawer-icon")).not.toBeNull();
   });
 
   it("sets aria-expanded on the handle", () => {
