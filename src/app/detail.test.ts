@@ -84,7 +84,13 @@ describe("renderDetailLoading", () => {
 describe("renderDetailReady", () => {
   it("renders header with title and distance", () => {
     const container = document.createElement("div");
-    renderDetailReady(container, makeArticle(), makeSummary(), () => {});
+    renderDetailReady(
+      container,
+      makeArticle(),
+      makeSummary(),
+      () => {},
+      () => {},
+    );
 
     expect(container.querySelector("h1")?.textContent).toBe("Eiffel Tower");
     const sub = container.querySelector(".detail-header-text p");
@@ -93,7 +99,13 @@ describe("renderDetailReady", () => {
 
   it("renders thumbnail when summary has thumbnailUrl", () => {
     const container = document.createElement("div");
-    renderDetailReady(container, makeArticle(), makeSummary(), () => {});
+    renderDetailReady(
+      container,
+      makeArticle(),
+      makeSummary(),
+      () => {},
+      () => {},
+    );
 
     const img = container.querySelector(
       ".detail-thumbnail",
@@ -111,6 +123,7 @@ describe("renderDetailReady", () => {
       makeArticle(),
       makeSummary({ thumbnailUrl: null }),
       () => {},
+      () => {},
     );
 
     expect(container.querySelector(".detail-thumbnail")).toBeNull();
@@ -118,7 +131,13 @@ describe("renderDetailReady", () => {
 
   it("renders description when present", () => {
     const container = document.createElement("div");
-    renderDetailReady(container, makeArticle(), makeSummary(), () => {});
+    renderDetailReady(
+      container,
+      makeArticle(),
+      makeSummary(),
+      () => {},
+      () => {},
+    );
 
     const desc = container.querySelector(".detail-description");
     expect(desc?.textContent).toBe("Iron lattice tower in Paris");
@@ -131,6 +150,7 @@ describe("renderDetailReady", () => {
       makeArticle(),
       makeSummary({ description: "" }),
       () => {},
+      () => {},
     );
 
     expect(container.querySelector(".detail-description")).toBeNull();
@@ -138,7 +158,13 @@ describe("renderDetailReady", () => {
 
   it("renders extract when present", () => {
     const container = document.createElement("div");
-    renderDetailReady(container, makeArticle(), makeSummary(), () => {});
+    renderDetailReady(
+      container,
+      makeArticle(),
+      makeSummary(),
+      () => {},
+      () => {},
+    );
 
     const extract = container.querySelector(".detail-extract");
     expect(extract?.textContent).toBe(
@@ -153,6 +179,7 @@ describe("renderDetailReady", () => {
       makeArticle(),
       makeSummary({ extract: "" }),
       () => {},
+      () => {},
     );
 
     expect(container.querySelector(".detail-extract")).toBeNull();
@@ -160,7 +187,13 @@ describe("renderDetailReady", () => {
 
   it("renders Wikipedia link with correct URL and target", () => {
     const container = document.createElement("div");
-    renderDetailReady(container, makeArticle(), makeSummary(), () => {});
+    renderDetailReady(
+      container,
+      makeArticle(),
+      makeSummary(),
+      () => {},
+      () => {},
+    );
 
     const link = container.querySelector(
       ".detail-wiki-link",
@@ -173,7 +206,13 @@ describe("renderDetailReady", () => {
   it("renders directions link with correct URL", () => {
     const container = document.createElement("div");
     const article = makeArticle({ lat: 48.8584, lon: 2.2945 });
-    renderDetailReady(container, article, makeSummary(), () => {});
+    renderDetailReady(
+      container,
+      article,
+      makeSummary(),
+      () => {},
+      () => {},
+    );
 
     const link = container.querySelector(
       ".detail-directions-link",
@@ -187,12 +226,51 @@ describe("renderDetailReady", () => {
     const container = document.createElement("div");
     const article = makeArticle({ lat: 48.8584, lon: 2.2945 });
     const origin = { lat: 48.86, lon: 2.3 };
-    renderDetailReady(container, article, makeSummary(), () => {}, origin);
+    renderDetailReady(
+      container,
+      article,
+      makeSummary(),
+      () => {},
+      () => {},
+      origin,
+    );
 
     const link = container.querySelector(
       ".detail-directions-link",
     ) as HTMLAnchorElement;
     expect(link.href).toContain("origin=48.86");
+  });
+
+  it("renders recenter button with expected label", () => {
+    const container = document.createElement("div");
+    renderDetailReady(
+      container,
+      makeArticle(),
+      makeSummary(),
+      () => {},
+      () => {},
+    );
+
+    const btn = container.querySelector(".detail-recenter-button");
+    expect(btn?.textContent).toBe("Explore from here");
+  });
+
+  it("fires onRecenter when recenter button is clicked", () => {
+    const onRecenter = vi.fn();
+    const container = document.createElement("div");
+    renderDetailReady(
+      container,
+      makeArticle(),
+      makeSummary(),
+      () => {},
+      onRecenter,
+    );
+
+    const btn = container.querySelector(
+      ".detail-recenter-button",
+    ) as HTMLButtonElement;
+    btn.click();
+    expect(onRecenter).toHaveBeenCalledOnce();
   });
 });
 
@@ -205,6 +283,7 @@ describe("renderDetailError", () => {
       container,
       makeArticle(),
       "Failed to load",
+      () => {},
       () => {},
       () => {},
     );
@@ -220,6 +299,7 @@ describe("renderDetailError", () => {
       "Network error",
       () => {},
       () => {},
+      () => {},
     );
 
     const msg = container.querySelector(".status-message");
@@ -229,7 +309,14 @@ describe("renderDetailError", () => {
   it("fires onRetry when retry button is clicked", () => {
     const onRetry = vi.fn();
     const container = document.createElement("div");
-    renderDetailError(container, makeArticle(), "Failed", () => {}, onRetry);
+    renderDetailError(
+      container,
+      makeArticle(),
+      "Failed",
+      () => {},
+      onRetry,
+      () => {},
+    );
 
     const retry = container.querySelector(
       ".status-action",
@@ -244,6 +331,7 @@ describe("renderDetailError", () => {
       container,
       makeArticle({ title: "Eiffel Tower" }),
       "Error",
+      () => {},
       () => {},
       () => {},
       "en",
@@ -265,6 +353,7 @@ describe("renderDetailError", () => {
       "Error",
       () => {},
       () => {},
+      () => {},
     );
 
     const link = container.querySelector(
@@ -283,6 +372,7 @@ describe("renderDetailError", () => {
       "Error",
       () => {},
       () => {},
+      () => {},
       "ja",
     );
 
@@ -290,5 +380,24 @@ describe("renderDetailError", () => {
       ".detail-wiki-link",
     ) as HTMLAnchorElement;
     expect(link.href).toContain("ja.wikipedia.org");
+  });
+
+  it("fires onRecenter when recenter button is clicked", () => {
+    const onRecenter = vi.fn();
+    const container = document.createElement("div");
+    renderDetailError(
+      container,
+      makeArticle(),
+      "Error",
+      () => {},
+      () => {},
+      onRecenter,
+    );
+
+    const btn = container.querySelector(
+      ".detail-recenter-button",
+    ) as HTMLButtonElement;
+    btn.click();
+    expect(onRecenter).toHaveBeenCalledOnce();
   });
 });

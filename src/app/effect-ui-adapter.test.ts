@@ -103,6 +103,7 @@ describe("createEffectUIAdapter", () => {
       mapPicker,
       browseMap: stubBrowseMap(),
       getState: () => state,
+      dispatch: vi.fn(),
       itemHeight: 68,
       getScrollContainer: () => container,
     });
@@ -110,7 +111,7 @@ describe("createEffectUIAdapter", () => {
     ui.renderDetailReady(article, summary);
 
     expect(renderDetailReady).toHaveBeenCalledTimes(1);
-    const [receivedApp, receivedArticle, receivedSummary, , origin] = (
+    const [receivedApp, receivedArticle, receivedSummary, , , origin] = (
       renderDetailReady as ReturnType<typeof vi.fn>
     ).mock.calls[0];
     expect(receivedApp).toBe(app);
@@ -133,13 +134,14 @@ describe("createEffectUIAdapter", () => {
       mapPicker: stubMapPicker(),
       browseMap: stubBrowseMap(),
       getState: () => state,
+      dispatch: vi.fn(),
       itemHeight: 68,
       getScrollContainer: () => document.createElement("div"),
     });
 
     ui.renderDetailReady(article, summary);
 
-    const [, , , , origin] = (renderDetailReady as ReturnType<typeof vi.fn>)
+    const [, , , , , origin] = (renderDetailReady as ReturnType<typeof vi.fn>)
       .mock.calls[0];
     expect(origin).toBeUndefined();
     expect(assertSpy).toHaveBeenCalledWith(true, expect.any(String));
@@ -157,13 +159,14 @@ describe("createEffectUIAdapter", () => {
       mapPicker: stubMapPicker(),
       browseMap: stubBrowseMap(),
       getState: () => state,
+      dispatch: vi.fn(),
       itemHeight: 68,
       getScrollContainer: () => document.createElement("div"),
     });
 
     ui.renderDetailReady(article, summary);
 
-    const [, , , , origin] = (renderDetailReady as ReturnType<typeof vi.fn>)
+    const [, , , , , origin] = (renderDetailReady as ReturnType<typeof vi.fn>)
       .mock.calls[0];
     expect(origin).toBeUndefined();
     expect(assertSpy).toHaveBeenCalledWith(
@@ -182,13 +185,14 @@ describe("createEffectUIAdapter", () => {
       mapPicker: stubMapPicker(),
       browseMap: stubBrowseMap(),
       getState: () => state,
+      dispatch: vi.fn(),
       itemHeight: 68,
       getScrollContainer: () => document.createElement("div"),
     });
 
     ui.renderDetailError(article, "boom", () => {}, "en");
 
-    const [receivedApp, receivedArticle, receivedMsg, , , lang, origin] = (
+    const [receivedApp, receivedArticle, receivedMsg, , , , lang, origin] = (
       renderDetailError as ReturnType<typeof vi.fn>
     ).mock.calls[0];
     expect(receivedApp).toBe(app);
@@ -196,6 +200,65 @@ describe("createEffectUIAdapter", () => {
     expect(receivedMsg).toBe("boom");
     expect(lang).toBe("en");
     expect(origin).toEqual(pos);
+  });
+
+  it("recenter callback from renderDetailReady pops history and dispatches pickPosition with the article coords", () => {
+    const historyBackSpy = vi
+      .spyOn(window.history, "back")
+      .mockImplementation(() => {});
+    const dispatch = vi.fn();
+    const ui = createEffectUIAdapter({
+      app: document.createElement("div"),
+      renderer: stubRenderer(),
+      mapPicker: stubMapPicker(),
+      browseMap: stubBrowseMap(),
+      getState: () => makeState({ position: pos, positionSource: "gps" }),
+      dispatch,
+      itemHeight: 68,
+      getScrollContainer: () => document.createElement("div"),
+    });
+
+    ui.renderDetailReady(article, summary);
+    const [, , , , onRecenter] = (renderDetailReady as ReturnType<typeof vi.fn>)
+      .mock.calls[0];
+    (onRecenter as () => void)();
+
+    expect(historyBackSpy).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "pickPosition",
+      position: { lat: article.lat, lon: article.lon },
+    });
+    historyBackSpy.mockRestore();
+  });
+
+  it("recenter callback from renderDetailError pops history and dispatches pickPosition with the article coords", () => {
+    const historyBackSpy = vi
+      .spyOn(window.history, "back")
+      .mockImplementation(() => {});
+    const dispatch = vi.fn();
+    const ui = createEffectUIAdapter({
+      app: document.createElement("div"),
+      renderer: stubRenderer(),
+      mapPicker: stubMapPicker(),
+      browseMap: stubBrowseMap(),
+      getState: () => makeState({ position: pos, positionSource: "gps" }),
+      dispatch,
+      itemHeight: 68,
+      getScrollContainer: () => document.createElement("div"),
+    });
+
+    ui.renderDetailError(article, "boom", () => {}, "en");
+    const [, , , , , onRecenter] = (
+      renderDetailError as ReturnType<typeof vi.fn>
+    ).mock.calls[0];
+    (onRecenter as () => void)();
+
+    expect(historyBackSpy).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "pickPosition",
+      position: { lat: article.lat, lon: article.lon },
+    });
+    historyBackSpy.mockRestore();
   });
 
   it("showMapPicker resets the drawer before calling mapPicker.show", () => {
@@ -217,6 +280,7 @@ describe("createEffectUIAdapter", () => {
       mapPicker,
       browseMap: stubBrowseMap(),
       getState: () => makeState(),
+      dispatch: vi.fn(),
       itemHeight: 68,
       getScrollContainer: () => document.createElement("div"),
     });
@@ -235,6 +299,7 @@ describe("createEffectUIAdapter", () => {
       mapPicker: stubMapPicker(),
       browseMap: stubBrowseMap(),
       getState: () => makeState(),
+      dispatch: vi.fn(),
       itemHeight: 68,
       getScrollContainer: () => container,
     });
@@ -252,6 +317,7 @@ describe("createEffectUIAdapter", () => {
       mapPicker: stubMapPicker(),
       browseMap: stubBrowseMap(),
       getState: () => makeState(),
+      dispatch: vi.fn(),
       itemHeight: 68,
       getScrollContainer: () => container,
     });
@@ -272,6 +338,7 @@ describe("createEffectUIAdapter", () => {
       mapPicker: stubMapPicker(),
       browseMap: stubBrowseMap(),
       getState: () => makeState(),
+      dispatch: vi.fn(),
       itemHeight: 68,
       getScrollContainer: () => document.createElement("div"),
     });

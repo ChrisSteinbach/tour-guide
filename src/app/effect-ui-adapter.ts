@@ -10,7 +10,8 @@ import {
   renderDetailReady,
   renderDetailError,
 } from "./detail";
-import type { AppState } from "./state-machine";
+import type { AppState, Event } from "./state-machine";
+import type { NearbyArticle } from "./types";
 import type { RenderDeps } from "./effect-executor";
 import type { Renderer } from "./renderer";
 import type { MapPickerLifecycle } from "./map-picker-lifecycle";
@@ -22,6 +23,7 @@ export interface EffectUIAdapterDeps {
   mapPicker: MapPickerLifecycle;
   browseMap: BrowseMapLifecycle;
   getState: () => AppState;
+  dispatch: (event: Event) => void;
   itemHeight: number;
   getScrollContainer: () => HTMLElement;
 }
@@ -54,6 +56,22 @@ export function createEffectUIAdapter(deps: EffectUIAdapterDeps): RenderDeps {
       : undefined;
   };
 
+  // "Explore from here" in the detail view: pop the detail history entry so
+  // the browser Back button from the new browsing list behaves normally,
+  // then dispatch pickPosition to switch the session to the article's
+  // coordinates. history.back() fires popstate asynchronously; by the time
+  // it runs, the state machine is already in browsing/loadingTiles, so the
+  // resulting `back` dispatch is a no-op.
+  const recenterTo =
+    (article: NearbyArticle): (() => void) =>
+    () => {
+      history.back();
+      deps.dispatch({
+        type: "pickPosition",
+        position: { lat: article.lat, lon: article.lon },
+      });
+    };
+
   return {
     render: () => deps.renderer.renderPhase(),
     renderBrowsingList: () => {
@@ -70,7 +88,14 @@ export function createEffectUIAdapter(deps: EffectUIAdapterDeps): RenderDeps {
     },
     renderDetailReady: (article, summary) => {
       deps.browseMap.highlight(article.title);
-      renderDetailReady(deps.app, article, summary, goBack, pickedOrigin());
+      renderDetailReady(
+        deps.app,
+        article,
+        summary,
+        goBack,
+        recenterTo(article),
+        pickedOrigin(),
+      );
     },
     renderDetailError: (article, msg, retry, lang) => {
       deps.browseMap.highlight(article.title);
@@ -80,6 +105,7 @@ export function createEffectUIAdapter(deps: EffectUIAdapterDeps): RenderDeps {
         msg,
         goBack,
         retry,
+        recenterTo(article),
         lang,
         pickedOrigin(),
       );

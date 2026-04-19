@@ -54,6 +54,7 @@ export function renderDetailReady(
   article: NearbyArticle,
   summary: ArticleSummary,
   onBack: () => void,
+  onRecenter: () => void,
   origin?: UserPosition,
 ): void {
   container.textContent = "";
@@ -103,7 +104,13 @@ export function renderDetailReady(
   directions.rel = "noopener";
   directions.textContent = "Directions";
 
-  actions.append(link, directions);
+  const recenter = document.createElement("button");
+  recenter.type = "button";
+  recenter.className = "detail-recenter-button";
+  recenter.textContent = "Explore from here";
+  recenter.addEventListener("click", onRecenter);
+
+  actions.append(link, directions, recenter);
   content.appendChild(actions);
 
   container.append(header, content);
@@ -116,6 +123,7 @@ export function renderDetailError(
   message: string,
   onBack: () => void,
   onRetry: () => void,
+  onRecenter: () => void,
   lang: Lang = "en",
   origin?: UserPosition,
 ): void {
@@ -148,6 +156,12 @@ export function renderDetailError(
   directions.rel = "noopener";
   directions.textContent = "Directions";
 
-  body.append(msg, retry, fallback, directions);
+  const recenter = document.createElement("button");
+  recenter.type = "button";
+  recenter.className = "detail-recenter-button";
+  recenter.textContent = "Explore from here";
+  recenter.addEventListener("click", onRecenter);
+
+  body.append(msg, retry, fallback, directions, recenter);
   container.append(header, body);
 }
