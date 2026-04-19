@@ -609,24 +609,45 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
     }
 
     case "forwardToDetail": {
-      if (state.phase.phase !== "browsing") {
-        return { next: state, effects: [] };
-      }
-      const article = state.phase.articles.find((a) => a.title === event.title);
-      if (!article) return { next: state, effects: [] };
-      const { phase: _, ...context } = state.phase;
-      return {
-        next: {
-          ...state,
-          phase: {
-            phase: "detail",
-            ...context,
-            article,
-            savedFirstVisibleIndex: 0,
+      if (state.phase.phase === "browsing") {
+        const article = state.phase.articles.find(
+          (a) => a.title === event.title,
+        );
+        if (!article) return { next: state, effects: [] };
+        const { phase: _, ...context } = state.phase;
+        return {
+          next: {
+            ...state,
+            phase: {
+              phase: "detail",
+              ...context,
+              article,
+              savedFirstVisibleIndex: 0,
+            },
           },
-        },
-        effects: [{ type: "fetchSummary", article }],
-      };
+          effects: [{ type: "fetchSummary", article }],
+        };
+      }
+      // popstate between two detail states (e.g. Back after a pin-swap):
+      // swap the article in place without pushing history. Mirrors the
+      // selectArticle detail-branch, minus the pushHistory effect.
+      if (state.phase.phase === "detail") {
+        const article = state.phase.articles.find(
+          (a) => a.title === event.title,
+        );
+        if (!article) return { next: state, effects: [] };
+        if (article === state.phase.article) {
+          return { next: state, effects: [] };
+        }
+        return {
+          next: {
+            ...state,
+            phase: { ...state.phase, article },
+          },
+          effects: [{ type: "fetchSummary", article }],
+        };
+      }
+      return { next: state, effects: [] };
     }
 
     case "back": {

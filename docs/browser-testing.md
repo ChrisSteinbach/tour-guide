@@ -24,7 +24,8 @@ Tile data is pipeline-generated and not in git. Check that `data/tiles/` has con
 - Clicking an article → detail view with title, description, thumbnail, Wikipedia link
 - Clicking a map pin while browsing → detail view (same as list click)
 - Clicking a different map pin while detail is open → detail swaps and pin highlight moves
-- Back navigation returns to the article list
+- Back navigation returns to the article list (from list-opened detail)
+- Back navigation from a pin-swapped detail returns to the previous detail (not straight to the list)
 
 ### Interactions
 
@@ -48,7 +49,11 @@ Tile data is pipeline-generated and not in git. Check that `data/tiles/` has con
 
 ### Edge cases
 
-- Browser back/forward navigation between views
+- Browser back/forward navigation between views, including:
+  - list → detail → Back → list
+  - list → detail → Forward after Back → detail re-renders (regression: tour-guide-4ez1)
+  - list → detail A → pin tap → detail B → Back → detail A re-renders (regression: tour-guide-gawf)
+  - list → detail A → pin tap → detail B → Back → Forward → detail B re-renders
 - Only one marker at a time in map picker
 - Confirm button in map picker works at all zoom levels
 

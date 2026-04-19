@@ -1073,13 +1073,75 @@ describe("forwardToDetail event", () => {
     expect(effects).toEqual([]);
   });
 
-  it("no-ops when not browsing", () => {
+  it("no-ops when phase is not browsing or detail", () => {
     const state = makeState({ phase: { phase: "locating" } });
     const { next, effects } = transition(state, {
       type: "forwardToDetail",
       title: "Anything",
     });
     expect(next).toBe(state);
+    expect(effects).toEqual([]);
+  });
+
+  it("swaps article in place when already in detail (back after pin-swap)", () => {
+    const state = browsingState();
+    const browsing = expectBrowsing(state);
+    const first = browsing.articles[0];
+    const second = browsing.articles[1];
+    const { next: afterFirstDetail } = transition(state, {
+      type: "selectArticle",
+      article: first,
+      firstVisibleIndex: 3,
+    });
+    const { next: afterPinSwap } = transition(afterFirstDetail, {
+      type: "selectArticle",
+      article: second,
+      firstVisibleIndex: 0,
+    });
+    const swapped = expectDetail(afterPinSwap);
+    expect(swapped.article).toBe(second);
+
+    const { next, effects } = transition(afterPinSwap, {
+      type: "forwardToDetail",
+      title: first.title,
+    });
+    const detail = expectDetail(next);
+    expect(detail.article).toBe(first);
+    expect(detail.savedFirstVisibleIndex).toBe(3);
+    expect(effectTypes(effects)).toContain("fetchSummary");
+    expect(effectTypes(effects)).not.toContain("pushHistory");
+  });
+
+  it("no-ops in detail when the target title matches the current article", () => {
+    const state = browsingState();
+    const browsing = expectBrowsing(state);
+    const article = browsing.articles[0];
+    const { next: detailState } = transition(state, {
+      type: "selectArticle",
+      article,
+      firstVisibleIndex: 0,
+    });
+    const { next, effects } = transition(detailState, {
+      type: "forwardToDetail",
+      title: article.title,
+    });
+    expect(next).toBe(detailState);
+    expect(effects).toEqual([]);
+  });
+
+  it("no-ops in detail when the title is not in the article list", () => {
+    const state = browsingState();
+    const browsing = expectBrowsing(state);
+    const { next: detailState } = transition(state, {
+      type: "selectArticle",
+      article: browsing.articles[0],
+      firstVisibleIndex: 0,
+    });
+    const { next, effects } = transition(detailState, {
+      type: "forwardToDetail",
+      title: "Unknown Article",
+    });
+    expect(next).toBe(detailState);
     expect(effects).toEqual([]);
   });
 });
