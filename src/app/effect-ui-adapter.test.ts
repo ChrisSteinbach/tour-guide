@@ -3,6 +3,7 @@ import { createEffectUIAdapter } from "./effect-ui-adapter";
 import type { AppState } from "./state-machine";
 import type { Renderer } from "./renderer";
 import type { MapPickerLifecycle } from "./map-picker-lifecycle";
+import type { BrowseMapLifecycle } from "./browse-map-lifecycle";
 import type { NearbyArticle, UserPosition } from "./types";
 import type { ArticleSummary } from "./wiki-api";
 
@@ -55,6 +56,15 @@ function stubMapPicker(): MapPickerLifecycle {
   };
 }
 
+function stubBrowseMap(): BrowseMapLifecycle {
+  return {
+    update: vi.fn(),
+    highlight: vi.fn(),
+    resize: vi.fn(),
+    destroy: vi.fn(),
+  };
+}
+
 function makeState(overrides: Partial<AppState> = {}): AppState {
   return {
     phase: { phase: "welcome" },
@@ -91,6 +101,7 @@ describe("createEffectUIAdapter", () => {
       app,
       renderer,
       mapPicker,
+      browseMap: stubBrowseMap(),
       getState: () => state,
       itemHeight: 68,
       getScrollContainer: () => container,
@@ -120,6 +131,7 @@ describe("createEffectUIAdapter", () => {
       app,
       renderer,
       mapPicker: stubMapPicker(),
+      browseMap: stubBrowseMap(),
       getState: () => state,
       itemHeight: 68,
       getScrollContainer: () => document.createElement("div"),
@@ -143,6 +155,7 @@ describe("createEffectUIAdapter", () => {
       app,
       renderer: stubRenderer(),
       mapPicker: stubMapPicker(),
+      browseMap: stubBrowseMap(),
       getState: () => state,
       itemHeight: 68,
       getScrollContainer: () => document.createElement("div"),
@@ -167,6 +180,7 @@ describe("createEffectUIAdapter", () => {
       app,
       renderer: stubRenderer(),
       mapPicker: stubMapPicker(),
+      browseMap: stubBrowseMap(),
       getState: () => state,
       itemHeight: 68,
       getScrollContainer: () => document.createElement("div"),
@@ -201,6 +215,7 @@ describe("createEffectUIAdapter", () => {
       app: document.createElement("div"),
       renderer,
       mapPicker,
+      browseMap: stubBrowseMap(),
       getState: () => makeState(),
       itemHeight: 68,
       getScrollContainer: () => document.createElement("div"),
@@ -218,6 +233,7 @@ describe("createEffectUIAdapter", () => {
       app: document.createElement("div"),
       renderer: stubRenderer(),
       mapPicker: stubMapPicker(),
+      browseMap: stubBrowseMap(),
       getState: () => makeState(),
       itemHeight: 68,
       getScrollContainer: () => container,
@@ -234,6 +250,7 @@ describe("createEffectUIAdapter", () => {
       app: document.createElement("div"),
       renderer: stubRenderer(),
       mapPicker: stubMapPicker(),
+      browseMap: stubBrowseMap(),
       getState: () => makeState(),
       itemHeight: 68,
       getScrollContainer: () => container,
@@ -253,6 +270,7 @@ describe("createEffectUIAdapter", () => {
       app,
       renderer: stubRenderer(),
       mapPicker: stubMapPicker(),
+      browseMap: stubBrowseMap(),
       getState: () => makeState(),
       itemHeight: 68,
       getScrollContainer: () => document.createElement("div"),

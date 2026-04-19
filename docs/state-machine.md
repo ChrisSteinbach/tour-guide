@@ -59,30 +59,31 @@ interface AppState {
 
 All inputs to the machine are modeled as a single `Event` union:
 
-| Event                  | Payload                         | Source                                             |
-| ---------------------- | ------------------------------- | -------------------------------------------------- |
-| `start`                | `hasGeolocation`                | User clicks "Use my location" or session restore   |
-| `pickPosition`         | `position`                      | User picks a location on the map                   |
-| `position`             | `pos`                           | GPS `watchPosition` callback                       |
-| `gpsError`             | `error`                         | GPS error callback                                 |
-| `tileLoadStarted`      | `id`                            | Tile fetch initiated                               |
-| `tileIndexLoaded`      | `index`, `lang`, `gen`          | Tile index fetch completed                         |
-| `tileLoaded`           | `id`, `tileQuery`, `gen`        | Individual tile fetch completed                    |
-| `tileLoadFailed`       | `id`, `gen`                     | Individual tile fetch failed                       |
-| `downloadProgress`     | `fraction`, `gen`               | Tile index download progress                       |
-| `langChanged`          | `lang`                          | User selects a different language                  |
-| `selectArticle`        | `article`, `firstVisibleIndex`  | User taps an article in the list                   |
-| `back`                 | —                               | Browser popstate or back button                    |
-| `scrollPause`          | —                               | User scrolls the article list                      |
-| `togglePause`          | —                               | User taps pause/resume button                      |
-| `useGps`               | —                               | User taps "Use GPS" button                         |
-| `expandInfiniteScroll` | —                               | Scroll sentinel enters viewport                    |
-| `showMapPicker`        | —                               | User taps "Pick location" button                   |
-| `queryResult`          | `articles`, `queryPos`, `count` | Nearest-neighbor query completed                   |
-| `noTilesNearby`        | —                               | Effect executor: no tiles exist near user position |
-| `swUpdateAvailable`    | —                               | Service worker controller change                   |
-| `showAbout`            | —                               | User taps the About link                           |
-| `closeAbout`           | —                               | User dismisses the About dialog                    |
+| Event                  | Payload                         | Source                                              |
+| ---------------------- | ------------------------------- | --------------------------------------------------- |
+| `start`                | `hasGeolocation`                | User clicks "Use my location" or session restore    |
+| `pickPosition`         | `position`                      | User picks a location on the map                    |
+| `position`             | `pos`                           | GPS `watchPosition` callback                        |
+| `gpsError`             | `error`                         | GPS error callback                                  |
+| `tileLoadStarted`      | `id`                            | Tile fetch initiated                                |
+| `tileIndexLoaded`      | `index`, `lang`, `gen`          | Tile index fetch completed                          |
+| `tileLoaded`           | `id`, `tileQuery`, `gen`        | Individual tile fetch completed                     |
+| `tileLoadFailed`       | `id`, `gen`                     | Individual tile fetch failed                        |
+| `downloadProgress`     | `fraction`, `gen`               | Tile index download progress                        |
+| `langChanged`          | `lang`                          | User selects a different language                   |
+| `selectArticle`        | `article`, `firstVisibleIndex`  | User taps an article in the list or a map pin       |
+| `back`                 | —                               | Browser popstate landing on a non-detail state      |
+| `forwardToDetail`      | `title`                         | Browser popstate landing on a `view:'detail'` state |
+| `scrollPause`          | —                               | User scrolls the article list                       |
+| `togglePause`          | —                               | User taps pause/resume button                       |
+| `useGps`               | —                               | User taps "Use GPS" button                          |
+| `expandInfiniteScroll` | —                               | Scroll sentinel enters viewport                     |
+| `showMapPicker`        | —                               | User taps "Pick location" button                    |
+| `queryResult`          | `articles`, `queryPos`, `count` | Nearest-neighbor query completed                    |
+| `noTilesNearby`        | —                               | Effect executor: no tiles exist near user position  |
+| `swUpdateAvailable`    | —                               | Service worker controller change                    |
+| `showAbout`            | —                               | User taps the About link                            |
+| `closeAbout`           | —                               | User dismisses the About dialog                     |
 
 ### Generation tracking
 
@@ -214,6 +215,9 @@ The `start` event branches based on two conditions — whether tile data is read
 | any                 | `showMapPicker`        | —                           | `mapPicker`                  | pushHistory, showMapPicker                                          |
 | `mapPicker`         | `back`                 | —                           | (returnPhase)                | renderBrowsingList or render                                        |
 | `browsing`          | `selectArticle`        | —                           | `detail`                     | pushHistory, fetchSummary                                           |
+| `detail`            | `selectArticle`        | pin tap swaps target        | `detail`                     | pushHistory, fetchSummary                                           |
+| `browsing`          | `forwardToDetail`      | title in article list       | `detail`                     | fetchSummary                                                        |
+| `detail`            | `forwardToDetail`      | title differs from current  | `detail`                     | fetchSummary                                                        |
 | `browsing`          | `queryResult`          | articles changed, infinite  | `browsing`                   | renderBrowsingList                                                  |
 | `browsing`          | `queryResult`          | articles changed, viewport  | `browsing`                   | renderBrowsingList, fetchListSummaries                              |
 | `browsing`          | `queryResult`          | same articles               | `browsing`                   | updateDistances                                                     |

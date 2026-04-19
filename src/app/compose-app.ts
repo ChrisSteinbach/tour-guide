@@ -230,6 +230,7 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
       app,
       renderer,
       mapPicker,
+      browseMap,
       getState,
       itemHeight,
       getScrollContainer,
