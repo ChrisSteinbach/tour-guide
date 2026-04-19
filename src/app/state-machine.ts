@@ -566,28 +566,46 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
     // ── Detail view (tour-guide-2cd) ─────────────────────────
 
     case "selectArticle": {
-      if (state.phase.phase !== "browsing") {
-        return { next: state, effects: [] };
+      if (state.phase.phase === "browsing") {
+        const { phase: _, ...context } = state.phase;
+        return {
+          next: {
+            ...state,
+            phase: {
+              phase: "detail",
+              ...context,
+              article: event.article,
+              savedFirstVisibleIndex: event.firstVisibleIndex,
+            },
+          },
+          effects: [
+            {
+              type: "pushHistory",
+              state: { view: "detail", title: event.article.title },
+            },
+            { type: "fetchSummary", article: event.article },
+          ],
+        };
       }
-      const { phase: _, ...context } = state.phase;
-      return {
-        next: {
-          ...state,
-          phase: {
-            phase: "detail",
-            ...context,
-            article: event.article,
-            savedFirstVisibleIndex: event.firstVisibleIndex,
+      // Allow swapping the detail target directly (e.g. clicking a different
+      // pin while detail is open) — keep the original savedFirstVisibleIndex
+      // so back still restores the list position from the originating click.
+      if (state.phase.phase === "detail") {
+        return {
+          next: {
+            ...state,
+            phase: { ...state.phase, article: event.article },
           },
-        },
-        effects: [
-          {
-            type: "pushHistory",
-            state: { view: "detail", title: event.article.title },
-          },
-          { type: "fetchSummary", article: event.article },
-        ],
-      };
+          effects: [
+            {
+              type: "pushHistory",
+              state: { view: "detail", title: event.article.title },
+            },
+            { type: "fetchSummary", article: event.article },
+          ],
+        };
+      }
+      return { next: state, effects: [] };
     }
 
     case "forwardToDetail": {

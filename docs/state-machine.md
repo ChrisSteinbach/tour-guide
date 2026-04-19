@@ -71,7 +71,7 @@ All inputs to the machine are modeled as a single `Event` union:
 | `tileLoadFailed`       | `id`, `gen`                     | Individual tile fetch failed                       |
 | `downloadProgress`     | `fraction`, `gen`               | Tile index download progress                       |
 | `langChanged`          | `lang`                          | User selects a different language                  |
-| `selectArticle`        | `article`, `firstVisibleIndex`  | User taps an article in the list                   |
+| `selectArticle`        | `article`, `firstVisibleIndex`  | User taps an article in the list or a map pin      |
 | `back`                 | —                               | Browser popstate or back button                    |
 | `scrollPause`          | —                               | User scrolls the article list                      |
 | `togglePause`          | —                               | User taps pause/resume button                      |
@@ -214,6 +214,7 @@ The `start` event branches based on two conditions — whether tile data is read
 | any                 | `showMapPicker`        | —                           | `mapPicker`                  | pushHistory, showMapPicker                                          |
 | `mapPicker`         | `back`                 | —                           | (returnPhase)                | renderBrowsingList or render                                        |
 | `browsing`          | `selectArticle`        | —                           | `detail`                     | pushHistory, fetchSummary                                           |
+| `detail`            | `selectArticle`        | pin tap swaps target        | `detail`                     | pushHistory, fetchSummary                                           |
 | `browsing`          | `queryResult`          | articles changed, infinite  | `browsing`                   | renderBrowsingList                                                  |
 | `browsing`          | `queryResult`          | articles changed, viewport  | `browsing`                   | renderBrowsingList, fetchListSummaries                              |
 | `browsing`          | `queryResult`          | same articles               | `browsing`                   | updateDistances                                                     |

@@ -14,11 +14,13 @@ import type { AppState } from "./state-machine";
 import type { RenderDeps } from "./effect-executor";
 import type { Renderer } from "./renderer";
 import type { MapPickerLifecycle } from "./map-picker-lifecycle";
+import type { BrowseMapLifecycle } from "./browse-map-lifecycle";
 
 export interface EffectUIAdapterDeps {
   app: HTMLElement;
   renderer: Renderer;
   mapPicker: MapPickerLifecycle;
+  browseMap: BrowseMapLifecycle;
   getState: () => AppState;
   itemHeight: number;
   getScrollContainer: () => HTMLElement;
@@ -54,17 +56,24 @@ export function createEffectUIAdapter(deps: EffectUIAdapterDeps): RenderDeps {
 
   return {
     render: () => deps.renderer.renderPhase(),
-    renderBrowsingList: () => deps.renderer.renderBrowsingList(),
+    renderBrowsingList: () => {
+      deps.browseMap.highlight(null);
+      deps.renderer.renderBrowsingList();
+    },
     renderBrowsingHeader: () => deps.renderer.renderBrowsingHeader(),
     updateDistances: (articles) => updateNearbyDistances(deps.app, articles),
     showAbout,
     hideAbout,
-    renderDetailLoading: (article) =>
-      renderDetailLoading(deps.app, article, goBack),
+    renderDetailLoading: (article) => {
+      deps.browseMap.highlight(article.title);
+      renderDetailLoading(deps.app, article, goBack);
+    },
     renderDetailReady: (article, summary) => {
+      deps.browseMap.highlight(article.title);
       renderDetailReady(deps.app, article, summary, goBack, pickedOrigin());
     },
     renderDetailError: (article, msg, retry, lang) => {
+      deps.browseMap.highlight(article.title);
       renderDetailError(
         deps.app,
         article,

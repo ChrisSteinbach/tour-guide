@@ -22,6 +22,8 @@ Tile data is pipeline-generated and not in git. Check that `data/tiles/` has con
 - "Pick a spot on the map" → map picker → click → confirm → article list appears
 - "Use my location" → article list appears (requires geolocation permission)
 - Clicking an article → detail view with title, description, thumbnail, Wikipedia link
+- Clicking a map pin while browsing → detail view (same as list click)
+- Clicking a different map pin while detail is open → detail swaps and pin highlight moves
 - Back navigation returns to the article list
 
 ### Interactions
