@@ -9,7 +9,13 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { deserializeBinary } from "../geometry/serialization.js";
-import { collectTileArticles, buildArticleIndex } from "./build.js";
+import {
+  collectTileArticles,
+  buildArticleIndex,
+  parseArgs,
+  readArticles,
+  buildTile,
+} from "./build.js";
 import type { TileIndex } from "../tiles.js";
 import type { Article } from "./extract-dump.js";
 
@@ -115,6 +121,143 @@ describe("collectTileArticles", () => {
     );
     expect(native).toHaveLength(2);
     expect(all).toHaveLength(2);
+  });
+});
+
+// ---------- parseArgs ----------
+
+describe("parseArgs", () => {
+  it("returns defaults when no flags are given", () => {
+    const { limit, bounds, lang } = parseArgs([]);
+    expect(limit).toBe(Infinity);
+    expect(bounds).toBeNull();
+    expect(lang).toBe("en");
+  });
+
+  it("parses --limit as a positive integer", () => {
+    expect(parseArgs(["--limit=500"]).limit).toBe(500);
+  });
+
+  it("rejects --limit=0 and negative values", () => {
+    expect(() => parseArgs(["--limit=0"])).toThrow(/Invalid --limit/);
+    expect(() => parseArgs(["--limit=-1"])).toThrow(/Invalid --limit/);
+  });
+
+  it("rejects non-numeric --limit", () => {
+    expect(() => parseArgs(["--limit=abc"])).toThrow(/Invalid --limit/);
+  });
+
+  it("parses --bounds as west,south,east,north", () => {
+    const { bounds } = parseArgs(["--bounds=1,2,3,4"]);
+    expect(bounds).toEqual({ west: 1, south: 2, east: 3, north: 4 });
+  });
+
+  it("accepts a supported language", () => {
+    expect(parseArgs(["--lang=de"]).lang).toBe("de");
+  });
+
+  it("rejects an unsupported language", () => {
+    expect(() => parseArgs(["--lang=xx"])).toThrow(/Unsupported language/);
+  });
+
+  it("ignores unknown flags rather than failing", () => {
+    // Forward-compatibility: unrecognized flags shouldn't break the pipeline.
+    const { limit, lang } = parseArgs(["--unknown=foo", "--limit=10"]);
+    expect(limit).toBe(10);
+    expect(lang).toBe("en");
+  });
+});
+
+// ---------- readArticles ----------
+
+describe("readArticles", () => {
+  const tmp = join(tmpdir(), "build-readArticles-" + Date.now());
+
+  beforeAll(() => mkdirSync(tmp, { recursive: true }));
+  afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+
+  function writeNdjson(name: string, articles: Article[]): string {
+    const path = join(tmp, name);
+    writeFileSync(path, articles.map((a) => JSON.stringify(a)).join("\n"));
+    return path;
+  }
+
+  it("reads all articles when limit is Infinity and bounds are null", async () => {
+    const path = writeNdjson("all.ndjson", [
+      { title: "A", lat: 1, lon: 1 },
+      { title: "B", lat: 2, lon: 2 },
+      { title: "C", lat: 3, lon: 3 },
+    ]);
+    const articles = await readArticles(path, Infinity, null);
+    expect(articles.map((a) => a.title)).toEqual(["A", "B", "C"]);
+  });
+
+  it("stops reading at the limit", async () => {
+    const path = writeNdjson("limited.ndjson", [
+      { title: "A", lat: 1, lon: 1 },
+      { title: "B", lat: 2, lon: 2 },
+      { title: "C", lat: 3, lon: 3 },
+    ]);
+    const articles = await readArticles(path, 2, null);
+    expect(articles.map((a) => a.title)).toEqual(["A", "B"]);
+  });
+
+  it("filters articles outside the bounds", async () => {
+    const path = writeNdjson("bounded.ndjson", [
+      { title: "inside", lat: 1, lon: 1 },
+      { title: "outside-north", lat: 50, lon: 1 },
+      { title: "outside-east", lat: 1, lon: 50 },
+    ]);
+    const articles = await readArticles(path, Infinity, {
+      west: 0,
+      south: 0,
+      east: 5,
+      north: 5,
+    });
+    expect(articles.map((a) => a.title)).toEqual(["inside"]);
+  });
+
+  it("skips blank lines without crashing", async () => {
+    const path = join(tmp, "blanks.ndjson");
+    writeFileSync(
+      path,
+      [
+        JSON.stringify({ title: "A", lat: 1, lon: 1 }),
+        "",
+        "  ",
+        JSON.stringify({ title: "B", lat: 2, lon: 2 }),
+      ].join("\n"),
+    );
+    const articles = await readArticles(path, Infinity, null);
+    expect(articles.map((a) => a.title)).toEqual(["A", "B"]);
+  });
+});
+
+// ---------- buildTile ----------
+
+describe("buildTile", () => {
+  it("returns a non-empty buffer for a valid set of well-spread articles", () => {
+    const articles: Article[] = [
+      { title: "NE", lat: 14, lon: 4 },
+      { title: "NW", lat: 14, lon: 1 },
+      { title: "SE", lat: 11, lon: 4 },
+      { title: "SW", lat: 11, lon: 1 },
+      { title: "C", lat: 12.5, lon: 2.5 },
+    ];
+    const buf = buildTile(articles);
+    expect(buf).not.toBeNull();
+    expect(buf!.byteLength).toBeGreaterThan(0);
+  });
+
+  it("returns null when articles are coplanar (cannot form a 3D hull)", () => {
+    // All on the equator on the same longitude → degenerate (collinear in 3D).
+    const collinear: Article[] = [
+      { title: "A", lat: 0, lon: 0 },
+      { title: "B", lat: 0, lon: 0.1 },
+      { title: "C", lat: 0, lon: 0.2 },
+      { title: "D", lat: 0, lon: 0.3 },
+    ];
+    expect(buildTile(collinear)).toBeNull();
   });
 });
 
