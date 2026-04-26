@@ -32,7 +32,7 @@ import type { TileEntry, TileIndex } from "../tiles.js";
 
 // ---------- CLI arg parsing ----------
 
-function parseArgs(): {
+export function parseArgs(argv: readonly string[]): {
   limit: number;
   bounds: Bounds | null;
   lang: Lang;
@@ -41,7 +41,7 @@ function parseArgs(): {
   let bounds: Bounds | null = null;
   let lang: Lang = DEFAULT_LANG;
 
-  for (const arg of process.argv.slice(2)) {
+  for (const arg of argv) {
     if (arg.startsWith("--limit=")) {
       limit = parseInt(arg.slice("--limit=".length), 10);
       if (!Number.isFinite(limit) || limit < 1) {
@@ -65,7 +65,7 @@ function parseArgs(): {
 
 // ---------- NDJSON reader ----------
 
-async function readArticles(
+export async function readArticles(
   inputPath: string,
   limit: number,
   bounds: Bounds | null,
@@ -172,7 +172,7 @@ export function collectTileArticles(
 }
 
 /** Build a single tile's triangulation and return the binary buffer, or null if hull fails. */
-function buildTile(tileArticles: Article[]): ArrayBuffer | null {
+export function buildTile(tileArticles: Article[]): ArrayBuffer | null {
   const points = tileArticles.map((a) =>
     toCartesian({ lat: a.lat, lon: a.lon }),
   );
@@ -300,7 +300,7 @@ async function buildTiled(articles: Article[], lang: Lang): Promise<void> {
 }
 
 async function main() {
-  const { limit, bounds, lang } = parseArgs();
+  const { limit, bounds, lang } = parseArgs(process.argv.slice(2));
 
   console.log("tour-guide build pipeline\n");
   console.log(`  --lang=${lang}`);
