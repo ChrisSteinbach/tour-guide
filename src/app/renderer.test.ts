@@ -536,3 +536,347 @@ describe("renderer renderPhase teardown prefix", () => {
     expect(drawerClose).toHaveBeenCalledTimes(3);
   });
 });
+
+// ── Viewport-list dispatch wiring ───────────────────────────
+
+describe("renderer renderBrowsingList viewport mode dispatch", () => {
+  it("dispatches selectArticle with firstVisibleIndex derived from scrollTop", () => {
+    // Clicking the article must hand the state machine the user's current
+    // scroll position so that, on back, the list scrolls back to where
+    // they were. The renderer computes firstVisibleIndex by dividing
+    // scrollTop by itemHeight — e.g., scrollTop=204 / itemHeight=68 → 3.
+    const dispatch = vi.fn();
+    const scrollContainer = document.createElement("div");
+    Object.defineProperty(scrollContainer, "scrollTop", {
+      value: 204,
+      configurable: true,
+    });
+    const deps = makeDeps({
+      dispatch,
+      getState: vi.fn(() => tiledBrowsingState({}, { scrollMode: "viewport" })),
+      getScrollContainer: vi.fn(() => scrollContainer),
+      itemHeight: 68,
+    });
+
+    const renderer = createRenderer(deps);
+    renderer.renderBrowsingList();
+
+    const item = deps.app.querySelector<HTMLElement>(".nearby-item");
+    expect(item).not.toBeNull();
+    item!.click();
+
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "selectArticle",
+      article,
+      firstVisibleIndex: 3,
+    });
+  });
+});
+
+// ── Scroll-pause setup ──────────────────────────────────────
+
+describe("renderer scroll-pause detector setup", () => {
+  /** A scrollable container: scrollHeight > clientHeight is required so the
+   *  scroll-pause detector attaches its container listener (see
+   *  scroll-pause-detector.ts). scrollTop starts at 0 and is writable. */
+  function makeScrollContainer(): HTMLDivElement {
+    const el = document.createElement("div");
+    Object.defineProperty(el, "scrollTop", {
+      value: 0,
+      configurable: true,
+      writable: true,
+    });
+    Object.defineProperty(el, "scrollHeight", {
+      value: 1000,
+      configurable: true,
+    });
+    Object.defineProperty(el, "clientHeight", {
+      value: 200,
+      configurable: true,
+    });
+    return el;
+  }
+
+  function viewportGpsState() {
+    return tiledBrowsingState(
+      { positionSource: null },
+      { scrollMode: "viewport", paused: false },
+    );
+  }
+
+  it("dispatches scrollPause when the user scrolls past the threshold (GPS, unpaused)", () => {
+    // The detector listens on the scroll container and fires once scrollTop
+    // exceeds scrollPauseThreshold. Renderer must wire it up only when
+    // positionSource is GPS (positionSource !== "picked") and the browse
+    // phase is not paused.
+    const dispatch = vi.fn();
+    const scrollContainer = makeScrollContainer();
+    const deps = makeDeps({
+      dispatch,
+      getState: vi.fn(() => viewportGpsState()),
+      getScrollContainer: vi.fn(() => scrollContainer),
+      scrollPauseThreshold: 50,
+    });
+
+    const renderer = createRenderer(deps);
+    renderer.renderBrowsingList();
+
+    (scrollContainer as unknown as { scrollTop: number }).scrollTop = 100;
+    scrollContainer.dispatchEvent(new Event("scroll"));
+
+    expect(dispatch).toHaveBeenCalledWith({ type: "scrollPause" });
+  });
+
+  it("does not arm the detector when position source is picked", () => {
+    // Picked locations are static — no GPS drift, no scroll-pause needed.
+    const dispatch = vi.fn();
+    const scrollContainer = makeScrollContainer();
+    const deps = makeDeps({
+      dispatch,
+      getState: vi.fn(() =>
+        tiledBrowsingState(
+          { positionSource: "picked" },
+          { scrollMode: "viewport", paused: false },
+        ),
+      ),
+      getScrollContainer: vi.fn(() => scrollContainer),
+      scrollPauseThreshold: 50,
+    });
+
+    const renderer = createRenderer(deps);
+    renderer.renderBrowsingList();
+
+    (scrollContainer as unknown as { scrollTop: number }).scrollTop = 100;
+    scrollContainer.dispatchEvent(new Event("scroll"));
+
+    expect(dispatch).not.toHaveBeenCalledWith({ type: "scrollPause" });
+  });
+
+  it("does not arm the detector when the browse phase is already paused", () => {
+    const dispatch = vi.fn();
+    const scrollContainer = makeScrollContainer();
+    const deps = makeDeps({
+      dispatch,
+      getState: vi.fn(() =>
+        tiledBrowsingState(
+          { positionSource: null },
+          { scrollMode: "viewport", paused: true, pauseReason: "manual" },
+        ),
+      ),
+      getScrollContainer: vi.fn(() => scrollContainer),
+      scrollPauseThreshold: 50,
+    });
+
+    const renderer = createRenderer(deps);
+    renderer.renderBrowsingList();
+
+    (scrollContainer as unknown as { scrollTop: number }).scrollTop = 100;
+    scrollContainer.dispatchEvent(new Event("scroll"));
+
+    expect(dispatch).not.toHaveBeenCalledWith({ type: "scrollPause" });
+  });
+});
+
+// ── Infinite-scroll active branch ───────────────────────────
+
+describe("renderer renderInfiniteScrollDOM active branch", () => {
+  it("updates browseMap with the articles in the virtual list's visible range", () => {
+    // When an active infinite scroll re-renders, the renderer feeds
+    // browseMap only the *visible* slice (range.start..range.end) so
+    // map markers track what the user can see, not the whole loaded set.
+    const a0 = { ...article, title: "A0" };
+    const a1 = { ...article, title: "A1" };
+    const a2 = { ...article, title: "A2" };
+    const articles = [a0, a1, a2];
+
+    const update = vi.fn();
+    const browseMap = stubBrowseMap({ update });
+    const container = document.createElement("div");
+    container.className = "virtual-scroll-container";
+
+    const infiniteScroll = stubInfiniteScroll({
+      isActive: vi.fn(() => true),
+      virtualList: vi.fn(() => ({
+        update: vi.fn(),
+        refresh: vi.fn(),
+        visibleRange: () => ({ start: 1, end: 3, overscan: 0 }),
+        totalCount: () => 3,
+        destroy: vi.fn(),
+      })),
+    });
+
+    const deps = makeDeps({
+      getState: vi.fn(() => tiledBrowsingState({}, { articles })),
+      browseMap,
+      infiniteScroll,
+      getArticleByIndex: vi.fn((i: number) => articles[i]),
+    });
+    deps.app.appendChild(container);
+
+    const renderer = createRenderer(deps);
+    renderer.renderBrowsingList();
+
+    expect(update).toHaveBeenCalledWith(pos, [a1, a2]);
+  });
+});
+
+// ── App-update banner ───────────────────────────────────────
+
+describe("renderer renderAppUpdateBanner", () => {
+  afterEach(() => {
+    document.body
+      .querySelectorAll("#app-update-banner")
+      .forEach((el) => el.remove());
+  });
+
+  it("appends a single banner with a Reload button", () => {
+    const renderer = createRenderer(makeDeps());
+
+    renderer.renderAppUpdateBanner();
+
+    const banners = document.querySelectorAll("#app-update-banner");
+    expect(banners).toHaveLength(1);
+    expect(banners[0].querySelector(".update-banner-accept")?.textContent).toBe(
+      "Reload",
+    );
+  });
+
+  it("is idempotent — calling twice still leaves a single banner", () => {
+    const renderer = createRenderer(makeDeps());
+
+    renderer.renderAppUpdateBanner();
+    renderer.renderAppUpdateBanner();
+
+    expect(document.querySelectorAll("#app-update-banner")).toHaveLength(1);
+  });
+});
+
+// ── resetDrawerForMapPicker ─────────────────────────────────
+
+describe("renderer resetDrawerForMapPicker", () => {
+  it("destroys map picker, browse map, hides the drawer panel, and closes the drawer", () => {
+    const mapPickerDestroy = vi.fn();
+    const browseMapDestroy = vi.fn();
+    const drawerClose = vi.fn();
+    const drawerPanel = document.createElement("div");
+    drawerPanel.removeAttribute("hidden");
+    const deps = makeDeps({
+      mapPicker: { show: vi.fn(), destroy: mapPickerDestroy },
+      browseMap: stubBrowseMap({ destroy: browseMapDestroy }),
+      drawer: { ...stubDrawer(), close: drawerClose },
+      drawerPanel,
+    });
+
+    const renderer = createRenderer(deps);
+    renderer.resetDrawerForMapPicker();
+
+    expect(mapPickerDestroy).toHaveBeenCalled();
+    expect(browseMapDestroy).toHaveBeenCalled();
+    expect(drawerPanel.hasAttribute("hidden")).toBe(true);
+    expect(drawerClose).toHaveBeenCalled();
+  });
+
+  it("forces drawerInitialized=false so the next browsing render re-runs the open/close branch", () => {
+    // After resetDrawerForMapPicker, returning to browsing must re-execute
+    // the desktop-vs-mobile drawer choice. We assert that by counting the
+    // number of times drawer.open/close fires across the cycle.
+    const drawerClose = vi.fn();
+    const drawer: MapDrawer = { ...stubDrawer(), close: drawerClose };
+    const deps = makeDeps({
+      drawer,
+      desktopQuery: stubDesktopQuery(false),
+    });
+
+    const renderer = createRenderer(deps);
+    renderer.renderBrowsingList(); // drawer.close called once
+    expect(drawerClose).toHaveBeenCalledTimes(1);
+
+    renderer.resetDrawerForMapPicker(); // unconditional close — call 2
+    expect(drawerClose).toHaveBeenCalledTimes(2);
+
+    renderer.renderBrowsingList(); // re-init branch fires close — call 3
+    expect(drawerClose).toHaveBeenCalledTimes(3);
+  });
+});
+
+// ── renderPhase: per-phase delegation ───────────────────────
+
+describe("renderer renderPhase delegates to status renderers", () => {
+  it("renders the welcome screen for the welcome phase", () => {
+    const deps = makeDeps({
+      getState: vi.fn(() => ({
+        ...tiledBrowsingState(),
+        phase: { phase: "welcome" as const },
+      })),
+    });
+    const renderer = createRenderer(deps);
+    renderer.renderPhase();
+
+    // renderWelcome appends a "Use my location" button.
+    const startBtn = Array.from(
+      deps.app.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((b) => /use my location/i.test(b.textContent ?? ""));
+    expect(startBtn).toBeDefined();
+  });
+
+  it("renders an error message for the error phase", () => {
+    const deps = makeDeps({
+      getState: vi.fn(() => ({
+        ...tiledBrowsingState(),
+        phase: {
+          phase: "error" as const,
+          error: {
+            code: "PERMISSION_DENIED",
+            message: "Permission denied",
+          } as const,
+        },
+      })),
+    });
+    const renderer = createRenderer(deps);
+    renderer.renderPhase();
+
+    expect(deps.app.querySelector(".status-screen")).not.toBeNull();
+  });
+
+  it("renders the loading-progress screen for the downloading phase", () => {
+    const deps = makeDeps({
+      getState: vi.fn(() => ({
+        ...tiledBrowsingState(),
+        phase: { phase: "downloading" as const, progress: 0.5 },
+      })),
+    });
+    const renderer = createRenderer(deps);
+    renderer.renderPhase();
+
+    const fill = deps.app.querySelector<HTMLElement>(".progress-fill");
+    expect(fill?.style.width).toBe("50%");
+  });
+});
+
+// ── Desktop drawer initialization ───────────────────────────
+
+describe("renderer renderBrowsingList desktop-first render", () => {
+  it("opens the drawer and schedules a browseMap.resize on desktop", async () => {
+    // On desktop (matches=true) the drawer is open by default. The drawer
+    // panel was hidden, so no CSS transitionend fires to trigger resize —
+    // the renderer must schedule resize via rAF instead.
+    const open = vi.fn();
+    const drawer: MapDrawer = { ...stubDrawer(), open };
+    const resize = vi.fn();
+    const browseMap = stubBrowseMap({ resize });
+    const deps = makeDeps({
+      drawer,
+      browseMap,
+      desktopQuery: stubDesktopQuery(true),
+    });
+
+    const renderer = createRenderer(deps);
+    renderer.renderBrowsingList();
+
+    expect(open).toHaveBeenCalled();
+
+    // Wait for the rAF to flush.
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    expect(resize).toHaveBeenCalled();
+  });
+});
