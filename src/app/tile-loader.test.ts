@@ -18,12 +18,12 @@ import {
   buildTriangulation,
   serialize,
   deserializeBinary,
-} from "../geometry";
-import type { ArticleMeta, FlatDelaunay } from "../geometry";
+} from "spherical-delaunay";
+import type { ArticleMeta, FlatDelaunay } from "spherical-delaunay";
 
-vi.mock("../geometry", async (importOriginal) => {
+vi.mock("spherical-delaunay", async (importOriginal) => {
   // eslint-disable-next-line @typescript-eslint/consistent-type-imports
-  const actual = await importOriginal<typeof import("../geometry")>();
+  const actual = await importOriginal<typeof import("spherical-delaunay")>();
   return { ...actual, deserializeBinary: vi.fn() };
 });
 

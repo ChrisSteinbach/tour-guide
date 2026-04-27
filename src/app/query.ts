@@ -1,8 +1,12 @@
 // Client-side nearest-neighbor query module
 // Uses flat typed arrays to avoid GC pressure from millions of small objects.
 
-import type { ArticleMeta, FlatDelaunay, TriangulationFile } from "../geometry";
-import { toCartesian } from "../geometry";
+import type {
+  ArticleMeta,
+  FlatDelaunay,
+  TriangulationFile,
+} from "spherical-delaunay";
+import { toCartesian } from "spherical-delaunay";
 
 const EARTH_RADIUS_M = 6_371_000;
 const RAD_TO_DEG = 180 / Math.PI;

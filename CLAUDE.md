@@ -21,7 +21,7 @@ npm run pipeline      # Run offline build pipeline (tsx src/pipeline/build.ts)
 npm run extract       # Extract geotagged articles from Wikipedia dumps → data/articles-{lang}.json (requires ~6 GB heap)
 ```
 
-Run a single test file: `npx vitest run src/geometry/index.test.ts`
+Run a single test file: `npx vitest run lib/spherical-delaunay/src/index.test.ts`
 
 Requires **Node.js 18+** (ES2022 target; tested with Node 20 and 22).
 
@@ -31,9 +31,9 @@ Husky runs lint-staged on every commit, auto-fixing ESLint and Prettier on stage
 
 ## Architecture
 
-Three directories under `src/`, plus two shared files:
+Two directories under `src/` plus one workspace package, with two shared files:
 
-- **`src/geometry/`** — Spherical math primitives (coordinate conversion, great-circle distance, Delaunay triangulation).
+- **`lib/spherical-delaunay/`** — Standalone npm workspace package: spherical math primitives (coordinate conversion, great-circle distance, Delaunay triangulation). Imported as `spherical-delaunay`.
 - **`src/pipeline/`** — Offline build: extracts Wikipedia coordinates, computes triangulation, outputs static tiles. Run via `tsx`.
 - **`src/app/`** — PWA frontend: loads pre-computed data, performs nearest-neighbor queries. Vite root (`root: "src/app"`).
 - **`src/lang.ts`** — Supported language definitions, shared by all modules.

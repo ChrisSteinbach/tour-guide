@@ -2,7 +2,7 @@ dist/
 data/
 node_modules/
 coverage/
-src/geometry/vendor/
+lib/spherical-delaunay/src/vendor/
 .beads/
 .claude/
 *.bin

@@ -217,5 +217,5 @@ This project includes vendored code from
 [robust-predicates](https://github.com/mourner/robust-predicates) by Vladimir
 Agafonkin (based on Jonathan Shewchuk's exact arithmetic predicates), released
 into the public domain under the [Unlicense](https://unlicense.org). See
-[`src/geometry/vendor/robust-predicates/LICENSE`](src/geometry/vendor/robust-predicates/LICENSE)
+[`lib/spherical-delaunay/src/vendor/robust-predicates/LICENSE`](lib/spherical-delaunay/src/vendor/robust-predicates/LICENSE)
 for details.

@@ -183,7 +183,7 @@ Data and app code are decoupled — data updates don't require app rebuilds, and
 
 ## Geometry Library
 
-All modules live under `src/geometry/` and are shared by the pipeline and app.
+All modules live under `lib/spherical-delaunay/src/` (standalone workspace package, imported as `spherical-delaunay`) and are shared by the pipeline and app.
 
 ### Coordinate System
 
@@ -254,7 +254,7 @@ src/pipeline/
   canary.ts            Post-extraction landmark validation
   dump-test-fixtures.ts Test fixture generator for dump parser
 
-src/geometry/
+lib/spherical-delaunay/src/
   index.ts             Coord conversion, distance, circumcenter
   convex-hull.ts       Incremental 3D convex hull
   delaunay.ts          Spherical Delaunay from convex hull

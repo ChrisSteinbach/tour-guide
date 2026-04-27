@@ -5,8 +5,8 @@ import {
   serializeBinary,
   deserializeBinary,
   toCartesian,
-} from "../geometry";
-import type { Point3D } from "../geometry";
+} from "spherical-delaunay";
+import type { Point3D } from "spherical-delaunay";
 import { NearestQuery, toFlatDelaunay } from "./query";
 
 // ---------- Fixtures ----------
