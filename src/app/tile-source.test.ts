@@ -1,6 +1,6 @@
 import { createTileSource } from "./tile-source";
 import { NearestQuery, toFlatDelaunay } from "./query";
-import { buildTriangulation, convexHull, serialize } from "../geometry";
+import { buildTriangulation, convexHull, serialize } from "spherical-delaunay";
 import { GRID_DEG, tileFor, tileId, type TileEntry } from "../tiles";
 
 function makeEntryAt(lat: number, lon: number): TileEntry {

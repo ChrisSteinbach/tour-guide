@@ -22,7 +22,7 @@ import {
   convexHull,
   buildTriangulation,
   serialize,
-} from "../geometry";
+} from "spherical-delaunay";
 
 // ── Test helpers ─────────────────────────────────────────────
 

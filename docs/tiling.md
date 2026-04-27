@@ -232,7 +232,7 @@ To keep IDB storage bounded, each tile access updates a per-language LRU list th
 
 The per-tile binary format is **identical** to the format documented in docs/binary-format.md. A typical tile file for 1,500 articles is ~150 KB.
 
-The `deserializeBinary()` function in `src/geometry/serialization.ts` works unchanged on tile files.
+The `deserializeBinary()` function in `lib/spherical-delaunay/src/serialization.ts` works unchanged on tile files.
 
 ### IDB cache keys
 
