@@ -135,7 +135,7 @@ function stubDesktopQuery(matches = false): MediaQueryList {
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
     dispatchEvent: vi.fn(() => true),
-  } as unknown as MediaQueryList;
+  };
 }
 
 function makeDeps(overrides: Partial<RendererDeps> = {}): RendererDeps {

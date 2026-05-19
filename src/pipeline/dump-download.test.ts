@@ -150,8 +150,7 @@ describe("downloadDump", () => {
     body: string,
     headers?: Record<string, string>,
   ): typeof fetch {
-    return (async () =>
-      new Response(body, { headers })) as unknown as typeof fetch;
+    return async () => new Response(body, { headers });
   }
 
   it("downloads a file and reports progress", async () => {

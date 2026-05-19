@@ -75,9 +75,7 @@ describe("createBootstrap", () => {
       bootstrap.destroy();
 
       // Fire any listeners that remain; there should be none.
-      listeners.forEach((cb) =>
-        cb(new Event("controllerchange") as unknown as Event),
-      );
+      listeners.forEach((cb) => cb(new Event("controllerchange")));
 
       expect(dispatch).not.toHaveBeenCalledWith({ type: "swUpdateAvailable" });
       expect(swContainer.removeEventListener).toHaveBeenCalledWith(
