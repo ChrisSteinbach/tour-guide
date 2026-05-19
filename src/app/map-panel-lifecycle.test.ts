@@ -133,12 +133,10 @@ function installMockMediaQuery(initialMatches: boolean): {
     },
     media: "(min-width: 1024px)",
     addEventListener: (type: string, cb: EventListener) => {
-      if (type === "change")
-        listeners.add(cb as (ev: MediaQueryListEvent) => void);
+      if (type === "change") listeners.add(cb);
     },
     removeEventListener: (type: string, cb: EventListener) => {
-      if (type === "change")
-        listeners.delete(cb as (ev: MediaQueryListEvent) => void);
+      if (type === "change") listeners.delete(cb);
     },
     dispatchEvent: () => true,
   };
