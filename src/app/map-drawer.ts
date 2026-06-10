@@ -2,7 +2,7 @@
 // The drawer hosts the map container (rendered by a separate lifecycle).
 
 import { setupDrawerGesture } from "./drawer-gesture";
-import { createFoldedMapIcon } from "./icons";
+import { createRadarIcon } from "./icons";
 
 export interface MapDrawer {
   open(): void;
@@ -22,11 +22,11 @@ export function createMapDrawer(container: HTMLElement): MapDrawer {
 
   const handle = document.createElement("button");
   handle.className = "map-drawer-handle";
-  handle.setAttribute("aria-label", "Toggle map drawer");
+  handle.setAttribute("aria-label", "Toggle radar and map drawer");
   handle.setAttribute("aria-expanded", "false");
   handle.type = "button";
 
-  const icon = createFoldedMapIcon();
+  const icon = createRadarIcon();
   icon.setAttribute("class", "map-drawer-icon");
   handle.appendChild(icon);
 

@@ -93,7 +93,7 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
     resolveScrollContainer(infiniteScroll, app);
 
   // ── Map panel lifecycle ──
-  // Owns the drawer, desktop media query, browse map, and map picker.
+  // Owns the drawer, desktop media query, spatial panel (radar/map), and map picker.
   // The renderer is wired in after construction (forward-ref via
   // rendererRef, resolved when onDesktopQueryChange fires — see the
   // rendererRef declaration below for the full hazard note).
@@ -122,13 +122,14 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
     getScrollContainer,
     itemHeight,
     appName: APP_NAME,
+    storage: localStorage,
     renderBrowsingList: () => rendererRef.current?.renderBrowsingList(),
   });
   const {
     drawer,
     drawerPanel,
     desktopQuery,
-    browseMap,
+    spatialPanel,
     mapPicker,
     onHoverArticle,
   } = mapPanel;
@@ -164,7 +165,7 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
     dispatch,
     app,
     itemHeight,
-    browseMap,
+    spatialPanel,
     summaryLoader,
     onHoverArticle,
     getArticleByIndex: (i) => lifecycle.getArticleByIndex(i),
@@ -201,7 +202,7 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
     drawer,
     drawerPanel,
     desktopQuery,
-    browseMap,
+    spatialPanel,
     mapPicker,
     resetArticleWindow: () => lifecycle.resetArticleWindow(),
     getCurrentWindow: () => lifecycle.currentWindow(),
@@ -230,7 +231,7 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
       app,
       renderer,
       mapPicker,
-      browseMap,
+      spatialPanel,
       getState,
       dispatch,
       itemHeight,

@@ -137,7 +137,7 @@ Two debounced side effects run on `onRangeChange`:
 
 **`SummaryLoader.request()` semantics:** When the title is already pending (queued by a prior `load()`), `request()` moves it to the **front** of the queue so viewport items beat off-screen items still waiting their turn. This is the core integration between the enrich scheduler and the loader — the scheduler doesn't reorder anything itself, it just prods `request()` for whatever is currently visible. When the title is a **cache hit**, `request()` is a no-op: it does NOT invoke `onSummary`. Callers that want the cached value must use `get()` explicitly. This stops scroll-settle from re-firing DOM patches over already-delivered items, which would otherwise reset hover state and re-run reconciliation on every scroll quiet point.
 
-**Map sync** (`debounced-map-sync.ts`): After 150ms of scroll settle, syncs browse-map markers with the currently visible articles (rendered in the map drawer).
+**Map sync** (`debounced-map-sync.ts`): After 150ms of scroll settle, syncs the active spatial view (radar or map, rendered in the drawer) with the currently visible articles.
 
 Both are created during `infiniteScroll.init()` and destroyed with the lifecycle.
 

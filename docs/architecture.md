@@ -97,6 +97,7 @@ Distance uses chord length (`2 * asin(||v - q|| / 2)`, clamped for numerical saf
 
 - Article cards with distance badges
 - Language selector dropdown, GPS/Pin position source toggle, pause/resume button, and About button in header
+- Slide-in drawer (right edge) hosts a spatial panel with two tabs — Radar (default) and Map. The radar renders nearby articles as canvas blips placed by great-circle bearing and distance, with labeled range rings, a rotating sweep, and heading-up rotation when a compass heading is available; the map is the Leaflet browse map. Each view loads lazily on first activation, and the tab choice persists in localStorage
 - Virtual infinite scroll with progressive tile loading (see [infinite-scroll.md](infinite-scroll.md))
 - Smart re-render with two paths: if the article list is unchanged, `updateDistances` patches only the distance badges in-place. If articles change, `reconcileListItems` matches existing DOM nodes by article title — reused nodes keep their enrichment (thumbnails, descriptions fetched from Wikipedia) and only get a badge update, while new articles get fresh nodes. This title-keyed reconciliation is why enrichment survives GPS-triggered re-renders even as the article list shifts.
 - Re-query threshold: 15m minimum movement before recalculating
@@ -255,7 +256,7 @@ src/pipeline/
   dump-test-fixtures.ts Test fixture generator for dump parser
 
 src/geometry/
-  index.ts             Coord conversion, distance, circumcenter
+  index.ts             Coord conversion, distance, bearing, circumcenter
   convex-hull.ts       Incremental 3D convex hull
   delaunay.ts          Spherical Delaunay from convex hull
   point-location.ts    Triangle walk, greedy nearest-neighbor
@@ -269,7 +270,7 @@ src/app/
   bootstrap.ts         Startup sequence, window-level event listeners (popstate, SW update), welcome-or-restore
   renderer.ts          DOM renderer factory; translates app state into DOM updates
   infinite-scroll-wiring.ts Configures the infinite-scroll lifecycle (per-item render, header, map sync, enrichment, near-end)
-  map-panel-lifecycle.ts Owns drawer and browse/picker map lifecycles, keeps them in sync
+  map-panel-lifecycle.ts Owns drawer, spatial panel, and map picker lifecycles, keeps them in sync
   state-machine.ts     Pure state machine (phase/event/effect)
   effect-executor.ts   Executes state machine effects (I/O bridge between pure state and side effects)
   effect-ui-adapter.ts Translates effect executor's `ui` callbacks into renderer/mapPicker/detail calls
@@ -298,12 +299,17 @@ src/app/
   enrich-scheduler.ts         Debounced enrichment trigger — fires after articles settle in viewport
   summary-loader.ts           Concurrency-limited, cancellable batch fetcher for article summaries
   scroll-pause-detector.ts    Fires callback when scroll passes a pixel threshold (window + container)
-  debounced-map-sync.ts       Batches visible-range changes and syncs browse map markers after settle period
+  debounced-map-sync.ts       Batches visible-range changes and syncs the active spatial view (radar or map) after settle period
   infinite-scroll-lifecycle.ts Orchestrates virtualList, enrichScheduler, map sync, scroll as one lifecycle
 
-  # Map lifecycles
-  browse-map-lifecycle.ts     Lazy-loads, creates, updates, and tears down the browse map (rendered inside the map drawer)
-  map-drawer.ts               Slide-in drawer panel that hosts the browse map; toggle via handle or swipe
+  # Spatial panel & map lifecycles
+  spatial-panel-lifecycle.ts  Multiplexes the drawer between radar and map tabs, replays state on tab switch, persists tab choice
+  lazy-view-lifecycle.ts      Generic lazy view lifecycle (dynamic import, rAF-deferred creation, update coalescing) for drawer views
+  browse-map-lifecycle.ts     Thin adapter over lazy-view-lifecycle.ts for the browse map
+  radar-view.ts               Canvas radar: blips by bearing/distance, range rings, rotating sweep, compass heading-up rotation
+  radar-math.ts               Pure radar geometry: range-ring selection, sqrt radial scale, blip projection, hit-testing
+  compass.ts                  DeviceOrientation wrapper for compass heading (iOS permission gate, Android absolute events)
+  map-drawer.ts               Slide-in drawer panel that hosts the spatial panel; toggle via handle or swipe
   drawer-gesture.ts           Swipe/drag gesture handling for the map drawer
   map-picker-lifecycle.ts     Lazy-loads and manages the full-screen map picker overlay
 

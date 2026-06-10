@@ -73,6 +73,9 @@ export function createLazyViewLifecycle(
         handle.update(position, articles);
         return;
       }
+      // Container was cleared externally — release the orphaned view's
+      // listeners/timers before recreating it.
+      handle.destroy();
       handle = null;
     }
 

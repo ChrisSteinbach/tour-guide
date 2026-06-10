@@ -1,13 +1,14 @@
 // Map panel lifecycle — extracted from main.ts.
-// Owns the drawer, the desktop media query, and the browse/picker
-// map lifecycles, plus the event listeners that keep them in sync.
+// Owns the drawer, the desktop media query, the spatial panel
+// (radar/map views inside the drawer), and the map picker lifecycle,
+// plus the event listeners that keep them in sync.
 // All I/O boundaries are injected via MapPanelLifecycleDeps.
 
 import { createMapDrawer, type MapDrawer } from "./map-drawer";
 import {
-  createBrowseMapLifecycle,
-  type BrowseMapLifecycle,
-} from "./browse-map-lifecycle";
+  createSpatialPanelLifecycle,
+  type SpatialPanelLifecycle,
+} from "./spatial-panel-lifecycle";
 import {
   createMapPickerLifecycle,
   type MapPickerLifecycle,
@@ -21,6 +22,8 @@ export interface MapPanelLifecycleDeps {
   getScrollContainer: () => HTMLElement;
   itemHeight: number;
   appName: string;
+  /** Persists the radar/map tab preference. */
+  storage: Pick<Storage, "getItem" | "setItem">;
   /** Called when the desktop media query changes while browsing. */
   renderBrowsingList: () => void;
 }
@@ -29,12 +32,12 @@ export interface MapPanelLifecycle {
   drawer: MapDrawer;
   drawerPanel: HTMLElement;
   desktopQuery: MediaQueryList;
-  browseMap: BrowseMapLifecycle;
+  spatialPanel: SpatialPanelLifecycle;
   mapPicker: MapPickerLifecycle;
   onHoverArticle: (title: string | null) => void;
   /**
    * Remove event listeners attached at construction time and tear down the
-   * drawer, browse map, and map picker sub-lifecycles constructed here.
+   * drawer, spatial panel, and map picker sub-lifecycles constructed here.
    * Safe to call more than once.
    */
   destroy: () => void;
@@ -48,11 +51,11 @@ export function createMapPanelLifecycle(
   const drawer = createMapDrawer(document.body);
   const drawerPanel = drawer.panel;
 
-  const browseMap = createBrowseMapLifecycle({
+  const spatialPanel = createSpatialPanelLifecycle({
     container: drawer.element,
     onSelectArticle: (article) => {
       // On mobile the drawer covers the detail view. Dismiss it as the
-      // detail opens; the handle/gesture can still reopen the map.
+      // detail opens; the handle/gesture can still reopen the panel.
       if (!desktopQuery.matches && drawer.isOpen()) {
         drawer.close();
       }
@@ -65,6 +68,8 @@ export function createMapPanelLifecycle(
       });
     },
     importBrowseMap: () => import("./browse-map"),
+    importRadarView: () => import("./radar-view"),
+    storage: deps.storage,
   });
 
   const mapPicker = createMapPickerLifecycle({
@@ -77,21 +82,28 @@ export function createMapPanelLifecycle(
   });
 
   const onHoverArticle = (title: string | null): void =>
-    browseMap.highlight(title);
+    spatialPanel.highlight(title);
 
   const onDesktopQueryChange = (): void => {
-    if (deps.getState().phase.phase === "browsing") {
-      if (desktopQuery.matches) {
-        drawer.open();
-      } else {
-        drawer.close();
-      }
+    const phase = deps.getState().phase.phase;
+    // The drawer persists across browsing↔detail, so keep its open state
+    // in sync with the viewport in both phases — crossing into mobile
+    // with the drawer open would otherwise leave it covering the detail
+    // view (mobile has no side-by-side layout).
+    if (phase !== "browsing" && phase !== "detail") return;
+    if (desktopQuery.matches) {
+      drawer.open();
+    } else {
+      drawer.close();
+    }
+    if (phase === "browsing") {
       deps.renderBrowsingList();
     }
   };
 
   const onDrawerTransitionEnd = (e: TransitionEvent): void => {
-    if (e.propertyName === "transform" && drawer.isOpen()) browseMap.resize();
+    if (e.propertyName === "transform" && drawer.isOpen())
+      spatialPanel.resize();
   };
 
   desktopQuery.addEventListener("change", onDesktopQueryChange);
@@ -103,7 +115,7 @@ export function createMapPanelLifecycle(
     desktopQuery.removeEventListener("change", onDesktopQueryChange);
     drawerPanel.removeEventListener("transitionend", onDrawerTransitionEnd);
     mapPicker.destroy();
-    browseMap.destroy();
+    spatialPanel.destroy();
     drawer.destroy();
   }
 
@@ -111,7 +123,7 @@ export function createMapPanelLifecycle(
     drawer,
     drawerPanel,
     desktopQuery,
-    browseMap,
+    spatialPanel,
     mapPicker,
     onHoverArticle,
     destroy,

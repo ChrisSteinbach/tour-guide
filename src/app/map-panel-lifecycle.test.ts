@@ -2,7 +2,7 @@
 import { createMapPanelLifecycle } from "./map-panel-lifecycle";
 import type { MapPanelLifecycleDeps } from "./map-panel-lifecycle";
 import type { MapDrawer } from "./map-drawer";
-import type { BrowseMapLifecycle } from "./browse-map-lifecycle";
+import type { SpatialPanelLifecycle } from "./spatial-panel-lifecycle";
 import type { MapPickerLifecycle } from "./map-picker-lifecycle";
 import type { AppState, QueryState } from "./state-machine";
 import type { UserPosition } from "./types";
@@ -10,9 +10,9 @@ import type { UserPosition } from "./types";
 // Mock the three sub-lifecycle factories so we can observe the wiring
 // without spinning up any real maps.
 let drawerStub: MapDrawer;
-let browseMapStub: BrowseMapLifecycle;
+let spatialPanelStub: SpatialPanelLifecycle;
 let mapPickerStub: MapPickerLifecycle;
-let capturedBrowseMapOnSelect:
+let capturedOnSelect:
   | ((article: { title: string; lat: number; lon: number }) => void)
   | null = null;
 
@@ -20,11 +20,11 @@ vi.mock("./map-drawer", () => ({
   createMapDrawer: vi.fn(() => drawerStub),
 }));
 
-vi.mock("./browse-map-lifecycle", () => ({
-  createBrowseMapLifecycle: vi.fn(
-    (opts: { onSelectArticle: typeof capturedBrowseMapOnSelect }) => {
-      capturedBrowseMapOnSelect = opts.onSelectArticle;
-      return browseMapStub;
+vi.mock("./spatial-panel-lifecycle", () => ({
+  createSpatialPanelLifecycle: vi.fn(
+    (opts: { onSelectArticle: typeof capturedOnSelect }) => {
+      capturedOnSelect = opts.onSelectArticle;
+      return spatialPanelStub;
     },
   ),
 }));
@@ -103,7 +103,7 @@ function makeDrawer(isOpenValue = false): MapDrawer {
   };
 }
 
-function makeBrowseMap(): BrowseMapLifecycle {
+function makeSpatialPanel(): SpatialPanelLifecycle {
   return {
     update: vi.fn(),
     highlight: vi.fn(),
@@ -166,6 +166,7 @@ function makeDeps(
     getScrollContainer: vi.fn(() => scrollContainer),
     itemHeight: 68,
     appName: "WikiRadar",
+    storage: { getItem: () => null, setItem: () => {} },
     renderBrowsingList: vi.fn(),
     ...overrides,
   };
@@ -174,9 +175,9 @@ function makeDeps(
 describe("createMapPanelLifecycle", () => {
   beforeEach(() => {
     drawerStub = makeDrawer(false);
-    browseMapStub = makeBrowseMap();
+    spatialPanelStub = makeSpatialPanel();
     mapPickerStub = makeMapPicker();
-    capturedBrowseMapOnSelect = null;
+    capturedOnSelect = null;
     installMockMediaQuery(false);
   });
 
@@ -184,12 +185,12 @@ describe("createMapPanelLifecycle", () => {
     document.body.textContent = "";
   });
 
-  it("returns the drawer, browseMap, mapPicker, and desktop query", () => {
+  it("returns the drawer, spatialPanel, mapPicker, and desktop query", () => {
     const deps = makeDeps();
     const lifecycle = createMapPanelLifecycle(deps);
 
     expect(lifecycle.drawer).toBe(drawerStub);
-    expect(lifecycle.browseMap).toBe(browseMapStub);
+    expect(lifecycle.spatialPanel).toBe(spatialPanelStub);
     expect(lifecycle.mapPicker).toBe(mapPickerStub);
     expect(lifecycle.drawerPanel).toBe(drawerStub.panel);
     expect(lifecycle.desktopQuery.media).toBe("(min-width: 1024px)");
@@ -229,7 +230,37 @@ describe("createMapPanelLifecycle", () => {
       expect(renderBrowsingList).toHaveBeenCalled();
     });
 
-    it("does nothing when the phase is not browsing", () => {
+    it("closes the drawer when crossing into mobile during detail, without re-rendering the list", () => {
+      const mq = installMockMediaQuery(true);
+      drawerStub = makeDrawer(true);
+      const renderBrowsingList = vi.fn();
+      const browsing = makeBrowsingState();
+      const detailState: AppState = {
+        ...browsing,
+        phase: {
+          ...(browsing.phase as Extract<
+            AppState["phase"],
+            { phase: "browsing" }
+          >),
+          phase: "detail",
+          article: { title: "Hojskär", lat: 57.7, lon: 18.9, distanceM: 3100 },
+          savedFirstVisibleIndex: 0,
+        },
+      };
+      const deps = makeDeps({
+        getState: () => detailState,
+        renderBrowsingList,
+      });
+      createMapPanelLifecycle(deps);
+
+      mq.setMatches(false);
+      mq.fireChange();
+
+      expect(drawerStub.close).toHaveBeenCalled();
+      expect(renderBrowsingList).not.toHaveBeenCalled();
+    });
+
+    it("does nothing when the phase is not browsing or detail", () => {
       const mq = installMockMediaQuery(false);
       const renderBrowsingList = vi.fn();
       const deps = makeDeps({
@@ -248,7 +279,7 @@ describe("createMapPanelLifecycle", () => {
   });
 
   describe("drawerPanel transitionend listener", () => {
-    it("calls browseMap.resize when transform transition ends with drawer open", () => {
+    it("calls spatialPanel.resize when transform transition ends with drawer open", () => {
       drawerStub = makeDrawer(true);
       const deps = makeDeps();
       createMapPanelLifecycle(deps);
@@ -257,7 +288,7 @@ describe("createMapPanelLifecycle", () => {
       Object.defineProperty(event, "propertyName", { value: "transform" });
       drawerStub.panel.dispatchEvent(event);
 
-      expect(browseMapStub.resize).toHaveBeenCalled();
+      expect(spatialPanelStub.resize).toHaveBeenCalled();
     });
 
     it("does not resize when the transitioned property is not transform", () => {
@@ -269,7 +300,7 @@ describe("createMapPanelLifecycle", () => {
       Object.defineProperty(event, "propertyName", { value: "opacity" });
       drawerStub.panel.dispatchEvent(event);
 
-      expect(browseMapStub.resize).not.toHaveBeenCalled();
+      expect(spatialPanelStub.resize).not.toHaveBeenCalled();
     });
 
     it("does not resize when the drawer is closed", () => {
@@ -281,7 +312,7 @@ describe("createMapPanelLifecycle", () => {
       Object.defineProperty(event, "propertyName", { value: "transform" });
       drawerStub.panel.dispatchEvent(event);
 
-      expect(browseMapStub.resize).not.toHaveBeenCalled();
+      expect(spatialPanelStub.resize).not.toHaveBeenCalled();
     });
   });
 
@@ -312,7 +343,7 @@ describe("createMapPanelLifecycle", () => {
       Object.defineProperty(event, "propertyName", { value: "transform" });
       drawerStub.panel.dispatchEvent(event);
 
-      expect(browseMapStub.resize).not.toHaveBeenCalled();
+      expect(spatialPanelStub.resize).not.toHaveBeenCalled();
     });
 
     it("is safe to call more than once", () => {
@@ -323,14 +354,14 @@ describe("createMapPanelLifecycle", () => {
       expect(() => lifecycle.destroy()).not.toThrow();
     });
 
-    it("tears down the drawer, browseMap, and mapPicker sub-lifecycles", () => {
+    it("tears down the drawer, spatialPanel, and mapPicker sub-lifecycles", () => {
       const deps = makeDeps();
       const lifecycle = createMapPanelLifecycle(deps);
 
       lifecycle.destroy();
 
       expect(drawerStub.destroy).toHaveBeenCalled();
-      expect(browseMapStub.destroy).toHaveBeenCalled();
+      expect(spatialPanelStub.destroy).toHaveBeenCalled();
       expect(mapPickerStub.destroy).toHaveBeenCalled();
     });
 
@@ -347,26 +378,26 @@ describe("createMapPanelLifecycle", () => {
   });
 
   describe("onHoverArticle", () => {
-    it("delegates to browseMap.highlight with the article title", () => {
+    it("delegates to spatialPanel.highlight with the article title", () => {
       const deps = makeDeps();
       const lifecycle = createMapPanelLifecycle(deps);
 
       lifecycle.onHoverArticle("Stockholm");
 
-      expect(browseMapStub.highlight).toHaveBeenCalledWith("Stockholm");
+      expect(spatialPanelStub.highlight).toHaveBeenCalledWith("Stockholm");
     });
 
-    it("passes null through to browseMap.highlight to clear the highlight", () => {
+    it("passes null through to spatialPanel.highlight to clear the highlight", () => {
       const deps = makeDeps();
       const lifecycle = createMapPanelLifecycle(deps);
 
       lifecycle.onHoverArticle(null);
 
-      expect(browseMapStub.highlight).toHaveBeenCalledWith(null);
+      expect(spatialPanelStub.highlight).toHaveBeenCalledWith(null);
     });
   });
 
-  describe("browseMap onSelectArticle drawer dismiss", () => {
+  describe("spatial panel onSelectArticle drawer dismiss", () => {
     const article = {
       title: "Stockholm",
       lat: 59.33,
@@ -381,7 +412,7 @@ describe("createMapPanelLifecycle", () => {
       const deps = makeDeps({ dispatch });
       createMapPanelLifecycle(deps);
 
-      capturedBrowseMapOnSelect?.(article);
+      capturedOnSelect?.(article);
 
       expect(drawerStub.close).toHaveBeenCalledTimes(1);
       expect(dispatch).toHaveBeenCalledWith(
@@ -396,7 +427,7 @@ describe("createMapPanelLifecycle", () => {
       const deps = makeDeps({ dispatch });
       createMapPanelLifecycle(deps);
 
-      capturedBrowseMapOnSelect?.(article);
+      capturedOnSelect?.(article);
 
       expect(drawerStub.close).not.toHaveBeenCalled();
       expect(dispatch).toHaveBeenCalled();
@@ -409,7 +440,7 @@ describe("createMapPanelLifecycle", () => {
       const deps = makeDeps({ dispatch });
       createMapPanelLifecycle(deps);
 
-      capturedBrowseMapOnSelect?.(article);
+      capturedOnSelect?.(article);
 
       expect(drawerStub.close).not.toHaveBeenCalled();
       expect(dispatch).toHaveBeenCalled();
