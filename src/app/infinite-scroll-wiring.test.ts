@@ -282,10 +282,11 @@ describe("createInfiniteScrollWiring", () => {
 
       capturedDeps!.syncMapMarkers([stockholm, uppsala]);
 
-      expect(spatialPanel.update).toHaveBeenCalledWith(pos, [
-        stockholm,
-        uppsala,
-      ]);
+      expect(spatialPanel.update).toHaveBeenCalledWith(
+        pos,
+        [stockholm, uppsala],
+        "gps",
+      );
     });
 
     it("is a no-op when no position is set", () => {
@@ -449,7 +450,7 @@ describe("createInfiniteScrollWiring", () => {
 
       capturedDeps!.initSpatialView();
 
-      expect(spatialPanel.update).toHaveBeenCalledWith(pos, []);
+      expect(spatialPanel.update).toHaveBeenCalledWith(pos, [], "gps");
     });
 
     it("initSpatialView is a no-op when no position is set", () => {

@@ -3,22 +3,28 @@
 // spatial view (browse map, radar). Extracted from the original
 // browse-map lifecycle so both views share the subtle async logic.
 
-import type { NearbyArticle, UserPosition } from "./types";
+import type { NearbyArticle, PositionSource, UserPosition } from "./types";
 
 /** Handle shape shared by drawer-hosted spatial views (map, radar). */
 export interface SpatialViewHandle {
-  update(position: UserPosition, articles: NearbyArticle[]): void;
+  update(
+    position: UserPosition,
+    articles: NearbyArticle[],
+    source: PositionSource,
+  ): void;
   highlight(title: string | null): void;
   resize(): void;
   destroy(): void;
 }
 
-/** Factory signature every spatial view module exposes. */
+/** Factory signature every spatial view module exposes. Views that don't
+ *  care about the position source (the map) simply omit the parameter. */
 export type CreateSpatialView = (
   el: HTMLElement,
   position: UserPosition,
   articles: NearbyArticle[],
   onSelect: (article: NearbyArticle) => void,
+  source: PositionSource,
 ) => SpatialViewHandle;
 
 export interface LazyViewLifecycleDeps {
@@ -31,7 +37,11 @@ export interface LazyViewLifecycleDeps {
 }
 
 export interface LazyViewLifecycle {
-  update(position: UserPosition, articles: NearbyArticle[]): void;
+  update(
+    position: UserPosition,
+    articles: NearbyArticle[],
+    source: PositionSource,
+  ): void;
   highlight(title: string | null): void;
   resize(): void;
   destroy(): void;
@@ -44,6 +54,7 @@ export function createLazyViewLifecycle(
   let creating = false;
   let pendingPosition: UserPosition | null = null;
   let pendingArticles: NearbyArticle[] | null = null;
+  let pendingSource: PositionSource | null = null;
   let pendingHighlight: string | null | undefined = undefined;
 
   const selector = `.${deps.className}`;
@@ -56,6 +67,7 @@ export function createLazyViewLifecycle(
     creating = false;
     pendingPosition = null;
     pendingArticles = null;
+    pendingSource = null;
     pendingHighlight = undefined;
     const el = deps.container.querySelector(selector);
     el?.remove();
@@ -65,12 +77,16 @@ export function createLazyViewLifecycle(
     handle?.resize();
   }
 
-  function update(position: UserPosition, articles: NearbyArticle[]): void {
+  function update(
+    position: UserPosition,
+    articles: NearbyArticle[],
+    source: PositionSource,
+  ): void {
     // If the view handle exists and its container is still in the DOM, just update.
     if (handle) {
       const existing = deps.container.querySelector(selector);
       if (existing && deps.container.contains(existing)) {
-        handle.update(position, articles);
+        handle.update(position, articles, source);
         return;
       }
       // Container was cleared externally — release the orphaned view's
@@ -83,6 +99,7 @@ export function createLazyViewLifecycle(
     if (creating) {
       pendingPosition = position;
       pendingArticles = articles;
+      pendingSource = source;
       return;
     }
     creating = true;
@@ -112,18 +129,22 @@ export function createLazyViewLifecycle(
             creating = false;
             pendingPosition = null;
             pendingArticles = null;
+            pendingSource = null;
             pendingHighlight = undefined;
             return;
           }
           const finalPosition = pendingPosition ?? position;
           const finalArticles = pendingArticles ?? articles;
+          const finalSource = pendingSource ?? source;
           pendingPosition = null;
           pendingArticles = null;
+          pendingSource = null;
           handle = createView(
             viewEl,
             finalPosition,
             finalArticles,
             deps.onSelectArticle,
+            finalSource,
           );
           creating = false;
           if (pendingHighlight !== undefined) {
@@ -138,6 +159,7 @@ export function createLazyViewLifecycle(
         creating = false;
         pendingPosition = null;
         pendingArticles = null;
+        pendingSource = null;
         pendingHighlight = undefined;
         viewEl?.remove();
       });

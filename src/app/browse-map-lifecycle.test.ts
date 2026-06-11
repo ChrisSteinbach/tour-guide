@@ -55,7 +55,7 @@ describe("BrowseMapLifecycle", () => {
       const deps = makeDeps();
       const lifecycle = createBrowseMapLifecycle(deps);
 
-      lifecycle.update({ lat: 51, lon: 0 }, []);
+      lifecycle.update({ lat: 51, lon: 0 }, [], "gps");
       await flushImportAndRaf();
 
       expect(deps.container.querySelector(".browse-map")).toBeTruthy();
@@ -65,15 +65,16 @@ describe("BrowseMapLifecycle", () => {
       const deps = makeDeps();
       const lifecycle = createBrowseMapLifecycle(deps);
 
-      lifecycle.update({ lat: 51, lon: 0 }, []);
+      lifecycle.update({ lat: 51, lon: 0 }, [], "gps");
       await flushImportAndRaf();
 
       // Second update should reuse existing handle
-      lifecycle.update({ lat: 52, lon: 1 }, []);
+      lifecycle.update({ lat: 52, lon: 1 }, [], "gps");
 
       expect(deps.lastHandle.update).toHaveBeenCalledWith(
         { lat: 52, lon: 1 },
         [],
+        "gps",
       );
     });
 
@@ -81,13 +82,13 @@ describe("BrowseMapLifecycle", () => {
       const deps = makeDeps();
       const lifecycle = createBrowseMapLifecycle(deps);
 
-      lifecycle.update({ lat: 51, lon: 0 }, []);
+      lifecycle.update({ lat: 51, lon: 0 }, [], "gps");
       await flushImportAndRaf();
 
       // Simulate detail view clearing the container
       deps.container.textContent = "";
 
-      lifecycle.update({ lat: 52, lon: 1 }, []);
+      lifecycle.update({ lat: 52, lon: 1 }, [], "gps");
       await flushImportAndRaf();
 
       // Should have created a new map container
@@ -100,7 +101,7 @@ describe("BrowseMapLifecycle", () => {
       });
       const lifecycle = createBrowseMapLifecycle(deps);
 
-      lifecycle.update({ lat: 51, lon: 0 }, []);
+      lifecycle.update({ lat: 51, lon: 0 }, [], "gps");
       await flushImportAndRaf();
 
       expect(deps.container.querySelector(".browse-map")).toBeNull();
@@ -115,8 +116,8 @@ describe("BrowseMapLifecycle", () => {
 
       const firstArticles = [{ title: "A" }] as any[];
       const secondArticles = [{ title: "B" }] as any[];
-      lifecycle.update({ lat: 51, lon: 0 }, firstArticles);
-      lifecycle.update({ lat: 52, lon: 1 }, secondArticles);
+      lifecycle.update({ lat: 51, lon: 0 }, firstArticles, "gps");
+      lifecycle.update({ lat: 52, lon: 1 }, secondArticles, "gps");
       await flushImportAndRaf();
 
       expect(createBrowseMap).toHaveBeenCalledTimes(1);
@@ -125,6 +126,7 @@ describe("BrowseMapLifecycle", () => {
         { lat: 52, lon: 1 },
         secondArticles,
         expect.any(Function),
+        "gps",
       );
     });
   });
@@ -134,7 +136,7 @@ describe("BrowseMapLifecycle", () => {
       const deps = makeDeps();
       const lifecycle = createBrowseMapLifecycle(deps);
 
-      lifecycle.update({ lat: 51, lon: 0 }, []);
+      lifecycle.update({ lat: 51, lon: 0 }, [], "gps");
       await flushImportAndRaf();
 
       lifecycle.highlight("Some Article");
@@ -151,7 +153,7 @@ describe("BrowseMapLifecycle", () => {
       const deps = makeDeps();
       const lifecycle = createBrowseMapLifecycle(deps);
 
-      lifecycle.update({ lat: 51, lon: 0 }, []);
+      lifecycle.update({ lat: 51, lon: 0 }, [], "gps");
       lifecycle.highlight("Deferred Article");
       await flushImportAndRaf();
 
@@ -164,7 +166,7 @@ describe("BrowseMapLifecycle", () => {
       const deps = makeDeps();
       const lifecycle = createBrowseMapLifecycle(deps);
 
-      lifecycle.update({ lat: 51, lon: 0 }, []);
+      lifecycle.update({ lat: 51, lon: 0 }, [], "gps");
       lifecycle.highlight("Some Article");
       lifecycle.highlight(null);
       await flushImportAndRaf();
@@ -178,7 +180,7 @@ describe("BrowseMapLifecycle", () => {
       const deps = makeDeps();
       const lifecycle = createBrowseMapLifecycle(deps);
 
-      lifecycle.update({ lat: 51, lon: 0 }, []);
+      lifecycle.update({ lat: 51, lon: 0 }, [], "gps");
       await flushImportAndRaf();
 
       lifecycle.resize();
@@ -197,7 +199,7 @@ describe("BrowseMapLifecycle", () => {
       const deps = makeDeps();
       const lifecycle = createBrowseMapLifecycle(deps);
 
-      lifecycle.update({ lat: 51, lon: 0 }, []);
+      lifecycle.update({ lat: 51, lon: 0 }, [], "gps");
       await flushImportAndRaf();
 
       lifecycle.destroy();
@@ -215,7 +217,7 @@ describe("BrowseMapLifecycle", () => {
       const deps = makeDeps();
       const lifecycle = createBrowseMapLifecycle(deps);
 
-      lifecycle.update({ lat: 51, lon: 0 }, []);
+      lifecycle.update({ lat: 51, lon: 0 }, [], "gps");
       await flushImportAndRaf();
 
       lifecycle.destroy();
@@ -233,7 +235,7 @@ describe("BrowseMapLifecycle", () => {
       });
       const lifecycle = createBrowseMapLifecycle(deps);
 
-      lifecycle.update({ lat: 51, lon: 0 }, []);
+      lifecycle.update({ lat: 51, lon: 0 }, [], "gps");
       await flushImportAndRaf();
 
       // 4th arg is onSelectArticle
