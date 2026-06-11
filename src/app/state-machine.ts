@@ -127,7 +127,7 @@ export type Event =
   | { type: "tileLoaded"; id: string; tileQuery: NearestQuery; gen: number }
   | { type: "tileLoadFailed"; id: string; gen: number }
   | { type: "downloadProgress"; fraction: number; gen: number }
-  | { type: "langChanged"; lang: Lang }
+  | { type: "langChanged"; lang: Lang; persist?: boolean }
   | {
       type: "selectArticle";
       article: NearbyArticle;
@@ -725,10 +725,14 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
     // ── Language + update banner (tour-guide-e3f) ────────────
 
     case "langChanged": {
-      const effects: Effect[] = [
-        { type: "storeLang", lang: event.lang },
-        { type: "loadData", lang: event.lang },
-      ];
+      // Boot dispatches a non-persisting langChanged (persist: false) purely to
+      // kick off loadData for the active language; only explicit user changes
+      // write to storage. Omitting `persist` defaults to persisting.
+      const effects: Effect[] = [];
+      if (event.persist !== false) {
+        effects.push({ type: "storeLang", lang: event.lang });
+      }
+      effects.push({ type: "loadData", lang: event.lang });
       const hasStarted = state.phase.phase !== "welcome";
       const next: AppState = {
         ...state,
