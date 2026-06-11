@@ -750,7 +750,12 @@ body:has(.app-scroll) {
 
 .map-picker-search {
   position: relative;
-  z-index: 1000;
+
+  /* This wrapper is a stacking context, so its z-index (not the results
+     list's) is what's compared against Leaflet's control panes. 1100 keeps
+     the whole search UI — including the overlaid results — above the zoom
+     +/− control (Leaflet controls cap at z-index 1000). */
+  z-index: 1100;
   padding: 8px 12px;
   background: #fff;
   border-bottom: 1px solid #e0e0e0;
@@ -825,7 +830,10 @@ body:has(.app-scroll) {
   border-radius: 0 0 8px 8px;
   box-shadow: 0 6px 16px rgb(0 0 0 / 15%);
   overflow-y: auto;
-  z-index: 1000;
+
+  /* Sits above the search form within the wrapper's stacking context; the
+     wrapper's own z-index is what clears Leaflet's controls. */
+  z-index: 1;
 }
 
 .map-picker-search-result {
