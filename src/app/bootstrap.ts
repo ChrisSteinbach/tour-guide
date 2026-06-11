@@ -103,6 +103,8 @@ export function createBootstrap(deps: BootstrapDeps): Bootstrap {
             hasGeolocation: !!navigator.geolocation,
           }),
         onPickLocation: () => deps.dispatch({ type: "showMapPicker" }),
+        onExplore: (position) =>
+          deps.dispatch({ type: "pickPosition", position }),
         currentLang: deps.getCurrentLang(),
         onLangChange: (lang) => deps.dispatch({ type: "langChanged", lang }),
         onShowAbout: () => deps.dispatch({ type: "showAbout" }),

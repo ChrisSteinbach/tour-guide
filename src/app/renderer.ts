@@ -235,6 +235,8 @@ export function createRenderer(deps: RendererDeps): Renderer {
               hasGeolocation: deps.hasGeolocation,
             }),
           onPickLocation: () => deps.dispatch({ type: "showMapPicker" }),
+          onExplore: (position) =>
+            deps.dispatch({ type: "pickPosition", position }),
           currentLang: state.currentLang,
           onLangChange: (lang) => deps.dispatch({ type: "langChanged", lang }),
           onShowAbout: () => deps.dispatch({ type: "showAbout" }),

@@ -204,6 +204,23 @@ describe("createBootstrap", () => {
         hasGeolocation: !!navigator.geolocation,
       });
     });
+
+    it("wires the welcome onExplore callback to dispatch pickPosition", () => {
+      vi.mocked(renderWelcome).mockClear();
+      const dispatch = vi.fn();
+      const deps = makeDeps({ dispatch });
+      const bootstrap = createBootstrap(deps);
+
+      bootstrap.run();
+
+      const options = vi.mocked(renderWelcome).mock.calls.at(-1)?.[1];
+      options?.onExplore({ lat: 1, lon: 2 });
+
+      expect(dispatch).toHaveBeenCalledWith({
+        type: "pickPosition",
+        position: { lat: 1, lon: 2 },
+      });
+    });
   });
 
   describe("location restore (permalink)", () => {
