@@ -7,6 +7,7 @@ import {
   renderNearbyHeader,
   createArticleItemContent,
   applyEnrichment,
+  createEmptyHighlightsHint,
 } from "./render";
 import { computeOptimisticCount } from "./article-window-lifecycle";
 import {
@@ -138,8 +139,18 @@ export function createInfiniteScrollWiring(
           onPickLocation: () => deps.dispatch({ type: "showMapPicker" }),
           onUseGps: () => deps.dispatch({ type: "useGps" }),
           gpsSignalLost: state.gpsSignalLost,
+          filter: state.filter,
+          onToggleFilter: () => deps.dispatch({ type: "toggleFilter" }),
           onShowAbout: () => deps.dispatch({ type: "showAbout" }),
         });
+      },
+      renderEmptyState: () => {
+        const state = deps.getState();
+        if (state.phase.phase !== "browsing") return null;
+        if (state.filter !== "highlights") return null;
+        return createEmptyHighlightsHint(() =>
+          deps.dispatch({ type: "toggleFilter" }),
+        );
       },
       initSpatialView: () => {
         const state = deps.getState();

@@ -25,3 +25,10 @@ export interface UserPosition {
 
 /** Where the browsing position comes from: live GPS or a map-picked spot. */
 export type PositionSource = "gps" | "picked";
+
+/**
+ * Which articles the nearby list shows: "highlights" (default) keeps only
+ * articles with substantial pages (weight >= HIGHLIGHT_MIN_WEIGHT in
+ * config.ts); "all" shows everything, including bot-generated stubs.
+ */
+export type ArticleFilter = "highlights" | "all";

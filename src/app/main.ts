@@ -7,6 +7,7 @@ import {
 } from "./state-machine";
 import { composeApp } from "./compose-app";
 import { getStoredLang } from "./stored-lang";
+import { getStoredHighlights } from "./stored-highlights";
 import { parseLocationHash, createUrlMirror } from "./url-state";
 
 const app =
@@ -31,9 +32,9 @@ const viewportFillCount = Math.max(
 
 // ── State ────────────────────────────────────────────────────
 
-// A shareable permalink (#lat,lon&lang=xx) seeds the initial language so tiles
-// load in the linked language. Its position is restored later by bootstrap.
-// The hash language is NOT persisted here — only explicit user changes persist.
+// A shareable permalink (#lat,lon&lang=xx&filter=all) seeds the initial
+// language and article filter. Its position is restored later by bootstrap.
+// Hash values are NOT persisted here — only explicit user changes persist.
 const initialHashState = parseLocationHash(window.location.hash);
 
 let appState: AppState = {
@@ -42,6 +43,7 @@ let appState: AppState = {
   position: null,
   positionSource: null,
   currentLang: initialHashState?.lang ?? getStoredLang(localStorage),
+  filter: initialHashState?.filter ?? getStoredHighlights(localStorage),
   loadGeneration: 0,
   loadingTiles: new Set(),
   downloadProgress: -1,
@@ -54,8 +56,9 @@ let appState: AppState = {
 
 // ── Dispatch ─────────────────────────────────────────────────
 
-// Mirror the live position + language into the address bar so every view is a
-// shareable permalink. replaceState (not pushState) keeps history intact.
+// Mirror the live position + language + filter into the address bar so every
+// view is a shareable permalink. replaceState (not pushState) keeps history
+// intact.
 const syncUrl = createUrlMirror({
   history: window.history,
   location: window.location,
@@ -67,7 +70,7 @@ function dispatch(event: Event): void {
   for (const effect of effects) {
     executeEffect(effect);
   }
-  syncUrl(appState.position, appState.currentLang);
+  syncUrl(appState.position, appState.currentLang, appState.filter);
 }
 
 // ── Compose ──────────────────────────────────────────────────

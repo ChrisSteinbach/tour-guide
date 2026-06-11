@@ -9,13 +9,15 @@
 
 import { SUPPORTED_LANGS } from "../lang";
 import type { Lang } from "../lang";
-import type { UserPosition } from "./types";
+import type { ArticleFilter, UserPosition } from "./types";
 
 /** Parsed result of a location hash: always a position, optionally a language. */
 export interface LocationHashState {
   position: UserPosition;
   /** Supported language from the hash, or undefined when absent/unrecognised. */
   lang?: Lang;
+  /** Article filter from the hash, or undefined when absent/unrecognised. */
+  filter?: ArticleFilter;
 }
 
 /** Number of decimal places used when encoding lat/lon (~11 m precision). */
@@ -28,14 +30,16 @@ function isSupportedLang(value: string): value is Lang {
 /**
  * Parse a location hash into a position (+ optional language).
  *
- * Accepts `#lat,lon` and `#lat,lon&lang=xx`; the leading `#` is optional.
+ * Accepts `#lat,lon` plus optional `&lang=xx` and `&filter=all` params; the
+ * leading `#` is optional.
  * Returns null for anything that isn't a valid coordinate pair:
  *   - non-finite numbers / junk text
  *   - latitude outside [-90, 90] or longitude outside [-180, 180]
  *
  * A missing or unsupported `lang` yields `lang: undefined` but still keeps the
  * position — sharing a link must never silently drop a recognised location just
- * because the language is unknown.
+ * because the language is unknown. The same applies to `filter`: unknown values
+ * yield `filter: undefined` (the caller falls back to its default).
  */
 export function parseLocationHash(hash: string): LocationHashState | null {
   if (!hash) return null;
@@ -57,6 +61,7 @@ export function parseLocationHash(hash: string): LocationHashState | null {
   if (lon < -180 || lon > 180) return null;
 
   let lang: Lang | undefined;
+  let filter: ArticleFilter | undefined;
   for (const param of params) {
     const eq = param.indexOf("=");
     if (eq === -1) continue;
@@ -65,20 +70,31 @@ export function parseLocationHash(hash: string): LocationHashState | null {
     if (key === "lang" && isSupportedLang(value)) {
       lang = value;
     }
+    if (key === "filter" && (value === "all" || value === "highlights")) {
+      filter = value;
+    }
   }
 
-  return { position: { lat, lon }, lang };
+  return { position: { lat, lon }, lang, filter };
 }
 
 /**
- * Encode a position + language into a location hash. The language is always
- * included so a shared link is fully self-describing, e.g.
+ * Encode a position + language (+ filter) into a location hash. The language
+ * is always included so a shared link is fully self-describing, e.g.
  *   #41.8902,12.4922&lang=en
+ * The filter is only included when it differs from the default ("highlights"),
+ * so default-state URLs stay clean:
+ *   #41.8902,12.4922&lang=en&filter=all
  */
-export function encodeLocationHash(position: UserPosition, lang: Lang): string {
+export function encodeLocationHash(
+  position: UserPosition,
+  lang: Lang,
+  filter: ArticleFilter = "highlights",
+): string {
   const lat = position.lat.toFixed(COORD_PRECISION);
   const lon = position.lon.toFixed(COORD_PRECISION);
-  return `#${lat},${lon}&lang=${lang}`;
+  const filterParam = filter === "all" ? "&filter=all" : "";
+  return `#${lat},${lon}&lang=${lang}${filterParam}`;
 }
 
 export interface UrlMirrorDeps {
@@ -89,8 +105,8 @@ export interface UrlMirrorDeps {
 }
 
 /**
- * Build a function that mirrors the live (position, language) into the address
- * bar via `history.replaceState`, never pushing a new history entry.
+ * Build a function that mirrors the live (position, language, filter) into the
+ * address bar via `history.replaceState`, never pushing a new history entry.
  *
  * Key behaviours:
  *   - No-op when there is no position (e.g. the welcome screen).
@@ -101,10 +117,10 @@ export interface UrlMirrorDeps {
  */
 export function createUrlMirror(
   deps: UrlMirrorDeps,
-): (position: UserPosition | null, lang: Lang) => void {
-  return (position, lang) => {
+): (position: UserPosition | null, lang: Lang, filter?: ArticleFilter) => void {
+  return (position, lang, filter) => {
     if (!position) return;
-    const nextHash = encodeLocationHash(position, lang);
+    const nextHash = encodeLocationHash(position, lang, filter);
     if (nextHash === deps.location.hash) return;
     deps.history.replaceState(deps.history.state, "", nextHash);
   };

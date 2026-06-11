@@ -1,7 +1,7 @@
 // Pure state machine for the app — no DOM, no I/O, no side effects.
 // transition(state, event) → { next, effects }
 
-import type { NearbyArticle, UserPosition } from "./types";
+import type { ArticleFilter, NearbyArticle, UserPosition } from "./types";
 import type { LocationError } from "./location";
 import type { NearestQuery } from "./query";
 import { findNearestTiled, buildTileMap } from "./tile-loader";
@@ -42,15 +42,24 @@ export type QueryState =
       tiles: ReadonlyMap<string, NearestQuery>;
     };
 
-/** Compute nearby articles using the current query state. */
+/** Compute nearby articles using the current query state.
+ *  `minWeight` (when set) drops articles below that weight class — the
+ *  Highlights filter. See filterMinWeight in config.ts. */
 export function getNearby(
   queryState: QueryState,
   pos: UserPosition,
   count: number,
+  minWeight?: number,
 ): NearbyArticle[] {
   switch (queryState.mode) {
     case "tiled":
-      return findNearestTiled(queryState.tiles, pos.lat, pos.lon, count);
+      return findNearestTiled(
+        queryState.tiles,
+        pos.lat,
+        pos.lon,
+        count,
+        minWeight === undefined ? undefined : { minWeight },
+      );
     case "none":
       return [];
   }
@@ -96,6 +105,8 @@ export interface AppState {
   position: UserPosition | null;
   positionSource: "gps" | "picked" | null;
   currentLang: Lang;
+  /** Article filter for nearby queries: "highlights" (default) or "all". */
+  filter: ArticleFilter;
   loadGeneration: number;
   loadingTiles: Set<string>;
   downloadProgress: number;
@@ -137,6 +148,7 @@ export type Event =
   | { type: "forwardToDetail"; title: string }
   | { type: "scrollPause" }
   | { type: "togglePause" }
+  | { type: "toggleFilter" }
   | { type: "useGps" }
   | { type: "expandInfiniteScroll" }
   | { type: "showMapPicker" }
@@ -164,6 +176,7 @@ export type Effect =
   | { type: "startGps" }
   | { type: "stopGps" }
   | { type: "storeLang"; lang: Lang }
+  | { type: "storeFilter"; filter: ArticleFilter }
   | { type: "storeStarted" }
   | { type: "loadData"; lang: Lang }
   | { type: "loadTiles"; lang: Lang }
@@ -432,6 +445,56 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
           },
         },
         effects: [{ type: "renderBrowsingList" }],
+      };
+    }
+
+    case "toggleFilter": {
+      // The filter toggle only exists in the browsing header, so other
+      // phases ignore the event (mirrors togglePause).
+      if (state.phase.phase !== "browsing") {
+        return { next: state, effects: [] };
+      }
+      const filter: ArticleFilter =
+        state.filter === "highlights" ? "all" : "highlights";
+      const storeEffect: Effect = { type: "storeFilter", filter };
+      if (!state.position) {
+        // No position (e.g. waiting for GPS after useGps) — flip the mode
+        // and refresh the header; the next position update requeries with
+        // the new filter automatically.
+        return {
+          next: { ...state, filter },
+          effects: [storeEffect, { type: "renderBrowsingList" }],
+        };
+      }
+      // Requery from already-loaded tiles with the new filter. Scroll and
+      // infinite-scroll state reset exactly like the other requery flows
+      // (togglePause/scrollPause). renderBrowsingList is explicit because
+      // queryResult's "same articles" optimisation would otherwise skip the
+      // header rebuild that flips the toggle's pressed state.
+      const count =
+        state.phase.scrollMode === "infinite"
+          ? INFINITE_SCROLL_INITIAL
+          : state.phase.nearbyCount;
+      const effects: Effect[] = [
+        storeEffect,
+        { type: "scrollToTop" },
+        { type: "requery", pos: state.position, count },
+        { type: "renderBrowsingList" },
+      ];
+      if (state.phase.scrollMode !== "infinite") {
+        effects.push({ type: "fetchListSummaries" });
+      }
+      return {
+        next: {
+          ...state,
+          filter,
+          phase: {
+            ...state.phase,
+            lastQueryPos: state.position,
+            infiniteScrollLimit: INFINITE_SCROLL_INITIAL,
+          },
+        },
+        effects,
       };
     }
 

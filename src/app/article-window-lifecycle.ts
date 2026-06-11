@@ -3,17 +3,20 @@
 // reset→create→ensureRange→render orchestration.
 
 import type { ArticleWindow } from "./article-window";
-import type { NearbyArticle, UserPosition } from "./types";
+import type { ArticleFilter, NearbyArticle, UserPosition } from "./types";
 import type { NearestQuery } from "./query";
 import type { TileEntry } from "../tiles";
 import type { Lang } from "../lang";
 import type { AppState } from "./state-machine";
+import { filterMinWeight } from "./config";
 
 export interface CreateWindowOpts {
   position: UserPosition;
   tileMap: Map<string, TileEntry>;
   lang: Lang;
   signal: AbortSignal;
+  /** Weight floor for queries (the Highlights filter), or undefined. */
+  minWeight?: number;
   getStateMachineTiles: () => ReadonlyMap<string, NearestQuery>;
   onWindowChange?: () => void;
 }
@@ -97,6 +100,9 @@ export function createArticleWindowLifecycle(
   let articleWindow: ArticleWindow | null = null;
   let articleWindowAbort: AbortController | null = null;
   let windowPosition: UserPosition | null = null;
+  /** Filter the current window was created with — a change invalidates the
+   *  window's cached articles just like a position change does. */
+  let windowFilter: ArticleFilter | null = null;
   let lastScrollCount = 0;
   let scrollCountObserver: ScrollCountObserver | null = null;
   let articlesObserver: ArticlesObserver | null = null;
@@ -111,6 +117,7 @@ export function createArticleWindowLifecycle(
       articleWindowAbort = null;
     }
     windowPosition = null;
+    windowFilter = null;
     lastScrollCount = 0;
   }
 
@@ -126,11 +133,14 @@ export function createArticleWindowLifecycle(
 
     articleWindowAbort = new AbortController();
 
+    windowFilter = state.filter;
+
     articleWindow = deps.createArticleWindow({
       position: state.position,
       tileMap: state.query.tileMap,
       lang: state.currentLang,
       signal: articleWindowAbort.signal,
+      minWeight: filterMinWeight(state.filter),
       getStateMachineTiles: () => {
         const current = deps.getState();
         if (current.query.mode === "tiled") return current.query.tiles;
@@ -184,8 +194,10 @@ export function createArticleWindowLifecycle(
       !windowPosition ||
       pos.lat !== windowPosition.lat ||
       pos.lon !== windowPosition.lon;
+    const filterChanged =
+      windowFilter !== null && windowFilter !== deps.getState().filter;
 
-    if (posChanged) {
+    if (posChanged || filterChanged) {
       resetArticleWindow();
     }
 

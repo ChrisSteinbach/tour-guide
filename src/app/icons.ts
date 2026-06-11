@@ -97,6 +97,19 @@ export function createSatelliteIcon(): SVGSVGElement {
   return svg;
 }
 
+export function createStarIcon(): SVGSVGElement {
+  const svg = createSvgRoot();
+  // Five-point star — marks the "highlights only" article filter.
+  svg.appendChild(
+    el("polygon", {
+      points:
+        "9,1.5 10.76,6.57 16.13,6.68 11.85,9.93 13.41,15.07 " +
+        "9,12 4.59,15.07 6.15,9.93 1.87,6.68 7.24,6.57",
+    }),
+  );
+  return svg;
+}
+
 export function createMapIcon(): SVGSVGElement {
   const svg = createSvgRoot();
   svg.appendChild(

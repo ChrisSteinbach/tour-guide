@@ -16,6 +16,18 @@ describe("encodeLocationHash", () => {
       "#41.8902,12.5000&lang=sv",
     );
   });
+
+  it("appends filter=all when the Everything filter is active", () => {
+    expect(
+      encodeLocationHash({ lat: 41.8902, lon: 12.4922 }, "en", "all"),
+    ).toBe("#41.8902,12.4922&lang=en&filter=all");
+  });
+
+  it("omits the filter param for the default Highlights filter", () => {
+    expect(
+      encodeLocationHash({ lat: 41.8902, lon: 12.4922 }, "en", "highlights"),
+    ).toBe("#41.8902,12.4922&lang=en");
+  });
 });
 
 describe("parseLocationHash", () => {
@@ -25,7 +37,50 @@ describe("parseLocationHash", () => {
     expect(parseLocationHash(hash)).toEqual({
       position: { lat: 41.8902, lon: 12.4922 },
       lang: "sv",
+      filter: undefined,
     });
+  });
+
+  it("round-trips an encoded hash with the Everything filter", () => {
+    const hash = encodeLocationHash(
+      { lat: 41.8902, lon: 12.4922 },
+      "sv",
+      "all",
+    );
+
+    expect(parseLocationHash(hash)).toEqual({
+      position: { lat: 41.8902, lon: 12.4922 },
+      lang: "sv",
+      filter: "all",
+    });
+  });
+
+  it("parses lang and filter together regardless of param order", () => {
+    expect(parseLocationHash("#41.8902,12.4922&filter=all&lang=de")).toEqual({
+      position: { lat: 41.8902, lon: 12.4922 },
+      lang: "de",
+      filter: "all",
+    });
+  });
+
+  it("yields filter: undefined when the param is absent (old URLs)", () => {
+    const parsed = parseLocationHash("#48.8584,2.2945&lang=en");
+
+    expect(parsed?.position).toEqual({ lat: 48.8584, lon: 2.2945 });
+    expect(parsed?.filter).toBeUndefined();
+  });
+
+  it("accepts an explicit filter=highlights", () => {
+    expect(parseLocationHash("#48.8584,2.2945&filter=highlights")?.filter).toBe(
+      "highlights",
+    );
+  });
+
+  it("keeps the position but drops an unrecognised filter value", () => {
+    const parsed = parseLocationHash("#48.8584,2.2945&filter=banana");
+
+    expect(parsed?.position).toEqual({ lat: 48.8584, lon: 2.2945 });
+    expect(parsed?.filter).toBeUndefined();
   });
 
   it("parses a hash without the leading '#'", () => {
@@ -157,6 +212,34 @@ describe("createUrlMirror", () => {
       { view: "detail" },
       "",
       "#41.8902,12.4922&lang=sv",
+    );
+  });
+
+  it("writes filter=all when the Everything filter becomes active", () => {
+    const deps = makeDeps();
+    const mirror = createUrlMirror(deps);
+
+    mirror({ lat: 41.8902, lon: 12.4922 }, "en", "highlights");
+    mirror({ lat: 41.8902, lon: 12.4922 }, "en", "all");
+
+    expect(deps.history.replaceState).toHaveBeenCalledTimes(2);
+    expect(deps.history.replaceState).toHaveBeenLastCalledWith(
+      { view: "detail" },
+      "",
+      "#41.8902,12.4922&lang=en&filter=all",
+    );
+  });
+
+  it("drops the filter param when switching back to Highlights", () => {
+    const deps = makeDeps("#41.8902,12.4922&lang=en&filter=all");
+    const mirror = createUrlMirror(deps);
+
+    mirror({ lat: 41.8902, lon: 12.4922 }, "en", "highlights");
+
+    expect(deps.history.replaceState).toHaveBeenLastCalledWith(
+      { view: "detail" },
+      "",
+      "#41.8902,12.4922&lang=en",
     );
   });
 });

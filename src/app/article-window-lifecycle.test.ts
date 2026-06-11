@@ -6,6 +6,7 @@ import {
   computeOptimisticCount,
   type ArticleWindowLifecycleDeps,
 } from "./article-window-lifecycle";
+import { HIGHLIGHT_MIN_WEIGHT } from "./config";
 
 const pos: UserPosition = { lat: 59.33, lon: 18.07 };
 const article: NearbyArticle = {
@@ -57,6 +58,7 @@ function tiledAppState(): AppState {
     position: pos,
     positionSource: "picked",
     currentLang: "en",
+    filter: "highlights",
     loadGeneration: 1,
     loadingTiles: new Set(),
     downloadProgress: -1,
@@ -133,6 +135,51 @@ describe("createArticleWindowLifecycle", () => {
     expect(aw.reset).not.toHaveBeenCalled();
     expect(deps.createArticleWindow).toHaveBeenCalledTimes(1);
     expect(aw.ensureRange).toHaveBeenLastCalledWith(0, 400);
+  });
+
+  it("ensureArticleRange resets the window when the article filter changes", () => {
+    const aw = stubArticleWindow();
+    let filter: AppState["filter"] = "highlights";
+    const deps = makeDeps({
+      getState: vi.fn(() => ({ ...tiledAppState(), filter })),
+      createArticleWindow: vi.fn(() => aw),
+    });
+
+    const lifecycle = createArticleWindowLifecycle(deps);
+
+    // Prime the lifecycle under the Highlights filter
+    lifecycle.ensureArticleRange(pos, 200);
+    expect(aw.reset).not.toHaveBeenCalled();
+
+    // Same position, but the user toggled to Everything — the cached
+    // (filtered) window contents are stale and must be rebuilt.
+    filter = "all";
+    lifecycle.ensureArticleRange(pos, 200);
+
+    expect(aw.reset).toHaveBeenCalled();
+    expect(deps.createArticleWindow).toHaveBeenCalledTimes(2);
+  });
+
+  it("creates the window with the highlight weight floor in Highlights mode and none in Everything mode", () => {
+    const createArticleWindow = vi.fn(() => stubArticleWindow());
+    let filter: AppState["filter"] = "highlights";
+    const deps = makeDeps({
+      getState: vi.fn(() => ({ ...tiledAppState(), filter })),
+      createArticleWindow,
+    });
+
+    const lifecycle = createArticleWindowLifecycle(deps);
+
+    lifecycle.ensureArticleRange(pos, 200);
+    expect(createArticleWindow).toHaveBeenLastCalledWith(
+      expect.objectContaining({ minWeight: HIGHLIGHT_MIN_WEIGHT }),
+    );
+
+    filter = "all";
+    lifecycle.ensureArticleRange(pos, 200);
+    expect(createArticleWindow).toHaveBeenLastCalledWith(
+      expect.objectContaining({ minWeight: undefined }),
+    );
   });
 
   it("getOrCreateArticleWindow reuses existing window on second call", () => {

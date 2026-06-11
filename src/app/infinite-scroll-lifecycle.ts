@@ -44,6 +44,10 @@ export interface InfiniteScrollDeps {
   renderItem: (index: number) => HTMLElement | null;
   /** Render the header element. */
   renderHeader: () => HTMLElement;
+  /** Render content for the zero-article state (e.g. the "no highlights
+   *  nearby" hint), or null to show nothing. Rebuilt on every update so it
+   *  tracks the current filter. */
+  renderEmptyState?: () => HTMLElement | null;
   /** Called to set up the spatial view (radar/map) initially. */
   initSpatialView: () => void;
   /** Destroy the spatial view. */
@@ -98,8 +102,18 @@ export function createInfiniteScrollLifecycle(
   let disconnectScroll: (() => void) | null = null;
   let cancelMapSync: (() => void) | null = null;
   let scrollEl: HTMLElement | null = null;
+  let emptyEl: HTMLElement | null = null;
   let nearEndAnchor = 0;
   const nearEndThreshold = deps.nearEndThreshold ?? 50;
+
+  /** Show/refresh the empty-state element while the list has zero items. */
+  function syncEmptyState(listHeight: number): void {
+    emptyEl?.remove();
+    emptyEl = null;
+    if (listHeight > 0 || !deps.renderEmptyState || !scrollEl) return;
+    emptyEl = deps.renderEmptyState();
+    if (emptyEl) scrollEl.appendChild(emptyEl);
+  }
 
   function destroy(): void {
     if (disconnectScroll) {
@@ -117,6 +131,10 @@ export function createInfiniteScrollLifecycle(
     if (cancelMapSync) {
       cancelMapSync();
       cancelMapSync = null;
+    }
+    if (emptyEl) {
+      emptyEl.remove();
+      emptyEl = null;
     }
     scrollEl = null;
   }
@@ -173,6 +191,7 @@ export function createInfiniteScrollLifecycle(
     });
 
     virtualList.update(listHeight, deps.renderItem);
+    syncEmptyState(listHeight);
 
     disconnectScroll = connectScroll(virtualList, scrollWrapper);
   }
@@ -195,6 +214,7 @@ export function createInfiniteScrollLifecycle(
     updateHeader();
 
     virtualList.update(listHeight, deps.renderItem);
+    syncEmptyState(listHeight);
   }
 
   return {
