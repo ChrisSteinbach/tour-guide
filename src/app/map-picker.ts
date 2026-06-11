@@ -2,6 +2,12 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { worldZoomBounds } from "./map-bounds";
 import { locationPinIcon } from "./map-icons";
+import { createPlaceSearch } from "./place-search";
+import { searchPlaces } from "./nominatim";
+
+// Zoom level applied when panning to a place chosen from search — close enough
+// to see the city, loose enough to nudge the marker afterward.
+const SEARCH_RESULT_ZOOM = 14;
 
 export interface MapPickerHandle {
   destroy(): void;
@@ -37,9 +43,9 @@ export function createMapPicker(
   let marker: L.Marker | null = null;
   let confirmBtn: HTMLButtonElement | null = null;
 
-  map.on("click", (e: L.LeafletMouseEvent) => {
-    const { lat, lng } = e.latlng;
-
+  // Shared selection path for both a map click and a search result: place (or
+  // move) the marker and arm the confirm button to pick that exact spot.
+  function selectLocation(lat: number, lng: number): void {
     if (marker) {
       marker.setLatLng([lat, lng]);
     } else {
@@ -60,10 +66,26 @@ export function createMapPicker(
     }
 
     confirmBtn.onclick = () => onPick(lat, lng);
+  }
+
+  map.on("click", (e: L.LeafletMouseEvent) => {
+    selectLocation(e.latlng.lat, e.latlng.lng);
   });
+
+  // Place search: panning to a result reuses the same selection path, so the
+  // existing confirm → onPick flow works unchanged.
+  const placeSearch = createPlaceSearch({
+    search: (query) => searchPlaces(query),
+    onSelect: ({ lat, lon }) => {
+      map.setView([lat, lon], SEARCH_RESULT_ZOOM);
+      selectLocation(lat, lon);
+    },
+  });
+  container.parentElement?.insertBefore(placeSearch.element, container);
 
   return {
     destroy() {
+      placeSearch.element.remove();
       confirmBtn?.remove();
       removeResizeHandler();
       map.remove();

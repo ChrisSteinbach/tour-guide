@@ -30,6 +30,7 @@ import { createMapPanelLifecycle } from "./map-panel-lifecycle";
 import { createRenderer, type Renderer } from "./renderer";
 import { createBootstrap, type Bootstrap } from "./bootstrap";
 import { createEffectUIAdapter } from "./effect-ui-adapter";
+import { parseLocationHash } from "./url-state";
 
 export interface ComposeAppDeps {
   app: HTMLElement;
@@ -256,6 +257,7 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
     dispatch,
     app,
     getCurrentLang: () => getState().currentLang,
+    getLocationRestore: () => parseLocationHash(window.location.hash),
   });
 
   let destroyed = false;

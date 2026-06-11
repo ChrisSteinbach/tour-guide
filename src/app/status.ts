@@ -1,8 +1,25 @@
 import type { LocationError } from "./location";
 import { SUPPORTED_LANGS, LANG_NAMES } from "../lang";
 import type { Lang } from "../lang";
+import type { UserPosition } from "./types";
 import { createAppHeader } from "./header";
 import { createSatelliteIcon, createMapIcon } from "./icons";
+
+/** A famous, Wikipedia-dense spot offered as a one-tap demo on the welcome
+ *  screen — lets a first-time visitor browse instantly without GPS or the map
+ *  picker. */
+interface DemoPlace {
+  /** Short label shown on the chip. */
+  name: string;
+  position: UserPosition;
+}
+
+const DEMO_PLACES: readonly DemoPlace[] = [
+  { name: "Rome", position: { lat: 41.8902, lon: 12.4922 } },
+  { name: "Giza", position: { lat: 29.9792, lon: 31.1342 } },
+  { name: "Kyoto", position: { lat: 35.0037, lon: 135.778 } },
+  { name: "Manhattan", position: { lat: 40.758, lon: -73.9855 } },
+];
 
 /** Native `<select>` language picker for status screens (welcome, data-unavailable).
  *  The browsing header uses `createLangDropdown` from `lang-dropdown.ts` instead,
@@ -90,13 +107,21 @@ export function renderWelcome(
   options: {
     onStart: () => void;
     onPickLocation: () => void;
+    /** Jump straight to browsing at a famous demo spot — no GPS prompt. */
+    onExplore: (position: UserPosition) => void;
     currentLang: Lang;
     onLangChange: (lang: Lang) => void;
     onShowAbout: () => void;
   },
 ): void {
-  const { onStart, onPickLocation, currentLang, onLangChange, onShowAbout } =
-    options;
+  const {
+    onStart,
+    onPickLocation,
+    onExplore,
+    currentLang,
+    onLangChange,
+    onShowAbout,
+  } = options;
   const tagline = document.createElement("p");
   tagline.className = "status-message";
   tagline.textContent = "Discover Wikipedia articles about nearby places.";
@@ -124,12 +149,38 @@ export function renderWelcome(
 
   choices.append(liveBtn, pickBtn);
 
+  // Low-commitment demo row: tap a famous place to start browsing immediately.
+  const explore = document.createElement("div");
+  explore.className = "welcome-explore";
+
+  const exploreLabel = document.createElement("span");
+  exploreLabel.className = "welcome-explore-label";
+  exploreLabel.textContent = "or explore:";
+
+  const chips = document.createElement("div");
+  chips.className = "welcome-chips";
+  for (const place of DEMO_PLACES) {
+    const chip = document.createElement("button");
+    chip.className = "welcome-chip";
+    chip.textContent = place.name;
+    chip.addEventListener("click", () => onExplore(place.position));
+    chips.appendChild(chip);
+  }
+
+  explore.append(exploreLabel, chips);
+
   const aboutLink = document.createElement("button");
   aboutLink.className = "welcome-about";
   aboutLink.textContent = "About";
   aboutLink.addEventListener("click", onShowAbout);
 
-  renderStatusScreen(container, [tagline, langSelect, choices, aboutLink]);
+  renderStatusScreen(container, [
+    tagline,
+    langSelect,
+    choices,
+    explore,
+    aboutLink,
+  ]);
 }
 
 /** Render the data-unavailable state with language picker. */

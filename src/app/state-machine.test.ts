@@ -1209,6 +1209,25 @@ describe("langChanged event", () => {
     expect(effectTypes(effects)).not.toContain("render");
     expect(effectTypes(effects)).toContain("loadData");
   });
+
+  it("persists by default when persist is omitted (explicit user change)", () => {
+    const state = makeState({ currentLang: "en" });
+    const { effects } = transition(state, { type: "langChanged", lang: "sv" });
+    expect(effectTypes(effects)).toContain("storeLang");
+  });
+
+  it("does not emit storeLang for a non-persisting change (boot kick)", () => {
+    const state = makeState({ currentLang: "en" });
+    const { next, effects } = transition(state, {
+      type: "langChanged",
+      lang: "sv",
+      persist: false,
+    });
+    // Everything else is identical: the language still changes and data loads.
+    expect(next.currentLang).toBe("sv");
+    expect(effectTypes(effects)).toContain("loadData");
+    expect(effectTypes(effects)).not.toContain("storeLang");
+  });
 });
 
 // ── downloadProgress event (tour-guide-8y4) ──────────────────

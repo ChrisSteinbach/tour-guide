@@ -41,7 +41,18 @@ vi.mock("leaflet", () => ({
 
 vi.mock("leaflet/dist/leaflet.css", () => ({}));
 
+// Stub the geocoding client so the search glue can be driven offline.
+vi.mock("./nominatim", () => ({
+  searchPlaces: vi.fn(),
+}));
+
 import { createMapPicker } from "./map-picker";
+import { searchPlaces } from "./nominatim";
+
+// Flush microtasks so a settled searchPlaces promise has rendered its results.
+function flush(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
 
 // ── Helpers ─────────────────────────────────────────────────
 
@@ -235,5 +246,59 @@ describe("createMapPicker", () => {
 
     expect(mockMap.setMinZoom).toHaveBeenCalledWith(5);
     handle.destroy();
+  });
+
+  it("inserts a place-search box above the map", () => {
+    const handle = createMapPicker(container, { onPick: vi.fn() });
+
+    const search = wrapper.querySelector(".map-picker-search");
+    expect(search).not.toBeNull();
+    // Search must precede the Leaflet map element in document order.
+    expect(
+      search!.compareDocumentPosition(container) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    handle.destroy();
+  });
+
+  it("pans to and selects a chosen search result", async () => {
+    const L = (await import("leaflet")).default;
+    vi.mocked(searchPlaces).mockResolvedValue([
+      { displayName: "Paris, France", lat: 48.8566, lon: 2.3522 },
+    ]);
+    const onPick = vi.fn();
+    const handle = createMapPicker(container, { onPick });
+
+    const input = wrapper.querySelector(
+      ".map-picker-search-input",
+    ) as HTMLInputElement;
+    input.value = "Paris";
+    wrapper
+      .querySelector(".map-picker-search-form")!
+      .dispatchEvent(new Event("submit", { cancelable: true }));
+    await flush();
+
+    (
+      wrapper.querySelector(".map-picker-search-result") as HTMLButtonElement
+    ).click();
+
+    expect(mockMap.setView).toHaveBeenCalledWith([48.8566, 2.3522], 14);
+    expect(L.marker).toHaveBeenCalledWith(
+      [48.8566, 2.3522],
+      expect.objectContaining({ icon: expect.anything() }),
+    );
+
+    // The shared confirm flow picks the searched coordinates.
+    (wrapper.querySelector(".map-picker-confirm") as HTMLButtonElement).click();
+    expect(onPick).toHaveBeenCalledWith(48.8566, 2.3522);
+    handle.destroy();
+  });
+
+  it("removes the place-search box on destroy", () => {
+    const handle = createMapPicker(container, { onPick: vi.fn() });
+    expect(wrapper.querySelector(".map-picker-search")).not.toBeNull();
+
+    handle.destroy();
+    expect(wrapper.querySelector(".map-picker-search")).toBeNull();
   });
 });

@@ -21,6 +21,7 @@ describe("renderWelcome", () => {
     const container = document.createElement("div");
     renderWelcome(container, {
       onShowAbout: () => {},
+      onExplore: () => {},
       onStart,
       onPickLocation: () => {},
       currentLang: "en",
@@ -36,6 +37,7 @@ describe("renderWelcome", () => {
     const container = document.createElement("div");
     renderWelcome(container, {
       onShowAbout: () => {},
+      onExplore: () => {},
       onStart: () => {},
       onPickLocation,
       currentLang: "en",
@@ -50,6 +52,7 @@ describe("renderWelcome", () => {
     const container = document.createElement("div");
     renderWelcome(container, {
       onShowAbout: () => {},
+      onExplore: () => {},
       onStart: () => {},
       onPickLocation: () => {},
       currentLang: "en",
@@ -65,6 +68,7 @@ describe("renderWelcome", () => {
     const container = document.createElement("div");
     renderWelcome(container, {
       onShowAbout: () => {},
+      onExplore: () => {},
       onStart: () => {},
       onPickLocation: () => {},
       currentLang: "sv",
@@ -79,6 +83,7 @@ describe("renderWelcome", () => {
     const container = document.createElement("div");
     renderWelcome(container, {
       onShowAbout: () => {},
+      onExplore: () => {},
       onStart: () => {},
       onPickLocation: () => {},
       currentLang: "en",
@@ -94,6 +99,7 @@ describe("renderWelcome", () => {
     const container = document.createElement("div");
     renderWelcome(container, {
       onShowAbout: () => {},
+      onExplore: () => {},
       onStart: () => {},
       onPickLocation: () => {},
       currentLang: "en",
@@ -107,6 +113,7 @@ describe("renderWelcome", () => {
     const container = document.createElement("div");
     renderWelcome(container, {
       onShowAbout: () => {},
+      onExplore: () => {},
       onStart: () => {},
       onPickLocation: () => {},
       currentLang: "en",
@@ -122,6 +129,7 @@ describe("renderWelcome", () => {
     const container = document.createElement("div");
     renderWelcome(container, {
       onShowAbout,
+      onExplore: () => {},
       onStart: () => {},
       onPickLocation: () => {},
       currentLang: "en",
@@ -135,6 +143,57 @@ describe("renderWelcome", () => {
 
     aboutBtn.click();
     expect(onShowAbout).toHaveBeenCalledOnce();
+  });
+
+  it("renders an 'or explore' demo row with four place chips", () => {
+    const container = document.createElement("div");
+    renderWelcome(container, {
+      onShowAbout: () => {},
+      onExplore: () => {},
+      onStart: () => {},
+      onPickLocation: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+
+    const label = container.querySelector(".welcome-explore-label");
+    expect(label?.textContent).toMatch(/explore/i);
+
+    const chips = container.querySelectorAll(".welcome-chip");
+    expect(chips).toHaveLength(4);
+    expect(Array.from(chips).map((c) => c.textContent)).toEqual([
+      "Rome",
+      "Giza",
+      "Kyoto",
+      "Manhattan",
+    ]);
+  });
+
+  it("tapping a chip calls onExplore with that place's exact coordinates", () => {
+    const expected = [
+      { name: "Rome", position: { lat: 41.8902, lon: 12.4922 } },
+      { name: "Giza", position: { lat: 29.9792, lon: 31.1342 } },
+      { name: "Kyoto", position: { lat: 35.0037, lon: 135.778 } },
+      { name: "Manhattan", position: { lat: 40.758, lon: -73.9855 } },
+    ];
+    const onExplore = vi.fn();
+    const container = document.createElement("div");
+    renderWelcome(container, {
+      onShowAbout: () => {},
+      onExplore,
+      onStart: () => {},
+      onPickLocation: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+
+    const chips =
+      container.querySelectorAll<HTMLButtonElement>(".welcome-chip");
+    expected.forEach((place, i) => {
+      onExplore.mockClear();
+      chips[i].click();
+      expect(onExplore).toHaveBeenCalledWith(place.position);
+    });
   });
 });
 

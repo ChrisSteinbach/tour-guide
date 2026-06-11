@@ -7,12 +7,15 @@ import { idbOpen, idbCleanupOldKeys } from "./idb";
 import { renderWelcome } from "./status";
 import { STARTED_STORAGE_KEY, STARTED_TTL_MS } from "./effect-executor";
 import type { Event } from "./state-machine";
+import type { LocationHashState } from "./url-state";
 import type { Lang } from "../lang";
 
 export interface BootstrapDeps {
   dispatch: (event: Event) => void;
   app: HTMLElement;
   getCurrentLang: () => Lang;
+  /** Position (+ language) to restore from the URL hash, or null when none. */
+  getLocationRestore: () => LocationHashState | null;
 }
 
 export interface Bootstrap {
@@ -64,7 +67,27 @@ export function createBootstrap(deps: BootstrapDeps): Bootstrap {
     });
 
     listenForSwUpdate();
-    deps.dispatch({ type: "langChanged", lang: deps.getCurrentLang() });
+
+    const restore = deps.getLocationRestore();
+
+    // Boot only needs langChanged to kick off the data load, so it does NOT
+    // persist: the active language may have come from a shared permalink's hash
+    // (#…&lang=xx), and following someone's link must never overwrite the
+    // visitor's own saved language. Explicit user changes still persist.
+    deps.dispatch({
+      type: "langChanged",
+      lang: deps.getCurrentLang(),
+      persist: false,
+    });
+
+    if (restore) {
+      // A shareable link was opened. Restore the shared position directly: this
+      // skips both the welcome screen and any auto-GPS-resume. pickPosition
+      // stops GPS, loads tiles, and enters browsing at the shared spot
+      // (positionSource "picked").
+      deps.dispatch({ type: "pickPosition", position: restore.position });
+      return;
+    }
 
     const startedAt = Number(localStorage.getItem(STARTED_STORAGE_KEY));
     if (startedAt && Date.now() - startedAt < STARTED_TTL_MS) {
@@ -80,6 +103,8 @@ export function createBootstrap(deps: BootstrapDeps): Bootstrap {
             hasGeolocation: !!navigator.geolocation,
           }),
         onPickLocation: () => deps.dispatch({ type: "showMapPicker" }),
+        onExplore: (position) =>
+          deps.dispatch({ type: "pickPosition", position }),
         currentLang: deps.getCurrentLang(),
         onLangChange: (lang) => deps.dispatch({ type: "langChanged", lang }),
         onShowAbout: () => deps.dispatch({ type: "showAbout" }),

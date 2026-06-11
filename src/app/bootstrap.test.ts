@@ -3,6 +3,7 @@ import { createBootstrap } from "./bootstrap";
 import type { BootstrapDeps } from "./bootstrap";
 import { STARTED_STORAGE_KEY } from "./effect-executor";
 import { idbOpen, idbCleanupOldKeys } from "./idb";
+import { renderWelcome } from "./status";
 import type { Lang } from "../lang";
 
 // Stub out side-effectful modules so tests can focus on listener wiring.
@@ -22,6 +23,7 @@ function makeDeps(overrides: Partial<BootstrapDeps> = {}): BootstrapDeps {
     dispatch: vi.fn(),
     app,
     getCurrentLang: vi.fn<() => Lang>(() => "en"),
+    getLocationRestore: vi.fn(() => null),
     ...overrides,
   };
 }
@@ -149,7 +151,7 @@ describe("createBootstrap", () => {
       expect(dispatch).toHaveBeenCalledWith({ type: "back" });
     });
 
-    it("dispatches langChanged with the current language at startup", () => {
+    it("dispatches a non-persisting langChanged with the current language at startup", () => {
       const dispatch = vi.fn();
       const getCurrentLang = vi.fn<() => Lang>(() => "sv");
       const deps = makeDeps({ dispatch, getCurrentLang });
@@ -157,9 +159,13 @@ describe("createBootstrap", () => {
 
       bootstrap.run();
 
+      // persist: false — the boot dispatch only kicks the data load. The active
+      // language may have come from a shared permalink hash, and must not
+      // overwrite the visitor's own saved language.
       expect(dispatch).toHaveBeenCalledWith({
         type: "langChanged",
         lang: "sv",
+        persist: false,
       });
     });
 
@@ -197,6 +203,102 @@ describe("createBootstrap", () => {
         type: "start",
         hasGeolocation: !!navigator.geolocation,
       });
+    });
+
+    it("wires the welcome onExplore callback to dispatch pickPosition", () => {
+      vi.mocked(renderWelcome).mockClear();
+      const dispatch = vi.fn();
+      const deps = makeDeps({ dispatch });
+      const bootstrap = createBootstrap(deps);
+
+      bootstrap.run();
+
+      const options = vi.mocked(renderWelcome).mock.calls.at(-1)?.[1];
+      options?.onExplore({ lat: 1, lon: 2 });
+
+      expect(dispatch).toHaveBeenCalledWith({
+        type: "pickPosition",
+        position: { lat: 1, lon: 2 },
+      });
+    });
+  });
+
+  describe("location restore (permalink)", () => {
+    it("dispatches pickPosition with the restored position", () => {
+      const dispatch = vi.fn();
+      const deps = makeDeps({
+        dispatch,
+        getLocationRestore: () => ({
+          position: { lat: 41.8902, lon: 12.4922 },
+          lang: "sv",
+        }),
+        getCurrentLang: () => "sv",
+      });
+      const bootstrap = createBootstrap(deps);
+
+      bootstrap.run();
+
+      expect(dispatch).toHaveBeenCalledWith({
+        type: "pickPosition",
+        position: { lat: 41.8902, lon: 12.4922 },
+      });
+    });
+
+    it("loads data for the hash language without persisting it", () => {
+      const dispatch = vi.fn();
+      const deps = makeDeps({
+        dispatch,
+        getLocationRestore: () => ({
+          position: { lat: 41.8902, lon: 12.4922 },
+          lang: "sv",
+        }),
+        getCurrentLang: () => "sv",
+      });
+      const bootstrap = createBootstrap(deps);
+
+      bootstrap.run();
+
+      // persist: false keeps a shared link from overwriting the visitor's own
+      // saved language. The non-persisting langChanged carries the data load.
+      expect(dispatch).toHaveBeenCalledWith({
+        type: "langChanged",
+        lang: "sv",
+        persist: false,
+      });
+    });
+
+    it("skips the welcome screen and the auto-resume start when restoring", () => {
+      vi.mocked(renderWelcome).mockClear();
+      // A recent started-at would normally trigger auto-resume.
+      localStorage.setItem(STARTED_STORAGE_KEY, String(Date.now()));
+      const dispatch = vi.fn();
+      const deps = makeDeps({
+        dispatch,
+        getLocationRestore: () => ({ position: { lat: 10, lon: 20 } }),
+      });
+      const bootstrap = createBootstrap(deps);
+
+      bootstrap.run();
+
+      expect(renderWelcome).not.toHaveBeenCalled();
+      expect(dispatch).not.toHaveBeenCalledWith({
+        type: "start",
+        hasGeolocation: !!navigator.geolocation,
+      });
+    });
+
+    it("falls through to the normal welcome flow when there is no hash to restore", () => {
+      vi.mocked(renderWelcome).mockClear();
+      const dispatch = vi.fn();
+      const deps = makeDeps({ dispatch, getLocationRestore: () => null });
+      const bootstrap = createBootstrap(deps);
+
+      bootstrap.run();
+
+      expect(renderWelcome).toHaveBeenCalled();
+      expect(dispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: "pickPosition" }),
+      );
     });
   });
 });

@@ -819,6 +819,31 @@ describe("renderer renderPhase delegates to status renderers", () => {
     expect(startBtn).toBeDefined();
   });
 
+  it("dispatches pickPosition when a welcome demo chip is tapped", () => {
+    const dispatch = vi.fn();
+    const deps = makeDeps({
+      dispatch,
+      getState: vi.fn(() => ({
+        ...tiledBrowsingState(),
+        phase: { phase: "welcome" as const },
+      })),
+    });
+    const renderer = createRenderer(deps);
+    renderer.renderPhase();
+
+    const chip = deps.app.querySelector<HTMLButtonElement>(".welcome-chip");
+    expect(chip).not.toBeNull();
+    chip?.click();
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "pickPosition" }),
+    );
+    const call = dispatch.mock.calls.find(
+      ([e]) => e.type === "pickPosition",
+    )?.[0];
+    expect(call.position).toEqual({ lat: 41.8902, lon: 12.4922 });
+  });
+
   it("renders an error message for the error phase", () => {
     const deps = makeDeps({
       getState: vi.fn(() => ({
