@@ -231,6 +231,16 @@ describe("readArticles", () => {
     const articles = await readArticles(path, Infinity, null);
     expect(articles.map((a) => a.title)).toEqual(["A", "B"]);
   });
+
+  it("preserves the optional len field and leaves it absent for old NDJSON", async () => {
+    const path = writeNdjson("len.ndjson", [
+      { title: "A", lat: 1, lon: 1, len: 2048 },
+      { title: "B", lat: 2, lon: 2 }, // old NDJSON line without len
+    ]);
+    const articles = await readArticles(path, Infinity, null);
+    expect(articles[0].len).toBe(2048);
+    expect(articles[1].len).toBeUndefined();
+  });
 });
 
 // ---------- buildTile ----------
@@ -258,6 +268,41 @@ describe("buildTile", () => {
       { title: "D", lat: 0, lon: 0.3 },
     ];
     expect(buildTile(collinear)).toBeNull();
+  });
+
+  it("derives per-vertex weights from article page lengths", () => {
+    const articles: Article[] = [
+      { title: "NE", lat: 14, lon: 4, len: 1024 }, // 8*log2(1024) = 80
+      { title: "NW", lat: 14, lon: 1, len: 8192 }, // 8*log2(8192) = 104
+      { title: "SE", lat: 11, lon: 4 }, // missing len → 0
+      { title: "SW", lat: 11, lon: 1, len: 1 }, // log2(1)=0, clamped → 1
+      { title: "C", lat: 12.5, lon: 2.5, len: 2 ** 40 }, // clamped → 255
+    ];
+
+    const buf = buildTile(articles);
+    expect(buf).not.toBeNull();
+    const { articles: metas, weights } = deserializeBinary(buf!);
+
+    const weightByTitle = new Map(metas.map((m, i) => [m.title, weights[i]]));
+    expect(weightByTitle.get("NE")).toBe(80);
+    expect(weightByTitle.get("NW")).toBe(104);
+    expect(weightByTitle.get("SE")).toBe(0);
+    expect(weightByTitle.get("SW")).toBe(1);
+    expect(weightByTitle.get("C")).toBe(255);
+  });
+
+  it("builds tiles with all-zero weights when no article has a len (old NDJSON)", () => {
+    const articles: Article[] = [
+      { title: "NE", lat: 14, lon: 4 },
+      { title: "NW", lat: 14, lon: 1 },
+      { title: "SE", lat: 11, lon: 4 },
+      { title: "SW", lat: 11, lon: 1 },
+    ];
+
+    const buf = buildTile(articles);
+    expect(buf).not.toBeNull();
+    const { weights } = deserializeBinary(buf!);
+    expect(Array.from(weights)).toEqual([0, 0, 0, 0]);
   });
 });
 

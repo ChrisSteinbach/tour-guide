@@ -548,6 +548,7 @@ describe("loadTile", () => {
     { title: "B" },
     { title: "C" },
   ];
+  const fakeWeights = new Uint8Array([0, 0, 0]);
 
   const cachedTile = {
     vertexPoints: fakeFd.vertexPoints,
@@ -583,6 +584,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     const fakeBuf = new ArrayBuffer(8);
@@ -614,6 +616,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -650,6 +653,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -675,6 +679,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -701,6 +706,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -743,6 +749,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -777,6 +784,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -812,6 +820,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -865,6 +874,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -891,6 +901,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -914,6 +925,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -969,6 +981,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -1004,6 +1017,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -1039,6 +1053,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValue({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -1079,6 +1094,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValue({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -1125,6 +1141,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValue({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(

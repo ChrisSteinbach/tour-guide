@@ -4,7 +4,7 @@
  * 1. Download SQL dump files from dumps.wikimedia.org
  * 2. Stream-parse and join tables by page_id
  *
- * Output: NDJSON with {title, lat, lon}.
+ * Output: NDJSON with {title, lat, lon, len?}.
  */
 
 import { createWriteStream } from "node:fs";
@@ -22,6 +22,15 @@ export interface Article {
   title: string;
   lat: number;
   lon: number;
+  /** Page length in bytes (page_len from the page dump); omitted when unknown. */
+  len?: number;
+}
+
+/** Page metadata joined onto geo_tags rows by page_id. */
+export interface PageInfo {
+  title: string;
+  /** Page length in bytes; omitted when page_len is missing or unparsable. */
+  len?: number;
 }
 
 export interface Bounds {
@@ -56,28 +65,54 @@ const PAGE_ID = "page_id";
 const PAGE_NAMESPACE = "page_namespace";
 const PAGE_TITLE = "page_title";
 const PAGE_IS_REDIRECT = "page_is_redirect";
+const PAGE_LEN = "page_len";
 
 // ---------- Phase 1: Build page map ----------
 
+/** Parse a page_len SQL value to a positive integer, or undefined if unparsable. */
+function parsePageLen(value: string | number | null): number | undefined {
+  if (value === null) return undefined;
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  return Math.trunc(n);
+}
+
 /**
- * Build a map of page_id → title from the page dump.
+ * Build a map of page_id → {title, len} from the page dump.
  * Filters: namespace=0 (articles), not redirect.
  */
 export async function buildPageMap(
   filePath: string,
   onProgress?: (count: number) => void,
-): Promise<Map<number, string>> {
-  const pages = new Map<number, string>();
+): Promise<Map<number, PageInfo>> {
+  const pages = new Map<number, PageInfo>();
 
-  for await (const [pageId, namespace, title, isRedirect] of streamDump({
+  for await (const [
+    pageId,
+    namespace,
+    title,
+    isRedirect,
+    pageLen,
+  ] of streamDump({
     filePath,
     tableName: "page",
-    requiredColumns: [PAGE_ID, PAGE_NAMESPACE, PAGE_TITLE, PAGE_IS_REDIRECT],
+    requiredColumns: [
+      PAGE_ID,
+      PAGE_NAMESPACE,
+      PAGE_TITLE,
+      PAGE_IS_REDIRECT,
+      PAGE_LEN,
+    ],
     onProgress,
     progressInterval: 500_000,
   })) {
     if (namespace === 0 && isRedirect === 0) {
-      pages.set(pageId as number, (title as string).replace(/_/g, " "));
+      const info: PageInfo = {
+        title: (title as string).replace(/_/g, " "),
+      };
+      const len = parsePageLen(pageLen);
+      if (len !== undefined) info.len = len;
+      pages.set(pageId as number, info);
     }
   }
 
@@ -115,7 +150,7 @@ export function isInBounds(lat: number, lon: number, bounds: Bounds): boolean {
  */
 export async function* streamGeoArticles(
   filePath: string,
-  pages: Map<number, string>,
+  pages: Map<number, PageInfo>,
   opts: {
     bounds?: Bounds;
     onProgress?: (count: number) => void;
@@ -137,10 +172,16 @@ export async function* streamGeoArticles(
 
     if (bounds && !isInBounds(lat as number, lon as number, bounds)) continue;
 
-    const title = pages.get(pageId as number);
-    if (!title) continue; // Not an article or is a redirect
+    const page = pages.get(pageId as number);
+    if (!page) continue; // Not an article or is a redirect
 
-    yield { title, lat: lat as number, lon: lon as number };
+    const article: Article = {
+      title: page.title,
+      lat: lat as number,
+      lon: lon as number,
+    };
+    if (page.len !== undefined) article.len = page.len;
+    yield article;
   }
 }
 

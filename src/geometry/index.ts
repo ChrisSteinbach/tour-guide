@@ -175,6 +175,7 @@ export {
   deserialize,
   serializeBinary,
   deserializeBinary,
+  pageLenToWeight,
   BinaryFormatError,
 } from "./serialization";
 export type {

@@ -55,6 +55,8 @@ interface PageRow {
   title: string;
   ns?: number; // default: 0 (article namespace)
   redirect?: number; // default: 0 (not a redirect)
+  /** page_len value. Default: 100. Strings are written quoted (garbage), null as SQL NULL. */
+  len?: number | string | null;
 }
 
 interface GeoRow {
@@ -73,7 +75,10 @@ export function makePageDump(rows: PageRow[]): string {
     .map((r) => {
       const ns = r.ns ?? 0;
       const redirect = r.redirect ?? 0;
-      return `(${r.id},${ns},'${r.title}',${redirect},0,0.5,'20260101000000',NULL,1,100,'wikitext',NULL)`;
+      const len = r.len === undefined ? 100 : r.len;
+      const lenSql =
+        len === null ? "NULL" : typeof len === "string" ? `'${len}'` : `${len}`;
+      return `(${r.id},${ns},'${r.title}',${redirect},0,0.5,'20260101000000',NULL,1,${lenSql},'wikitext',NULL)`;
     })
     .join(",");
   return `${PAGE_SCHEMA}\n\nINSERT INTO \`page\` VALUES ${values};`;

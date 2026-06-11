@@ -14,6 +14,7 @@ import {
   buildTriangulation,
   serialize,
   serializeBinary,
+  pageLenToWeight,
 } from "../geometry/index.js";
 import type { ArticleMeta } from "../geometry/index.js";
 import { SUPPORTED_LANGS, DEFAULT_LANG } from "../lang.js";
@@ -186,6 +187,7 @@ export function buildTile(tileArticles: Article[]): ArrayBuffer | null {
   const tri = buildTriangulation(hull);
   const meta: ArticleMeta[] = tri.originalIndices.map((i) => ({
     title: tileArticles[i].title,
+    weight: pageLenToWeight(tileArticles[i].len),
   }));
   const data = serialize(tri, meta);
   return serializeBinary(data);
