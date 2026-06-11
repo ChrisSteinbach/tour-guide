@@ -16,3 +16,6 @@ export interface UserPosition {
   lat: number;
   lon: number;
 }
+
+/** Where the browsing position comes from: live GPS or a map-picked spot. */
+export type PositionSource = "gps" | "picked";

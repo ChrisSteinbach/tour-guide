@@ -87,7 +87,11 @@ export function createInfiniteScrollWiring(
       syncMapMarkers: (articles) => {
         const state = deps.getState();
         if (state.position) {
-          deps.spatialPanel.update(state.position, articles as NearbyArticle[]);
+          deps.spatialPanel.update(
+            state.position,
+            articles as NearbyArticle[],
+            state.positionSource ?? "gps",
+          );
         }
       },
       renderItem: (i) => {
@@ -140,7 +144,11 @@ export function createInfiniteScrollWiring(
       initSpatialView: () => {
         const state = deps.getState();
         if (state.position) {
-          deps.spatialPanel.update(state.position, []);
+          deps.spatialPanel.update(
+            state.position,
+            [],
+            state.positionSource ?? "gps",
+          );
         }
       },
       destroySpatialView: () => deps.spatialPanel.destroy(),

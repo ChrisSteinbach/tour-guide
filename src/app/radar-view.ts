@@ -18,7 +18,7 @@ import {
   type RadarBlip,
 } from "./radar-math";
 import { createCompassWatcher } from "./compass";
-import type { NearbyArticle, UserPosition } from "./types";
+import type { NearbyArticle, PositionSource, UserPosition } from "./types";
 import type { SpatialViewHandle } from "./lazy-view-lifecycle";
 
 /** Most blips drawn at once; articles arrive nearest-first. */
@@ -57,6 +57,7 @@ export function createRadarView(
   position: UserPosition,
   articles: NearbyArticle[],
   onSelect: (article: NearbyArticle) => void,
+  initialSource: PositionSource = "gps",
 ): SpatialViewHandle {
   const canvas = document.createElement("canvas");
   canvas.className = "radar-canvas";
@@ -72,6 +73,7 @@ export function createRadarView(
 
   // ── State ──
   let pos = position;
+  let source: PositionSource = initialSource;
   let contacts: Contact[] = [];
   let range: RadarRange = radarRange(0);
   let highlightTitle: string | null = null;
@@ -99,22 +101,43 @@ export function createRadarView(
     },
   });
 
+  // Heading-up rotation only makes sense when the radar is centered on
+  // the device's physical location. For a map-picked position the
+  // compass is ignored entirely: watcher stopped, permission button
+  // hidden, display locked to north-up.
+  let compassAllowed = !compass.needsPermission();
+
   let compassBtn: HTMLButtonElement | null = null;
-  if (compass.needsPermission()) {
+  if (!compassAllowed) {
     compassBtn = document.createElement("button");
     compassBtn.type = "button";
     compassBtn.className = "radar-compass-btn";
     compassBtn.textContent = "Enable compass";
     compassBtn.addEventListener("click", () => {
       void compass.requestPermission().then((granted) => {
-        if (granted && !destroyed) compass.start();
+        if (granted && !destroyed) {
+          compassAllowed = true;
+          if (source === "gps") compass.start();
+        }
         compassBtn?.remove();
         compassBtn = null;
       });
     });
     el.appendChild(compassBtn);
-  } else {
-    compass.start();
+  }
+
+  function applySource(next: PositionSource): void {
+    source = next;
+    if (source === "picked") {
+      compass.stop();
+      targetHeading = null;
+      displayedHeading = null;
+      if (compassBtn) compassBtn.hidden = true;
+    } else {
+      if (compassAllowed) compass.start();
+      if (compassBtn) compassBtn.hidden = false;
+    }
+    markDirty();
   }
 
   // ── Layout ──
@@ -437,12 +460,14 @@ export function createRadarView(
     markDirty();
   }
 
+  applySource(initialSource);
   applyData(position, articles);
   syncCanvasSize();
   schedule();
 
   return {
-    update(newPosition, newArticles) {
+    update(newPosition, newArticles, newSource) {
+      if (newSource !== source) applySource(newSource);
       applyData(newPosition, newArticles);
     },
     highlight(title) {

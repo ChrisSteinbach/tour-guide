@@ -147,7 +147,11 @@ export function createRenderer(deps: RendererDeps): Renderer {
       gpsSignalLost: state.gpsSignalLost,
       onShowAbout: () => deps.dispatch({ type: "showAbout" }),
     });
-    deps.spatialPanel.update(state.position, state.phase.articles);
+    deps.spatialPanel.update(
+      state.position,
+      state.phase.articles,
+      state.positionSource ?? "gps",
+    );
     if (isGps && !state.phase.paused) {
       setupScrollPauseListener();
     }
@@ -195,7 +199,11 @@ export function createRenderer(deps: RendererDeps): Renderer {
             const a = deps.getArticleByIndex(i);
             if (a) visible.push(a);
           }
-          deps.spatialPanel.update(state.position, visible);
+          deps.spatialPanel.update(
+            state.position,
+            visible,
+            state.positionSource ?? "gps",
+          );
         }
       }
     }

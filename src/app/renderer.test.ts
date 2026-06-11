@@ -716,7 +716,7 @@ describe("renderer renderInfiniteScrollDOM active branch", () => {
     const renderer = createRenderer(deps);
     renderer.renderBrowsingList();
 
-    expect(update).toHaveBeenCalledWith(pos, [a1, a2]);
+    expect(update).toHaveBeenCalledWith(pos, [a1, a2], "picked");
   });
 });
 

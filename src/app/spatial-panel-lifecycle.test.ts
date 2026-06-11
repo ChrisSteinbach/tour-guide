@@ -4,9 +4,8 @@ import {
   SPATIAL_VIEW_STORAGE_KEY,
 } from "./spatial-panel-lifecycle";
 import type { SpatialPanelDeps } from "./spatial-panel-lifecycle";
-import type { SpatialViewHandle } from "./lazy-view-lifecycle";
 
-function makeHandle(): SpatialViewHandle {
+function makeHandle() {
   return {
     update: vi.fn(),
     highlight: vi.fn(),
@@ -73,7 +72,7 @@ describe("SpatialPanelLifecycle", () => {
       const { deps, container, createRadarView, createBrowseMap } = makeDeps();
       const panel = createSpatialPanelLifecycle(deps);
 
-      panel.update(POS, ARTICLES);
+      panel.update(POS, ARTICLES, "gps");
       await flushImportAndRaf();
 
       expect(container.querySelector(".spatial-tabs")).toBeTruthy();
@@ -88,6 +87,7 @@ describe("SpatialPanelLifecycle", () => {
         POS,
         ARTICLES,
         deps.onSelectArticle,
+        "gps",
       );
       expect(createBrowseMap).not.toHaveBeenCalled();
     });
@@ -98,7 +98,7 @@ describe("SpatialPanelLifecycle", () => {
       });
       const panel = createSpatialPanelLifecycle(deps);
 
-      panel.update(POS, ARTICLES);
+      panel.update(POS, ARTICLES, "gps");
       await flushImportAndRaf();
 
       expect(createBrowseMap).toHaveBeenCalled();
@@ -114,7 +114,7 @@ describe("SpatialPanelLifecycle", () => {
       });
       const panel = createSpatialPanelLifecycle(deps);
 
-      panel.update(POS, ARTICLES);
+      panel.update(POS, ARTICLES, "gps");
       await flushImportAndRaf();
 
       expect(createRadarView).toHaveBeenCalled();
@@ -127,7 +127,7 @@ describe("SpatialPanelLifecycle", () => {
       const { deps, container, createBrowseMap } = makeDeps({ storage });
       const panel = createSpatialPanelLifecycle(deps);
 
-      panel.update(POS, ARTICLES);
+      panel.update(POS, ARTICLES, "gps");
       panel.highlight("Castle");
       await flushImportAndRaf();
 
@@ -139,6 +139,7 @@ describe("SpatialPanelLifecycle", () => {
         POS,
         ARTICLES,
         deps.onSelectArticle,
+        "gps",
       );
       expect(storage.dump()[SPATIAL_VIEW_STORAGE_KEY]).toBe("map");
       expect(
@@ -150,7 +151,7 @@ describe("SpatialPanelLifecycle", () => {
       const { deps, container, mapHandle } = makeDeps();
       const panel = createSpatialPanelLifecycle(deps);
 
-      panel.update(POS, ARTICLES);
+      panel.update(POS, ARTICLES, "gps");
       await flushImportAndRaf();
       panel.highlight("Castle");
 
@@ -164,7 +165,7 @@ describe("SpatialPanelLifecycle", () => {
       const { deps, container } = makeDeps();
       const panel = createSpatialPanelLifecycle(deps);
 
-      panel.update(POS, ARTICLES);
+      panel.update(POS, ARTICLES, "gps");
       await flushImportAndRaf();
 
       const radarTab = container.querySelector(".spatial-tab-radar")!;
@@ -182,7 +183,7 @@ describe("SpatialPanelLifecycle", () => {
       const { deps, container, radarHandle } = makeDeps();
       const panel = createSpatialPanelLifecycle(deps);
 
-      panel.update(POS, ARTICLES);
+      panel.update(POS, ARTICLES, "gps");
       await flushImportAndRaf();
 
       container.querySelector<HTMLButtonElement>(".spatial-tab-map")!.click();
@@ -191,11 +192,11 @@ describe("SpatialPanelLifecycle", () => {
       const newer = [
         { title: "Bridge", lat: 59.32, lon: 18.12, distanceM: 600 },
       ];
-      panel.update(POS, newer);
+      panel.update(POS, newer, "gps");
 
       container.querySelector<HTMLButtonElement>(".spatial-tab-radar")!.click();
 
-      expect(radarHandle.update).toHaveBeenLastCalledWith(POS, newer);
+      expect(radarHandle.update).toHaveBeenLastCalledWith(POS, newer, "gps");
     });
 
     it("keeps working when the preference cannot be persisted", async () => {
@@ -208,7 +209,7 @@ describe("SpatialPanelLifecycle", () => {
       const { deps, container, createBrowseMap } = makeDeps({ storage });
       const panel = createSpatialPanelLifecycle(deps);
 
-      panel.update(POS, ARTICLES);
+      panel.update(POS, ARTICLES, "gps");
       await flushImportAndRaf();
 
       container.querySelector<HTMLButtonElement>(".spatial-tab-map")!.click();
@@ -223,11 +224,11 @@ describe("SpatialPanelLifecycle", () => {
       const { deps, container, radarHandle, mapHandle } = makeDeps();
       const panel = createSpatialPanelLifecycle(deps);
 
-      panel.update(POS, ARTICLES);
+      panel.update(POS, ARTICLES, "gps");
       await flushImportAndRaf();
-      panel.update(POS, []);
+      panel.update(POS, [], "gps");
 
-      expect(radarHandle.update).toHaveBeenLastCalledWith(POS, []);
+      expect(radarHandle.update).toHaveBeenLastCalledWith(POS, [], "gps");
       expect(mapHandle.update).not.toHaveBeenCalled();
       expect(container).toBeTruthy();
     });
@@ -236,7 +237,7 @@ describe("SpatialPanelLifecycle", () => {
       const { deps, radarHandle } = makeDeps();
       const panel = createSpatialPanelLifecycle(deps);
 
-      panel.update(POS, ARTICLES);
+      panel.update(POS, ARTICLES, "gps");
       await flushImportAndRaf();
       panel.resize();
 
@@ -256,7 +257,7 @@ describe("SpatialPanelLifecycle", () => {
       const { deps, container, radarHandle, createRadarView } = makeDeps();
       const panel = createSpatialPanelLifecycle(deps);
 
-      panel.update(POS, ARTICLES);
+      panel.update(POS, ARTICLES, "gps");
       await flushImportAndRaf();
 
       panel.destroy();
@@ -264,7 +265,7 @@ describe("SpatialPanelLifecycle", () => {
       expect(radarHandle.destroy).toHaveBeenCalled();
       expect(container.querySelector(".spatial-panel")).toBeNull();
 
-      panel.update(POS, ARTICLES);
+      panel.update(POS, ARTICLES, "gps");
       await flushImportAndRaf();
 
       expect(container.querySelector(".spatial-panel")).toBeTruthy();

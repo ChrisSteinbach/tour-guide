@@ -12,7 +12,7 @@ import {
 } from "./lazy-view-lifecycle";
 import { createRadarIcon, createFoldedMapIcon } from "./icons";
 import type { BrowseMapHandle } from "./browse-map";
-import type { NearbyArticle, UserPosition } from "./types";
+import type { NearbyArticle, PositionSource, UserPosition } from "./types";
 
 export type SpatialViewKind = "radar" | "map";
 
@@ -20,7 +20,11 @@ export type SpatialViewKind = "radar" | "map";
 export const SPATIAL_VIEW_STORAGE_KEY = "tour-guide-spatial-view";
 
 export interface SpatialPanelLifecycle {
-  update(position: UserPosition, articles: NearbyArticle[]): void;
+  update(
+    position: UserPosition,
+    articles: NearbyArticle[],
+    source: PositionSource,
+  ): void;
   highlight(title: string | null): void;
   resize(): void;
   destroy(): void;
@@ -59,6 +63,7 @@ export function createSpatialPanelLifecycle(
   let activeKind: SpatialViewKind = readStoredKind(deps.storage);
   let lastPosition: UserPosition | null = null;
   let lastArticles: NearbyArticle[] = [];
+  let lastSource: PositionSource = "gps";
   let lastHighlight: string | null = null;
 
   let panelEl: HTMLElement | null = null;
@@ -89,7 +94,7 @@ export function createSpatialPanelLifecycle(
     applyActiveKind();
     const view = activeView();
     if (view && lastPosition) {
-      view.update(lastPosition, lastArticles);
+      view.update(lastPosition, lastArticles, lastSource);
       view.highlight(lastHighlight);
       view.resize();
     }
@@ -160,11 +165,12 @@ export function createSpatialPanelLifecycle(
   }
 
   return {
-    update(position, articles) {
+    update(position, articles, source) {
       lastPosition = position;
       lastArticles = articles;
+      lastSource = source;
       ensureBuilt();
-      activeView()?.update(position, articles);
+      activeView()?.update(position, articles, source);
     },
     highlight(title) {
       lastHighlight = title;
@@ -184,6 +190,7 @@ export function createSpatialPanelLifecycle(
       built = false;
       lastPosition = null;
       lastArticles = [];
+      lastSource = "gps";
       lastHighlight = null;
     },
   };
