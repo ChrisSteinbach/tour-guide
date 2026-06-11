@@ -20,7 +20,7 @@ import type { AppState, Event } from "./state-machine";
 import type { ArticleWindow } from "./article-window";
 import type { InfiniteScrollLifecycle } from "./infinite-scroll-lifecycle";
 import type { MapDrawer } from "./map-drawer";
-import type { BrowseMapLifecycle } from "./browse-map-lifecycle";
+import type { SpatialPanelLifecycle } from "./spatial-panel-lifecycle";
 import type { MapPickerLifecycle } from "./map-picker-lifecycle";
 import type { Lang } from "../lang";
 
@@ -32,7 +32,7 @@ export interface RendererDeps {
   drawer: MapDrawer;
   drawerPanel: HTMLElement;
   desktopQuery: MediaQueryList;
-  browseMap: BrowseMapLifecycle;
+  spatialPanel: SpatialPanelLifecycle;
   mapPicker: MapPickerLifecycle;
   resetArticleWindow: () => void;
   getCurrentWindow: () => ArticleWindow | null;
@@ -53,7 +53,7 @@ export interface Renderer {
   renderAppUpdateBanner: () => void;
   /**
    * Reset drawer state before showing the map picker. This destroys the
-   * existing mapPicker and browseMap instances and closes the drawer; the
+   * existing mapPicker and spatialPanel instances and closes the drawer; the
    * caller is responsible for calling mapPicker.show() (or otherwise
    * re-initializing the map picker) immediately afterward.
    */
@@ -104,9 +104,9 @@ export function createRenderer(deps: RendererDeps): Renderer {
       if (deps.desktopQuery.matches) {
         deps.drawer.open();
         // No CSS transition fires when going from hidden to visible,
-        // so transitionend never triggers browseMap.resize(). Schedule
+        // so transitionend never triggers spatialPanel.resize(). Schedule
         // it manually so Leaflet picks up the correct container size.
-        requestAnimationFrame(() => deps.browseMap.resize());
+        requestAnimationFrame(() => deps.spatialPanel.resize());
       } else {
         deps.drawer.close();
       }
@@ -147,7 +147,7 @@ export function createRenderer(deps: RendererDeps): Renderer {
       gpsSignalLost: state.gpsSignalLost,
       onShowAbout: () => deps.dispatch({ type: "showAbout" }),
     });
-    deps.browseMap.update(state.position, state.phase.articles);
+    deps.spatialPanel.update(state.position, state.phase.articles);
     if (isGps && !state.phase.paused) {
       setupScrollPauseListener();
     }
@@ -195,7 +195,7 @@ export function createRenderer(deps: RendererDeps): Renderer {
             const a = deps.getArticleByIndex(i);
             if (a) visible.push(a);
           }
-          deps.browseMap.update(state.position, visible);
+          deps.spatialPanel.update(state.position, visible);
         }
       }
     }
@@ -207,13 +207,13 @@ export function createRenderer(deps: RendererDeps): Renderer {
     teardownScrollPauseListener();
     deps.mapPicker.destroy();
     const state = deps.getState();
-    // browseMap + drawer persist across browsing↔detail so the map stays
+    // spatialPanel + drawer persist across browsing↔detail so the map/radar stays
     // visible while viewing an article. Teardown only fires when the next
     // phase is outside that pair (welcome, mapPicker, error, etc.).
     const inBrowsePair =
       state.phase.phase === "browsing" || state.phase.phase === "detail";
     if (!inBrowsePair) {
-      deps.browseMap.destroy();
+      deps.spatialPanel.destroy();
       deps.drawerPanel.setAttribute("hidden", "");
       deps.drawer.close();
       drawerInitialized = false;
@@ -284,7 +284,7 @@ export function createRenderer(deps: RendererDeps): Renderer {
 
   function resetDrawerForMapPicker(): void {
     deps.mapPicker.destroy();
-    deps.browseMap.destroy();
+    deps.spatialPanel.destroy();
     deps.drawerPanel.setAttribute("hidden", "");
     deps.drawer.close();
     drawerInitialized = false;

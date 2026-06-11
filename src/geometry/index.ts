@@ -100,6 +100,26 @@ export function haversineDistance(a: LatLon, b: LatLon): number {
   return 2 * Math.asin(Math.sqrt(clamp(h, 0, 1)));
 }
 
+// ---------- Initial bearing ----------
+
+/**
+ * Initial great-circle bearing from `from` to `to`, in degrees
+ * clockwise from true north, normalized to [0, 360).
+ */
+export function initialBearing(from: LatLon, to: LatLon): number {
+  const lat1 = from.lat * DEG_TO_RAD;
+  const lat2 = to.lat * DEG_TO_RAD;
+  const dLon = (to.lon - from.lon) * DEG_TO_RAD;
+
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x =
+    Math.cos(lat1) * Math.sin(lat2) -
+    Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+
+  const deg = Math.atan2(y, x) * RAD_TO_DEG;
+  return (deg + 360) % 360;
+}
+
 // ---------- Circumcenter on sphere ----------
 
 /**

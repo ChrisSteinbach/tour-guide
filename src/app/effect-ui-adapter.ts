@@ -15,13 +15,13 @@ import type { NearbyArticle } from "./types";
 import type { RenderDeps } from "./effect-executor";
 import type { Renderer } from "./renderer";
 import type { MapPickerLifecycle } from "./map-picker-lifecycle";
-import type { BrowseMapLifecycle } from "./browse-map-lifecycle";
+import type { SpatialPanelLifecycle } from "./spatial-panel-lifecycle";
 
 export interface EffectUIAdapterDeps {
   app: HTMLElement;
   renderer: Renderer;
   mapPicker: MapPickerLifecycle;
-  browseMap: BrowseMapLifecycle;
+  spatialPanel: SpatialPanelLifecycle;
   getState: () => AppState;
   dispatch: (event: Event) => void;
   itemHeight: number;
@@ -75,7 +75,7 @@ export function createEffectUIAdapter(deps: EffectUIAdapterDeps): RenderDeps {
   return {
     render: () => deps.renderer.renderPhase(),
     renderBrowsingList: () => {
-      deps.browseMap.highlight(null);
+      deps.spatialPanel.highlight(null);
       deps.renderer.renderBrowsingList();
     },
     renderBrowsingHeader: () => deps.renderer.renderBrowsingHeader(),
@@ -83,11 +83,11 @@ export function createEffectUIAdapter(deps: EffectUIAdapterDeps): RenderDeps {
     showAbout,
     hideAbout,
     renderDetailLoading: (article) => {
-      deps.browseMap.highlight(article.title);
+      deps.spatialPanel.highlight(article.title);
       renderDetailLoading(deps.app, article, goBack);
     },
     renderDetailReady: (article, summary) => {
-      deps.browseMap.highlight(article.title);
+      deps.spatialPanel.highlight(article.title);
       renderDetailReady(
         deps.app,
         article,
@@ -98,7 +98,7 @@ export function createEffectUIAdapter(deps: EffectUIAdapterDeps): RenderDeps {
       );
     },
     renderDetailError: (article, msg, retry, lang) => {
-      deps.browseMap.highlight(article.title);
+      deps.spatialPanel.highlight(article.title);
       renderDetailError(
         deps.app,
         article,
@@ -112,7 +112,7 @@ export function createEffectUIAdapter(deps: EffectUIAdapterDeps): RenderDeps {
     },
     renderAppUpdateBanner: () => deps.renderer.renderAppUpdateBanner(),
     showMapPicker: () => {
-      // resetDrawerForMapPicker() destroys the prior mapPicker/browseMap;
+      // resetDrawerForMapPicker() destroys the prior mapPicker/spatialPanel;
       // mapPicker.show() re-initializes it. The destroy-then-show sequence
       // is intentional — see Renderer.resetDrawerForMapPicker.
       deps.renderer.resetDrawerForMapPicker();

@@ -35,8 +35,8 @@ function makeDeps(
       header.textContent = "Header";
       return header;
     },
-    initBrowseMap: () => {},
-    destroyBrowseMap: () => {},
+    initSpatialView: () => {},
+    destroySpatialView: () => {},
     ...overrides,
   };
 }
@@ -93,25 +93,27 @@ describe("InfiniteScrollLifecycle", () => {
     it("destroys browse map before rebuilding", () => {
       const calls: string[] = [];
       const lifecycle = createInfiniteScrollLifecycle(
-        makeDeps({ destroyBrowseMap: () => calls.push("destroyBrowseMap") }),
+        makeDeps({
+          destroySpatialView: () => calls.push("destroySpatialView"),
+        }),
       );
 
       lifecycle.init(5);
 
-      expect(calls).toContain("destroyBrowseMap");
+      expect(calls).toContain("destroySpatialView");
     });
 
     it("initializes browse map on init", () => {
       const calls: string[] = [];
       const lifecycle = createInfiniteScrollLifecycle(
         makeDeps({
-          initBrowseMap: () => calls.push("initBrowseMap"),
+          initSpatialView: () => calls.push("initSpatialView"),
         }),
       );
 
       lifecycle.init(5);
 
-      expect(calls).toContain("initBrowseMap");
+      expect(calls).toContain("initSpatialView");
     });
 
     it("creates virtual list with correct total count", () => {

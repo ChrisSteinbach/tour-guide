@@ -22,7 +22,8 @@ Tile data is pipeline-generated and not in git. Check that `data/tiles/` has con
 - "Pick a spot on the map" → map picker → click → confirm → article list appears
 - "Use my location" → article list appears (requires geolocation permission)
 - Clicking an article → detail view with title, description, thumbnail, Wikipedia link
-- Clicking a map pin while browsing → detail view (same as list click)
+- Clicking a radar blip while browsing → detail view (same as list click)
+- Clicking a map pin while browsing (Map tab) → detail view (same as list click)
 - Clicking a different map pin while detail is open → detail swaps and pin highlight moves
 - Back navigation returns to the article list (from list-opened detail)
 - Back navigation from a pin-swapped detail returns to the previous detail (not straight to the list)
@@ -31,13 +32,13 @@ Tile data is pipeline-generated and not in git. Check that `data/tiles/` has con
 
 - Language switching (welcome dropdown and browsing header) persists to localStorage
 - About dialog opens/closes, traps focus, returns focus to trigger on close
-- Map drawer: auto-opens on desktop (>=1024px), toggle via handle on mobile
+- Radar/map drawer: auto-opens on desktop (>=1024px), toggle via handle on mobile; tabs switch between radar (default) and map, and the choice persists
 - GPS mode: pause/resume, mode toggle between GPS and picked location
 - Keyboard: Tab reaches all interactive elements, Enter activates articles and buttons
 
 ### Responsive layout
 
-- Desktop (1280px): map drawer visible alongside article list
+- Desktop (1280px): radar/map drawer visible alongside article list
 - Mobile (375x667): full-width layout, drawer collapsed behind handle
 - Resize between breakpoints triggers correct layout changes
 

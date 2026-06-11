@@ -830,6 +830,91 @@ body:has(.app-scroll) {
   }
 }
 
+/* ── Spatial panel (radar/map views inside the drawer) ─────── */
+
+.spatial-panel,
+.spatial-slot {
+  position: absolute;
+  inset: 0;
+}
+
+.spatial-slot[hidden] {
+  display: none;
+}
+
+.spatial-slot-radar {
+  background: #0a1322;
+}
+
+.spatial-tabs {
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow: 0 1px 6px rgb(0 0 0 / 30%);
+
+  /* Above Leaflet's controls (z-index ≤ 1000) */
+  z-index: 1100;
+}
+
+.spatial-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: none;
+  background: #fff;
+  color: #555;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.spatial-tab[aria-pressed="true"] {
+  background: #1a73e8;
+  color: #fff;
+}
+
+.radar-view {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.radar-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: manipulation;
+}
+
+.radar-empty {
+  position: absolute;
+  top: 62%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  color: rgb(168 200 255 / 60%);
+  font-size: 0.9rem;
+  pointer-events: none;
+}
+
+.radar-compass-btn {
+  position: absolute;
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border: 1px solid rgb(104 150 255 / 40%);
+  border-radius: 999px;
+  background: rgb(16 32 58 / 90%);
+  color: #dce8ff;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
 /* ── About dialog ──────────────────────────────────────────── */
 
 .about-btn {

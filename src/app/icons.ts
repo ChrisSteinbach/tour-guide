@@ -147,6 +147,42 @@ export function createBackIcon(): SVGSVGElement {
   return svg;
 }
 
+export function createRadarIcon(): SVGSVGElement {
+  const svg = createSvgRoot();
+  // Radar scope: two range rings, a sweep line to the NE with a faint
+  // trailing wedge, and a contact blip in the SW quadrant.
+  const ring = (r: number) =>
+    el("circle", {
+      cx: 9,
+      cy: 9,
+      r,
+      fill: "none",
+      stroke: "currentColor",
+      "stroke-width": 1.3,
+    });
+  const trail = el("path", {
+    d: "M9 9 L9 2.5 A6.5 6.5 0 0 1 13.6 4.4 Z",
+    opacity: 0.35,
+  });
+  const sweep = el("line", {
+    x1: 9,
+    y1: 9,
+    x2: 13.6,
+    y2: 4.4,
+    stroke: "currentColor",
+    "stroke-width": 1.4,
+    "stroke-linecap": "round",
+  });
+  svg.append(
+    ring(6.5),
+    ring(3.25),
+    trail,
+    sweep,
+    el("circle", { cx: 6, cy: 11.5, r: 1.4 }),
+  );
+  return svg;
+}
+
 export function createFoldedMapIcon(): SVGSVGElement {
   const svg = createSvgRoot("0 0 24 24");
   // Trifold paper map: three panels alternating fold direction,

@@ -101,9 +101,7 @@ describe("BrowseMapLifecycle", () => {
       const lifecycle = createBrowseMapLifecycle(deps);
 
       lifecycle.update({ lat: 51, lon: 0 }, []);
-      // Wait for rejection microtask
-      await Promise.resolve();
-      await Promise.resolve();
+      await flushImportAndRaf();
 
       expect(deps.container.querySelector(".browse-map")).toBeNull();
     });

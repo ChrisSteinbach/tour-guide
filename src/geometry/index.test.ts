@@ -5,6 +5,7 @@ import {
   sideOfGreatCircle,
   sphericalDistance,
   haversineDistance,
+  initialBearing,
   sphericalCircumcenter,
 } from "./index";
 import type { Point3D, LatLon } from "./index";
@@ -276,6 +277,56 @@ describe("haversineDistance", () => {
     const d1 = sphericalDistance(toCartesian(a), toCartesian(b));
     const d2 = haversineDistance(a, b);
     expectClose(d1, d2, 1e-9);
+  });
+});
+
+// ---------- Initial bearing ----------
+
+describe("initialBearing", () => {
+  it("due north → 0°", () => {
+    expectClose(initialBearing({ lat: 10, lon: 20 }, { lat: 11, lon: 20 }), 0);
+  });
+
+  it("due south → 180°", () => {
+    expectClose(initialBearing({ lat: 10, lon: 20 }, { lat: 9, lon: 20 }), 180);
+  });
+
+  it("due east on the equator → 90°", () => {
+    expectClose(initialBearing({ lat: 0, lon: 20 }, { lat: 0, lon: 21 }), 90);
+  });
+
+  it("due west on the equator → 270°", () => {
+    expectClose(initialBearing({ lat: 0, lon: 20 }, { lat: 0, lon: 19 }), 270);
+  });
+
+  it("normalizes to [0, 360)", () => {
+    const b = initialBearing(
+      { lat: 59.33, lon: 18.07 },
+      { lat: 59.34, lon: 18.0 },
+    );
+    expect(b).toBeGreaterThanOrEqual(0);
+    expect(b).toBeLessThan(360);
+  });
+
+  it("eastward across the antimeridian heads east, not west", () => {
+    const b = initialBearing({ lat: 0, lon: 179.5 }, { lat: 0, lon: -179.5 });
+    expectClose(b, 90, 1e-6);
+  });
+
+  it("matches known fixture: London → New York ≈ 288°", () => {
+    // Movable Type Scripts reference value for this classic pair.
+    const b = initialBearing(
+      { lat: 51.5074, lon: -0.1278 },
+      { lat: 40.7128, lon: -74.006 },
+    );
+    expectClose(b, 288.3, 0.2);
+  });
+
+  it("mid-latitude eastward bearing leans poleward of 90°", () => {
+    // Great circles at 60°N bow toward the pole relative to the rhumb line.
+    const b = initialBearing({ lat: 60, lon: 0 }, { lat: 60, lon: 10 });
+    expect(b).toBeGreaterThan(80);
+    expect(b).toBeLessThan(90);
   });
 });
 

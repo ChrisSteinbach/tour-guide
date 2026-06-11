@@ -5,7 +5,7 @@ import type { AppState, QueryState } from "./state-machine";
 import type { ArticleWindow } from "./article-window";
 import type { InfiniteScrollLifecycle } from "./infinite-scroll-lifecycle";
 import type { MapDrawer } from "./map-drawer";
-import type { BrowseMapLifecycle } from "./browse-map-lifecycle";
+import type { SpatialPanelLifecycle } from "./spatial-panel-lifecycle";
 import type { MapPickerLifecycle } from "./map-picker-lifecycle";
 import { createRenderer, type RendererDeps } from "./renderer";
 
@@ -106,9 +106,9 @@ function stubDrawer(): MapDrawer {
   };
 }
 
-function stubBrowseMap(
-  overrides: Partial<BrowseMapLifecycle> = {},
-): BrowseMapLifecycle {
+function stubSpatialPanel(
+  overrides: Partial<SpatialPanelLifecycle> = {},
+): SpatialPanelLifecycle {
   return {
     update: vi.fn(),
     highlight: vi.fn(),
@@ -155,7 +155,7 @@ function makeDeps(overrides: Partial<RendererDeps> = {}): RendererDeps {
     drawer: stubDrawer(),
     drawerPanel,
     desktopQuery: stubDesktopQuery(false),
-    browseMap: stubBrowseMap(),
+    spatialPanel: stubSpatialPanel(),
     mapPicker: stubMapPicker(),
     resetArticleWindow: vi.fn(),
     getCurrentWindow: vi.fn(() => null),
@@ -174,7 +174,7 @@ describe("renderer renderBrowsingList scrollMode switch", () => {
   it("tears down ArticleWindow and infinite scroll BEFORE rendering the viewport list when leaving infinite mode", () => {
     // The teardown ordering matters: a stale ArticleWindow leaking into the
     // viewport render would be a regression. Track call order and assert
-    // resetArticleWindow + infiniteScroll.destroy precede browseMap.update
+    // resetArticleWindow + infiniteScroll.destroy precede spatialPanel.update
     // (which is called from inside renderViewportListDOM).
     const callOrder: string[] = [];
     const resetArticleWindow = vi.fn(() =>
@@ -183,14 +183,14 @@ describe("renderer renderBrowsingList scrollMode switch", () => {
     const infiniteScroll = stubInfiniteScroll({
       destroy: vi.fn(() => callOrder.push("infiniteScroll.destroy")),
     });
-    const browseMap = stubBrowseMap({
-      update: vi.fn(() => callOrder.push("browseMap.update")),
+    const spatialPanel = stubSpatialPanel({
+      update: vi.fn(() => callOrder.push("spatialPanel.update")),
     });
     const deps = makeDeps({
       getState: vi.fn(() => tiledBrowsingState({}, { scrollMode: "viewport" })),
       resetArticleWindow,
       infiniteScroll,
-      browseMap,
+      spatialPanel,
     });
 
     const renderer = createRenderer(deps);
@@ -199,7 +199,7 @@ describe("renderer renderBrowsingList scrollMode switch", () => {
     expect(callOrder).toEqual([
       "resetArticleWindow",
       "infiniteScroll.destroy",
-      "browseMap.update",
+      "spatialPanel.update",
     ]);
   });
 
@@ -381,13 +381,13 @@ describe("renderer renderPhase teardown prefix", () => {
   it("runs all teardowns before switching to a non-browsing phase", () => {
     // When renderPhase is called for a phase like welcome, ALL pre-switch
     // teardowns must run: resetArticleWindow, infiniteScroll.destroy,
-    // mapPicker.destroy, browseMap.destroy, drawerPanel.hidden=true,
+    // mapPicker.destroy, spatialPanel.destroy, drawerPanel.hidden=true,
     // drawer.close, drawerInitialized=false. Missing any leaks state into
     // the next phase.
     const resetArticleWindow = vi.fn();
     const infiniteScrollDestroy = vi.fn();
     const mapPickerDestroy = vi.fn();
-    const browseMapDestroy = vi.fn();
+    const spatialPanelDestroy = vi.fn();
     const drawerClose = vi.fn();
     const infiniteScroll = stubInfiniteScroll({
       destroy: infiniteScrollDestroy,
@@ -396,7 +396,7 @@ describe("renderer renderPhase teardown prefix", () => {
       show: vi.fn(),
       destroy: mapPickerDestroy,
     };
-    const browseMap = stubBrowseMap({ destroy: browseMapDestroy });
+    const spatialPanel = stubSpatialPanel({ destroy: spatialPanelDestroy });
     const drawer: MapDrawer = {
       ...stubDrawer(),
       close: drawerClose,
@@ -413,7 +413,7 @@ describe("renderer renderPhase teardown prefix", () => {
       resetArticleWindow,
       infiniteScroll,
       mapPicker,
-      browseMap,
+      spatialPanel,
       drawer,
       drawerPanel,
     });
@@ -424,18 +424,18 @@ describe("renderer renderPhase teardown prefix", () => {
     expect(resetArticleWindow).toHaveBeenCalled();
     expect(infiniteScrollDestroy).toHaveBeenCalled();
     expect(mapPickerDestroy).toHaveBeenCalled();
-    expect(browseMapDestroy).toHaveBeenCalled();
+    expect(spatialPanelDestroy).toHaveBeenCalled();
     expect(drawerClose).toHaveBeenCalled();
     expect(drawerPanel.hasAttribute("hidden")).toBe(true);
   });
 
-  it("preserves browseMap and drawer state when transitioning to detail", () => {
+  it("preserves spatialPanel and drawer state when transitioning to detail", () => {
     // browsing → detail must not tear down the drawer — on desktop the
     // map stays visible alongside the article, and on mobile the drawer
     // must remain constructed so the gesture can reopen it.
-    const browseMapDestroy = vi.fn();
+    const spatialPanelDestroy = vi.fn();
     const drawerClose = vi.fn();
-    const browseMap = stubBrowseMap({ destroy: browseMapDestroy });
+    const spatialPanel = stubSpatialPanel({ destroy: spatialPanelDestroy });
     const drawer: MapDrawer = { ...stubDrawer(), close: drawerClose };
     const drawerPanel = document.createElement("div");
     drawerPanel.removeAttribute("hidden");
@@ -455,7 +455,7 @@ describe("renderer renderPhase teardown prefix", () => {
           infiniteScrollLimit: 200,
         },
       })),
-      browseMap,
+      spatialPanel,
       drawer,
       drawerPanel,
     });
@@ -463,7 +463,7 @@ describe("renderer renderPhase teardown prefix", () => {
     const renderer = createRenderer(deps);
     renderer.renderPhase();
 
-    expect(browseMapDestroy).not.toHaveBeenCalled();
+    expect(spatialPanelDestroy).not.toHaveBeenCalled();
     expect(drawerClose).not.toHaveBeenCalled();
     expect(drawerPanel.hasAttribute("hidden")).toBe(false);
   });
@@ -473,12 +473,12 @@ describe("renderer renderPhase teardown prefix", () => {
     // re-tear down the drawer on the way back to browsing.
     const drawerClose = vi.fn();
     const drawer: MapDrawer = { ...stubDrawer(), close: drawerClose };
-    const browseMapDestroy = vi.fn();
-    const browseMap = stubBrowseMap({ destroy: browseMapDestroy });
+    const spatialPanelDestroy = vi.fn();
+    const spatialPanel = stubSpatialPanel({ destroy: spatialPanelDestroy });
     const deps = makeDeps({
       getState: vi.fn(() => tiledBrowsingState()),
       drawer,
-      browseMap,
+      spatialPanel,
       desktopQuery: stubDesktopQuery(true),
     });
 
@@ -490,7 +490,7 @@ describe("renderer renderPhase teardown prefix", () => {
 
     // renderPhase in the browse pair does not add a drawer.close call.
     expect(drawerClose).toHaveBeenCalledTimes(initialDrawerCloses);
-    expect(browseMapDestroy).not.toHaveBeenCalled();
+    expect(spatialPanelDestroy).not.toHaveBeenCalled();
   });
 
   it("re-initializes the drawer on the next browsing render after a teardown", () => {
@@ -680,9 +680,9 @@ describe("renderer scroll-pause detector setup", () => {
 // ── Infinite-scroll active branch ───────────────────────────
 
 describe("renderer renderInfiniteScrollDOM active branch", () => {
-  it("updates browseMap with the articles in the virtual list's visible range", () => {
+  it("updates spatialPanel with the articles in the virtual list's visible range", () => {
     // When an active infinite scroll re-renders, the renderer feeds
-    // browseMap only the *visible* slice (range.start..range.end) so
+    // spatialPanel only the *visible* slice (range.start..range.end) so
     // map markers track what the user can see, not the whole loaded set.
     const a0 = { ...article, title: "A0" };
     const a1 = { ...article, title: "A1" };
@@ -690,7 +690,7 @@ describe("renderer renderInfiniteScrollDOM active branch", () => {
     const articles = [a0, a1, a2];
 
     const update = vi.fn();
-    const browseMap = stubBrowseMap({ update });
+    const spatialPanel = stubSpatialPanel({ update });
     const container = document.createElement("div");
     container.className = "virtual-scroll-container";
 
@@ -707,7 +707,7 @@ describe("renderer renderInfiniteScrollDOM active branch", () => {
 
     const deps = makeDeps({
       getState: vi.fn(() => tiledBrowsingState({}, { articles })),
-      browseMap,
+      spatialPanel,
       infiniteScroll,
       getArticleByIndex: vi.fn((i: number) => articles[i]),
     });
@@ -756,13 +756,13 @@ describe("renderer renderAppUpdateBanner", () => {
 describe("renderer resetDrawerForMapPicker", () => {
   it("destroys map picker, browse map, hides the drawer panel, and closes the drawer", () => {
     const mapPickerDestroy = vi.fn();
-    const browseMapDestroy = vi.fn();
+    const spatialPanelDestroy = vi.fn();
     const drawerClose = vi.fn();
     const drawerPanel = document.createElement("div");
     drawerPanel.removeAttribute("hidden");
     const deps = makeDeps({
       mapPicker: { show: vi.fn(), destroy: mapPickerDestroy },
-      browseMap: stubBrowseMap({ destroy: browseMapDestroy }),
+      spatialPanel: stubSpatialPanel({ destroy: spatialPanelDestroy }),
       drawer: { ...stubDrawer(), close: drawerClose },
       drawerPanel,
     });
@@ -771,7 +771,7 @@ describe("renderer resetDrawerForMapPicker", () => {
     renderer.resetDrawerForMapPicker();
 
     expect(mapPickerDestroy).toHaveBeenCalled();
-    expect(browseMapDestroy).toHaveBeenCalled();
+    expect(spatialPanelDestroy).toHaveBeenCalled();
     expect(drawerPanel.hasAttribute("hidden")).toBe(true);
     expect(drawerClose).toHaveBeenCalled();
   });
@@ -856,17 +856,17 @@ describe("renderer renderPhase delegates to status renderers", () => {
 // ── Desktop drawer initialization ───────────────────────────
 
 describe("renderer renderBrowsingList desktop-first render", () => {
-  it("opens the drawer and schedules a browseMap.resize on desktop", async () => {
+  it("opens the drawer and schedules a spatialPanel.resize on desktop", async () => {
     // On desktop (matches=true) the drawer is open by default. The drawer
     // panel was hidden, so no CSS transitionend fires to trigger resize —
     // the renderer must schedule resize via rAF instead.
     const open = vi.fn();
     const drawer: MapDrawer = { ...stubDrawer(), open };
     const resize = vi.fn();
-    const browseMap = stubBrowseMap({ resize });
+    const spatialPanel = stubSpatialPanel({ resize });
     const deps = makeDeps({
       drawer,
-      browseMap,
+      spatialPanel,
       desktopQuery: stubDesktopQuery(true),
     });
 

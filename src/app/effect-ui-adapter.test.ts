@@ -3,7 +3,7 @@ import { createEffectUIAdapter } from "./effect-ui-adapter";
 import type { AppState } from "./state-machine";
 import type { Renderer } from "./renderer";
 import type { MapPickerLifecycle } from "./map-picker-lifecycle";
-import type { BrowseMapLifecycle } from "./browse-map-lifecycle";
+import type { SpatialPanelLifecycle } from "./spatial-panel-lifecycle";
 import type { NearbyArticle, UserPosition } from "./types";
 import type { ArticleSummary } from "./wiki-api";
 
@@ -56,7 +56,7 @@ function stubMapPicker(): MapPickerLifecycle {
   };
 }
 
-function stubBrowseMap(): BrowseMapLifecycle {
+function stubSpatialPanel(): SpatialPanelLifecycle {
   return {
     update: vi.fn(),
     highlight: vi.fn(),
@@ -101,7 +101,7 @@ describe("createEffectUIAdapter", () => {
       app,
       renderer,
       mapPicker,
-      browseMap: stubBrowseMap(),
+      spatialPanel: stubSpatialPanel(),
       getState: () => state,
       dispatch: vi.fn(),
       itemHeight: 68,
@@ -132,7 +132,7 @@ describe("createEffectUIAdapter", () => {
       app,
       renderer,
       mapPicker: stubMapPicker(),
-      browseMap: stubBrowseMap(),
+      spatialPanel: stubSpatialPanel(),
       getState: () => state,
       dispatch: vi.fn(),
       itemHeight: 68,
@@ -157,7 +157,7 @@ describe("createEffectUIAdapter", () => {
       app,
       renderer: stubRenderer(),
       mapPicker: stubMapPicker(),
-      browseMap: stubBrowseMap(),
+      spatialPanel: stubSpatialPanel(),
       getState: () => state,
       dispatch: vi.fn(),
       itemHeight: 68,
@@ -183,7 +183,7 @@ describe("createEffectUIAdapter", () => {
       app,
       renderer: stubRenderer(),
       mapPicker: stubMapPicker(),
-      browseMap: stubBrowseMap(),
+      spatialPanel: stubSpatialPanel(),
       getState: () => state,
       dispatch: vi.fn(),
       itemHeight: 68,
@@ -211,7 +211,7 @@ describe("createEffectUIAdapter", () => {
       app: document.createElement("div"),
       renderer: stubRenderer(),
       mapPicker: stubMapPicker(),
-      browseMap: stubBrowseMap(),
+      spatialPanel: stubSpatialPanel(),
       getState: () => makeState({ position: pos, positionSource: "gps" }),
       dispatch,
       itemHeight: 68,
@@ -240,7 +240,7 @@ describe("createEffectUIAdapter", () => {
       app: document.createElement("div"),
       renderer: stubRenderer(),
       mapPicker: stubMapPicker(),
-      browseMap: stubBrowseMap(),
+      spatialPanel: stubSpatialPanel(),
       getState: () => makeState({ position: pos, positionSource: "gps" }),
       dispatch,
       itemHeight: 68,
@@ -278,7 +278,7 @@ describe("createEffectUIAdapter", () => {
       app: document.createElement("div"),
       renderer,
       mapPicker,
-      browseMap: stubBrowseMap(),
+      spatialPanel: stubSpatialPanel(),
       getState: () => makeState(),
       dispatch: vi.fn(),
       itemHeight: 68,
@@ -297,7 +297,7 @@ describe("createEffectUIAdapter", () => {
       app: document.createElement("div"),
       renderer: stubRenderer(),
       mapPicker: stubMapPicker(),
-      browseMap: stubBrowseMap(),
+      spatialPanel: stubSpatialPanel(),
       getState: () => makeState(),
       dispatch: vi.fn(),
       itemHeight: 68,
@@ -315,7 +315,7 @@ describe("createEffectUIAdapter", () => {
       app: document.createElement("div"),
       renderer: stubRenderer(),
       mapPicker: stubMapPicker(),
-      browseMap: stubBrowseMap(),
+      spatialPanel: stubSpatialPanel(),
       getState: () => makeState(),
       dispatch: vi.fn(),
       itemHeight: 68,
@@ -336,7 +336,7 @@ describe("createEffectUIAdapter", () => {
       app,
       renderer: stubRenderer(),
       mapPicker: stubMapPicker(),
-      browseMap: stubBrowseMap(),
+      spatialPanel: stubSpatialPanel(),
       getState: () => makeState(),
       dispatch: vi.fn(),
       itemHeight: 68,

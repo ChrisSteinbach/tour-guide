@@ -44,10 +44,10 @@ export interface InfiniteScrollDeps {
   renderItem: (index: number) => HTMLElement | null;
   /** Render the header element. */
   renderHeader: () => HTMLElement;
-  /** Called to set up the browse map initially (desktop only). */
-  initBrowseMap: () => void;
-  /** Destroy the browse map. */
-  destroyBrowseMap: () => void;
+  /** Called to set up the spatial view (radar/map) initially. */
+  initSpatialView: () => void;
+  /** Destroy the spatial view. */
+  destroySpatialView: () => void;
   /** Called when scroll nears the end of loaded articles. */
   onNearEnd?: () => void;
   /** How many items from the end to trigger onNearEnd (default 50). */
@@ -123,7 +123,7 @@ export function createInfiniteScrollLifecycle(
 
   function init(listHeight: number, anchor?: number): void {
     destroy();
-    deps.destroyBrowseMap();
+    deps.destroySpatialView();
     deps.container.textContent = "";
     deps.container.appendChild(deps.renderHeader());
 
@@ -135,7 +135,7 @@ export function createInfiniteScrollLifecycle(
     listContainer.className = "virtual-scroll-container";
     scrollWrapper.appendChild(listContainer);
 
-    deps.initBrowseMap();
+    deps.initSpatialView();
 
     const mapSync = createDebouncedMapSync({
       settleMs: deps.mapSyncSettleMs,

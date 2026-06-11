@@ -7,7 +7,7 @@ import type {
 } from "./infinite-scroll-lifecycle";
 import type { AppState, Event, QueryState } from "./state-machine";
 import type { ArticleWindow } from "./article-window";
-import type { BrowseMapLifecycle } from "./browse-map-lifecycle";
+import type { SpatialPanelLifecycle } from "./spatial-panel-lifecycle";
 import type { SummaryLoader } from "./summary-loader";
 import type { NearbyArticle, UserPosition } from "./types";
 import type { ArticleSummary } from "./wiki-api";
@@ -105,9 +105,9 @@ function stubArticleWindow(
   };
 }
 
-function stubBrowseMap(
-  overrides: Partial<BrowseMapLifecycle> = {},
-): BrowseMapLifecycle {
+function stubSpatialPanel(
+  overrides: Partial<SpatialPanelLifecycle> = {},
+): SpatialPanelLifecycle {
   return {
     update: vi.fn(),
     highlight: vi.fn(),
@@ -170,7 +170,7 @@ function makeDeps(
     dispatch: vi.fn(),
     app,
     itemHeight: 68,
-    browseMap: stubBrowseMap(),
+    spatialPanel: stubSpatialPanel(),
     summaryLoader: stubSummaryLoader(),
     onHoverArticle: vi.fn(),
     getArticleByIndex: vi.fn(() => undefined),
@@ -276,26 +276,29 @@ describe("createInfiniteScrollWiring", () => {
 
   describe("syncMapMarkers", () => {
     it("updates the browse map with the current position and articles", () => {
-      const browseMap = stubBrowseMap();
-      const deps = makeDeps({ browseMap });
+      const spatialPanel = stubSpatialPanel();
+      const deps = makeDeps({ spatialPanel });
       createInfiniteScrollWiring(deps);
 
       capturedDeps!.syncMapMarkers([stockholm, uppsala]);
 
-      expect(browseMap.update).toHaveBeenCalledWith(pos, [stockholm, uppsala]);
+      expect(spatialPanel.update).toHaveBeenCalledWith(pos, [
+        stockholm,
+        uppsala,
+      ]);
     });
 
     it("is a no-op when no position is set", () => {
-      const browseMap = stubBrowseMap();
+      const spatialPanel = stubSpatialPanel();
       const deps = makeDeps({
-        browseMap,
+        spatialPanel,
         getState: () => makeBrowsingState({ position: null }),
       });
       createInfiniteScrollWiring(deps);
 
       capturedDeps!.syncMapMarkers([stockholm]);
 
-      expect(browseMap.update).not.toHaveBeenCalled();
+      expect(spatialPanel.update).not.toHaveBeenCalled();
     });
   });
 
@@ -438,38 +441,38 @@ describe("createInfiniteScrollWiring", () => {
     });
   });
 
-  describe("initBrowseMap / destroyBrowseMap", () => {
-    it("initBrowseMap updates the browse map with an empty article list", () => {
-      const browseMap = stubBrowseMap();
-      const deps = makeDeps({ browseMap });
+  describe("initSpatialView / destroySpatialView", () => {
+    it("initSpatialView updates the browse map with an empty article list", () => {
+      const spatialPanel = stubSpatialPanel();
+      const deps = makeDeps({ spatialPanel });
       createInfiniteScrollWiring(deps);
 
-      capturedDeps!.initBrowseMap();
+      capturedDeps!.initSpatialView();
 
-      expect(browseMap.update).toHaveBeenCalledWith(pos, []);
+      expect(spatialPanel.update).toHaveBeenCalledWith(pos, []);
     });
 
-    it("initBrowseMap is a no-op when no position is set", () => {
-      const browseMap = stubBrowseMap();
+    it("initSpatialView is a no-op when no position is set", () => {
+      const spatialPanel = stubSpatialPanel();
       const deps = makeDeps({
-        browseMap,
+        spatialPanel,
         getState: () => makeBrowsingState({ position: null }),
       });
       createInfiniteScrollWiring(deps);
 
-      capturedDeps!.initBrowseMap();
+      capturedDeps!.initSpatialView();
 
-      expect(browseMap.update).not.toHaveBeenCalled();
+      expect(spatialPanel.update).not.toHaveBeenCalled();
     });
 
-    it("destroyBrowseMap delegates to browseMap.destroy", () => {
-      const browseMap = stubBrowseMap();
-      const deps = makeDeps({ browseMap });
+    it("destroySpatialView delegates to spatialPanel.destroy", () => {
+      const spatialPanel = stubSpatialPanel();
+      const deps = makeDeps({ spatialPanel });
       createInfiniteScrollWiring(deps);
 
-      capturedDeps!.destroyBrowseMap();
+      capturedDeps!.destroySpatialView();
 
-      expect(browseMap.destroy).toHaveBeenCalled();
+      expect(spatialPanel.destroy).toHaveBeenCalled();
     });
   });
 

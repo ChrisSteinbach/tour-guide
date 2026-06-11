@@ -15,7 +15,7 @@ import {
 } from "./infinite-scroll-lifecycle";
 import type { NearbyArticle } from "./types";
 import type { AppState, Event } from "./state-machine";
-import type { BrowseMapLifecycle } from "./browse-map-lifecycle";
+import type { SpatialPanelLifecycle } from "./spatial-panel-lifecycle";
 import type { SummaryLoader } from "./summary-loader";
 import type { ArticleWindow } from "./article-window";
 import type { Lang } from "../lang";
@@ -25,7 +25,7 @@ export interface InfiniteScrollWiringDeps {
   dispatch: (event: Event) => void;
   app: HTMLElement;
   itemHeight: number;
-  browseMap: BrowseMapLifecycle;
+  spatialPanel: SpatialPanelLifecycle;
   summaryLoader: SummaryLoader;
   onHoverArticle: (title: string | null) => void;
   getArticleByIndex: (i: number) => NearbyArticle | undefined;
@@ -87,7 +87,7 @@ export function createInfiniteScrollWiring(
       syncMapMarkers: (articles) => {
         const state = deps.getState();
         if (state.position) {
-          deps.browseMap.update(state.position, articles as NearbyArticle[]);
+          deps.spatialPanel.update(state.position, articles as NearbyArticle[]);
         }
       },
       renderItem: (i) => {
@@ -137,13 +137,13 @@ export function createInfiniteScrollWiring(
           onShowAbout: () => deps.dispatch({ type: "showAbout" }),
         });
       },
-      initBrowseMap: () => {
+      initSpatialView: () => {
         const state = deps.getState();
         if (state.position) {
-          deps.browseMap.update(state.position, []);
+          deps.spatialPanel.update(state.position, []);
         }
       },
-      destroyBrowseMap: () => deps.browseMap.destroy(),
+      destroySpatialView: () => deps.spatialPanel.destroy(),
       onNearEnd: () => {
         const aw = deps.getCurrentWindow();
         if (aw) {
