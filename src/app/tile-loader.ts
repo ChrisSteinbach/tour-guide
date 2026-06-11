@@ -12,7 +12,7 @@ import {
 import type { TileEntry, TileIndex } from "../tiles";
 import { tilesAtRing, MAX_RING } from "./tile-radius";
 import { NearestQuery } from "./query";
-import type { QueryResult } from "./query";
+import type { FindNearestOptions, QueryResult } from "./query";
 import { idbOpen, idbGetAny, idbPutAny, idbDelete } from "./idb";
 import type { Lang } from "../lang";
 
@@ -70,7 +70,7 @@ function touchLru(
 
       for (const id of evict) {
         deps
-          .deleteKey(db, `tile-v1-${lang}-${id}`)
+          .deleteKey(db, `tile-v2-${lang}-${id}`)
           .catch((e) => console.warn("IDB tile eviction failed:", e));
       }
 
@@ -92,6 +92,7 @@ export function findNearestTiled(
   lat: number,
   lon: number,
   k = 1,
+  opts?: FindNearestOptions,
 ): QueryResult[] {
   if (tiles.size === 0) return [];
 
@@ -99,7 +100,13 @@ export function findNearestTiled(
   const results: QueryResult[] = [];
 
   for (const tileQuery of tiles.values()) {
-    const { results: tileResults } = tileQuery.findNearest(lat, lon, k);
+    const { results: tileResults } = tileQuery.findNearest(
+      lat,
+      lon,
+      k,
+      undefined,
+      opts,
+    );
     for (const r of tileResults) {
       if (!seen.has(r.title)) {
         seen.add(r.title);
@@ -219,6 +226,8 @@ interface CachedTileData {
   triangleVertices: Uint32Array;
   triangleNeighbors: Uint32Array;
   articles: string[];
+  /** Weight class per vertex (0-255), same ordering as articles. */
+  weights: Uint8Array;
   hash: string;
 }
 
@@ -298,7 +307,7 @@ export async function loadTileIndex(
 
 /**
  * Fetch a single tile .bin, deserialize, and return a NearestQuery.
- * Caches in IDB keyed by `tile-v1-{lang}-{id}` with hash.
+ * Caches in IDB keyed by `tile-v2-{lang}-{id}` with hash.
  * On cache hit with matching hash, returns from IDB.
  */
 export async function loadTile(
@@ -308,7 +317,7 @@ export async function loadTile(
   signal?: AbortSignal,
   deps: TileLoaderDeps = defaultDeps,
 ): Promise<NearestQuery> {
-  const cacheKey = `tile-v1-${lang}-${entry.id}`;
+  const cacheKey = `tile-v2-${lang}-${entry.id}`;
   const db = await deps.openDb();
 
   // Check IDB cache
@@ -322,6 +331,7 @@ export async function loadTile(
         cached.vertexTriangles instanceof Uint32Array &&
         cached.triangleVertices instanceof Uint32Array &&
         cached.triangleNeighbors instanceof Uint32Array &&
+        cached.weights instanceof Uint8Array &&
         Array.isArray(cached.articles) &&
         cached.articles.every((a) => typeof a === "string")
       ) {
@@ -332,7 +342,10 @@ export async function loadTile(
             triangleVertices: cached.triangleVertices,
             triangleNeighbors: cached.triangleNeighbors,
           },
-          cached.articles.map((title) => ({ title })),
+          cached.articles.map((title, i) => ({
+            title,
+            weight: cached.weights[i],
+          })),
         );
         // Touch LRU only after NearestQuery construction succeeds
         touchLru(db, lang, entry.id, deps).catch(() => undefined);
@@ -353,7 +366,7 @@ export async function loadTile(
   }
 
   const buf = await response.arrayBuffer();
-  const { fd, articles } = deserializeBinary(buf);
+  const { fd, articles, weights } = deserializeBinary(buf);
 
   // Cache in IDB
   if (db) {
@@ -363,6 +376,7 @@ export async function loadTile(
       triangleVertices: fd.triangleVertices,
       triangleNeighbors: fd.triangleNeighbors,
       articles: articles.map((a) => a.title),
+      weights,
       hash: entry.hash,
     };
     deps

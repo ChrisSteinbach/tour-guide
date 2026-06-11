@@ -9,6 +9,12 @@ export interface Article {
 export interface NearbyArticle extends Article {
   /** Distance from the user in meters. */
   distanceM: number;
+  /**
+   * Weight class 0-255 derived from page length (see pageLenToWeight in
+   * src/geometry); 0 or absent when unknown. Always populated on articles
+   * produced by nearest-neighbor queries.
+   */
+  weight?: number;
 }
 
 /** The user's current geographic position. */

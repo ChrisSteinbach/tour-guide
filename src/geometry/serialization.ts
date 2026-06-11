@@ -15,8 +15,8 @@ export interface ArticleMeta {
   title: string;
   /**
    * Weight class 0-255: 0 = unknown, else round(8*log2(page_len)) clamped
-   * to [1,255] (see pageLenToWeight). Optional because the app's IDB tile
-   * cache predates weights; treated as 0 when absent.
+   * to [1,255] (see pageLenToWeight). Optional so callers without weight
+   * data (e.g. hand-built fixtures) can omit it; treated as 0 when absent.
    */
   weight?: number;
 }
