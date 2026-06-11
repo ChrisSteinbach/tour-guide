@@ -4,7 +4,7 @@ A Wikipedia-powered tour guide PWA that finds nearby articles based on your
 geographic location. Uses spherical Delaunay triangulation for fast
 nearest-neighbor search across over a million geotagged Wikipedia articles.
 
-**[Try it live](https://chrissteinbach.github.io/tour-guide/)**
+**[Try it live](https://wikiradar.org/)**
 
 ## How it works
 
