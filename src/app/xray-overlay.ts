@@ -8,12 +8,14 @@ import type { FlatDelaunay } from "../geometry";
 import type { TileEntry } from "../tiles";
 import type { NearestQuery, QueryResult, WalkTrace } from "./query";
 import { createWalkTrace, vertexLatLon } from "./query";
-import type { GeoBounds } from "./xray-geometry";
+import type { GeoBounds, WalkTimeline } from "./xray-geometry";
 import {
   meshSegments,
+  phaseIndex,
   tileBufferRing,
   tileCoreBounds,
   tileHueIndex,
+  walkTimeline,
 } from "./xray-geometry";
 
 // ---------- Public surface ----------
@@ -65,40 +67,7 @@ const MESH_MIN_ZOOM = 6;
 
 const MOVE_DEBOUNCE_MS = 150;
 
-// Walk animation: each phase gets a TOTAL time budget and its per-step time is
-// scaled to fit, so a 416-hop locate walk replays in ~4s instead of ~29s while
-// a short 60-hop walk keeps the readable 70ms/hop pace. Every hop still
-// renders — only the cadence changes. Worst case ≈ 4 + 1.5 + 1.5 + pulse ≈ 7.7s.
-const WALK_LOCATE_BUDGET_MS = 4000;
-const WALK_DESCENT_BUDGET_MS = 1500;
-const WALK_BFS_BUDGET_MS = 1500;
-const WALK_MIN_STEP_MS = 12;
-const WALK_MAX_STEP_MS = 70;
-const WALK_PULSE_MS = 900;
 const POS_EPSILON = 1e-6;
-
-/** Per-step time for a phase of `count` steps, scaled to fit `budgetMs`. */
-function phaseStepMs(budgetMs: number, count: number): number {
-  if (count <= 0) return WALK_MAX_STEP_MS;
-  const raw = budgetMs / count;
-  return Math.min(WALK_MAX_STEP_MS, Math.max(WALK_MIN_STEP_MS, raw));
-}
-
-/**
- * How many items of a phase to show at `elapsed` ms, given the phase begins at
- * `start` ms and advances one item per `stepMs`. Returns 0 before the phase
- * starts; the first item appears the instant it does; clamps to `total`.
- */
-function phaseCount(
-  elapsed: number,
-  start: number,
-  stepMs: number,
-  total: number,
-): number {
-  if (total <= 0 || elapsed < start) return 0;
-  const n = Math.floor((elapsed - start) / stepMs) + 1;
-  return Math.min(n, total);
-}
 
 interface LayerState {
   mesh: boolean;
@@ -244,17 +213,6 @@ interface TileAnim {
   lastBfs: number;
 }
 
-/** Shared phase timing for one walk replay (ms offsets from animStart). */
-interface WalkTiming {
-  locateStepMs: number;
-  descentStepMs: number;
-  bfsStepMs: number;
-  locateEnd: number;
-  descentEnd: number;
-  bfsEnd: number;
-  totalEnd: number;
-}
-
 // ---------- Factory ----------
 
 export function createXRayOverlay(map: L.Map, deps: XRayDeps): XRayHandle {
@@ -286,7 +244,7 @@ export function createXRayOverlay(map: L.Map, deps: XRayDeps): XRayHandle {
   let rafToken: number | null = null;
   let animTiles: TileAnim[] = [];
   let animStart: number | null = null;
-  let animTiming: WalkTiming | null = null;
+  let animTiming: WalkTimeline | null = null;
   let lastWalkPos: { lat: number; lon: number } | null = null;
 
   const control = new L.Control({ position: "bottomleft" });
@@ -601,26 +559,15 @@ export function createXRayOverlay(map: L.Map, deps: XRayDeps): XRayHandle {
       } satisfies TileAnim;
     });
 
-    // Per-phase step time scales to the slowest tile in that phase, so every
-    // tile shares one timeline and the whole replay stays within budget.
-    const maxLoc = Math.max(0, ...animTiles.map((t) => t.locN));
-    const maxDes = Math.max(0, ...animTiles.map((t) => t.desN));
-    const maxBfs = Math.max(0, ...animTiles.map((t) => t.bfsN));
-    const locateStepMs = phaseStepMs(WALK_LOCATE_BUDGET_MS, maxLoc);
-    const descentStepMs = phaseStepMs(WALK_DESCENT_BUDGET_MS, maxDes);
-    const bfsStepMs = phaseStepMs(WALK_BFS_BUDGET_MS, maxBfs);
-    const locateEnd = maxLoc * locateStepMs;
-    const descentEnd = locateEnd + maxDes * descentStepMs;
-    const bfsEnd = descentEnd + maxBfs * bfsStepMs;
-    animTiming = {
-      locateStepMs,
-      descentStepMs,
-      bfsStepMs,
-      locateEnd,
-      descentEnd,
-      bfsEnd,
-      totalEnd: bfsEnd + WALK_PULSE_MS,
-    };
+    // Phase DURATIONS come from the winning tile's counts (the path the user
+    // follows and the one the status line reports), so the replay length is
+    // bounded regardless of how large any non-winner tile's trace is. Each tile
+    // then maps elapsed → its own step index proportionally (see stepWalk).
+    animTiming = walkTimeline({
+      locate: winner.trace.locateTriangles.length,
+      descent: winner.trace.descentVertices.length,
+      bfs: winner.trace.bfsVertices.length,
+    });
     animStart = null;
     rafToken = requestAnimationFrame(stepWalk);
   }
@@ -715,7 +662,8 @@ export function createXRayOverlay(map: L.Map, deps: XRayDeps): XRayHandle {
     if (!t.pulse || !animTiming) return;
     const ps = elapsed - animTiming.bfsEnd;
     if (ps <= 0) return;
-    const wave = Math.abs(Math.sin((ps / WALK_PULSE_MS) * Math.PI * 2));
+    const pulseDur = animTiming.totalEnd - animTiming.bfsEnd;
+    const wave = Math.abs(Math.sin((ps / pulseDur) * Math.PI * 2));
     t.pulse.setRadius(6 + 8 * wave);
     t.pulse.setStyle({
       fillOpacity: 0.15 + 0.35 * wave,
@@ -739,16 +687,19 @@ export function createXRayOverlay(map: L.Map, deps: XRayDeps): XRayHandle {
     if (!timing) return;
     const elapsed = ts - animStart;
 
+    // Each tile interpolates its own trace across the shared phase windows, so
+    // a huge non-winner trace advances many steps per frame rather than
+    // stretching the clock. renderLocate/Descent/Bfs draw incrementally from
+    // their last index up to the new one, so every hop is still drawn.
+    const descentDur = timing.descentEnd - timing.locateEnd;
+    const bfsDur = timing.bfsEnd - timing.descentEnd;
     for (const t of animTiles) {
-      renderLocate(t, phaseCount(elapsed, 0, timing.locateStepMs, t.locN));
+      renderLocate(t, phaseIndex(elapsed, 0, timing.locateEnd, t.locN));
       renderDescent(
         t,
-        phaseCount(elapsed, timing.locateEnd, timing.descentStepMs, t.desN),
+        phaseIndex(elapsed, timing.locateEnd, descentDur, t.desN),
       );
-      renderBfs(
-        t,
-        phaseCount(elapsed, timing.descentEnd, timing.bfsStepMs, t.bfsN),
-      );
+      renderBfs(t, phaseIndex(elapsed, timing.descentEnd, bfsDur, t.bfsN));
       if (t.isWinner) updatePulse(t, elapsed);
     }
 

@@ -9,9 +9,12 @@ import { toFlatDelaunay } from "./query";
 import {
   MAX_MESH_EDGE_RAD,
   meshSegments,
+  phaseIndex,
   tileBufferRing,
   tileCoreBounds,
   tileHueIndex,
+  WALK_MAX_TOTAL_MS,
+  walkTimeline,
 } from "./xray-geometry";
 
 // ---------- Fixtures ----------
@@ -210,5 +213,93 @@ describe("tileHueIndex", () => {
       buckets.add(tileHueIndex(`10-${String(col).padStart(2, "0")}`, 6));
     }
     expect(buckets.size).toBeGreaterThan(1);
+  });
+});
+
+// ---------- Walk replay timeline ----------
+
+describe("walkTimeline", () => {
+  it("bounds the total replay length even for an enormous winner trace", () => {
+    // A pathological trace (huge locate walk, possibly a cycle → brute-force)
+    // must not stretch the replay — every phase clamps to its ceiling.
+    const t = walkTimeline({ locate: 5000, descent: 800, bfs: 800 });
+
+    expect(t.totalEnd).toBe(WALK_MAX_TOTAL_MS);
+    expect(t.totalEnd).toBeLessThanOrEqual(8000);
+  });
+
+  it("stays bounded for a 416-hop winner (the Stockholm regression case)", () => {
+    // Only the winner's counts feed the timeline, so a huge off-screen
+    // non-winner tile can never own the clock — this is bounded by construction.
+    const t = walkTimeline({ locate: 416, descent: 2, bfs: 30 });
+
+    expect(t.totalEnd).toBeLessThanOrEqual(8000);
+  });
+
+  it("orders the phase boundaries and reserves a pulse window after BFS", () => {
+    const t = walkTimeline({ locate: 50, descent: 5, bfs: 10 });
+
+    expect(t.locateEnd).toBeGreaterThan(0);
+    expect(t.descentEnd).toBeGreaterThan(t.locateEnd);
+    expect(t.bfsEnd).toBeGreaterThan(t.descentEnd);
+    expect(t.totalEnd).toBeGreaterThan(t.bfsEnd);
+  });
+
+  it("floors a tiny walk so it does not flash by", () => {
+    const t = walkTimeline({ locate: 1, descent: 1, bfs: 1 });
+
+    expect(t.locateEnd).toBe(600); // locate floor
+    expect(t.descentEnd).toBe(900); // + descent floor 300
+    expect(t.bfsEnd).toBe(1200); // + bfs floor 300
+    expect(t.totalEnd).toBe(2100); // + pulse 900
+  });
+
+  it("paces the winner locate phase at 12–70 ms per hop for typical counts", () => {
+    for (const hops of [30, 60, 150, 300]) {
+      const { locateEnd } = walkTimeline({ locate: hops, descent: 1, bfs: 1 });
+      const msPerHop = locateEnd / hops;
+      expect(msPerHop).toBeGreaterThanOrEqual(12);
+      expect(msPerHop).toBeLessThanOrEqual(70);
+    }
+  });
+});
+
+describe("phaseIndex", () => {
+  it("draws nothing at or before the phase start", () => {
+    expect(phaseIndex(-50, 100, 1000, 10)).toBe(0);
+    expect(phaseIndex(100, 100, 1000, 10)).toBe(0);
+  });
+
+  it("reaches exactly the full count at and after the phase end", () => {
+    expect(phaseIndex(1000, 0, 1000, 10)).toBe(10);
+    expect(phaseIndex(9999, 0, 1000, 10)).toBe(10);
+  });
+
+  it("interpolates proportionally — halfway through draws half the items", () => {
+    expect(phaseIndex(500, 0, 1000, 10)).toBe(5);
+  });
+
+  it("advances monotonically across the phase", () => {
+    let prev = -1;
+    for (let elapsed = 0; elapsed <= 1000; elapsed += 25) {
+      const idx = phaseIndex(elapsed, 0, 1000, 10);
+      expect(idx).toBeGreaterThanOrEqual(prev);
+      expect(idx).toBeGreaterThanOrEqual(0);
+      expect(idx).toBeLessThanOrEqual(10);
+      prev = idx;
+    }
+  });
+
+  it("advances a huge trace many items per frame so time stays fixed", () => {
+    // ~16 ms frame within a 4000 ms phase of 5000 steps → ~20 steps/frame.
+    const a = phaseIndex(1000, 0, 4000, 5000);
+    const b = phaseIndex(1016, 0, 4000, 5000);
+
+    expect(a).toBe(1250);
+    expect(b - a).toBeGreaterThan(10);
+  });
+
+  it("returns 0 for an empty phase", () => {
+    expect(phaseIndex(500, 0, 1000, 0)).toBe(0);
   });
 });

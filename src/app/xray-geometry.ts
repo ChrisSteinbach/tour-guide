@@ -169,3 +169,100 @@ export function tileHueIndex(id: string, paletteSize: number): number {
   }
   return ((h % paletteSize) + paletteSize) % paletteSize;
 }
+
+// ---------- Walk replay timeline ----------
+//
+// The walk animation runs many tiles' traces on one shared clock. Phase
+// DURATIONS are fixed up front (derived only from the WINNER's trace sizes);
+// every tile then maps elapsed time to its own step index proportionally. This
+// inverts the old "step time × trace length" pacing, where one giant non-winner
+// trace could stretch the replay to tens of seconds. Here the total is bounded
+// by construction — a 5000-hop non-winner advances thousands of steps per frame
+// instead of stretching the clock.
+
+/** A walk's trace sizes: locate hops, descent steps, and BFS-expansion steps. */
+export interface WalkCounts {
+  locate: number;
+  descent: number;
+  bfs: number;
+}
+
+/** Phase boundaries for one replay, as ms offsets from its start. */
+export interface WalkTimeline {
+  /** End of the locate phase (also its duration, since it starts at 0). */
+  locateEnd: number;
+  /** End of the descent phase. */
+  descentEnd: number;
+  /** End of the BFS phase. */
+  bfsEnd: number;
+  /** End of the whole replay, after the result-pulse window. */
+  totalEnd: number;
+}
+
+// Each phase scales with the winner's count at a readable pace, then clamps to a
+// [floor, ceiling] so the total is bounded no matter how large any trace is.
+const WALK_LOCATE_MS_PER_HOP = 70;
+const WALK_DESCENT_MS_PER_STEP = 70;
+const WALK_BFS_MS_PER_STEP = 40;
+const WALK_LOCATE_MIN_MS = 600;
+const WALK_LOCATE_MAX_MS = 4000;
+const WALK_DESCENT_MIN_MS = 300;
+const WALK_DESCENT_MAX_MS = 1500;
+const WALK_BFS_MIN_MS = 300;
+const WALK_BFS_MAX_MS = 1500;
+/** Result-pulse window appended after the BFS phase. */
+const WALK_PULSE_MS = 900;
+
+/** Hard upper bound on a replay's length: every phase ceiling plus the pulse. */
+export const WALK_MAX_TOTAL_MS =
+  WALK_LOCATE_MAX_MS + WALK_DESCENT_MAX_MS + WALK_BFS_MAX_MS + WALK_PULSE_MS;
+
+function clamp(value: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, value));
+}
+
+/**
+ * Phase boundaries for one walk replay, derived solely from the WINNER's trace
+ * sizes (the path the user follows and the one the status line reports). Because
+ * each phase duration is clamped to a fixed ceiling, `totalEnd` never exceeds
+ * {@link WALK_MAX_TOTAL_MS} regardless of how large any tile's trace is.
+ */
+export function walkTimeline(winner: WalkCounts): WalkTimeline {
+  const locateDur = clamp(
+    winner.locate * WALK_LOCATE_MS_PER_HOP,
+    WALK_LOCATE_MIN_MS,
+    WALK_LOCATE_MAX_MS,
+  );
+  const descentDur = clamp(
+    winner.descent * WALK_DESCENT_MS_PER_STEP,
+    WALK_DESCENT_MIN_MS,
+    WALK_DESCENT_MAX_MS,
+  );
+  const bfsDur = clamp(
+    winner.bfs * WALK_BFS_MS_PER_STEP,
+    WALK_BFS_MIN_MS,
+    WALK_BFS_MAX_MS,
+  );
+  const locateEnd = locateDur;
+  const descentEnd = locateEnd + descentDur;
+  const bfsEnd = descentEnd + bfsDur;
+  return { locateEnd, descentEnd, bfsEnd, totalEnd: bfsEnd + WALK_PULSE_MS };
+}
+
+/**
+ * How many items of a phase to draw at `elapsed` ms, given the phase spans
+ * `[start, start + duration]` and holds `count` items. Proportional: 0 at/before
+ * the start, exactly `count` at/after the end, `floor(fraction * count)` between.
+ * Monotonic non-decreasing in `elapsed`; large traces advance many items per
+ * frame, so every item is still drawn while the phase duration stays fixed.
+ */
+export function phaseIndex(
+  elapsed: number,
+  start: number,
+  duration: number,
+  count: number,
+): number {
+  if (count <= 0 || elapsed <= start) return 0;
+  if (duration <= 0 || elapsed >= start + duration) return count;
+  return Math.min(count, Math.floor(((elapsed - start) / duration) * count));
+}
