@@ -11,6 +11,8 @@ import type { Lang } from "../lang";
 import type { AppState, Effect, Event, QueryState } from "./state-machine";
 import type { SummaryLoader } from "./summary-loader";
 import { LANG_STORAGE_KEY } from "./stored-lang";
+import { HIGHLIGHTS_STORAGE_KEY } from "./stored-highlights";
+import { filterMinWeight } from "./config";
 
 export const STARTED_STORAGE_KEY = "tour-guide-started";
 /** How long a stored "started" timestamp remains valid (1 hour). */
@@ -74,6 +76,7 @@ export interface EffectDeps {
     query: QueryState,
     pos: UserPosition,
     count: number,
+    minWeight?: number,
   ) => NearbyArticle[];
   /** For infinite scroll: reset ArticleWindow and load articles via TileRadiusProvider. */
   ensureArticleRange?: (pos: UserPosition, count: number) => void;
@@ -244,6 +247,9 @@ export function createEffectExecutor(
       case "storeLang":
         deps.storage.setItem(LANG_STORAGE_KEY, effect.lang);
         break;
+      case "storeFilter":
+        deps.storage.setItem(HIGHLIGHTS_STORAGE_KEY, effect.filter);
+        break;
       case "storeStarted":
         deps.storage.setItem(STARTED_STORAGE_KEY, String(Date.now()));
         break;
@@ -275,7 +281,12 @@ export function createEffectExecutor(
         break;
       case "requery": {
         const state = deps.getState();
-        const articles = deps.getNearby(state.query, effect.pos, effect.count);
+        const articles = deps.getNearby(
+          state.query,
+          effect.pos,
+          effect.count,
+          filterMinWeight(state.filter),
+        );
         if (
           state.phase.phase === "browsing" &&
           state.phase.scrollMode === "infinite" &&

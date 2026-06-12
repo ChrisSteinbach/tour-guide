@@ -93,6 +93,11 @@ describe("NearestQuery", () => {
     expect(typeof lastTriangle).toBe("number");
     expect(lastTriangle).toBeGreaterThanOrEqual(0);
   });
+
+  it("reports weight 0 for articles without weight data", () => {
+    const { results } = nq.findNearest(90, 0);
+    expect(results[0].weight).toBe(0);
+  });
 });
 
 describe("NearestQuery (degenerate triangulation)", () => {
@@ -169,5 +174,203 @@ describe("NearestQuery (Float32 round-trip)", () => {
     // B and C should be ~900–1000 m away, definitely not 0
     expect(results[1].distanceM).toBeGreaterThan(500);
     expect(results[2].distanceM).toBeGreaterThan(500);
+  });
+});
+
+// ---------- Weight filtering ----------
+
+/** Build a NearestQuery from weighted lat/lon articles. */
+function buildWeightedQuery(
+  articles: { title: string; lat: number; lon: number; weight: number }[],
+): NearestQuery {
+  const points = articles.map((a) => toCartesian({ lat: a.lat, lon: a.lon }));
+  const hull = convexHull(points);
+  const tri = buildTriangulation(hull);
+  const meta = tri.originalIndices.map((i) => ({
+    title: articles[i].title,
+    weight: articles[i].weight,
+  }));
+  const data = serialize(tri, meta);
+  const fd = toFlatDelaunay(data);
+  const metas = data.articles.map((title, i) => ({
+    title,
+    weight: data.weights[i],
+  }));
+  return new NearestQuery(fd, metas);
+}
+
+const STUB_WEIGHT = 10;
+const HIGHLIGHT_WEIGHT = 100;
+
+/**
+ * Concentric rings around (0,0): two inner rings of low-weight stubs
+ * (12 vertices, every one of them nearer than any highlight) and an outer
+ * ring of high-weight highlights. The nearest matches sit behind a wall of
+ * stubs, so a filtered query must expand through non-matching vertices.
+ * An antipodal stub closes the hull.
+ */
+function ringArticles(): {
+  title: string;
+  lat: number;
+  lon: number;
+  weight: number;
+}[] {
+  const articles: {
+    title: string;
+    lat: number;
+    lon: number;
+    weight: number;
+  }[] = [];
+  const ring = (
+    radiusDeg: number,
+    offsetDeg: number,
+    titlePrefix: string,
+    weight: number,
+  ) => {
+    for (let i = 0; i < 6; i++) {
+      const angle = ((i * 60 + offsetDeg) * Math.PI) / 180;
+      articles.push({
+        title: `${titlePrefix} ${i}`,
+        lat: Math.sin(angle) * radiusDeg,
+        lon: Math.cos(angle) * radiusDeg,
+        weight,
+      });
+    }
+  };
+  ring(1, 0, "Inner stub", STUB_WEIGHT);
+  ring(2, 30, "Mid stub", STUB_WEIGHT);
+  ring(5, 0, "Highlight", HIGHLIGHT_WEIGHT);
+  articles.push({
+    title: "Antipode stub",
+    lat: 0,
+    lon: 180,
+    weight: STUB_WEIGHT,
+  });
+  return articles;
+}
+
+describe("NearestQuery (weight filtering)", () => {
+  let ringQ: NearestQuery;
+
+  beforeAll(() => {
+    ringQ = buildWeightedQuery(ringArticles());
+  });
+
+  it("returns only articles meeting minWeight, sorted by distance", () => {
+    const { results } = ringQ.findNearest(0, 0, 3, undefined, {
+      minWeight: 50,
+    });
+
+    expect(results).toHaveLength(3);
+    for (const r of results) {
+      expect(r.weight).toBeGreaterThanOrEqual(50);
+      expect(r.title).toMatch(/^Highlight/);
+    }
+    for (let i = 1; i < results.length; i++) {
+      expect(results[i].distanceM).toBeGreaterThanOrEqual(
+        results[i - 1].distanceM,
+      );
+    }
+  });
+
+  it("expands through a wall of low-weight vertices to reach matches beyond it", () => {
+    // Sanity: the 12 nearest articles are all stubs — every path from the
+    // query to a highlight crosses non-matching vertices.
+    const { results: unfiltered } = ringQ.findNearest(0, 0, 12);
+    expect(unfiltered).toHaveLength(12);
+    expect(unfiltered.every((r) => r.weight === STUB_WEIGHT)).toBe(true);
+
+    // The filtered query must traverse the stub wall to find a highlight.
+    // The walk's nearest vertex (an inner stub) seeds the frontier but is
+    // not returned.
+    const { results } = ringQ.findNearest(0, 0, 1, undefined, {
+      minWeight: 50,
+    });
+    expect(results).toHaveLength(1);
+    expect(results[0].title).toMatch(/^Highlight/);
+  });
+
+  it("returns all matches found when fewer than k satisfy the filter", () => {
+    const { results } = ringQ.findNearest(0, 0, 10, undefined, {
+      minWeight: 50,
+    });
+
+    expect(results).toHaveLength(6); // the fixture has exactly 6 highlights
+    expect(results.every((r) => r.title.startsWith("Highlight"))).toBe(true);
+  });
+
+  it("returns empty results when no article meets the threshold", () => {
+    const { results } = ringQ.findNearest(0, 0, 3, undefined, {
+      minWeight: HIGHLIGHT_WEIGHT + 1,
+    });
+
+    expect(results).toEqual([]);
+  });
+
+  it("returns the same lastTriangle as an unfiltered query", () => {
+    const unfiltered = ringQ.findNearest(0.5, 0.5, 3);
+    const filtered = ringQ.findNearest(0.5, 0.5, 3, undefined, {
+      minWeight: 50,
+    });
+
+    expect(filtered.lastTriangle).toBe(unfiltered.lastTriangle);
+  });
+
+  it("includes the article weight on unfiltered results", () => {
+    const { results } = ringQ.findNearest(0, 0, 1);
+    expect(results[0].weight).toBe(STUB_WEIGHT);
+  });
+});
+
+describe("NearestQuery (filtered visit cap)", () => {
+  /**
+   * 5000 quasi-uniform vertices (Fibonacci sphere). All are low-weight
+   * stubs except the one at the south pole. Queried from the north pole,
+   * the lone match lies beyond the FILTERED_VISIT_FLOOR (4096) horizon —
+   * the cap bounds the scan instead of crawling the whole sphere.
+   */
+  const VERTEX_COUNT = 5000;
+  let sphereQ: NearestQuery;
+
+  beforeAll(() => {
+    const golden = Math.PI * (3 - Math.sqrt(5));
+    const articles = Array.from({ length: VERTEX_COUNT }, (_, i) => {
+      const z = 1 - (i / (VERTEX_COUNT - 1)) * 2; // 1 (north) → -1 (south)
+      const theta = golden * i;
+      return {
+        title: `P${i}`,
+        lat: (Math.asin(z) * 180) / Math.PI,
+        lon: (Math.atan2(Math.sin(theta), Math.cos(theta)) * 180) / Math.PI,
+        weight: i === VERTEX_COUNT - 1 ? HIGHLIGHT_WEIGHT : STUB_WEIGHT,
+      };
+    });
+    sphereQ = buildWeightedQuery(articles);
+  });
+
+  it("stops scanning at the visit cap when matches are out of reach", () => {
+    // From the north pole, the only highlight (south pole) sits ~900
+    // vertices beyond the 4096-vertex budget: empty result, bounded work.
+    const { results } = sphereQ.findNearest(90, 0, 1, undefined, {
+      minWeight: 50,
+    });
+
+    expect(results).toEqual([]);
+
+    // Contrast: a larger k raises the budget (64 * k > vertex count), so
+    // the same query reaches the south pole — proving the empty result
+    // above came from the cap, not from the match being unreachable.
+    const { results: uncapped } = sphereQ.findNearest(90, 0, 80, undefined, {
+      minWeight: 50,
+    });
+    expect(uncapped.map((r) => r.title)).toEqual([`P${VERTEX_COUNT - 1}`]);
+  });
+
+  it("finds a sparse match that lies within the visit budget", () => {
+    const { results } = sphereQ.findNearest(-89, 0, 1, undefined, {
+      minWeight: 50,
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0].title).toBe(`P${VERTEX_COUNT - 1}`);
   });
 });

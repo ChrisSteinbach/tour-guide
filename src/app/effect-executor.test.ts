@@ -10,6 +10,8 @@ import type {
 import type { TileEntry } from "../tiles";
 import { createEffectExecutor, STARTED_STORAGE_KEY } from "./effect-executor";
 import { LANG_STORAGE_KEY } from "./stored-lang";
+import { HIGHLIGHTS_STORAGE_KEY } from "./stored-highlights";
+import { HIGHLIGHT_MIN_WEIGHT } from "./config";
 import type { SummaryLoader } from "./summary-loader";
 import { NearestQuery } from "./query";
 
@@ -67,6 +69,7 @@ function browsingState(overrides: Partial<AppState> = {}): AppState {
     position: pos,
     positionSource: null,
     currentLang: "en",
+    filter: "highlights",
     loadGeneration: 1,
     loadingTiles: new Set(),
     downloadProgress: -1,
@@ -97,6 +100,7 @@ function detailState(overrides: Partial<AppState> = {}): AppState {
     position: pos,
     positionSource: null,
     currentLang: "en",
+    filter: "highlights",
     loadGeneration: 1,
     loadingTiles: new Set(),
     downloadProgress: -1,
@@ -929,6 +933,51 @@ describe("createEffectExecutor", () => {
     expect(deps.storage.setItem).toHaveBeenCalledWith(LANG_STORAGE_KEY, "sv");
   });
 
+  it("storeFilter writes correct key", () => {
+    const deps = makeDeps();
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "storeFilter", filter: "all" });
+    expect(deps.storage.setItem).toHaveBeenCalledWith(
+      HIGHLIGHTS_STORAGE_KEY,
+      "all",
+    );
+  });
+
+  it("requery in Highlights mode passes the highlight weight floor to getNearby", () => {
+    const deps = makeDeps({
+      getState: vi.fn(() => browsingState({ filter: "highlights" })),
+      getNearby: vi.fn(() => [article]),
+    });
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "requery", pos, count: 10 });
+
+    expect(deps.getNearby).toHaveBeenCalledWith(
+      { mode: "none" },
+      pos,
+      10,
+      HIGHLIGHT_MIN_WEIGHT,
+    );
+  });
+
+  it("requery in Everything mode passes no weight floor to getNearby", () => {
+    const deps = makeDeps({
+      getState: vi.fn(() => browsingState({ filter: "all" })),
+      getNearby: vi.fn(() => [article]),
+    });
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "requery", pos, count: 10 });
+
+    expect(deps.getNearby).toHaveBeenCalledWith(
+      { mode: "none" },
+      pos,
+      10,
+      undefined,
+    );
+  });
+
   it("storeStarted writes timestamp to localStorage", () => {
     const deps = makeDeps();
     const exec = createEffectExecutor(deps);
@@ -1018,7 +1067,12 @@ describe("createEffectExecutor", () => {
     exec({ type: "requery", pos, count: 10 });
 
     expect(ensureArticleRange).not.toHaveBeenCalled();
-    expect(deps.getNearby).toHaveBeenCalledWith({ mode: "none" }, pos, 10);
+    expect(deps.getNearby).toHaveBeenCalledWith(
+      { mode: "none" },
+      pos,
+      10,
+      HIGHLIGHT_MIN_WEIGHT,
+    );
     expect(deps.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "queryResult",

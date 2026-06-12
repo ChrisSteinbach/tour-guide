@@ -186,6 +186,59 @@ describe("InfiniteScrollLifecycle", () => {
     });
   });
 
+  describe("empty state", () => {
+    function makeEmptyStateDeps(container: HTMLElement): InfiniteScrollDeps {
+      return makeDeps({
+        container,
+        renderEmptyState: () => {
+          const el = document.createElement("div");
+          el.className = "nearby-empty";
+          el.textContent = "No highlights nearby.";
+          return el;
+        },
+      });
+    }
+
+    it("shows the empty-state element when the list height drops to zero", () => {
+      const container = makeContainer();
+      const lifecycle = createInfiniteScrollLifecycle(
+        makeEmptyStateDeps(container),
+      );
+
+      lifecycle.init(5);
+      expect(container.querySelector(".nearby-empty")).toBeNull();
+
+      lifecycle.update(0);
+      expect(container.querySelector(".nearby-empty")?.textContent).toBe(
+        "No highlights nearby.",
+      );
+    });
+
+    it("removes the empty-state element when articles arrive", () => {
+      const container = makeContainer();
+      const lifecycle = createInfiniteScrollLifecycle(
+        makeEmptyStateDeps(container),
+      );
+
+      lifecycle.init(0);
+      expect(container.querySelector(".nearby-empty")).not.toBeNull();
+
+      lifecycle.update(10);
+      expect(container.querySelector(".nearby-empty")).toBeNull();
+    });
+
+    it("renders nothing on zero height when renderEmptyState returns null", () => {
+      const container = makeContainer();
+      const lifecycle = createInfiniteScrollLifecycle(
+        makeDeps({ container, renderEmptyState: () => null }),
+      );
+
+      lifecycle.init(0);
+
+      expect(container.querySelector(".nearby-empty")).toBeNull();
+    });
+  });
+
   describe("destroy", () => {
     it("marks lifecycle as inactive", () => {
       const lifecycle = createInfiniteScrollLifecycle(makeDeps());

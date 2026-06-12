@@ -62,9 +62,11 @@ npm run extract -- --lang=en --bounds=5.73,49.44,6.53,50.19
 `data/articles-{lang}.json` — NDJSON, one article per line:
 
 ```json
-{"title":"Eiffel Tower","lat":48.8584,"lon":2.2945}
-{"title":"Louvre","lat":48.8606,"lon":2.3376}
+{"title":"Eiffel Tower","lat":48.8584,"lon":2.2945,"len":215625}
+{"title":"Louvre","lat":48.8606,"lon":2.3376,"len":87018}
 ```
+
+`len` is the article's page length in bytes (`page_len` from the page dump). It is omitted when `page_len` is missing or unparsable; the build pipeline then assigns the article weight class 0 (unknown). See [binary-format.md](binary-format.md) for how page length maps to the per-vertex weight class.
 
 A full English extraction produces ~1.2M articles.
 

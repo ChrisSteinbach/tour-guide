@@ -145,6 +145,8 @@ export function createRenderer(deps: RendererDeps): Renderer {
       onUseGps: () => deps.dispatch({ type: "useGps" }),
       onPickLocation: () => deps.dispatch({ type: "showMapPicker" }),
       gpsSignalLost: state.gpsSignalLost,
+      filter: state.filter,
+      onToggleFilter: () => deps.dispatch({ type: "toggleFilter" }),
       onShowAbout: () => deps.dispatch({ type: "showAbout" }),
     });
     deps.spatialPanel.update(

@@ -111,7 +111,7 @@ describe("idbCleanupOldKeys", () => {
       "triangulation-v3-en", // old
       "triangulation-v2-en", // old
       "triangulation-v1-en", // old
-      "tile-v1-en-42", // current
+      "tile-v2-en-42", // current
       "tile-lru-v1-en", // current
     ]);
 
@@ -125,10 +125,24 @@ describe("idbCleanupOldKeys", () => {
     ]);
   });
 
+  it("treats v1 per-tile keys as orphaned after the v2 bump", async () => {
+    const { db, deleted } = fakeDbWithKeys([
+      "tile-v1-en-42", // old per-tile format (no weights)
+      "tile-v2-en-42", // current
+      "tile-index-v1-en", // current
+      "tile-lru-v1-en", // current
+    ]);
+
+    const count = await idbCleanupOldKeys(db);
+
+    expect(count).toBe(1);
+    expect(deleted).toEqual(["tile-v1-en-42"]);
+  });
+
   it("returns 0 when all keys are current", async () => {
     const { db, deleted } = fakeDbWithKeys([
       "tile-index-v1-sv",
-      "tile-v1-en-42",
+      "tile-v2-en-42",
       "tile-lru-v1-en",
     ]);
 

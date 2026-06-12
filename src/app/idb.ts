@@ -2,7 +2,7 @@
 //
 // Single object store with versioned key prefixes:
 //   tile-index-v1-{lang}                    tile index JSON
-//   tile-v1-{lang}-{id}                     individual tile data
+//   tile-v2-{lang}-{id}                     individual tile data (v2 added per-vertex weights)
 //   tile-lru-v1-{lang}                      tile LRU eviction list
 //
 // Schema migration strategy: bump the version in the key prefix (e.g.
@@ -15,7 +15,7 @@ export const IDB_STORE = "cache";
 /** Current key prefixes. Update when bumping a schema version. */
 export const CURRENT_KEY_PREFIXES = [
   "tile-index-v1-",
-  "tile-v1-",
+  "tile-v2-",
   "tile-lru-v1-",
 ];
 

@@ -16,18 +16,28 @@ export interface ArticleWindowFactoryDeps {
   signal: AbortSignal;
   source: TileSource;
   onWindowChange?: () => void;
+  /** Weight floor applied to every query (the Highlights filter), or
+   *  undefined for no filter. Fixed for the window's lifetime — the caller
+   *  resets the window when the filter changes. */
+  minWeight?: number;
 }
 
 export function createArticleWindowFactory(
   deps: ArticleWindowFactoryDeps,
 ): ArticleWindow {
-  const { position, signal, source, onWindowChange } = deps;
+  const { position, signal, source, onWindowChange, minWeight } = deps;
   const { row, col } = source.center;
 
   const radiusProvider = createTileRadiusProvider({
     queryAllTiles: () =>
       Promise.resolve(
-        findNearestTiled(source.loaded(), position.lat, position.lon, 99999),
+        findNearestTiled(
+          source.loaded(),
+          position.lat,
+          position.lon,
+          99999,
+          minWeight === undefined ? undefined : { minWeight },
+        ),
       ),
     loadRing: async (ring) => {
       const ids = source.idsAtRing(ring);

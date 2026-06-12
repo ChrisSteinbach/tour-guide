@@ -2,7 +2,7 @@
 
 The `.bin` files produced by the build pipeline (`npm run pipeline`) encode a spherical Delaunay triangulation and its associated article metadata in a single compact binary blob. This document specifies the byte-level layout so that anyone reading or modifying `src/geometry/serialization.ts` or `src/app/query.ts` knows exactly what to expect.
 
-Notation: **V** = vertex count, **T** = triangle count. All multi-byte integers and floats are **little-endian**. All sections are **4-byte aligned**.
+Notation: **V** = vertex count, **T** = triangle count. All multi-byte integers and floats are **little-endian**. All Float32/Uint32 sections are **4-byte aligned**; the Vertex Weights section is Uint8 and alignment-free.
 
 ## Overview
 
@@ -14,6 +14,7 @@ block-beta
     vtri["Vertex Triangles — V × 4 bytes, Uint32"]
     trivert["Triangle Vertices — T × 3 × 4 bytes, Uint32"]
     trineigh["Triangle Neighbors — T × 3 × 4 bytes, Uint32"]
+    weights["Vertex Weights — V × 1 byte, Uint8"]
     articles["Articles (+padding) — articlesLength bytes, UTF-8 JSON (byte = articlesOffset)"]
 ```
 
@@ -22,17 +23,17 @@ block-beta
 | Offset | Size | Type   | Field          | Description                                      |
 | ------ | ---- | ------ | -------------- | ------------------------------------------------ |
 | 0      | 4    | bytes  | magic          | Magic bytes `0x57 0x4B 0x52 0x44` (ASCII "WKRD") |
-| 4      | 4    | Uint32 | version        | Format version (currently `1`)                   |
+| 4      | 4    | Uint32 | version        | Format version (currently `2`)                   |
 | 8      | 4    | Uint32 | vertexCount    | Number of vertices (V)                           |
 | 12     | 4    | Uint32 | triangleCount  | Number of triangles (T)                          |
 | 16     | 4    | Uint32 | articlesOffset | Byte offset where the articles JSON begins       |
 | 20     | 4    | Uint32 | articlesLength | Byte length of the articles JSON (unpadded)      |
 
-The deserializer validates magic bytes and version before reading any data. Unrecognized magic bytes or unsupported versions cause an immediate `BinaryFormatError`, preventing silent misinterpretation of incompatible formats.
+The deserializer validates magic bytes and version before reading any data. Unrecognized magic bytes or unsupported versions cause an immediate `BinaryFormatError`, preventing silent misinterpretation of incompatible formats. The version check is strict: version-1 tiles (which lack the Vertex Weights section) are rejected. This is safe because the deployment workflow regenerates all tiles whenever the format changes.
 
 ## Numeric Sections
 
-All four sections are packed contiguously starting at byte 24, in the order listed below. Because every element is 4 bytes wide, alignment is naturally maintained.
+All five sections are packed contiguously starting at byte 24, in the order listed below. The first four use 4-byte elements, so alignment is naturally maintained. The fifth (Vertex Weights) uses 1-byte elements and is deliberately placed last — Uint8 needs no alignment, and the articles JSON that follows is read as raw bytes, so no padding is required anywhere.
 
 ### Vertex Points — `Float32[V * 3]`
 
@@ -54,9 +55,15 @@ Flat array of adjacent triangle indices: `[n0, n1, n2, n3, n4, n5, ...]`. For tr
 
 This adjacency structure enables O(√N) triangle-walk point location — starting from any triangle, the algorithm walks toward the query point by crossing edges until it reaches the containing triangle.
 
+### Vertex Weights — `Uint8[V]`
+
+One weight class per vertex, in the same order as the vertex arrays. Begins at byte `24 + V*3*4 + V*4 + T*3*4 + T*3*4`.
+
+The weight encodes the Wikipedia article's page length (`page_len`, in bytes) on a logarithmic scale: `0` means unknown (no page length available), otherwise the value is `round(8 * log2(page_len))` clamped to `[1, 255]` (see `pageLenToWeight` in serialization.ts). For example, a 1 KiB stub maps to 80 and an 8 KiB article to 104; the scale saturates at 255 for pages of ~4 GB (2^31.875 bytes) and larger, so in practice all real articles fall well below the cap. Each step of 8 represents a doubling of page length. This lets the app prefer substantial articles over bot-generated stubs without storing the raw page length.
+
 ## Articles Section
 
-Begins at byte `articlesOffset` (which equals `24 + V*3*4 + V*4 + T*3*4 + T*3*4`).
+Begins at byte `articlesOffset` (which equals `24 + V*3*4 + V*4 + T*3*4 + T*3*4 + V`, i.e. immediately after the Vertex Weights section).
 
 Contains a UTF-8-encoded JSON array with exactly **V** entries, one per vertex, in the same order as the vertex arrays. So `articles[i]` is the title for vertex `i`.
 
@@ -72,6 +79,7 @@ totalSize = 24                           // header
           + V * 4                        // vertex triangles
           + T * 3 * 4                    // triangle vertices
           + T * 3 * 4                    // triangle neighbors
+          + V                            // vertex weights
           + ceil(articlesLength / 4) * 4 // articles JSON (padded)
 ```
 
@@ -81,7 +89,7 @@ For reference, encoding all English articles (over a million; see [data-extracti
 
 **Writer:** `serializeBinary()` in `src/geometry/serialization.ts` — takes a `TriangulationFile` (JSON-friendly intermediate format) and returns an `ArrayBuffer`.
 
-**Reader:** `deserializeBinary()` in `src/geometry/serialization.ts` — takes an `ArrayBuffer` and returns a `FlatDelaunay` (typed-array views) plus an `ArticleMeta[]` array. Uint32 sections are zero-copy views into the original buffer. Float32 vertex data is copied into a Float64Array for runtime precision.
+**Reader:** `deserializeBinary()` in `src/geometry/serialization.ts` — takes an `ArrayBuffer` and returns a `FlatDelaunay` (typed-array views), an `ArticleMeta[]` array (each entry's `weight` populated from the Vertex Weights section), and the per-vertex `weights` as a `Uint8Array`. Uint32 and Uint8 sections are zero-copy views into the original buffer. Float32 vertex data is copied into a Float64Array for runtime precision.
 
 **Pipeline:** `src/pipeline/build.ts` calls `serialize()` then `serializeBinary()` and writes the result with `fs.writeFileSync`.
 

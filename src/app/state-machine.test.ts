@@ -33,6 +33,7 @@ function makeState(overrides: Partial<AppState> = {}): AppState {
     position: null,
     positionSource: null,
     currentLang: "en",
+    filter: "highlights",
     loadGeneration: 0,
     loadingTiles: new Set(),
     downloadProgress: -1,
@@ -233,6 +234,44 @@ describe("getNearby", () => {
   it("returns empty array when query mode is none", () => {
     const articles = getNearby({ mode: "none" }, paris, 10);
     expect(articles).toEqual([]);
+  });
+
+  it("applies the minWeight filter to tiled queries", () => {
+    // The Eiffel Tower is nearest to paris but is a low-weight stub here.
+    const weighted = testArticles.map((a) => ({
+      ...a,
+      weight: a.title === "Eiffel Tower" ? 10 : 200,
+    }));
+    const points = weighted.map((a) => toCartesian(a));
+    const hull = convexHull(points);
+    const tri = buildTriangulation(hull);
+    const meta = tri.originalIndices.map((i) => ({
+      title: weighted[i].title,
+      weight: weighted[i].weight,
+    }));
+    const data = serialize(tri, meta);
+    const orderedMeta = data.articles.map((title, i) => ({
+      title,
+      weight: data.weights[i],
+    }));
+    const query: QueryState = {
+      mode: "tiled",
+      index: sampleIndex,
+      tileMap: buildTileMap(sampleIndex),
+      tiles: new Map([
+        ["27-36", new NearestQuery(toFlatDelaunay(data), orderedMeta)],
+      ]),
+    };
+
+    const unfiltered = getNearby(query, paris, 3);
+    expect(unfiltered.map((a) => a.title)).toContain("Eiffel Tower");
+
+    const filtered = getNearby(query, paris, 3, 104);
+    expect(filtered.length).toBeGreaterThan(0);
+    expect(filtered.map((a) => a.title)).not.toContain("Eiffel Tower");
+    for (const a of filtered) {
+      expect(a.weight).toBeGreaterThanOrEqual(104);
+    }
   });
 });
 
@@ -800,6 +839,77 @@ describe("togglePause event", () => {
   it("no-ops when not browsing", () => {
     const state = makeState();
     const { next, effects } = transition(state, { type: "togglePause" });
+    expect(next).toBe(state);
+    expect(effects).toEqual([]);
+  });
+});
+
+// ── toggleFilter event ────────────────────────────────────────
+
+describe("toggleFilter event", () => {
+  it("flips highlights → all, persists, and requeries at the current position", () => {
+    const state = browsingState({ filter: "highlights", nearbyCount: 20 });
+    const { next, effects } = transition(state, { type: "toggleFilter" });
+    expect(next.filter).toBe("all");
+    expect(effects).toContainEqual({ type: "storeFilter", filter: "all" });
+    expect(effects).toContainEqual({ type: "requery", pos: paris, count: 20 });
+    expect(effectTypes(effects)).toContain("scrollToTop");
+    expect(effectTypes(effects)).toContain("renderBrowsingList");
+    expect(effectTypes(effects)).toContain("fetchListSummaries");
+  });
+
+  it("flips all → highlights and persists the new mode", () => {
+    const state = browsingState({ filter: "all" });
+    const { next, effects } = transition(state, { type: "toggleFilter" });
+    expect(next.filter).toBe("highlights");
+    expect(effects).toContainEqual({
+      type: "storeFilter",
+      filter: "highlights",
+    });
+    expect(effectTypes(effects)).toContain("requery");
+  });
+
+  it("requeries with the initial count and resets the lazy limit in infinite mode", () => {
+    const state = browsingState({
+      scrollMode: "infinite",
+      infiniteScrollLimit: INFINITE_SCROLL_INITIAL + 3 * INFINITE_SCROLL_STEP,
+      positionSource: "picked",
+    });
+    const { next, effects } = transition(state, { type: "toggleFilter" });
+    const browsing = expectBrowsing(next);
+    expect(browsing.infiniteScrollLimit).toBe(INFINITE_SCROLL_INITIAL);
+    expect(effects).toContainEqual({
+      type: "requery",
+      pos: paris,
+      count: INFINITE_SCROLL_INITIAL,
+    });
+    // Infinite mode enriches via the scroll scheduler, not eager fetching.
+    expect(effectTypes(effects)).not.toContain("fetchListSummaries");
+  });
+
+  it("leaves pause state and scroll mode untouched", () => {
+    const state = browsingState({
+      paused: true,
+      pauseReason: "manual",
+      scrollMode: "infinite",
+    });
+    const { next } = transition(state, { type: "toggleFilter" });
+    const browsing = expectBrowsing(next);
+    expect(browsing.paused).toBe(true);
+    expect(browsing.pauseReason).toBe("manual");
+    expect(browsing.scrollMode).toBe("infinite");
+  });
+
+  it("flips and re-renders without requerying when browsing has no position", () => {
+    const state = browsingState({ position: null });
+    const { next, effects } = transition(state, { type: "toggleFilter" });
+    expect(next.filter).toBe("all");
+    expect(effectTypes(effects)).toEqual(["storeFilter", "renderBrowsingList"]);
+  });
+
+  it("no-ops when not browsing", () => {
+    const state = makeState({ filter: "highlights" });
+    const { next, effects } = transition(state, { type: "toggleFilter" });
     expect(next).toBe(state);
     expect(effects).toEqual([]);
   });

@@ -177,47 +177,59 @@ export async function* streamDump(
 
   const insertPrefix = `INSERT INTO \`${tableName}\` VALUES `;
 
-  for await (const line of rl) {
-    // Collect CREATE TABLE block
-    if (line.includes("CREATE TABLE")) {
-      createTableLines = [line];
-      continue;
-    }
+  try {
+    for await (const line of rl) {
+      // Collect CREATE TABLE block
+      if (line.includes("CREATE TABLE")) {
+        createTableLines = [line];
+        continue;
+      }
 
-    if (createTableLines !== null) {
-      createTableLines.push(line);
-      if (line.includes(";")) {
-        schema = parseCreateTable(createTableLines);
-        createTableLines = null;
+      if (createTableLines !== null) {
+        createTableLines.push(line);
+        if (line.includes(";")) {
+          schema = parseCreateTable(createTableLines);
+          createTableLines = null;
 
-        if (schema && schema.tableName === tableName) {
-          const columnIndex = new Map(schema.columns.map((c, i) => [c, i]));
-          projectionIndices = requiredColumns.map((col) => {
-            const idx = columnIndex.get(col);
-            if (idx === undefined) {
-              throw new Error(
-                `Required column '${col}' not found in ${tableName}. Available: ${schema!.columns.join(", ")}`,
-              );
-            }
-            return idx;
-          });
+          if (schema && schema.tableName === tableName) {
+            const columnIndex = new Map(schema.columns.map((c, i) => [c, i]));
+            projectionIndices = requiredColumns.map((col) => {
+              const idx = columnIndex.get(col);
+              if (idx === undefined) {
+                throw new Error(
+                  `Required column '${col}' not found in ${tableName}. Available: ${schema!.columns.join(", ")}`,
+                );
+              }
+              return idx;
+            });
+          }
+        }
+        continue;
+      }
+
+      // Parse INSERT lines and project to required columns
+      if (line.startsWith(insertPrefix) && projectionIndices) {
+        const valuesStr = line.substring(insertPrefix.length);
+        const rows = parseValues(valuesStr);
+        for (const row of rows) {
+          yield projectionIndices.map((i) => row[i]);
+          rowCount++;
+          if (onProgress && rowCount % progressInterval === 0) {
+            onProgress(rowCount);
+          }
         }
       }
-      continue;
     }
-
-    // Parse INSERT lines and project to required columns
-    if (line.startsWith(insertPrefix) && projectionIndices) {
-      const valuesStr = line.substring(insertPrefix.length);
-      const rows = parseValues(valuesStr);
-      for (const row of rows) {
-        yield projectionIndices.map((i) => row[i]);
-        rowCount++;
-        if (onProgress && rowCount % progressInterval === 0) {
-          onProgress(rowCount);
-        }
-      }
+  } catch (err) {
+    // zlib reports a truncated .gz as a bare Z_BUF_ERROR ("unexpected end
+    // of file") with no hint of which file — rewrap it actionably.
+    if ((err as NodeJS.ErrnoException)?.code === "Z_BUF_ERROR") {
+      throw new Error(
+        `Dump file is corrupt or truncated: ${filePath} — delete it and re-download (re-run extract without --skip-download)`,
+        { cause: err },
+      );
     }
+    throw err;
   }
 
   if (!projectionIndices) {

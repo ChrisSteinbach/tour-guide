@@ -14,7 +14,34 @@ export interface QueryResult {
   lat: number;
   lon: number;
   distanceM: number;
+  /** Article weight class (0-255); 0 when the article has none. */
+  weight: number;
 }
+
+export interface FindNearestOptions {
+  /**
+   * Only vertices with weight >= minWeight count as results. Non-matching
+   * vertices are still traversed during expansion — they are part of the
+   * triangulation graph, and the nearest matches may sit behind them.
+   */
+  minWeight?: number;
+}
+
+// ---------- Filtered-expansion bounds ----------
+
+/**
+ * Visit cap for weight-filtered BFS expansion:
+ * Math.max(FILTERED_VISIT_FLOOR, FILTERED_VISIT_PER_RESULT * k) vertices.
+ *
+ * A filtered search must expand through non-matching vertices, so in a tile
+ * with few or no matches the BFS would otherwise scan every vertex. The
+ * floor lets small-k queries see past thousands of contiguous low-weight
+ * stubs (rural areas dominated by bot-generated articles); the per-k term
+ * scales the budget for large-k queries. When the cap is hit, however many
+ * matches were found so far are returned.
+ */
+export const FILTERED_VISIT_FLOOR = 4096;
+export const FILTERED_VISIT_PER_RESULT = 64;
 
 // ---------- Flat geometry functions ----------
 
@@ -221,6 +248,7 @@ export class NearestQuery {
     lon: number,
     k = 1,
     startTriangle?: number,
+    opts?: FindNearestOptions,
   ): { results: QueryResult[]; lastTriangle: number } {
     const [qx, qy, qz] = toCartesian({ lat, lon });
     const nearestIdx = flatFindNearest(
@@ -231,7 +259,17 @@ export class NearestQuery {
       startTriangle ?? this.defaultTriangle,
     );
 
+    // lastTriangle is the walk-start optimization for the next query —
+    // always derived from the unfiltered nearest vertex.
     const lastTriangle = this.fd.vertexTriangles[nearestIdx];
+
+    const minWeight = opts?.minWeight;
+    if (minWeight !== undefined) {
+      return {
+        results: this.collectFiltered(nearestIdx, k, minWeight, qx, qy, qz),
+        lastTriangle,
+      };
+    }
 
     if (k <= 1) {
       return {
@@ -282,6 +320,60 @@ export class NearestQuery {
     };
   }
 
+  /**
+   * BFS expansion that only collects vertices with weight >= minWeight.
+   * Non-matching vertices (including the seed, which is the walk's nearest
+   * vertex and may itself be below the threshold) still join the frontier
+   * so the search can expand through them to matches further out.
+   */
+  private collectFiltered(
+    seedIdx: number,
+    k: number,
+    minWeight: number,
+    qx: number,
+    qy: number,
+    qz: number,
+  ): QueryResult[] {
+    const vp = this.fd.vertexPoints;
+    const visited = new Set<number>([seedIdx]);
+    const frontier = [seedIdx];
+    let frontierHead = 0;
+    const candidates: { idx: number; d: number }[] = [];
+    if ((this.articles[seedIdx].weight ?? 0) >= minWeight) {
+      candidates.push({ idx: seedIdx, d: dist(vp, seedIdx * 3, qx, qy, qz) });
+    }
+
+    // Same oversampling target as the unfiltered BFS (see comment there),
+    // but counted in MATCHING candidates: keep expanding until enough
+    // matches are collected, the graph is exhausted, or the visit cap is
+    // hit (see FILTERED_VISIT_FLOOR for the cap rationale).
+    const target = Math.max(k * 2, k + 6);
+    const maxVisited = Math.max(
+      FILTERED_VISIT_FLOOR,
+      FILTERED_VISIT_PER_RESULT * k,
+    );
+    while (
+      frontierHead < frontier.length &&
+      candidates.length < target &&
+      visited.size < maxVisited
+    ) {
+      const current = frontier[frontierHead++];
+      for (const nIdx of flatNeighbors(this.fd, current)) {
+        if (visited.has(nIdx)) continue;
+        visited.add(nIdx);
+        if ((this.articles[nIdx].weight ?? 0) >= minWeight) {
+          candidates.push({ idx: nIdx, d: dist(vp, nIdx * 3, qx, qy, qz) });
+        }
+        frontier.push(nIdx);
+      }
+    }
+
+    candidates.sort((a, b) => a.d - b.d);
+    return candidates
+      .slice(0, k)
+      .map((c) => this.buildResult(c.idx, qx, qy, qz));
+  }
+
   private buildResult(
     vIdx: number,
     qx: number,
@@ -295,6 +387,7 @@ export class NearestQuery {
       lat: Math.asin(Math.max(-1, Math.min(1, vp[vi + 2]))) * RAD_TO_DEG,
       lon: Math.atan2(vp[vi + 1], vp[vi]) * RAD_TO_DEG,
       distanceM: dist(vp, vi, qx, qy, qz) * EARTH_RADIUS_M,
+      weight: this.articles[vIdx].weight ?? 0,
     };
   }
 }

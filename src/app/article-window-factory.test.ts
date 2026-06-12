@@ -64,6 +64,7 @@ function buildFactory(
     position?: UserPosition;
     signal?: AbortSignal;
     sourceOverrides?: Partial<CreateTileSourceOpts>;
+    minWeight?: number;
   } = {},
 ) {
   const position = opts.position ?? { lat: 1, lon: 2 };
@@ -79,8 +80,38 @@ function buildFactory(
     position,
     signal: opts.signal ?? new AbortController().signal,
     source,
+    minWeight: opts.minWeight,
   });
   return { source, articleWindow };
+}
+
+/**
+ * Octahedron query where even-indexed articles are heavyweight (200) and
+ * odd-indexed ones are stubs (10) — lets the weight-floor tests observe
+ * which side of the threshold survives.
+ */
+function makeWeightedQuery(): NearestQuery {
+  const points: [number, number, number][] = [
+    [1, 0, 0],
+    [-1, 0, 0],
+    [0, 1, 0],
+    [0, -1, 0],
+    [0, 0, 1],
+    [0, 0, -1],
+  ];
+  const input = points.map((_, i) => ({
+    title: `w-${i}`,
+    weight: i % 2 === 0 ? 200 : 10,
+  }));
+  const hull = convexHull(points);
+  const tri = buildTriangulation(hull);
+  const meta = tri.originalIndices.map((i) => input[i]);
+  const data = serialize(tri, meta);
+  const fd = toFlatDelaunay(data);
+  return new NearestQuery(
+    fd,
+    data.articles.map((t, i) => ({ title: t, weight: data.weights[i] })),
+  );
 }
 
 describe("createArticleWindowFactory", () => {
@@ -158,6 +189,31 @@ describe("createArticleWindowFactory", () => {
     // have cached its data, or downstream queries would include a tile the
     // caller explicitly abandoned.
     expect([...source.loaded().keys()]).toEqual([]);
+  });
+
+  it("applies the weight floor so only heavyweight articles surface", async () => {
+    const { articleWindow } = buildFactory({
+      position: { lat: 1, lon: 2 },
+      sourceOverrides: { loadTile: vi.fn(async () => makeWeightedQuery()) },
+      minWeight: 104,
+    });
+    await articleWindow.ensureRange(0, 10);
+
+    const loaded = articleWindow.getLoadedArticles();
+    expect(loaded).toHaveLength(3);
+    for (const a of loaded) {
+      expect(a.weight).toBeGreaterThanOrEqual(104);
+    }
+  });
+
+  it("returns all articles when no weight floor is set", async () => {
+    const { articleWindow } = buildFactory({
+      position: { lat: 1, lon: 2 },
+      sourceOverrides: { loadTile: vi.fn(async () => makeWeightedQuery()) },
+    });
+    await articleWindow.ensureRange(0, 10);
+
+    expect(articleWindow.getLoadedArticles()).toHaveLength(6);
   });
 
   it("continues loading remaining tiles after one tile fails to load", async () => {

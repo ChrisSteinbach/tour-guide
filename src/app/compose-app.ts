@@ -154,6 +154,7 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
         position: opts.position,
         signal: opts.signal,
         source,
+        minWeight: opts.minWeight,
         onWindowChange: opts.onWindowChange,
       });
     },

@@ -290,7 +290,7 @@ describe("streamDump", () => {
     ).rejects.toThrow("Schema for table 'geo_tags' not found");
   });
 
-  it("rejects with an error on truncated gzip input", async () => {
+  it("names the file and suggests re-download on truncated gzip input", async () => {
     const sql = dumpSql(
       "geo_tags",
       ["gt_id", "gt_page_id", "gt_lat", "gt_lon"],
@@ -308,6 +308,6 @@ describe("streamDump", () => {
         tableName: "geo_tags",
         requiredColumns: ["gt_id"],
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(`Dump file is corrupt or truncated: ${path}`);
   });
 });

@@ -122,10 +122,46 @@ describe("buildPageMap", () => {
     const map = await buildPageMap(path);
 
     expect(map.size).toBe(2);
-    expect(map.get(1)).toBe("Eiffel Tower");
-    expect(map.get(4)).toBe("Statue of Liberty");
+    expect(map.get(1)?.title).toBe("Eiffel Tower");
+    expect(map.get(4)?.title).toBe("Statue of Liberty");
     expect(map.has(2)).toBe(false);
     expect(map.has(3)).toBe(false);
+  });
+
+  it("extracts page_len as the page length in bytes", async () => {
+    const path = gzFile(
+      testDir,
+      "page-len.sql.gz",
+      makePageDump([{ id: 1, title: "Eiffel_Tower", len: 2048 }]),
+    );
+
+    const map = await buildPageMap(path);
+
+    expect(map.get(1)).toEqual({ title: "Eiffel Tower", len: 2048 });
+  });
+
+  it("omits len when page_len is garbage", async () => {
+    const path = gzFile(
+      testDir,
+      "page-len-garbage.sql.gz",
+      makePageDump([{ id: 1, title: "Eiffel_Tower", len: "not-a-number" }]),
+    );
+
+    const map = await buildPageMap(path);
+
+    expect(map.get(1)).toEqual({ title: "Eiffel Tower" });
+  });
+
+  it("omits len when page_len is NULL", async () => {
+    const path = gzFile(
+      testDir,
+      "page-len-null.sql.gz",
+      makePageDump([{ id: 1, title: "Eiffel_Tower", len: null }]),
+    );
+
+    const map = await buildPageMap(path);
+
+    expect(map.get(1)).toEqual({ title: "Eiffel Tower" });
   });
 });
 
@@ -144,8 +180,8 @@ describe("streamGeoArticles", () => {
     );
 
     const pages = new Map([
-      [100, "Eiffel Tower"],
-      [200, "Statue of Liberty"],
+      [100, { title: "Eiffel Tower" }],
+      [200, { title: "Statue of Liberty" }],
       // 300 has no page entry — should be skipped
     ]);
 
@@ -154,6 +190,27 @@ describe("streamGeoArticles", () => {
     expect(articles).toHaveLength(2);
     expect(articles[0].title).toBe("Eiffel Tower");
     expect(articles[1].title).toBe("Statue of Liberty");
+  });
+
+  it("carries page length onto joined articles and omits it when unknown", async () => {
+    const geoPath = gzFile(
+      testDir,
+      "geo_tags_len.sql.gz",
+      makeGeoDump([
+        { pageId: 100, lat: 48.8584, lon: 2.2945 },
+        { pageId: 200, lat: 40.7128, lon: -74.006 },
+      ]),
+    );
+
+    const pages = new Map([
+      [100, { title: "Eiffel Tower", len: 4096 }],
+      [200, { title: "Statue of Liberty" }], // no page_len available
+    ]);
+
+    const articles = await collectArticles(streamGeoArticles(geoPath, pages));
+
+    expect(articles[0].len).toBe(4096);
+    expect(articles[1]).not.toHaveProperty("len");
   });
 
   it("filters non-earth globes and non-primary tags", async () => {
@@ -168,9 +225,9 @@ describe("streamGeoArticles", () => {
     );
 
     const pages = new Map([
-      [100, "Paris"],
-      [200, "Moon Base"],
-      [300, "London"],
+      [100, { title: "Paris" }],
+      [200, { title: "Moon Base" }],
+      [300, { title: "London" }],
     ]);
 
     const articles = await collectArticles(streamGeoArticles(geoPath, pages));
@@ -190,8 +247,8 @@ describe("streamGeoArticles", () => {
     );
 
     const pages = new Map([
-      [100, "Paris"],
-      [200, "NYC"],
+      [100, { title: "Paris" }],
+      [200, { title: "NYC" }],
     ]);
 
     const articles = await collectArticles(
@@ -211,7 +268,7 @@ describe("streamGeoArticles", () => {
       makeGeoDump([{ pageId: 100, lat: 0, lon: 0 }]),
     );
 
-    const pages = new Map([[100, "Null Island"]]);
+    const pages = new Map([[100, { title: "Null Island" }]]);
 
     const articles = await collectArticles(streamGeoArticles(geoPath, pages));
 
@@ -238,10 +295,10 @@ describe("extractDump", () => {
     const dumpsDir = writeDumps(
       "dumps",
       [
-        { id: 100, title: "Eiffeltornet" },
+        { id: 100, title: "Eiffeltornet", len: 2048 },
         { id: 200, title: "Frihetsgudinnan" },
         { id: 300, title: "Redirect_Page", redirect: 1 },
-        { id: 400, title: "Liljeholmens_brandstation" },
+        { id: 400, title: "Liljeholmens_brandstation", len: "garbage" },
       ],
       [
         { pageId: 100, lat: 48.8584, lon: 2.2945 },
@@ -274,12 +331,15 @@ describe("extractDump", () => {
     const eiffel = articles.find((a) => a.title === "Eiffeltornet");
     expect(eiffel).toBeDefined();
     expect(eiffel!.lat).toBeCloseTo(48.8584, 3);
+    expect(eiffel!.len).toBe(2048);
 
     const liljeholmen = articles.find(
       (a) => a.title === "Liljeholmens brandstation",
     );
     expect(liljeholmen).toBeDefined();
     expect(liljeholmen!.lat).toBeCloseTo(59.308, 2);
+    // page_len was garbage — the field is omitted, not written as NaN
+    expect(liljeholmen).not.toHaveProperty("len");
   });
 
   it("respects bounds filtering", async () => {

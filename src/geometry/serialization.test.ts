@@ -8,23 +8,25 @@ import {
   deserialize,
   serializeBinary,
   deserializeBinary,
+  pageLenToWeight,
   BinaryFormatError,
 } from "./index";
 import type { Point3D, SphericalDelaunay, ArticleMeta } from "./index";
 
 // ---------- Fixtures ----------
 
+// Weights deliberately cover both extremes (0 = unknown, 255 = max class)
 const WORLD_CITIES = [
-  { lat: 48.8566, lon: 2.3522, title: "Eiffel Tower" },
-  { lat: 40.7128, lon: -74.006, title: "Statue of Liberty" },
-  { lat: 35.6762, lon: 139.6503, title: "Tokyo Tower" },
-  { lat: -33.8688, lon: 151.2093, title: "Sydney Opera House" },
-  { lat: 51.5074, lon: -0.1278, title: "Big Ben" },
-  { lat: -22.9068, lon: -43.1729, title: "Christ the Redeemer" },
-  { lat: 55.7558, lon: 37.6173, title: "Kremlin" },
-  { lat: 1.3521, lon: 103.8198, title: "Merlion" },
-  { lat: -1.2921, lon: 36.8219, title: "Nairobi National Park" },
-  { lat: 64.1466, lon: -21.9426, title: "Hallgrímskirkja" },
+  { lat: 48.8566, lon: 2.3522, title: "Eiffel Tower", weight: 104 },
+  { lat: 40.7128, lon: -74.006, title: "Statue of Liberty", weight: 0 },
+  { lat: 35.6762, lon: 139.6503, title: "Tokyo Tower", weight: 255 },
+  { lat: -33.8688, lon: 151.2093, title: "Sydney Opera House", weight: 80 },
+  { lat: 51.5074, lon: -0.1278, title: "Big Ben", weight: 1 },
+  { lat: -22.9068, lon: -43.1729, title: "Christ the Redeemer", weight: 120 },
+  { lat: 55.7558, lon: 37.6173, title: "Kremlin", weight: 96 },
+  { lat: 1.3521, lon: 103.8198, title: "Merlion", weight: 64 },
+  { lat: -1.2921, lon: 36.8219, title: "Nairobi National Park", weight: 200 },
+  { lat: 64.1466, lon: -21.9426, title: "Hallgrímskirkja", weight: 33 },
 ];
 
 function buildFixture(): {
@@ -37,7 +39,10 @@ function buildFixture(): {
   );
   const hull = convexHull(points);
   const tri = buildTriangulation(hull);
-  const articles = WORLD_CITIES.map((c) => ({ title: c.title }));
+  const articles = WORLD_CITIES.map((c) => ({
+    title: c.title,
+    weight: c.weight,
+  }));
   return { tri, articles, points };
 }
 
@@ -55,6 +60,41 @@ function bruteForceNearest(tri: SphericalDelaunay, query: Point3D): number {
   return bestIdx;
 }
 
+// ---------- pageLenToWeight ----------
+
+describe("pageLenToWeight", () => {
+  it("maps 1024 bytes to weight 80 (8 * log2(1024))", () => {
+    expect(pageLenToWeight(1024)).toBe(80);
+  });
+
+  it("maps 8192 bytes to weight 104", () => {
+    expect(pageLenToWeight(8192)).toBe(104);
+  });
+
+  it("clamps a 1-byte page up to weight 1 (log2(1) = 0)", () => {
+    expect(pageLenToWeight(1)).toBe(1);
+  });
+
+  it("returns 0 for a zero-length page", () => {
+    expect(pageLenToWeight(0)).toBe(0);
+  });
+
+  it("returns 0 for undefined", () => {
+    expect(pageLenToWeight(undefined)).toBe(0);
+  });
+
+  it("returns 0 for negative and non-finite inputs", () => {
+    expect(pageLenToWeight(-100)).toBe(0);
+    expect(pageLenToWeight(NaN)).toBe(0);
+    expect(pageLenToWeight(Infinity)).toBe(0);
+  });
+
+  it("clamps huge page lengths to 255", () => {
+    expect(pageLenToWeight(Number.MAX_SAFE_INTEGER)).toBe(255);
+    expect(pageLenToWeight(2 ** 40)).toBe(255);
+  });
+});
+
 // ---------- serialize ----------
 
 describe("serialize", () => {
@@ -69,6 +109,7 @@ describe("serialize", () => {
     expect(data.triangleVertices.length).toBe(tri.triangles.length * 3);
     expect(data.triangleNeighbors.length).toBe(tri.triangles.length * 3);
     expect(data.articles.length).toBe(tri.vertices.length);
+    expect(data.weights.length).toBe(tri.vertices.length);
   });
 
   it("truncates floats to at most 8 decimal places", () => {
@@ -90,6 +131,7 @@ describe("serialize", () => {
 
     for (let i = 0; i < articles.length; i++) {
       expect(data.articles[i]).toBe(articles[i].title);
+      expect(data.weights[i]).toBe(articles[i].weight);
     }
   });
 
@@ -230,7 +272,7 @@ describe("binary serialization", () => {
     const magic = new Uint8Array(buf, 0, 4);
     expect(String.fromCharCode(...magic)).toBe("WKRD");
     const view = new DataView(buf);
-    expect(view.getUint32(4, true)).toBe(1); // FORMAT_VERSION
+    expect(view.getUint32(4, true)).toBe(2); // FORMAT_VERSION
   });
 
   it("header counts match input", () => {
@@ -256,8 +298,19 @@ describe("binary serialization", () => {
 
   it("round-trips article metadata exactly", () => {
     const { articles } = deserializeBinary(buf);
-    const expected = WORLD_CITIES.map((c) => ({ title: c.title }));
+    const expected = WORLD_CITIES.map((c) => ({
+      title: c.title,
+      weight: c.weight,
+    }));
     expect(articles).toEqual(expected);
+  });
+
+  it("round-trips per-vertex weights exactly, including 0 and 255", () => {
+    const { weights } = deserializeBinary(buf);
+    expect(weights).toBeInstanceOf(Uint8Array);
+    expect(Array.from(weights)).toEqual(WORLD_CITIES.map((c) => c.weight));
+    expect(Array.from(weights)).toContain(0);
+    expect(Array.from(weights)).toContain(255);
   });
 
   it("produces Float64Array vertex points (upcast from Float32)", () => {
@@ -274,7 +327,7 @@ describe("binary serialization", () => {
     const bytes = new Uint8Array(badBuf);
     bytes.set([0x57, 0x4b, 0x52, 0x44]); // magic "WKRD"
     const view = new DataView(badBuf);
-    view.setUint32(4, 1, true); // version=1
+    view.setUint32(4, 2, true); // version=2
     view.setUint32(8, 0, true); // V=0
     view.setUint32(12, 0, true); // T=0
     view.setUint32(16, 24, true); // articlesOffset=24
@@ -303,11 +356,20 @@ describe("binary serialization", () => {
     expect(() => deserializeBinary(badBuf)).toThrow(/version/i);
   });
 
+  it("rejects version-1 tiles (weights section is mandatory in v2)", () => {
+    const v1Buf = new ArrayBuffer(24);
+    new Uint8Array(v1Buf, 0, 4).set([0x57, 0x4b, 0x52, 0x44]);
+    const view = new DataView(v1Buf);
+    view.setUint32(4, 1, true); // old format version
+    expect(() => deserializeBinary(v1Buf)).toThrow(BinaryFormatError);
+    expect(() => deserializeBinary(v1Buf)).toThrow(/version: 1/);
+  });
+
   it("rejects V/T counts that exceed buffer capacity", () => {
     const badBuf = new ArrayBuffer(24);
     new Uint8Array(badBuf, 0, 4).set([0x57, 0x4b, 0x52, 0x44]);
     const view = new DataView(badBuf);
-    view.setUint32(4, 1, true); // version=1
+    view.setUint32(4, 2, true); // version=2
     view.setUint32(8, 0xffffffff, true); // V=huge
     view.setUint32(12, 0, true); // T=0
     expect(() => deserializeBinary(badBuf)).toThrow(/too small for V=/i);
@@ -317,7 +379,7 @@ describe("binary serialization", () => {
     const badBuf = new ArrayBuffer(24);
     new Uint8Array(badBuf, 0, 4).set([0x57, 0x4b, 0x52, 0x44]);
     const view = new DataView(badBuf);
-    view.setUint32(4, 1, true); // version=1
+    view.setUint32(4, 2, true); // version=2
     view.setUint32(8, 0, true); // V=0
     view.setUint32(12, 0xffffffff, true); // T=huge
     expect(() => deserializeBinary(badBuf)).toThrow(/too small for V=/i);
@@ -332,7 +394,7 @@ describe("binary serialization", () => {
     const badBuf = new ArrayBuffer(totalSize);
     new Uint8Array(badBuf, 0, 4).set([0x57, 0x4b, 0x52, 0x44]);
     const view = new DataView(badBuf);
-    view.setUint32(4, 1, true); // version=1
+    view.setUint32(4, 2, true); // version=2
     view.setUint32(8, 0, true); // V=0
     view.setUint32(12, 0, true); // T=0
     view.setUint32(16, articlesOffset, true);

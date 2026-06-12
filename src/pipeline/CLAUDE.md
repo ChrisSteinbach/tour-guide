@@ -24,8 +24,10 @@ wc -l data/articles-en.json
 Output format (one JSON object per line):
 
 ```
-{"title":"Eiffel Tower","lat":48.8584,"lon":2.2945}
+{"title":"Eiffel Tower","lat":48.8584,"lon":2.2945,"len":215625}
 ```
+
+`len` is the article's page length in bytes (`page_len` from the page dump), used by the pipeline to derive a per-article weight class. It is omitted when `page_len` is missing or unparsable; such articles get weight 0 (unknown).
 
 ## Pipeline
 

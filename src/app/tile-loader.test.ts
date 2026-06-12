@@ -29,19 +29,23 @@ vi.mock("../geometry", async (importOriginal) => {
 
 // ---------- Helpers ----------
 
-/** Build a NearestQuery from a set of lat/lon articles. */
+/** Build a NearestQuery from a set of lat/lon articles (optionally weighted). */
 function buildQuery(
-  articles: { title: string; lat: number; lon: number }[],
+  articles: { title: string; lat: number; lon: number; weight?: number }[],
 ): NearestQuery {
   const points = articles.map((a) => toCartesian({ lat: a.lat, lon: a.lon }));
   const hull = convexHull(points);
   const tri = buildTriangulation(hull);
   const meta: ArticleMeta[] = tri.originalIndices.map((i) => ({
     title: articles[i].title,
+    weight: articles[i].weight,
   }));
   const data = serialize(tri, meta);
   const fd = toFlatDelaunay(data);
-  const metas = data.articles.map((title) => ({ title }));
+  const metas = data.articles.map((title, i) => ({
+    title,
+    weight: data.weights[i],
+  }));
   return new NearestQuery(fd, metas);
 }
 
@@ -126,6 +130,23 @@ describe("findNearestTiled", () => {
 
     const results = findNearestTiled(tiles, 0, 0, 5);
     expect(results).toEqual([]);
+  });
+
+  it("filters out low-weight articles when minWeight is set", () => {
+    // "Atlantic" is the nearest article to (0,0) but is a low-weight stub.
+    const weighted = GLOBAL_ARTICLES.map((a) => ({
+      ...a,
+      weight: a.title === "Atlantic" ? 10 : 100,
+    }));
+    const tiles = new Map([["18-36", buildQuery(weighted)]]);
+
+    const unfiltered = findNearestTiled(tiles, 0, 0, 1);
+    expect(unfiltered[0].title).toBe("Atlantic");
+
+    const filtered = findNearestTiled(tiles, 0, 0, 1, { minWeight: 50 });
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].title).not.toBe("Atlantic");
+    expect(filtered[0].weight).toBeGreaterThanOrEqual(50);
   });
 });
 
@@ -548,6 +569,7 @@ describe("loadTile", () => {
     { title: "B" },
     { title: "C" },
   ];
+  const fakeWeights = new Uint8Array([0, 0, 0]);
 
   const cachedTile = {
     vertexPoints: fakeFd.vertexPoints,
@@ -555,6 +577,7 @@ describe("loadTile", () => {
     triangleVertices: fakeFd.triangleVertices,
     triangleNeighbors: fakeFd.triangleNeighbors,
     articles: ["A", "B", "C"],
+    weights: fakeWeights,
     hash: "abc123",
   };
 
@@ -563,7 +586,7 @@ describe("loadTile", () => {
   });
 
   it("returns from IDB cache when hash matches", async () => {
-    const store = new Map<string, unknown>([["tile-v1-en-18-36", cachedTile]]);
+    const store = new Map<string, unknown>([["tile-v2-en-18-36", cachedTile]]);
 
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
@@ -579,10 +602,83 @@ describe("loadTile", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("preserves article weights across the IDB cache round trip", async () => {
+    vi.mocked(deserializeBinary).mockReturnValueOnce({
+      fd: fakeFd,
+      articles: [
+        { title: "A", weight: 80 },
+        { title: "B", weight: 104 },
+        { title: "C", weight: 0 },
+      ],
+      weights: new Uint8Array([80, 104, 0]),
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+      }),
+    );
+
+    // First load comes from the network and populates the cache
+    const store = new Map<string, unknown>();
+    await loadTile("/base/", "en", entry, undefined, makeDeps(store));
+
+    // Second load must be served from the cache (fetch called only once)
+    const fromCache = await loadTile(
+      "/base/",
+      "en",
+      entry,
+      undefined,
+      makeDeps(store),
+    );
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    // Vertex (1,0,0) = lat 0, lon 0 = article "A" with weight 80
+    const { results } = fromCache.findNearest(0, 0);
+    expect(results[0].title).toBe("A");
+    expect(results[0].weight).toBe(80);
+  });
+
+  it("falls through to network when cached entry lacks weights", async () => {
+    vi.mocked(deserializeBinary).mockReturnValueOnce({
+      fd: fakeFd,
+      articles: fakeArticles,
+      weights: fakeWeights,
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+      }),
+    );
+
+    // A pre-weights cache shape stored under the v2 key (matching hash)
+    const weightlessCache = { ...cachedTile, weights: undefined };
+    const store = new Map<string, unknown>([
+      ["tile-v2-en-18-36", weightlessCache],
+    ]);
+    const result = await loadTile(
+      "/base/",
+      "en",
+      entry,
+      undefined,
+      makeDeps(store),
+    );
+    expect(result).toBeInstanceOf(NearestQuery);
+    expect(fetch).toHaveBeenCalled();
+  });
+
   it("fetches from network on cache miss", async () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     const fakeBuf = new ArrayBuffer(8);
@@ -604,16 +700,17 @@ describe("loadTile", () => {
       makeDeps(store),
     );
     expect(result).toBeInstanceOf(NearestQuery);
-    expect(store.has("tile-v1-en-18-36")).toBe(true);
+    expect(store.has("tile-v2-en-18-36")).toBe(true);
   });
 
   it("fetches from network when cached hash is stale", async () => {
     const staleCache = { ...cachedTile, hash: "old-hash" };
-    const store = new Map<string, unknown>([["tile-v1-en-18-36", staleCache]]);
+    const store = new Map<string, unknown>([["tile-v2-en-18-36", staleCache]]);
 
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -650,6 +747,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -675,6 +773,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -689,7 +788,7 @@ describe("loadTile", () => {
     const deps = makeDeps();
     const originalGet = deps.getAny;
     deps.getAny = <T>(_db: IDBDatabase, key: string) => {
-      if (key === "tile-v1-en-18-36")
+      if (key === "tile-v2-en-18-36")
         return Promise.reject(new Error("IDB read failed"));
       return originalGet<T>(_db, key);
     };
@@ -701,6 +800,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -743,6 +843,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -759,7 +860,7 @@ describe("loadTile", () => {
       articles: [null, 42, {}],
     };
     const store = new Map<string, unknown>([
-      ["tile-v1-en-18-36", corruptArticlesCache],
+      ["tile-v2-en-18-36", corruptArticlesCache],
     ]);
     const result = await loadTile(
       "/base/",
@@ -777,6 +878,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -796,7 +898,7 @@ describe("loadTile", () => {
       vertexTriangles: null,
     };
     const store = new Map<string, unknown>([
-      ["tile-v1-en-18-36", corruptCache],
+      ["tile-v2-en-18-36", corruptCache],
     ]);
     const result = await loadTile(
       "/base/",
@@ -812,6 +914,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -831,10 +934,11 @@ describe("loadTile", () => {
       triangleVertices: [0, 1, 2],
       triangleNeighbors: [0, 0, 0],
       articles: ["A", "B", "C"],
+      weights: [0, 0, 0],
       hash: "abc123",
     };
     const store = new Map<string, unknown>([
-      ["tile-v1-en-18-36", plainArrayCache],
+      ["tile-v2-en-18-36", plainArrayCache],
     ]);
     const result = await loadTile(
       "/base/",
@@ -865,6 +969,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -891,6 +996,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -914,6 +1020,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -933,13 +1040,13 @@ describe("loadTile", () => {
     const store = new Map<string, unknown>();
     store.set("tile-lru-v1-en", existingIds);
     // Add a cache entry for the tile that should be evicted (oldest)
-    store.set("tile-v1-en-old-0", { fake: "data" });
+    store.set("tile-v2-en-old-0", { fake: "data" });
 
     await loadTile("/base/", "en", entry, undefined, makeDeps(store));
     await flush();
 
     // Oldest tile (old-0) should be evicted from cache
-    expect(store.has("tile-v1-en-old-0")).toBe(false);
+    expect(store.has("tile-v2-en-old-0")).toBe(false);
     // LRU should contain the new tile at the end, still at capacity
     const lru = store.get("tile-lru-v1-en") as string[];
     expect(lru).toHaveLength(MAX_CACHED_TILES);
@@ -951,7 +1058,7 @@ describe("loadTile", () => {
     // Pre-populate LRU with 18-36 not at the most-recent position
     const store = new Map<string, unknown>();
     store.set("tile-lru-v1-en", ["other-1", "18-36", "other-2"]);
-    store.set("tile-v1-en-18-36", cachedTile);
+    store.set("tile-v2-en-18-36", cachedTile);
 
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
@@ -969,6 +1076,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -982,7 +1090,7 @@ describe("loadTile", () => {
 
     const store = new Map<string, unknown>();
     // Add a stale tile that would be evicted if LRU were full
-    store.set("tile-v1-en-stale-0", { fake: "data" });
+    store.set("tile-v2-en-stale-0", { fake: "data" });
 
     const deps = makeDeps(store);
     const originalGet = deps.getAny;
@@ -1004,6 +1112,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -1039,6 +1148,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValue({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -1079,6 +1189,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValue({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -1125,6 +1236,7 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValue({
       fd: fakeFd,
       articles: fakeArticles,
+      weights: fakeWeights,
     });
 
     vi.stubGlobal(
@@ -1143,7 +1255,7 @@ describe("loadTile", () => {
     );
     const store = new Map<string, unknown>();
     store.set("tile-lru-v1-de", [...deIds]);
-    store.set("tile-v1-de-de-tile-0", { fake: "data" });
+    store.set("tile-v2-de-de-tile-0", { fake: "data" });
 
     // Load a tile in 'en' — should NOT touch the 'de' LRU
     await loadTile("/base/", "en", entry, undefined, makeDeps(store));
@@ -1158,6 +1270,6 @@ describe("loadTile", () => {
     expect(deLru).toEqual(deIds);
 
     // 'de' cache entry should NOT have been evicted
-    expect(store.has("tile-v1-de-de-tile-0")).toBe(true);
+    expect(store.has("tile-v2-de-de-tile-0")).toBe(true);
   });
 });

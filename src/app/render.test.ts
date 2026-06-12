@@ -163,6 +163,59 @@ describe("renderNearbyHeader", () => {
     expect(onTogglePause).toHaveBeenCalledOnce();
   });
 
+  it("renders the filter toggle pressed in Highlights mode", () => {
+    const header = renderNearbyHeader({
+      onShowAbout,
+      currentLang: "en",
+      onLangChange: () => {},
+      paused: false,
+      filter: "highlights",
+      onToggleFilter: () => {},
+    });
+    const btn = header.querySelector(".filter-toggle") as HTMLButtonElement;
+    expect(btn).not.toBeNull();
+    expect(btn.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("renders the filter toggle unpressed in Everything mode", () => {
+    const header = renderNearbyHeader({
+      onShowAbout,
+      currentLang: "en",
+      onLangChange: () => {},
+      paused: false,
+      filter: "all",
+      onToggleFilter: () => {},
+    });
+    const btn = header.querySelector(".filter-toggle") as HTMLButtonElement;
+    expect(btn.getAttribute("aria-pressed")).toBe("false");
+    expect(btn.getAttribute("aria-label")).toBe("Show highlights only");
+  });
+
+  it("calls onToggleFilter when the filter toggle is clicked", () => {
+    const onToggleFilter = vi.fn();
+    const header = renderNearbyHeader({
+      onShowAbout,
+      currentLang: "en",
+      onLangChange: () => {},
+      paused: false,
+      filter: "highlights",
+      onToggleFilter,
+    });
+    const btn = header.querySelector(".filter-toggle") as HTMLButtonElement;
+    btn.click();
+    expect(onToggleFilter).toHaveBeenCalledOnce();
+  });
+
+  it("omits the filter toggle when no onToggleFilter callback", () => {
+    const header = renderNearbyHeader({
+      onShowAbout,
+      currentLang: "en",
+      onLangChange: () => {},
+      paused: false,
+    });
+    expect(header.querySelector(".filter-toggle")).toBeNull();
+  });
+
   it("renders dual-icon mode toggle with GPS active", () => {
     const onPickLocation = vi.fn();
     const onUseGps = vi.fn();
@@ -550,6 +603,88 @@ describe("renderNearbyList", () => {
 });
 
 // ── open dropdown protection ─────────────────────────────────
+
+describe("renderNearbyList empty-highlights hint", () => {
+  it("shows the hint when Highlights mode yields zero articles", () => {
+    const container = document.createElement("div");
+    renderNearbyList(container, [], {
+      onShowAbout,
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+      filter: "highlights",
+      onToggleFilter: () => {},
+    });
+    const hint = container.querySelector(".nearby-empty");
+    expect(hint?.textContent).toContain("No highlights nearby");
+  });
+
+  it("clicking the hint's action switches to Everything", () => {
+    const onToggleFilter = vi.fn();
+    const container = document.createElement("div");
+    renderNearbyList(container, [], {
+      onShowAbout,
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+      filter: "highlights",
+      onToggleFilter,
+    });
+    const btn = container.querySelector(
+      ".nearby-empty-action",
+    ) as HTMLButtonElement;
+    btn.click();
+    expect(onToggleFilter).toHaveBeenCalledOnce();
+  });
+
+  it("shows no hint for an empty list in Everything mode", () => {
+    const container = document.createElement("div");
+    renderNearbyList(container, [], {
+      onShowAbout,
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+      filter: "all",
+      onToggleFilter: () => {},
+    });
+    expect(container.querySelector(".nearby-empty")).toBeNull();
+  });
+
+  it("removes the hint when a re-render brings articles", () => {
+    const container = document.createElement("div");
+    const opts = {
+      onShowAbout,
+      onSelectArticle: () => {},
+      currentLang: "en" as const,
+      onLangChange: () => {},
+      filter: "highlights" as const,
+      onToggleFilter: () => {},
+    };
+    renderNearbyList(container, [], opts);
+    expect(container.querySelector(".nearby-empty")).not.toBeNull();
+
+    renderNearbyList(container, makeArticles(2), opts);
+    expect(container.querySelector(".nearby-empty")).toBeNull();
+    expect(container.querySelectorAll(".nearby-item")).toHaveLength(2);
+  });
+
+  it("adds the hint when a re-render empties the list", () => {
+    const container = document.createElement("div");
+    const opts = {
+      onShowAbout,
+      onSelectArticle: () => {},
+      currentLang: "en" as const,
+      onLangChange: () => {},
+      filter: "highlights" as const,
+      onToggleFilter: () => {},
+    };
+    renderNearbyList(container, makeArticles(2), opts);
+    expect(container.querySelector(".nearby-empty")).toBeNull();
+
+    renderNearbyList(container, [], opts);
+    expect(container.querySelector(".nearby-empty")).not.toBeNull();
+  });
+});
 
 describe("renderNearbyList skips header replacement while dropdown is open", () => {
   it("preserves header when lang dropdown is open", () => {

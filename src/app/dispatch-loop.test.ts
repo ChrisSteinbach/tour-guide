@@ -118,6 +118,7 @@ function buildDispatchLoop(opts: {
     position: null,
     positionSource: null,
     currentLang: "en",
+    filter: "highlights",
     loadGeneration: 0,
     loadingTiles: new Set(),
     downloadProgress: -1,

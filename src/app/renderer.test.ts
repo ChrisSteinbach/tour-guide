@@ -51,6 +51,7 @@ function tiledBrowsingState(
     position: pos,
     positionSource: "picked",
     currentLang: "en",
+    filter: "highlights",
     loadGeneration: 1,
     loadingTiles: new Set(),
     downloadProgress: -1,

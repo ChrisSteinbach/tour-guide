@@ -13,6 +13,12 @@ import type { Point3D } from "./index";
 
 export interface ArticleMeta {
   title: string;
+  /**
+   * Weight class 0-255: 0 = unknown, else round(8*log2(page_len)) clamped
+   * to [1,255] (see pageLenToWeight). Optional so callers without weight
+   * data (e.g. hand-built fixtures) can omit it; treated as 0 when absent.
+   */
+  weight?: number;
 }
 
 export interface TriangulationFile {
@@ -23,6 +29,7 @@ export interface TriangulationFile {
   triangleVertices: number[]; // flat [v0,v1,v2, ...] — 3 per triangle
   triangleNeighbors: number[]; // flat [n0,n1,n2, ...] — 3 per triangle
   articles: string[]; // title per vertex
+  weights: number[]; // weight class per vertex (0-255)
 }
 
 /** Flat typed-array representation of a spherical Delaunay triangulation. */
@@ -31,6 +38,16 @@ export interface FlatDelaunay {
   vertexTriangles: Uint32Array; // incident triangle index per vertex
   triangleVertices: Uint32Array; // [v0,v1,v2, ...] — 3 per triangle
   triangleNeighbors: Uint32Array; // [n0,n1,n2, ...] — 3 per triangle
+}
+
+// ---------- Weight encoding ----------
+
+/** Map a page byte length to a 1-byte weight class: 0 = unknown, else round(8*log2(len)) clamped to [1,255]. */
+export function pageLenToWeight(pageLen: number | undefined): number {
+  if (pageLen === undefined || !Number.isFinite(pageLen) || pageLen <= 0) {
+    return 0;
+  }
+  return Math.min(255, Math.max(1, Math.round(8 * Math.log2(pageLen))));
 }
 
 // ---------- Serialize ----------
@@ -91,6 +108,7 @@ export function serialize(
     triangleVertices,
     triangleNeighbors,
     articles: articles.map((a) => a.title),
+    weights: articles.map((a) => a.weight ?? 0),
   };
 }
 
@@ -136,7 +154,10 @@ export function deserialize(data: TriangulationFile): {
     };
   }
 
-  const articles: ArticleMeta[] = data.articles.map((title) => ({ title }));
+  const articles: ArticleMeta[] = data.articles.map((title, i) => ({
+    title,
+    weight: data.weights[i],
+  }));
 
   // After deserialization, originalIndices is identity (already compacted)
   const originalIndices = Array.from({ length: vertexCount }, (_, i) => i);
@@ -147,7 +168,7 @@ export function deserialize(data: TriangulationFile): {
 //
 // Header (24 bytes):
 //   [0..3]   magic            "WKRD" (0x57 0x4B 0x52 0x44)
-//   [4..7]   version          uint32 (currently 1)
+//   [4..7]   version          uint32 (currently 2)
 //   [8..11]  vertexCount      uint32
 //   [12..15] triangleCount    uint32
 //   [16..19] articlesOffset   uint32
@@ -159,12 +180,16 @@ export function deserialize(data: TriangulationFile): {
 //   triangleVertices  Uint32[T * 3]
 //   triangleNeighbors Uint32[T * 3]
 //
-// Articles section (at articlesOffset):
+// Vertex weights (alignment-free, last fixed section):
+//   vertexWeights     Uint8[V] — weight class per vertex, 0-255
+//                     (values outside 0-255 wrap per Uint8Array semantics)
+//
+// Articles section (at articlesOffset, immediately after vertexWeights):
 //   UTF-8 JSON of string[] (titles)
 
 const HEADER_SIZE = 24;
 const MAGIC = new Uint8Array([0x57, 0x4b, 0x52, 0x44]); // "WKRD"
-const FORMAT_VERSION = 1;
+const FORMAT_VERSION = 2;
 
 /** Error thrown when binary tile data is corrupt or unrecognized. */
 export class BinaryFormatError extends Error {
@@ -186,16 +211,19 @@ export function serializeBinary(data: TriangulationFile): ArrayBuffer {
   const encoder = new TextEncoder();
   const articlesBytes = encoder.encode(JSON.stringify(data.articles));
 
-  // Compute section sizes (all 4-byte aligned)
+  // Compute section sizes (Uint32/Float32 sections are 4-byte aligned;
+  // vertexWeights is Uint8 and alignment-free, placed last before the JSON)
   const vertexPointsSize = V * 3 * 4; // Float32
   const vertexTrianglesSize = V * 4; // Uint32
   const triangleVerticesSize = T * 3 * 4; // Uint32
   const triangleNeighborsSize = T * 3 * 4; // Uint32
+  const vertexWeightsSize = V; // Uint8
   const numericSize =
     vertexPointsSize +
     vertexTrianglesSize +
     triangleVerticesSize +
-    triangleNeighborsSize;
+    triangleNeighborsSize +
+    vertexWeightsSize;
 
   const articlesOffset = HEADER_SIZE + numericSize;
   // Pad articles to 4-byte alignment
@@ -249,6 +277,17 @@ export function serializeBinary(data: TriangulationFile): ArrayBuffer {
     triangleNeighborsArr[i] = data.triangleNeighbors[i];
   }
 
+  // Write vertex weights (expected 0-255; out-of-range values wrap
+  // per standard Uint8Array semantics)
+  const vertexWeightsArr = new Uint8Array(
+    buf,
+    articlesOffset - vertexWeightsSize,
+    V,
+  );
+  for (let i = 0; i < V; i++) {
+    vertexWeightsArr[i] = data.weights[i];
+  }
+
   // Write articles JSON bytes
   new Uint8Array(buf, articlesOffset, articlesBytes.byteLength).set(
     articlesBytes,
@@ -258,13 +297,17 @@ export function serializeBinary(data: TriangulationFile): ArrayBuffer {
 }
 
 /**
- * Deserialize a binary ArrayBuffer to FlatDelaunay + articles.
- * Creates zero-copy typed array views for Uint32 data.
+ * Deserialize a binary ArrayBuffer to FlatDelaunay + articles + weights.
+ * Creates zero-copy typed array views for Uint32/Uint8 data.
  * Upcasts Float32 vertex data to Float64Array for the app's math.
+ *
+ * `weights` is a per-vertex Uint8Array (same ordering as `articles`);
+ * each article's `weight` field is populated from it.
  */
 export function deserializeBinary(buf: ArrayBuffer): {
   fd: FlatDelaunay;
   articles: ArticleMeta[];
+  weights: Uint8Array;
 } {
   if (buf.byteLength < HEADER_SIZE) {
     throw new BinaryFormatError(
@@ -305,12 +348,14 @@ export function deserializeBinary(buf: ArrayBuffer): {
   const vertexTrianglesSize = V * 4;
   const triangleVerticesSize = T * 3 * 4;
   const triangleNeighborsSize = T * 3 * 4;
+  const vertexWeightsSize = V;
   const expectedNumericEnd =
     HEADER_SIZE +
     vertexPointsSize +
     vertexTrianglesSize +
     triangleVerticesSize +
-    triangleNeighborsSize;
+    triangleNeighborsSize +
+    vertexWeightsSize;
 
   if (expectedNumericEnd > buf.byteLength) {
     throw new BinaryFormatError(
@@ -335,13 +380,15 @@ export function deserializeBinary(buf: ArrayBuffer): {
     vertexPoints[i] = f32[i];
   }
 
-  // Zero-copy typed array views for Uint32 data
+  // Zero-copy typed array views for Uint32/Uint8 data
   let offset = HEADER_SIZE + vertexPointsSize;
   const vertexTriangles = new Uint32Array(buf, offset, V);
   offset += vertexTrianglesSize;
   const triangleVertices = new Uint32Array(buf, offset, T * 3);
   offset += triangleVerticesSize;
   const triangleNeighbors = new Uint32Array(buf, offset, T * 3);
+  offset += triangleNeighborsSize;
+  const weights = new Uint8Array(buf, offset, V);
 
   // Parse articles JSON
   let parsed: (string | [string, string])[];
@@ -356,12 +403,14 @@ export function deserializeBinary(buf: ArrayBuffer): {
       `Failed to parse articles JSON: corrupt or truncated data`,
     );
   }
-  const articles = parsed.map((entry) => ({
+  const articles = parsed.map((entry, i) => ({
     title: Array.isArray(entry) ? entry[0] : entry,
+    weight: weights[i],
   }));
 
   return {
     fd: { vertexPoints, vertexTriangles, triangleVertices, triangleNeighbors },
     articles,
+    weights,
   };
 }

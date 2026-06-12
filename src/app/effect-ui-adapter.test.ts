@@ -72,6 +72,7 @@ function makeState(overrides: Partial<AppState> = {}): AppState {
     position: null,
     positionSource: null,
     currentLang: "en",
+    filter: "highlights",
     loadGeneration: 0,
     loadingTiles: new Set(),
     downloadProgress: -1,

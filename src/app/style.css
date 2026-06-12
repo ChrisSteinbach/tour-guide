@@ -77,6 +77,24 @@ body:has(.app-scroll) {
   flex-shrink: 0;
 }
 
+/* Up to six controls share the header row; below 420px shrink the icons and
+   title so the full set (pause, GPS/pin, filter, language, about) fits
+   without overflowing. */
+@media (width < 420px) {
+  .app-header h1 {
+    font-size: 1.1rem;
+  }
+
+  .header-icon-btn {
+    font-size: 1.4rem;
+    padding: 4px 5px;
+  }
+
+  .header-controls {
+    gap: 6px;
+  }
+}
+
 @media (width < 360px) {
   .header-controls {
     gap: 4px;
@@ -193,6 +211,21 @@ body:has(.app-scroll) {
   background: rgb(255 255 255 / 10%);
 }
 
+/* Highlights filter toggle: pressed = highlights only (default),
+   unpressed = everything. Mirrors the mode-toggle active/inactive look. */
+.filter-toggle[aria-pressed="true"] {
+  background: rgb(255 255 255 / 25%);
+  opacity: 1;
+}
+
+.filter-toggle[aria-pressed="false"] {
+  opacity: 0.4;
+}
+
+.filter-toggle[aria-pressed="false"]:hover {
+  opacity: 0.7;
+}
+
 .gps-signal-lost {
   animation: gps-blink 1.5s ease-in-out infinite;
 }
@@ -232,6 +265,34 @@ body:has(.app-scroll) {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+/* Empty-list hint (Highlights mode found nothing nearby). */
+.nearby-empty {
+  padding: 32px 24px;
+  text-align: center;
+  color: #666;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.nearby-empty p {
+  margin-bottom: 12px;
+}
+
+.nearby-empty-action {
+  background: #1a73e8;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.nearby-empty-action:active {
+  background: #1557b0;
 }
 
 .nearby-list.virtual-scroll {

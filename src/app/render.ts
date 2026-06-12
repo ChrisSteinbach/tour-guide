@@ -1,4 +1,4 @@
-import type { NearbyArticle } from "./types";
+import type { ArticleFilter, NearbyArticle } from "./types";
 import type { ArticleSummary } from "./wiki-api";
 import { formatDistance } from "./format";
 import type { Lang } from "../lang";
@@ -11,6 +11,7 @@ import {
   createPauseIcon,
   createSatelliteIcon,
   createMapIcon,
+  createStarIcon,
 } from "./icons";
 
 // ── Focus capture / restore ──────────────────────────────────
@@ -18,6 +19,7 @@ import {
 type FocusInfo =
   | { type: "langSelect" }
   | { type: "pauseToggle" }
+  | { type: "filterToggle" }
   | { type: "pickLocation" }
   | { type: "useGps" }
   | { type: "aboutBtn" }
@@ -29,6 +31,8 @@ function captureFocus(container: HTMLElement): FocusInfo | null {
 
   if (active.classList.contains("lang-trigger")) return { type: "langSelect" };
   if (active.classList.contains("pause-toggle")) return { type: "pauseToggle" };
+  if (active.classList.contains("filter-toggle"))
+    return { type: "filterToggle" };
   if (active.classList.contains("pick-location-btn"))
     return { type: "pickLocation" };
   if (active.classList.contains("use-gps-btn")) return { type: "useGps" };
@@ -51,6 +55,9 @@ function restoreFocus(container: HTMLElement, info: FocusInfo | null): void {
       break;
     case "pauseToggle":
       target = container.querySelector(".pause-toggle");
+      break;
+    case "filterToggle":
+      target = container.querySelector(".filter-toggle");
       break;
     case "pickLocation":
       target = container.querySelector(".pick-location-btn");
@@ -99,6 +106,10 @@ export interface RenderNearbyHeaderOptions {
   onPickLocation?: () => void;
   onUseGps?: () => void;
   gpsSignalLost?: boolean;
+  /** Current article filter; drives the toggle's pressed state. */
+  filter?: ArticleFilter;
+  /** When provided, the Highlights/Everything toggle is rendered. */
+  onToggleFilter?: () => void;
   onShowAbout: () => void;
 }
 
@@ -116,6 +127,8 @@ export function renderNearbyHeader(
     onPickLocation,
     onUseGps,
     gpsSignalLost,
+    filter,
+    onToggleFilter,
     onShowAbout,
   } = options;
   const header = createAppHeader({ title: false });
@@ -197,12 +210,47 @@ export function renderNearbyHeader(
     headerControls.appendChild(modeToggle);
   }
 
+  if (onToggleFilter) {
+    const highlightsOn = filter !== "all";
+    const filterBtn = document.createElement("button");
+    filterBtn.className = "header-icon-btn filter-toggle";
+    filterBtn.setAttribute("aria-pressed", String(highlightsOn));
+    const filterLabel = highlightsOn
+      ? "Highlights only — show everything"
+      : "Show highlights only";
+    filterBtn.setAttribute("aria-label", filterLabel);
+    filterBtn.title = filterLabel;
+    filterBtn.appendChild(createStarIcon());
+    filterBtn.addEventListener("click", onToggleFilter);
+    headerControls.appendChild(filterBtn);
+  }
+
   const langDropdown = createLangDropdown(currentLang, onLangChange);
   headerControls.appendChild(langDropdown);
   headerControls.appendChild(createAboutButton(onShowAbout));
   row.append(titleGroup, headerControls);
   header.appendChild(row);
   return header;
+}
+
+/**
+ * "No highlights nearby" hint with a one-tap escape to Everything mode.
+ * Shown when the Highlights filter yields zero articles; shared by the
+ * viewport list (render.ts) and the infinite scroll (via wiring).
+ */
+export function createEmptyHighlightsHint(
+  onShowEverything: () => void,
+): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.className = "nearby-empty";
+  const msg = document.createElement("p");
+  msg.textContent = "No highlights nearby.";
+  const btn = document.createElement("button");
+  btn.className = "nearby-empty-action";
+  btn.textContent = "Show everything";
+  btn.addEventListener("click", onShowEverything);
+  wrap.append(msg, btn);
+  return wrap;
 }
 
 /** Create the inner content of an article list item (the .nearby-item div). */
@@ -348,7 +396,19 @@ export interface RenderNearbyListOptions {
   onPickLocation?: () => void;
   onUseGps?: () => void;
   gpsSignalLost?: boolean;
+  filter?: ArticleFilter;
+  onToggleFilter?: () => void;
   onShowAbout: () => void;
+}
+
+/** Build the empty-highlights hint when it applies, else null. */
+function buildEmptyHint(
+  articles: NearbyArticle[],
+  options: RenderNearbyListOptions,
+): HTMLElement | null {
+  if (articles.length > 0) return null;
+  if (options.filter !== "highlights" || !options.onToggleFilter) return null;
+  return createEmptyHighlightsHint(options.onToggleFilter);
 }
 
 /** Build and replace the contents of `container` with a nearby-articles list. */
@@ -369,6 +429,8 @@ export function renderNearbyList(
     onPickLocation,
     onUseGps,
     gpsSignalLost,
+    filter,
+    onToggleFilter,
     onShowAbout,
   } = options;
 
@@ -382,6 +444,8 @@ export function renderNearbyList(
     onPickLocation,
     onUseGps,
     gpsSignalLost,
+    filter,
+    onToggleFilter,
     onShowAbout,
   };
 
@@ -403,6 +467,8 @@ export function renderNearbyList(
       );
     }
     scrollWrapper.appendChild(list);
+    const hint = buildEmptyHint(articles, options);
+    if (hint) scrollWrapper.appendChild(hint);
 
     container.append(header, scrollWrapper);
     return;
@@ -424,6 +490,12 @@ export function renderNearbyList(
 
   // Reconcile article list items by title key
   reconcileListItems(existingList, articles, onSelectArticle, onHoverArticle);
+
+  // Rebuild the empty-highlights hint so it tracks both the article count
+  // and the current filter.
+  scrollEl.querySelector(".nearby-empty")?.remove();
+  const hint = buildEmptyHint(articles, options);
+  if (hint) scrollEl.appendChild(hint);
 
   scrollEl.scrollTop = savedScrollTop;
   restoreFocus(container, savedFocus);

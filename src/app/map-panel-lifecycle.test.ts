@@ -66,6 +66,7 @@ function makeBrowsingState(): AppState {
     position: pos,
     positionSource: "gps",
     currentLang: "en",
+    filter: "highlights",
     loadGeneration: 1,
     loadingTiles: new Set(),
     downloadProgress: -1,
