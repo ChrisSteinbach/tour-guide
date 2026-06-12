@@ -64,9 +64,41 @@ const GRID_COLOR = "#666";
 const MESH_MIN_ZOOM = 6;
 
 const MOVE_DEBOUNCE_MS = 150;
-const WALK_STEP_MS = 70;
-const WALK_PULSE_STEPS = 8;
+
+// Walk animation: each phase gets a TOTAL time budget and its per-step time is
+// scaled to fit, so a 416-hop locate walk replays in ~4s instead of ~29s while
+// a short 60-hop walk keeps the readable 70ms/hop pace. Every hop still
+// renders — only the cadence changes. Worst case ≈ 4 + 1.5 + 1.5 + pulse ≈ 7.7s.
+const WALK_LOCATE_BUDGET_MS = 4000;
+const WALK_DESCENT_BUDGET_MS = 1500;
+const WALK_BFS_BUDGET_MS = 1500;
+const WALK_MIN_STEP_MS = 12;
+const WALK_MAX_STEP_MS = 70;
+const WALK_PULSE_MS = 900;
 const POS_EPSILON = 1e-6;
+
+/** Per-step time for a phase of `count` steps, scaled to fit `budgetMs`. */
+function phaseStepMs(budgetMs: number, count: number): number {
+  if (count <= 0) return WALK_MAX_STEP_MS;
+  const raw = budgetMs / count;
+  return Math.min(WALK_MAX_STEP_MS, Math.max(WALK_MIN_STEP_MS, raw));
+}
+
+/**
+ * How many items of a phase to show at `elapsed` ms, given the phase begins at
+ * `start` ms and advances one item per `stepMs`. Returns 0 before the phase
+ * starts; the first item appears the instant it does; clamps to `total`.
+ */
+function phaseCount(
+  elapsed: number,
+  start: number,
+  stepMs: number,
+  total: number,
+): number {
+  if (total <= 0 || elapsed < start) return 0;
+  const n = Math.floor((elapsed - start) / stepMs) + 1;
+  return Math.min(n, total);
+}
 
 interface LayerState {
   mesh: boolean;
@@ -201,7 +233,21 @@ interface TileAnim {
   descentDots: L.CircleMarker[];
   bfsDots: L.CircleMarker[];
   pulse: L.CircleMarker | null;
-  lastStep: number;
+  // Last-rendered counts, so per-frame work skips unchanged geometry.
+  lastLoc: number;
+  lastDes: number;
+  lastBfs: number;
+}
+
+/** Shared phase timing for one walk replay (ms offsets from animStart). */
+interface WalkTiming {
+  locateStepMs: number;
+  descentStepMs: number;
+  bfsStepMs: number;
+  locateEnd: number;
+  descentEnd: number;
+  bfsEnd: number;
+  totalEnd: number;
 }
 
 // ---------- Factory ----------
@@ -235,7 +281,7 @@ export function createXRayOverlay(map: L.Map, deps: XRayDeps): XRayHandle {
   let rafToken: number | null = null;
   let animTiles: TileAnim[] = [];
   let animStart: number | null = null;
-  let animGlobalEnd = 0;
+  let animTiming: WalkTiming | null = null;
   let lastWalkPos: { lat: number; lon: number } | null = null;
 
   const control = new L.Control({ position: "bottomleft" });
@@ -416,6 +462,7 @@ export function createXRayOverlay(map: L.Map, deps: XRayDeps): XRayHandle {
     }
     animTiles = [];
     animStart = null;
+    animTiming = null;
   }
 
   function triangleRing(fd: FlatDelaunay, tri: number): L.LatLngTuple[] {
@@ -540,13 +587,32 @@ export function createXRayOverlay(map: L.Map, deps: XRayDeps): XRayHandle {
         descentDots: [],
         bfsDots: [],
         pulse,
-        lastStep: -1,
+        lastLoc: -1,
+        lastDes: -1,
+        lastBfs: -1,
       } satisfies TileAnim;
     });
 
-    animGlobalEnd =
-      Math.max(0, ...animTiles.map((t) => t.locN + t.desN + t.bfsN)) +
-      WALK_PULSE_STEPS;
+    // Per-phase step time scales to the slowest tile in that phase, so every
+    // tile shares one timeline and the whole replay stays within budget.
+    const maxLoc = Math.max(0, ...animTiles.map((t) => t.locN));
+    const maxDes = Math.max(0, ...animTiles.map((t) => t.desN));
+    const maxBfs = Math.max(0, ...animTiles.map((t) => t.bfsN));
+    const locateStepMs = phaseStepMs(WALK_LOCATE_BUDGET_MS, maxLoc);
+    const descentStepMs = phaseStepMs(WALK_DESCENT_BUDGET_MS, maxDes);
+    const bfsStepMs = phaseStepMs(WALK_BFS_BUDGET_MS, maxBfs);
+    const locateEnd = maxLoc * locateStepMs;
+    const descentEnd = locateEnd + maxDes * descentStepMs;
+    const bfsEnd = descentEnd + maxBfs * bfsStepMs;
+    animTiming = {
+      locateStepMs,
+      descentStepMs,
+      bfsStepMs,
+      locateEnd,
+      descentEnd,
+      bfsEnd,
+      totalEnd: bfsEnd + WALK_PULSE_MS,
+    };
     animStart = null;
     rafToken = requestAnimationFrame(stepWalk);
   }
@@ -570,69 +636,78 @@ export function createXRayOverlay(map: L.Map, deps: XRayDeps): XRayHandle {
     });
   }
 
-  function renderTileDiscrete(t: TileAnim, step: number): void {
+  // --- Locate phase: bright current triangle + faint trail of visited.
+  function renderLocate(t: TileAnim, locCount: number): void {
+    if (locCount === t.lastLoc) return;
+    t.lastLoc = locCount;
     const fd = t.fd;
-    const op = t.isWinner ? 1 : 0.35;
-
-    // --- Locate phase: bright current triangle + faint trail of visited.
-    if (step < t.locN) {
-      const curIdx = Math.min(step, t.locN - 1);
-      const tri = t.trace.locateTriangles[curIdx];
-      t.currentPoly.setLatLngs(triangleRing(fd, tri));
-      const trail: L.LatLngTuple[][][] = [];
+    if (locCount <= 0) {
+      t.currentPoly.setLatLngs([]);
+      t.trailPoly.setLatLngs([]);
+      return;
+    }
+    const trail: L.LatLngTuple[][][] = [];
+    if (locCount < t.locN) {
+      const curIdx = locCount - 1;
+      t.currentPoly.setLatLngs(
+        triangleRing(fd, t.trace.locateTriangles[curIdx]),
+      );
       for (let i = 0; i < curIdx; i++) {
         trail.push([triangleRing(fd, t.trace.locateTriangles[i])]);
       }
-      t.trailPoly.setLatLngs(trail);
-    } else if (t.locN > 0) {
+    } else {
+      // Phase complete: current triangle clears, full faint trail remains.
       t.currentPoly.setLatLngs([]);
-      const trail: L.LatLngTuple[][][] = [];
       for (let i = 0; i < t.locN; i++) {
         trail.push([triangleRing(fd, t.trace.locateTriangles[i])]);
       }
-      t.trailPoly.setLatLngs(trail);
     }
+    t.trailPoly.setLatLngs(trail);
+  }
 
-    // --- Descent phase: growing polyline + a dot per visited vertex.
-    const ds = step - t.locN;
-    if (ds >= 0 && t.desN > 0) {
-      const nd = Math.min(ds + 1, t.desN);
-      const pts: L.LatLngTuple[] = [];
-      for (let i = 0; i < nd; i++) {
-        const ll = vertexLatLon(fd, t.trace.descentVertices[i]);
-        pts.push([ll.lat, ll.lon]);
-      }
-      t.descentLine.setLatLngs(pts);
-      while (t.descentDots.length < nd) {
-        const ll = vertexLatLon(
-          fd,
-          t.trace.descentVertices[t.descentDots.length],
-        );
-        const m = dotMarker(ll.lat, ll.lon, t.hue, op, false);
-        m.addTo(walkGroup);
-        t.descentDots.push(m);
-      }
+  // --- Descent phase: growing polyline + a dot per visited vertex.
+  function renderDescent(t: TileAnim, desCount: number): void {
+    if (t.desN <= 0 || desCount === t.lastDes) return;
+    t.lastDes = desCount;
+    if (desCount <= 0) return;
+    const fd = t.fd;
+    const op = t.isWinner ? 1 : 0.35;
+    const pts: L.LatLngTuple[] = [];
+    for (let i = 0; i < desCount; i++) {
+      const ll = vertexLatLon(fd, t.trace.descentVertices[i]);
+      pts.push([ll.lat, ll.lon]);
     }
-
-    // --- BFS phase: circle markers fading in for the k-NN expansion.
-    const bs = step - t.locN - t.desN;
-    if (bs >= 0 && t.bfsN > 0) {
-      const nb = Math.min(bs + 1, t.bfsN);
-      while (t.bfsDots.length < nb) {
-        const ll = vertexLatLon(fd, t.trace.bfsVertices[t.bfsDots.length]);
-        const m = dotMarker(ll.lat, ll.lon, t.hue, op, true);
-        m.addTo(walkGroup);
-        t.bfsDots.push(m);
-      }
+    t.descentLine.setLatLngs(pts);
+    while (t.descentDots.length < desCount) {
+      const ll = vertexLatLon(
+        fd,
+        t.trace.descentVertices[t.descentDots.length],
+      );
+      const m = dotMarker(ll.lat, ll.lon, t.hue, op, false);
+      m.addTo(walkGroup);
+      t.descentDots.push(m);
     }
   }
 
-  function updatePulse(t: TileAnim, stepF: number): void {
-    if (!t.pulse) return;
-    const tileEnd = t.locN + t.desN + t.bfsN;
-    const ps = stepF - tileEnd;
+  // --- BFS phase: circle markers fading in for the k-NN expansion.
+  function renderBfs(t: TileAnim, bfsCount: number): void {
+    if (t.bfsN <= 0 || bfsCount === t.lastBfs) return;
+    t.lastBfs = bfsCount;
+    const fd = t.fd;
+    const op = t.isWinner ? 1 : 0.35;
+    while (t.bfsDots.length < bfsCount) {
+      const ll = vertexLatLon(fd, t.trace.bfsVertices[t.bfsDots.length]);
+      const m = dotMarker(ll.lat, ll.lon, t.hue, op, true);
+      m.addTo(walkGroup);
+      t.bfsDots.push(m);
+    }
+  }
+
+  function updatePulse(t: TileAnim, elapsed: number): void {
+    if (!t.pulse || !animTiming) return;
+    const ps = elapsed - animTiming.bfsEnd;
     if (ps <= 0) return;
-    const wave = Math.abs(Math.sin(ps * 0.6));
+    const wave = Math.abs(Math.sin((ps / WALK_PULSE_MS) * Math.PI * 2));
     t.pulse.setRadius(6 + 8 * wave);
     t.pulse.setStyle({
       fillOpacity: 0.15 + 0.35 * wave,
@@ -640,24 +715,38 @@ export function createXRayOverlay(map: L.Map, deps: XRayDeps): XRayHandle {
     });
   }
 
+  function settleTile(t: TileAnim): void {
+    renderLocate(t, t.locN);
+    renderDescent(t, t.desN);
+    renderBfs(t, t.bfsN);
+    if (t.pulse) {
+      t.pulse.setRadius(7);
+      t.pulse.setStyle({ fillOpacity: 0.3, opacity: 0.9 });
+    }
+  }
+
   function stepWalk(ts: number): void {
     if (animStart === null) animStart = ts;
-    const stepF = (ts - animStart) / WALK_STEP_MS;
-    const intStep = Math.floor(stepF);
+    const timing = animTiming;
+    if (!timing) return;
+    const elapsed = ts - animStart;
 
     for (const t of animTiles) {
-      if (intStep !== t.lastStep) {
-        t.lastStep = intStep;
-        renderTileDiscrete(t, intStep);
-      }
-      if (t.isWinner) updatePulse(t, stepF);
+      renderLocate(t, phaseCount(elapsed, 0, timing.locateStepMs, t.locN));
+      renderDescent(
+        t,
+        phaseCount(elapsed, timing.locateEnd, timing.descentStepMs, t.desN),
+      );
+      renderBfs(
+        t,
+        phaseCount(elapsed, timing.descentEnd, timing.bfsStepMs, t.bfsN),
+      );
+      if (t.isWinner) updatePulse(t, elapsed);
     }
 
-    if (stepF >= animGlobalEnd) {
+    if (elapsed >= timing.totalEnd) {
       // Settle every path at its final, fully-drawn state.
-      for (const t of animTiles) {
-        renderTileDiscrete(t, t.locN + t.desN + t.bfsN);
-      }
+      for (const t of animTiles) settleTile(t);
       rafToken = null;
       animStart = null;
       return;
