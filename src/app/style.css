@@ -1314,3 +1314,12 @@ dialog.about-dialog::backdrop {
   color: #666;
   overflow-wrap: anywhere;
 }
+
+/* On narrow viewports the bottom-right OSM attribution reaches far enough
+   left to sit under the bottom-left panel. Lift the panel above the
+   attribution so it stays legible and the panel's controls stay tappable. */
+@media (width <= 480px) {
+  .leaflet-bottom .leaflet-control.xray-panel {
+    margin-bottom: 26px;
+  }
+}
