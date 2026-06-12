@@ -344,7 +344,24 @@ function flatLocate(
   return bestVertex;
 }
 
-function flatNeighbors(fd: FlatDelaunay, vIdx: number): number[] {
+/**
+ * Delaunay neighbors of a vertex, enumerated by walking its triangle fan.
+ *
+ * With `skipTriangles` (the back-closure mask), neighbors contributed by
+ * masked fan triangles are omitted — for a rim vertex those are chords to
+ * distant rim vertices across the hull's underside. BFS expansions pass
+ * the mask so their frontier grows through local front-side edges only:
+ * chord edges teleport the frontier along the patch boundary, scattering
+ * the visit budget over rim clusters hundreds of kilometres away and
+ * breaking the "hop order roughly tracks distance order" assumption the
+ * expansion budget relies on. The fan is still traversed THROUGH masked
+ * triangles (the walk needs the full cycle); only emission is skipped.
+ */
+function flatNeighbors(
+  fd: FlatDelaunay,
+  vIdx: number,
+  skipTriangles?: Uint8Array,
+): number[] {
   const startTri = fd.vertexTriangles[vIdx];
   const neighbors: number[] = [];
   let cur = startTri;
@@ -358,7 +375,8 @@ function flatNeighbors(fd: FlatDelaunay, vIdx: number): number[] {
         break;
       }
     }
-    neighbors.push(fd.triangleVertices[ti + ((k + 1) % 3)]);
+    if (skipTriangles === undefined || skipTriangles[cur] === 0)
+      neighbors.push(fd.triangleVertices[ti + ((k + 1) % 3)]);
     cur = fd.triangleNeighbors[ti + k];
     if (cur === startTri) break;
   }
@@ -630,7 +648,7 @@ export class NearestQuery {
     const target = Math.max(k * 2, k + 6);
     while (frontierHead < frontier.length && candidates.length < target) {
       const current = frontier[frontierHead++];
-      for (const nIdx of flatNeighbors(this.fd, current)) {
+      for (const nIdx of flatNeighbors(this.fd, current, this.backClosure)) {
         if (visited.has(nIdx)) continue;
         visited.add(nIdx);
         if (trace) trace.bfsVertices.push(nIdx);
@@ -690,7 +708,7 @@ export class NearestQuery {
       visited.size < maxVisited
     ) {
       const current = frontier[frontierHead++];
-      for (const nIdx of flatNeighbors(this.fd, current)) {
+      for (const nIdx of flatNeighbors(this.fd, current, this.backClosure)) {
         if (visited.has(nIdx)) continue;
         visited.add(nIdx);
         if (trace) trace.bfsVertices.push(nIdx);

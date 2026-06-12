@@ -72,6 +72,8 @@ Neighbors are enumerated by walking the triangle fan around a vertex (`flatNeigh
 
 For k-nearest queries, expand from the nearest vertex through Delaunay edges via BFS, collecting `max(2k, k+6)` candidates. Sort by distance, return top k. The oversampling margin (`k+6` for small k, `2k` for large k) ensures at least one full neighbor ring beyond the nearest vertex.
 
+The expansion (and the weight-filtered variant) skips fan edges contributed by back-closure triangles. Rim vertices are graph-connected to distant rim vertices through the hull's underside chords, and a BFS seeded at the rim — every query from outside the patch is — would otherwise teleport along the patch boundary, scattering its visit budget over rim clusters hundreds of kilometres away and breaking the "hop order roughly tracks distance order" assumption the budget relies on. The greedy descent keeps the full fan: a chord can only ever shortcut it closer.
+
 ## Distance computation
 
 The pipeline's geometry library (`src/geometry/index.ts`) uses `acos(dot(a, b))` for spherical distance, which is fine for Float64 pipeline math.
