@@ -153,6 +153,11 @@ function saveLayerState(
 
 // ---------- Small helpers ----------
 
+/** "1 hop", "2 hops" — regular plural for the status readout. */
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
 function parseTileId(id: string): { row: number; col: number } {
   const [row, col] = id.split("-").map(Number);
   return { row, col };
@@ -520,7 +525,10 @@ export function createXRayOverlay(map: L.Map, deps: XRayDeps): XRayHandle {
     // Status is known up-front from the winning tile's trace.
     const locateHops = winner.trace.locateTriangles.length;
     const descentSteps = winner.trace.descentVertices.length;
-    let status = `found in ${locateHops} hops + ${descentSteps} steps · ${scored.length} tiles searched`;
+    let status = `found in ${plural(locateHops, "hop")} + ${plural(
+      descentSteps,
+      "step",
+    )} · ${plural(scored.length, "tile")} searched`;
     if (winner.trace.usedBruteForce) status += " · cycle → brute force";
     setStatus(status);
 
