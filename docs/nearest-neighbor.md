@@ -35,7 +35,7 @@ The core geometric predicate is `orient3D(a, b, c, d)` — the sign of the 4×4 
 
 ### Query phase (app runtime)
 
-The app uses flat typed-array versions of the same algorithms to avoid GC pressure. Both `src/geometry/point-location.ts` (pipeline/tests) and `src/app/query.ts` (runtime) implement the same logic.
+The app uses flat typed-array versions of the same algorithms to avoid GC pressure. `src/geometry/point-location.ts` is the textbook reference implementation (used by pipeline tests on full-sphere triangulations); `src/app/query.ts` is the runtime version, hardened for the realities of tile data (see "Tile patches" below).
 
 **Step 1: Triangle walk** (`flatLocate` in `query.ts`, `locateTriangle` in `point-location.ts`)
 
@@ -47,7 +47,24 @@ The edge test uses the sign of `dot(cross(a, b), q)` — the scalar triple produ
 
 **Step 2: Greedy vertex walk** (`flatFindNearest` in `query.ts`, `findNearest` in `point-location.ts`)
 
-Starting from the closest vertex of the containing triangle, check all Delaunay neighbors. Move to any closer one. Repeat until no improvement. The Delaunay property guarantees this converges to the true nearest vertex.
+Starting from a seed vertex, check all Delaunay neighbors. Move to any closer one. Repeat until no improvement. The Delaunay property guarantees this converges to the true nearest vertex on a full-sphere triangulation.
+
+### Tile patches: why the runtime walk is hardened
+
+A tile's vertices cover only a ~5.5°×5.5° patch of the sphere, so their convex hull is a thin lens. The hull's topside facets are the true spherical Delaunay triangles of the patch, but the hull is closed by "back-closure" facets spanning the rim. As spherical regions for the walk's edge tests, topside facets cover the patch while back-closure facets cover its _antipode_ — so a query outside the patch (the app queries adjacent tiles with such positions on every update) is contained by **no facet at all**. The textbook walk can never terminate by containment there: it orbits the back closure for thousands of steps until cycle detection or the step limit rescues it, then seeds the descent from an arbitrary triangle.
+
+Two data artifacts compound this. Float32 coordinate quantization (the binary tile format) collapses co-located articles onto identical coordinates, producing degenerate zero-area triangles whose edge-test signs are noise, and clusters whose inner vertices have no strictly-closer neighbor — a greedy descent arriving from far away can stall in such a pocket kilometres from the true nearest. (Before hardening, ~3% of single-tile queries in a Stockholm-area sweep returned results up to 580 km off; the multi-tile merge in `findNearestTiled` masked this in practice.)
+
+`flatLocate` therefore adds, on top of the textbook walk:
+
+- **Best-seen tracking** — the walk records the closest vertex (squared chord distance) over all triangles it visits, and the descent is always seeded from it, never from whatever triangle the walk stopped on.
+- **Patience termination** — if no strictly closer vertex appears for `LOCATE_PATIENCE` steps, the walk stops: an orbit never approaches the query, so this cuts it short right after it has passed the rim vertices nearest the query. In-patch walks terminate by containment as usual.
+- **Back-closure walls** — the walk never crosses into facets with `det[a,b,c] < -1e-8` (`markBackClosure`, computed at load). Measured on production tiles, real back-closure facets — including every tile-spanning rim chord — sit at or below that determinant, while quantization-noise slivers stay within ±1e-9, so no genuine front triangle is ever walled. Rim edges act as walls and the walk slides along the rim's narrow front triangles instead; this also keeps tile-wide chord streaks out of the X-ray walk trace.
+- **Anchor restart** — a stalled or cycling walk restarts once from the tile's anchor triangle (the incident triangle of the vertex nearest the point-cloud centroid, computed at load). This rescues walks whose start triangle sits on the back closure, where flipped edge tests strand them (a warm start from an out-of-patch query can name such a triangle).
+- **Cycle triage** — a cycle hit while the walk was still improving means a degenerate tangle right where the answer should be: fall back to the exact brute-force scan. A cycle after progress stopped is just an orbit closing; the best-seen vertex already seeds correctly.
+- **Plateau tunneling** (`plateauEscape` in the descent) — when no fan neighbor is strictly closer, the descent floods the connected set of _exactly equal-distance_ vertices (coincident duplicates) and continues from any member with a strictly closer neighbor, escaping quantization pockets.
+
+With these, a 9,240-query sweep over seven production tiles (in-patch and out-of-patch positions) matches brute force exactly, with walks averaging ~150–225 hops and bounded by ~520 — versus averages of 10k–18k hops, frequent O(V) brute-force fallbacks, and 268 wrong results for the textbook walk.
 
 Neighbors are enumerated by walking the triangle fan around a vertex (`flatNeighbors` / `vertexNeighbors`).
 

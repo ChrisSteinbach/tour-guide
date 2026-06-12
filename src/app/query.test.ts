@@ -182,6 +182,191 @@ describe("NearestQuery (Float32 round-trip)", () => {
   });
 });
 
+// ---------- Patch tiles (out-of-cap queries) ----------
+
+/**
+ * Build a tile-like NearestQuery: a jittered grid of points covering a
+ * single 5°×5°-ish patch of the sphere (like a production tile, including
+ * the Float32 binary round-trip), with a few coincident-duplicate clusters
+ * mimicking bot-generated articles that share one coordinate.
+ *
+ * Unlike the full-sphere fixtures above, the convex hull of a patch is a
+ * thin lens whose underside ("back closure") gives the locate walk no
+ * containing triangle for queries outside the patch — the regression area
+ * for tour-guide-8lmb.
+ */
+function buildPatchQuery(): NearestQuery {
+  const articles: { lat: number; lon: number; title: string }[] = [];
+  const south = 55;
+  const west = 15;
+  const n = 24;
+  const step = 5 / n;
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      // Deterministic jitter, ±20% of a cell — irregular but reproducible.
+      const jLat = 0.2 * step * Math.sin(i * 12.9898 + j * 78.233);
+      const jLon = 0.2 * step * Math.sin(i * 39.346 + j * 11.135);
+      articles.push({
+        lat: south + (i + 0.5) * step + jLat,
+        lon: west + (j + 0.5) * step + jLon,
+        title: `P${i}-${j}`,
+      });
+    }
+  }
+  // Coincident duplicates: several articles at exactly the same coordinate
+  // (Float32 quantization makes them identical vertices in the data).
+  for (const [lat, lon, name] of [
+    [57.31, 17.42, "DupA"],
+    [55.87, 16.11, "DupB"],
+    [59.13, 19.55, "DupC"],
+  ] as const) {
+    for (let c = 0; c < 5; c++) {
+      articles.push({ lat, lon, title: `${name}-${c}` });
+    }
+  }
+
+  const points = articles.map((a) => toCartesian({ lat: a.lat, lon: a.lon }));
+  const hull = convexHull(points);
+  const tri = buildTriangulation(hull);
+  const metas = tri.originalIndices.map((i) => ({
+    title: articles[i].title,
+  }));
+  const data = serialize(tri, metas);
+  const bin = serializeBinary(data);
+  const { fd, articles: roundTripped } = deserializeBinary(bin);
+  return new NearestQuery(fd, roundTripped);
+}
+
+/** Exact nearest distance in meters by scanning every vertex. */
+function bruteNearestM(nq: NearestQuery, lat: number, lon: number): number {
+  const [qx, qy, qz] = toCartesian({ lat, lon });
+  const vp = nq.delaunay.vertexPoints;
+  let best = Infinity;
+  for (let v = 0; v < nq.size; v++) {
+    const dx = vp[v * 3] - qx;
+    const dy = vp[v * 3 + 1] - qy;
+    const dz = vp[v * 3 + 2] - qz;
+    const chord = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const d = 2 * Math.asin(chord < 2 ? chord / 2 : 1) * 6_371_000;
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+describe("NearestQuery (patch tile, queries outside the patch)", () => {
+  let patchQ: NearestQuery;
+
+  beforeAll(() => {
+    patchQ = buildPatchQuery();
+  });
+
+  it("finds the exact nearest article for queries outside the patch on every side", () => {
+    // Probes ~1° beyond each edge and corner of the 55..60 / 15..20 patch —
+    // the adjacent-tile situation: the query's containing triangle does not
+    // exist in this triangulation.
+    const probes: [number, number][] = [
+      [61.0, 17.5],
+      [54.0, 17.5],
+      [57.5, 13.9],
+      [57.5, 21.1],
+      [61.0, 13.9],
+      [61.0, 21.1],
+      [54.0, 13.9],
+      [54.0, 21.1],
+    ];
+    for (const [lat, lon] of probes) {
+      const { results } = patchQ.findNearest(lat, lon);
+      expect(results).toHaveLength(1);
+      // Compare distances, not titles: coincident duplicates tie exactly.
+      expect(results[0].distanceM).toBeCloseTo(
+        bruteNearestM(patchQ, lat, lon),
+        6,
+      );
+    }
+  });
+
+  it("terminates out-of-patch walks in bounded hops without brute force", () => {
+    const trace = createWalkTrace();
+    patchQ.findNearest(61.0, 17.5, 1, undefined, { trace });
+
+    // The pre-fix walk either orbited the hull's back closure until
+    // maxSteps (≈ triangle count, >1000 here) or fell back to an O(V)
+    // brute-force scan. The patience rule stops it shortly after it has
+    // passed the rim vertices nearest the query.
+    expect(trace.usedBruteForce).toBe(false);
+    expect(trace.locateTriangles.length).toBeLessThan(300);
+  });
+
+  it("keeps out-of-patch walk traces off tile-spanning back-closure chords", () => {
+    // The hull's underside triangulates the rim with chords that can span
+    // the whole patch. A walk that slides across them paints tile-wide
+    // streaks in the X-ray overlay, so they are walled off; the walk slides
+    // along the rim's narrow front triangles instead. The probe sits south
+    // of the patch: on the equatorward rim every wide facet is an underside
+    // chord. (Poleward rims also own wide FRONT facets — great-circle
+    // chords bulge poleward of the small-circle rim line — and the walk is
+    // allowed to cross those.)
+    const trace = createWalkTrace();
+    patchQ.findNearest(54.0, 17.5, 1, undefined, { trace });
+
+    const fd = patchQ.delaunay;
+    let maxLonSpan = 0;
+    for (const t of trace.locateTriangles) {
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (let i = 0; i < 3; i++) {
+        const { lon } = vertexLatLon(fd, fd.triangleVertices[t * 3 + i]);
+        lo = Math.min(lo, lon);
+        hi = Math.max(hi, lon);
+      }
+      maxLonSpan = Math.max(maxLonSpan, hi - lo);
+    }
+    // Front triangles of the fixture span well under a degree; underside
+    // chords span multiple degrees.
+    expect(maxLonSpan).toBeLessThan(1);
+  });
+
+  it("matches brute force for in-patch queries", () => {
+    for (const [lat, lon] of [
+      [57.5, 17.5],
+      [55.6, 15.4],
+      [59.7, 19.8],
+      [56.2, 18.9],
+    ] as [number, number][]) {
+      const { results } = patchQ.findNearest(lat, lon);
+      expect(results[0].distanceM).toBeCloseTo(
+        bruteNearestM(patchQ, lat, lon),
+        6,
+      );
+    }
+  });
+
+  it("returns the exact nearest when it is a coincident-duplicate cluster", () => {
+    // Query right next to the DupA cluster: greedy descent must not stall
+    // on a cluster vertex whose only equal-distance neighbors are its
+    // twins (the plateau is tunneled through).
+    const { results } = patchQ.findNearest(57.312, 17.423, 3);
+    expect(results[0].title).toMatch(/^DupA/);
+    expect(results[0].distanceM).toBeCloseTo(
+      bruteNearestM(patchQ, 57.312, 17.423),
+      6,
+    );
+  });
+
+  it("recovers exact answers from a warm start taken outside the patch", () => {
+    // An out-of-patch query's lastTriangle can sit on the hull's back
+    // closure, where edge tests are flipped. A later query warm-started
+    // from it must still answer exactly (the walk restarts from its
+    // anchor when the start strands).
+    const outside = patchQ.findNearest(61.0, 17.5);
+    const warm = patchQ.findNearest(57.5, 17.5, 1, outside.lastTriangle);
+    expect(warm.results[0].distanceM).toBeCloseTo(
+      bruteNearestM(patchQ, 57.5, 17.5),
+      6,
+    );
+  });
+});
+
 // ---------- Weight filtering ----------
 
 /** Build a NearestQuery from weighted lat/lon articles. */
