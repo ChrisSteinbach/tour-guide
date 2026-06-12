@@ -13,6 +13,7 @@ import {
   createMapPickerLifecycle,
   type MapPickerLifecycle,
 } from "./map-picker-lifecycle";
+import { filterMinWeight } from "./config";
 import type { AppState, Event } from "./state-machine";
 
 export interface MapPanelLifecycleDeps {
@@ -67,7 +68,39 @@ export function createMapPanelLifecycle(
         ),
       });
     },
-    importBrowseMap: () => import("./browse-map"),
+    importBrowseMap: () =>
+      Promise.all([import("./browse-map"), import("./xray-overlay")]).then(
+        ([m, x]) => ({
+          createBrowseMap: (el, pos, articles, onSelect) =>
+            m.createBrowseMap(el, pos, articles, onSelect, {
+              attachXRay: (map) =>
+                x.createXRayOverlay(map, {
+                  getLoadedTiles: () => {
+                    const q = deps.getState().query;
+                    return q.mode === "tiled" ? q.tiles : null;
+                  },
+                  getTileEntries: () => {
+                    const q = deps.getState().query;
+                    return q.mode === "tiled" ? q.tileMap : null;
+                  },
+                  getQueryContext: () => {
+                    const s = deps.getState();
+                    return s.position
+                      ? {
+                          position: s.position,
+                          k: s.viewportFillCount,
+                          minWeight: filterMinWeight(s.filter),
+                        }
+                      : null;
+                  },
+                  initialOpen: new URLSearchParams(window.location.search).has(
+                    "xray",
+                  ),
+                  storage: deps.storage,
+                }),
+            }),
+        }),
+      ),
     importRadarView: () => import("./radar-view"),
     storage: deps.storage,
   });

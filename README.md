@@ -22,6 +22,14 @@ great-circle distance. See [`docs/nearest-neighbor.md`](docs/nearest-neighbor.md
 for the theory and [`docs/architecture.md`](docs/architecture.md) for the
 end-to-end data flow.
 
+### X-ray mode
+
+To see the algorithm at work, right-click (or long-press on mobile) the browse
+map — or append `?xray=1` to the URL — to open the X-ray panel. It overlays the
+per-tile Delaunay mesh, the tile grid, the tile buffer zones, and an animated
+trace of the nearest-neighbor triangle walk, with a status line reporting how
+many hops, descent steps, and tiles each lookup took.
+
 ## Getting started
 
 ```bash
