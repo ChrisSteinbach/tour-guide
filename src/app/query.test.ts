@@ -7,7 +7,12 @@ import {
   toCartesian,
 } from "../geometry";
 import type { Point3D } from "../geometry";
-import { NearestQuery, toFlatDelaunay } from "./query";
+import {
+  NearestQuery,
+  toFlatDelaunay,
+  createWalkTrace,
+  vertexLatLon,
+} from "./query";
 
 // ---------- Fixtures ----------
 
@@ -372,5 +377,176 @@ describe("NearestQuery (filtered visit cap)", () => {
 
     expect(results).toHaveLength(1);
     expect(results[0].title).toBe(`P${VERTEX_COUNT - 1}`);
+  });
+});
+
+// ---------- Walk tracing ----------
+
+/**
+ * Quasi-uniform Fibonacci sphere of weighted vertices: every 5th vertex is a
+ * highlight, the rest stubs. Dense enough to exercise multi-step descents and
+ * BFS expansion, weighted so minWeight-filtered queries have matches to find.
+ */
+function buildTracedSphereQuery(count: number): NearestQuery {
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  const articles = Array.from({ length: count }, (_, i) => {
+    const z = 1 - (i / (count - 1)) * 2;
+    const theta = golden * i;
+    return {
+      title: `T${i}`,
+      lat: (Math.asin(z) * 180) / Math.PI,
+      lon: (Math.atan2(Math.sin(theta), Math.cos(theta)) * 180) / Math.PI,
+      weight: i % 5 === 0 ? HIGHLIGHT_WEIGHT : STUB_WEIGHT,
+    };
+  });
+  return buildWeightedQuery(articles);
+}
+
+/** Squared chord length from a vertex to a cartesian query point. */
+function chordSqToQuery(nq: NearestQuery, vertex: number, q: Point3D): number {
+  const vp = nq.delaunay.vertexPoints;
+  const vi = vertex * 3;
+  const dx = vp[vi] - q[0];
+  const dy = vp[vi + 1] - q[1];
+  const dz = vp[vi + 2] - q[2];
+  return dx * dx + dy * dy + dz * dz;
+}
+
+describe("NearestQuery (walk tracing)", () => {
+  let traceQ: NearestQuery;
+
+  beforeAll(() => {
+    traceQ = buildTracedSphereQuery(400);
+  });
+
+  it("returns identical results for an unfiltered k=1 query with and without a trace", () => {
+    const without = traceQ.findNearest(12, 34);
+    const with_ = traceQ.findNearest(12, 34, 1, undefined, {
+      trace: createWalkTrace(),
+    });
+    expect(with_.results).toEqual(without.results);
+    expect(with_.lastTriangle).toBe(without.lastTriangle);
+  });
+
+  it("returns identical results for a k=5 query with and without a trace", () => {
+    const without = traceQ.findNearest(12, 34, 5);
+    const with_ = traceQ.findNearest(12, 34, 5, undefined, {
+      trace: createWalkTrace(),
+    });
+    expect(with_.results).toEqual(without.results);
+    expect(with_.lastTriangle).toBe(without.lastTriangle);
+  });
+
+  it("returns identical results for a minWeight-filtered query with and without a trace", () => {
+    const without = traceQ.findNearest(12, 34, 5, undefined, { minWeight: 50 });
+    const with_ = traceQ.findNearest(12, 34, 5, undefined, {
+      minWeight: 50,
+      trace: createWalkTrace(),
+    });
+    expect(with_.results).toEqual(without.results);
+    expect(with_.lastTriangle).toBe(without.lastTriangle);
+  });
+
+  it("records a nearestVertex whose title matches the returned nearest", () => {
+    const trace = createWalkTrace();
+    const { results } = traceQ.findNearest(40, -75, 1, undefined, { trace });
+    expect(traceQ.articleTitle(trace.nearestVertex)).toBe(results[0].title);
+  });
+
+  it("records a descent with monotonically non-increasing distance to the query", () => {
+    const trace = createWalkTrace();
+    const q = toCartesian({ lat: -20, lon: 140 });
+    traceQ.findNearest(-20, 140, 1, undefined, { trace });
+
+    expect(trace.descentVertices.length).toBeGreaterThanOrEqual(1);
+    for (let i = 1; i < trace.descentVertices.length; i++) {
+      const prev = chordSqToQuery(traceQ, trace.descentVertices[i - 1], q);
+      const cur = chordSqToQuery(traceQ, trace.descentVertices[i], q);
+      expect(cur).toBeLessThanOrEqual(prev);
+    }
+    // The descent ends at the recorded nearest vertex.
+    expect(trace.descentVertices[trace.descentVertices.length - 1]).toBe(
+      trace.nearestVertex,
+    );
+  });
+
+  it("records BFS vertices with no duplicates, excluding the seed", () => {
+    const trace = createWalkTrace();
+    traceQ.findNearest(12, 34, 8, undefined, { trace });
+
+    expect(trace.bfsVertices.length).toBeGreaterThan(0);
+    expect(new Set(trace.bfsVertices).size).toBe(trace.bfsVertices.length);
+    // The seed (the unfiltered nearest vertex) is never re-emitted.
+    expect(trace.bfsVertices).not.toContain(trace.nearestVertex);
+  });
+
+  it("leaves bfsVertices empty for a plain k=1 query", () => {
+    const trace = createWalkTrace();
+    traceQ.findNearest(12, 34, 1, undefined, { trace });
+    expect(trace.bfsVertices).toEqual([]);
+  });
+
+  it("records a non-empty locate walk ending in an in-range triangle", () => {
+    const trace = createWalkTrace();
+    traceQ.findNearest(12, 34, 1, undefined, { trace });
+
+    expect(trace.locateTriangles.length).toBeGreaterThan(0);
+    const finalTri = trace.locateTriangles[trace.locateTriangles.length - 1];
+    const tv = traceQ.delaunay.triangleVertices;
+    for (let e = 0; e < 3; e++) {
+      const v = tv[finalTri * 3 + e];
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThan(traceQ.size);
+    }
+    expect(trace.usedBruteForce).toBe(false);
+  });
+
+  it("round-trips vertexLatLon through toCartesian", () => {
+    const fd = traceQ.delaunay;
+    for (const v of [0, 7, 100, 399]) {
+      const { lat, lon } = vertexLatLon(fd, v);
+      const [x, y, z] = toCartesian({ lat, lon });
+      const vi = v * 3;
+      // Vertices are stored truncated to 8 decimals, so they sit a hair off
+      // the unit sphere; the round-trip renormalizes within ~1e-8.
+      expect(x).toBeCloseTo(fd.vertexPoints[vi], 7);
+      expect(y).toBeCloseTo(fd.vertexPoints[vi + 1], 7);
+      expect(z).toBeCloseTo(fd.vertexPoints[vi + 2], 7);
+    }
+  });
+
+  it("exposes the delaunay, titles, and weights the constructor was given", () => {
+    const points: Point3D[] = [
+      [1, 0, 0],
+      [-1, 0, 0],
+      [0, 1, 0],
+      [0, -1, 0],
+      [0, 0, 1],
+      [0, 0, -1],
+    ];
+    const tri = buildTriangulation(convexHull(points));
+    const fd = toFlatDelaunay(
+      serialize(
+        tri,
+        tri.originalIndices.map((i) => ({ title: `placeholder ${i}` })),
+      ),
+    );
+    const articles = [
+      { title: "Alpha", weight: 5 },
+      { title: "Beta", weight: 0 },
+      { title: "Gamma", weight: 42 },
+      { title: "Delta" }, // no weight → reported as 0
+      { title: "Epsilon", weight: 255 },
+      { title: "Zeta", weight: 17 },
+    ];
+    const q = new NearestQuery(fd, articles);
+
+    expect(q.delaunay).toBe(fd);
+    expect(q.articleTitle(2)).toBe("Gamma");
+    expect(q.articleTitle(3)).toBe("Delta");
+    expect(q.articleWeight(0)).toBe(5);
+    expect(q.articleWeight(1)).toBe(0);
+    expect(q.articleWeight(3)).toBe(0);
+    expect(q.articleWeight(4)).toBe(255);
   });
 });

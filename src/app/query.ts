@@ -1,11 +1,15 @@
 // Client-side nearest-neighbor query module
 // Uses flat typed arrays to avoid GC pressure from millions of small objects.
 
-import type { ArticleMeta, FlatDelaunay, TriangulationFile } from "../geometry";
-import { toCartesian } from "../geometry";
+import type {
+  ArticleMeta,
+  FlatDelaunay,
+  Point3D,
+  TriangulationFile,
+} from "../geometry";
+import { toCartesian, toLatLon } from "../geometry";
 
 const EARTH_RADIUS_M = 6_371_000;
-const RAD_TO_DEG = 180 / Math.PI;
 
 // ---------- Types ----------
 
@@ -18,6 +22,34 @@ export interface QueryResult {
   weight: number;
 }
 
+/**
+ * Read-only record of the internal walk a single query performs, for
+ * visualization. Filling a trace must never change a query's results.
+ */
+export interface WalkTrace {
+  /** Triangle indices visited by the locate walk, in visit order (includes the final containing triangle). */
+  locateTriangles: number[];
+  /** True when the locate walk hit a cycle and the query fell back to the brute-force scan. */
+  usedBruteForce: boolean;
+  /** Vertex indices of the greedy descent, in order: first = best vertex of the located triangle, last = nearest vertex. */
+  descentVertices: number[];
+  /** Vertex indices visited by the BFS expansion (k>1 or weight-filtered), in visit order, excluding the seed. Empty for plain k=1 queries. */
+  bfsVertices: number[];
+  /** The unfiltered nearest vertex index (end of the descent, or brute-force result). */
+  nearestVertex: number;
+}
+
+/** Returns an empty trace ready to be filled by a query. */
+export function createWalkTrace(): WalkTrace {
+  return {
+    locateTriangles: [],
+    usedBruteForce: false,
+    descentVertices: [],
+    bfsVertices: [],
+    nearestVertex: -1,
+  };
+}
+
 export interface FindNearestOptions {
   /**
    * Only vertices with weight >= minWeight count as results. Non-matching
@@ -25,6 +57,11 @@ export interface FindNearestOptions {
    * triangulation graph, and the nearest matches may sit behind them.
    */
   minWeight?: number;
+  /**
+   * When provided, the query fills this trace as it runs. Must never change
+   * results — the untraced and traced paths return byte-identical output.
+   */
+  trace?: WalkTrace;
 }
 
 // ---------- Filtered-expansion bounds ----------
@@ -102,6 +139,7 @@ function flatLocate(
   qy: number,
   qz: number,
   start?: number,
+  trace?: WalkTrace,
 ): number {
   if (fd.vertexTriangles.length === 0) return 0;
   let cur = start ?? fd.vertexTriangles[0];
@@ -115,6 +153,7 @@ function flatLocate(
       if (history[h] === cur) return -1;
     }
     history[step % HISTORY_SIZE] = cur;
+    if (trace) trace.locateTriangles.push(cur);
 
     const ti = cur * 3;
     let crossed = false;
@@ -179,11 +218,20 @@ function flatFindNearest(
   qy: number,
   qz: number,
   startTri?: number,
+  trace?: WalkTrace,
 ): number {
-  const tIdx = flatLocate(fd, qx, qy, qz, startTri);
+  const tIdx = flatLocate(fd, qx, qy, qz, startTri, trace);
 
   // Walk got stuck in a degenerate cycle — fall back to brute force
-  if (tIdx < 0) return flatFindNearestBrute(fd, qx, qy, qz);
+  if (tIdx < 0) {
+    const result = flatFindNearestBrute(fd, qx, qy, qz);
+    if (trace) {
+      trace.usedBruteForce = true;
+      trace.descentVertices = [result];
+      trace.nearestVertex = result;
+    }
+    return result;
+  }
 
   const ti = tIdx * 3;
 
@@ -197,6 +245,7 @@ function flatFindNearest(
       bestV = v;
     }
   }
+  if (trace) trace.descentVertices.push(bestV);
 
   const maxWalk = fd.vertexTriangles.length;
   for (let step = 0; step < maxWalk; step++) {
@@ -207,16 +256,29 @@ function flatFindNearest(
         bestD = d;
         bestV = nIdx;
         improved = true;
+        if (trace) trace.descentVertices.push(bestV);
         break;
       }
     }
     if (!improved) break;
   }
 
+  if (trace) trace.nearestVertex = bestV;
   return bestV;
 }
 
 // ---------- Conversion ----------
+
+/** Convert a vertex index in a FlatDelaunay to lat/lon degrees. */
+export function vertexLatLon(
+  fd: FlatDelaunay,
+  vertex: number,
+): { lat: number; lon: number } {
+  const vi = vertex * 3;
+  const vp = fd.vertexPoints;
+  const point: Point3D = [vp[vi], vp[vi + 1], vp[vi + 2]];
+  return toLatLon(point);
+}
 
 /** Convert a TriangulationFile's flat number arrays to typed arrays. */
 export function toFlatDelaunay(data: TriangulationFile): FlatDelaunay {
@@ -250,6 +312,7 @@ export class NearestQuery {
     startTriangle?: number,
     opts?: FindNearestOptions,
   ): { results: QueryResult[]; lastTriangle: number } {
+    const trace = opts?.trace;
     const [qx, qy, qz] = toCartesian({ lat, lon });
     const nearestIdx = flatFindNearest(
       this.fd,
@@ -257,6 +320,7 @@ export class NearestQuery {
       qy,
       qz,
       startTriangle ?? this.defaultTriangle,
+      trace,
     );
 
     // lastTriangle is the walk-start optimization for the next query —
@@ -266,7 +330,15 @@ export class NearestQuery {
     const minWeight = opts?.minWeight;
     if (minWeight !== undefined) {
       return {
-        results: this.collectFiltered(nearestIdx, k, minWeight, qx, qy, qz),
+        results: this.collectFiltered(
+          nearestIdx,
+          k,
+          minWeight,
+          qx,
+          qy,
+          qz,
+          trace,
+        ),
         lastTriangle,
       };
     }
@@ -303,6 +375,7 @@ export class NearestQuery {
       for (const nIdx of flatNeighbors(this.fd, current)) {
         if (visited.has(nIdx)) continue;
         visited.add(nIdx);
+        if (trace) trace.bfsVertices.push(nIdx);
         candidates.push({
           idx: nIdx,
           d: dist(this.fd.vertexPoints, nIdx * 3, qx, qy, qz),
@@ -333,6 +406,7 @@ export class NearestQuery {
     qx: number,
     qy: number,
     qz: number,
+    trace?: WalkTrace,
   ): QueryResult[] {
     const vp = this.fd.vertexPoints;
     const visited = new Set<number>([seedIdx]);
@@ -361,6 +435,7 @@ export class NearestQuery {
       for (const nIdx of flatNeighbors(this.fd, current)) {
         if (visited.has(nIdx)) continue;
         visited.add(nIdx);
+        if (trace) trace.bfsVertices.push(nIdx);
         if ((this.articles[nIdx].weight ?? 0) >= minWeight) {
           candidates.push({ idx: nIdx, d: dist(vp, nIdx * 3, qx, qy, qz) });
         }
@@ -380,14 +455,29 @@ export class NearestQuery {
     qy: number,
     qz: number,
   ): QueryResult {
-    const vi = vIdx * 3;
-    const vp = this.fd.vertexPoints;
+    const { lat, lon } = vertexLatLon(this.fd, vIdx);
     return {
       title: this.articles[vIdx].title,
-      lat: Math.asin(Math.max(-1, Math.min(1, vp[vi + 2]))) * RAD_TO_DEG,
-      lon: Math.atan2(vp[vi + 1], vp[vi]) * RAD_TO_DEG,
-      distanceM: dist(vp, vi, qx, qy, qz) * EARTH_RADIUS_M,
+      lat,
+      lon,
+      distanceM:
+        dist(this.fd.vertexPoints, vIdx * 3, qx, qy, qz) * EARTH_RADIUS_M,
       weight: this.articles[vIdx].weight ?? 0,
     };
+  }
+
+  /** The underlying triangulation arrays. Callers must not mutate them. */
+  get delaunay(): FlatDelaunay {
+    return this.fd;
+  }
+
+  /** Title of the article at a vertex index. */
+  articleTitle(vertex: number): string {
+    return this.articles[vertex].title;
+  }
+
+  /** Weight class of the article at a vertex index; 0 when absent. */
+  articleWeight(vertex: number): number {
+    return this.articles[vertex].weight ?? 0;
   }
 }
