@@ -1,0 +1,894 @@
+// X-ray overlay: a Leaflet canvas overlay + control panel that visualises the
+// tile grid, per-tile Delaunay mesh, buffer zones, and the nearest-neighbour
+// triangle walk. Pure presentation — it reads everything it needs through the
+// injected XRayDeps and never reaches into app state directly.
+
+import L from "leaflet";
+import type { FlatDelaunay } from "../geometry";
+import type { TileEntry } from "../tiles";
+import type { NearestQuery, QueryResult, WalkTrace } from "./query";
+import { createWalkTrace, vertexLatLon } from "./query";
+import type { GeoBounds, WalkTimeline } from "./xray-geometry";
+import {
+  meshSegments,
+  phaseIndex,
+  tileBufferRing,
+  tileCoreBounds,
+  tileHueIndex,
+  walkTimeline,
+} from "./xray-geometry";
+
+// ---------- Public surface ----------
+
+export interface XRayQueryContext {
+  position: { lat: number; lon: number };
+  k: number;
+  minWeight?: number;
+}
+
+export interface XRayDeps {
+  /** Loaded per-tile query state, keyed by tile id. Null until ready. */
+  getLoadedTiles(): ReadonlyMap<string, NearestQuery> | null;
+  /** The full tile index, keyed by tile id. Null until loaded. */
+  getTileEntries(): ReadonlyMap<string, TileEntry> | null;
+  /** The current query (user position + k + optional weight floor). */
+  getQueryContext(): XRayQueryContext | null;
+  initialOpen: boolean;
+  storage: Pick<Storage, "getItem" | "setItem">;
+}
+
+export interface XRayHandle {
+  toggle(): void;
+  refresh(): void;
+  destroy(): void;
+}
+
+// ---------- Constants ----------
+
+const LAYERS_KEY = "tour-guide-xray-layers";
+
+/** Distinguishable hues that read on the OSM basemap, cycled per tile. */
+const PALETTE = [
+  "#e6194b", // crimson
+  "#3cb44b", // green
+  "#4363d8", // blue
+  "#f58231", // orange
+  "#911eb4", // purple
+  "#008080", // teal
+];
+
+/** App accent (matches the header / links). */
+const ACCENT = "#1a73e8";
+
+const GRID_COLOR = "#666";
+
+/** Below this zoom the mesh has too many segments to draw usefully. */
+const MESH_MIN_ZOOM = 6;
+
+const MOVE_DEBOUNCE_MS = 150;
+
+const POS_EPSILON = 1e-6;
+
+interface LayerState {
+  mesh: boolean;
+  grid: boolean;
+  buffers: boolean;
+  walk: boolean;
+}
+
+const DEFAULT_LAYERS: LayerState = {
+  mesh: true,
+  grid: false,
+  buffers: false,
+  walk: true,
+};
+
+// ---------- Persistence ----------
+
+function loadLayerState(storage: Pick<Storage, "getItem">): LayerState {
+  try {
+    const raw = storage.getItem(LAYERS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<LayerState>;
+      return {
+        mesh:
+          typeof parsed.mesh === "boolean" ? parsed.mesh : DEFAULT_LAYERS.mesh,
+        grid:
+          typeof parsed.grid === "boolean" ? parsed.grid : DEFAULT_LAYERS.grid,
+        buffers:
+          typeof parsed.buffers === "boolean"
+            ? parsed.buffers
+            : DEFAULT_LAYERS.buffers,
+        walk:
+          typeof parsed.walk === "boolean" ? parsed.walk : DEFAULT_LAYERS.walk,
+      };
+    }
+  } catch {
+    /* ignore malformed / unavailable storage */
+  }
+  return { ...DEFAULT_LAYERS };
+}
+
+function saveLayerState(
+  storage: Pick<Storage, "setItem">,
+  state: LayerState,
+): void {
+  try {
+    storage.setItem(LAYERS_KEY, JSON.stringify(state));
+  } catch {
+    /* ignore quota / unavailable storage */
+  }
+}
+
+// ---------- Small helpers ----------
+
+/** "1 hop", "2 hops" — regular plural for the status readout. */
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+function parseTileId(id: string): { row: number; col: number } {
+  const [row, col] = id.split("-").map(Number);
+  return { row, col };
+}
+
+/** Centre longitude of a tile, used to unwrap its mesh around the seam. */
+function tileCenterLon(col: number): number {
+  return col * 5 - 180 + 2.5;
+}
+
+function colorForTile(id: string): string {
+  return PALETTE[tileHueIndex(id, PALETTE.length)];
+}
+
+function rectRing(b: GeoBounds): L.LatLngTuple[] {
+  return [
+    [b.south, b.west],
+    [b.north, b.west],
+    [b.north, b.east],
+    [b.south, b.east],
+  ];
+}
+
+function boundsToGeo(b: L.LatLngBounds): GeoBounds {
+  return {
+    south: b.getSouth(),
+    west: b.getWest(),
+    north: b.getNorth(),
+    east: b.getEast(),
+  };
+}
+
+function geoToLatLngBounds(b: GeoBounds): L.LatLngBounds {
+  return L.latLngBounds([b.south, b.west], [b.north, b.east]);
+}
+
+function debounce(
+  fn: () => void,
+  ms: number,
+): (() => void) & { cancel(): void } {
+  let handle: ReturnType<typeof setTimeout> | null = null;
+  const wrapped = () => {
+    if (handle) clearTimeout(handle);
+    handle = setTimeout(() => {
+      handle = null;
+      fn();
+    }, ms);
+  };
+  wrapped.cancel = () => {
+    if (handle) {
+      clearTimeout(handle);
+      handle = null;
+    }
+  };
+  return wrapped;
+}
+
+// ---------- Walk animation state ----------
+
+interface TileWalk {
+  id: string;
+  query: NearestQuery;
+  trace: WalkTrace;
+  best?: QueryResult;
+}
+
+interface TileAnim {
+  fd: FlatDelaunay;
+  hue: string;
+  trace: WalkTrace;
+  isWinner: boolean;
+  locN: number;
+  desN: number;
+  bfsN: number;
+  trailPoly: L.Polygon;
+  currentPoly: L.Polygon;
+  descentLine: L.Polyline;
+  descentDots: L.CircleMarker[];
+  bfsDots: L.CircleMarker[];
+  pulse: L.CircleMarker | null;
+  // Last-rendered counts, so per-frame work skips unchanged geometry.
+  lastLoc: number;
+  lastDes: number;
+  lastBfs: number;
+}
+
+// ---------- Factory ----------
+
+export function createXRayOverlay(map: L.Map, deps: XRayDeps): XRayHandle {
+  // A dedicated pane above overlays (400) and below markers (600), with one
+  // shared canvas renderer for the whole mesh — SVG would choke on it.
+  const pane = map.createPane("xray");
+  pane.style.zIndex = "450";
+  const renderer = L.canvas({ pane: "xray" });
+
+  const layerState = loadLayerState(deps.storage);
+
+  const meshGroup = L.layerGroup();
+  const gridGroup = L.layerGroup();
+  const bufferGroup = L.layerGroup();
+  const walkGroup = L.layerGroup();
+
+  // Per-tile mesh cache, invalidated by the viewport epoch (mesh geometry
+  // depends on the clip rectangle, not on the query position).
+  const meshCache = new Map<string, { layer: L.Polyline; epoch: number }>();
+  let viewportEpoch = 0;
+
+  let gridBuiltKey = "";
+  let bufferBuiltKey = "";
+
+  let open = false;
+  let statusEl: HTMLElement | null = null;
+  const checkboxes: Partial<Record<keyof LayerState, HTMLInputElement>> = {};
+
+  let rafToken: number | null = null;
+  let animTiles: TileAnim[] = [];
+  let animStart: number | null = null;
+  let animTiming: WalkTimeline | null = null;
+  let lastWalkPos: { lat: number; lon: number } | null = null;
+
+  const control = new L.Control({ position: "bottomleft" });
+
+  // ---------- Status ----------
+
+  function setStatus(text: string): void {
+    if (statusEl) statusEl.textContent = text;
+  }
+
+  // ---------- Padded viewport ----------
+
+  function paddedViewport(): L.LatLngBounds {
+    return map.getBounds().pad(0.2);
+  }
+
+  // ---------- Mesh ----------
+
+  function reconcileMesh(
+    loaded: ReadonlyMap<string, NearestQuery> | null,
+  ): void {
+    if (map.getZoom() < MESH_MIN_ZOOM) {
+      meshGroup.clearLayers();
+      meshCache.clear();
+      return;
+    }
+    if (!loaded) {
+      meshGroup.clearLayers();
+      meshCache.clear();
+      return;
+    }
+
+    const view = paddedViewport();
+    const wanted = new Set<string>();
+
+    for (const [id, query] of loaded) {
+      const { row, col } = parseTileId(id);
+      const core = geoToLatLngBounds(tileCoreBounds(row, col));
+      if (!view.intersects(core)) continue;
+      wanted.add(id);
+
+      const cached = meshCache.get(id);
+      if (cached && cached.epoch === viewportEpoch) continue;
+      if (cached) {
+        meshGroup.removeLayer(cached.layer);
+      }
+
+      const segments = meshSegments(query.delaunay, {
+        unwrapLon: tileCenterLon(col),
+        clip: boundsToGeo(view),
+      });
+      const layer = L.polyline(segments, {
+        renderer,
+        color: colorForTile(id),
+        weight: 1,
+        opacity: 0.55,
+        interactive: false,
+      });
+      meshGroup.addLayer(layer);
+      meshCache.set(id, { layer, epoch: viewportEpoch });
+    }
+
+    // Drop meshes for tiles no longer loaded or no longer in view.
+    for (const [id, entry] of meshCache) {
+      if (!wanted.has(id)) {
+        meshGroup.removeLayer(entry.layer);
+        meshCache.delete(id);
+      }
+    }
+  }
+
+  // ---------- Tile grid ----------
+
+  function reconcileGrid(
+    loaded: ReadonlyMap<string, NearestQuery> | null,
+    entries: ReadonlyMap<string, TileEntry> | null,
+  ): void {
+    if (!entries) {
+      gridGroup.clearLayers();
+      gridBuiltKey = "";
+      return;
+    }
+    const loadedKey = loaded ? [...loaded.keys()].sort().join(",") : "";
+    const key = `${viewportEpoch}|${loadedKey}`;
+    if (key === gridBuiltKey) return;
+    gridBuiltKey = key;
+
+    gridGroup.clearLayers();
+    const view = paddedViewport();
+
+    for (const entry of entries.values()) {
+      const core = tileCoreBounds(entry.row, entry.col);
+      const llBounds = geoToLatLngBounds(core);
+      if (!view.intersects(llBounds)) continue;
+
+      const rect = L.rectangle(llBounds, {
+        renderer,
+        color: GRID_COLOR,
+        weight: 1,
+        fill: false,
+        dashArray: "4 4",
+        interactive: true,
+      });
+      rect.bindTooltip(
+        `${entry.id} · ${entry.articles.toLocaleString()} articles · ${Math.round(
+          entry.bytes / 1024,
+        )} kB`,
+      );
+      gridGroup.addLayer(rect);
+
+      if (loaded && loaded.has(entry.id)) {
+        gridGroup.addLayer(
+          L.rectangle(llBounds, {
+            renderer,
+            color: ACCENT,
+            weight: 2,
+            fill: true,
+            fillOpacity: 0.06,
+            interactive: false,
+          }),
+        );
+      }
+    }
+  }
+
+  // ---------- Buffer zones ----------
+
+  function reconcileBuffers(
+    loaded: ReadonlyMap<string, NearestQuery> | null,
+  ): void {
+    const loadedKey = loaded ? [...loaded.keys()].sort().join(",") : "";
+    if (loadedKey === bufferBuiltKey) return;
+    bufferBuiltKey = loadedKey;
+
+    bufferGroup.clearLayers();
+    if (!loaded) return;
+
+    for (const id of loaded.keys()) {
+      const { row, col } = parseTileId(id);
+      const { outer, inner } = tileBufferRing(row, col);
+      const polygon = L.polygon([rectRing(outer), rectRing(inner)], {
+        renderer,
+        stroke: false,
+        fill: true,
+        fillColor: colorForTile(id),
+        fillOpacity: 0.15,
+        interactive: false,
+      });
+      bufferGroup.addLayer(polygon);
+    }
+  }
+
+  // ---------- Group membership ----------
+
+  function updateGroupMembership(): void {
+    const groups: [keyof LayerState, L.LayerGroup][] = [
+      ["mesh", meshGroup],
+      ["grid", gridGroup],
+      ["buffers", bufferGroup],
+      ["walk", walkGroup],
+    ];
+    for (const [keyName, group] of groups) {
+      const shouldShow = open && layerState[keyName];
+      if (shouldShow && !map.hasLayer(group)) {
+        group.addTo(map);
+      } else if (!shouldShow && map.hasLayer(group)) {
+        map.removeLayer(group);
+      }
+    }
+  }
+
+  // ---------- Walk animation ----------
+
+  function cancelWalkAnimation(): void {
+    if (rafToken !== null) {
+      cancelAnimationFrame(rafToken);
+      rafToken = null;
+    }
+    animTiles = [];
+    animStart = null;
+    animTiming = null;
+  }
+
+  function triangleRing(fd: FlatDelaunay, tri: number): L.LatLngTuple[] {
+    if (tri < 0 || tri * 3 + 2 >= fd.triangleVertices.length) return [];
+    const ring: L.LatLngTuple[] = [];
+    const base = tri * 3;
+    for (let e = 0; e < 3; e++) {
+      const v = fd.triangleVertices[base + e];
+      const ll = vertexLatLon(fd, v);
+      ring.push([ll.lat, ll.lon]);
+    }
+    return ring;
+  }
+
+  function startWalk(): void {
+    cancelWalkAnimation();
+    walkGroup.clearLayers();
+
+    const ctx = deps.getQueryContext();
+    if (!ctx) {
+      setStatus("no query yet");
+      return;
+    }
+    const loaded = deps.getLoadedTiles();
+    if (!loaded || loaded.size === 0) {
+      setStatus("no query yet");
+      return;
+    }
+
+    const walks: TileWalk[] = [];
+    for (const [id, query] of loaded) {
+      const trace = createWalkTrace();
+      const { results } = query.findNearest(
+        ctx.position.lat,
+        ctx.position.lon,
+        ctx.k,
+        undefined,
+        { minWeight: ctx.minWeight, trace },
+      );
+      walks.push({ id, query, trace, best: results[0] });
+    }
+
+    const scored = walks.filter(
+      (w): w is TileWalk & { best: QueryResult } => w.best !== undefined,
+    );
+    if (scored.length === 0) {
+      setStatus("no results");
+      return;
+    }
+    let winner = scored[0];
+    for (const w of scored) {
+      if (w.best.distanceM < winner.best.distanceM) winner = w;
+    }
+
+    // Status is known up-front from the winning tile's trace.
+    const locateHops = winner.trace.locateTriangles.length;
+    const descentSteps = winner.trace.descentVertices.length;
+    let status = `found in ${plural(locateHops, "hop")} + ${plural(
+      descentSteps,
+      "step",
+    )} · ${plural(scored.length, "tile")} searched`;
+    if (winner.trace.usedBruteForce) status += " · cycle → brute force";
+    setStatus(status);
+
+    // Build per-tile animation layers (drawn incrementally by the rAF loop).
+    animTiles = walks.map((w) => {
+      const isWinner = w === winner;
+      const op = isWinner ? 1 : 0.35;
+      const hue = colorForTile(w.id);
+
+      const trailPoly = L.polygon([], {
+        renderer,
+        stroke: false,
+        fill: true,
+        fillColor: hue,
+        fillOpacity: 0.1 * op,
+        interactive: false,
+      });
+      const currentPoly = L.polygon([], {
+        renderer,
+        color: hue,
+        weight: 1,
+        opacity: 0.9 * op,
+        fill: true,
+        fillColor: hue,
+        fillOpacity: 0.45 * op,
+        interactive: false,
+      });
+      const descentLine = L.polyline([], {
+        renderer,
+        color: hue,
+        weight: 2,
+        opacity: 0.85 * op,
+        interactive: false,
+      });
+      trailPoly.addTo(walkGroup);
+      currentPoly.addTo(walkGroup);
+      descentLine.addTo(walkGroup);
+
+      let pulse: L.CircleMarker | null = null;
+      if (isWinner && w.best) {
+        pulse = L.circleMarker([w.best.lat, w.best.lon], {
+          renderer,
+          color: ACCENT,
+          weight: 2,
+          fillColor: ACCENT,
+          fillOpacity: 0.3,
+          radius: 6,
+          interactive: false,
+        });
+        pulse.addTo(walkGroup);
+      }
+
+      return {
+        fd: w.query.delaunay,
+        hue,
+        trace: w.trace,
+        isWinner,
+        locN: w.trace.locateTriangles.length,
+        desN: w.trace.descentVertices.length,
+        bfsN: w.trace.bfsVertices.length,
+        trailPoly,
+        currentPoly,
+        descentLine,
+        descentDots: [],
+        bfsDots: [],
+        pulse,
+        lastLoc: -1,
+        lastDes: -1,
+        lastBfs: -1,
+      } satisfies TileAnim;
+    });
+
+    // Phase DURATIONS come from the winning tile's counts (the path the user
+    // follows and the one the status line reports), so the replay length is
+    // bounded regardless of how large any non-winner tile's trace is. Each tile
+    // then maps elapsed → its own step index proportionally (see stepWalk).
+    animTiming = walkTimeline({
+      locate: winner.trace.locateTriangles.length,
+      descent: winner.trace.descentVertices.length,
+      bfs: winner.trace.bfsVertices.length,
+    });
+    animStart = null;
+    rafToken = requestAnimationFrame(stepWalk);
+  }
+
+  function dotMarker(
+    lat: number,
+    lon: number,
+    hue: string,
+    op: number,
+    bfs: boolean,
+  ): L.CircleMarker {
+    return L.circleMarker([lat, lon], {
+      renderer,
+      radius: bfs ? 2.5 : 3,
+      color: hue,
+      weight: bfs ? 1 : 0,
+      opacity: (bfs ? 0.5 : 0.9) * op,
+      fillColor: hue,
+      fillOpacity: (bfs ? 0.25 : 0.9) * op,
+      interactive: false,
+    });
+  }
+
+  // --- Locate phase: bright current triangle + faint trail of visited.
+  function renderLocate(t: TileAnim, locCount: number): void {
+    if (locCount === t.lastLoc) return;
+    t.lastLoc = locCount;
+    const fd = t.fd;
+    if (locCount <= 0) {
+      t.currentPoly.setLatLngs([]);
+      t.trailPoly.setLatLngs([]);
+      return;
+    }
+    const trail: L.LatLngTuple[][][] = [];
+    if (locCount < t.locN) {
+      const curIdx = locCount - 1;
+      t.currentPoly.setLatLngs(
+        triangleRing(fd, t.trace.locateTriangles[curIdx]),
+      );
+      for (let i = 0; i < curIdx; i++) {
+        trail.push([triangleRing(fd, t.trace.locateTriangles[i])]);
+      }
+    } else {
+      // Phase complete: current triangle clears, full faint trail remains.
+      t.currentPoly.setLatLngs([]);
+      for (let i = 0; i < t.locN; i++) {
+        trail.push([triangleRing(fd, t.trace.locateTriangles[i])]);
+      }
+    }
+    t.trailPoly.setLatLngs(trail);
+  }
+
+  // --- Descent phase: growing polyline + a dot per visited vertex.
+  function renderDescent(t: TileAnim, desCount: number): void {
+    if (t.desN <= 0 || desCount === t.lastDes) return;
+    t.lastDes = desCount;
+    if (desCount <= 0) return;
+    const fd = t.fd;
+    const op = t.isWinner ? 1 : 0.35;
+    const pts: L.LatLngTuple[] = [];
+    for (let i = 0; i < desCount; i++) {
+      const ll = vertexLatLon(fd, t.trace.descentVertices[i]);
+      pts.push([ll.lat, ll.lon]);
+    }
+    t.descentLine.setLatLngs(pts);
+    while (t.descentDots.length < desCount) {
+      const ll = vertexLatLon(
+        fd,
+        t.trace.descentVertices[t.descentDots.length],
+      );
+      const m = dotMarker(ll.lat, ll.lon, t.hue, op, false);
+      m.addTo(walkGroup);
+      t.descentDots.push(m);
+    }
+  }
+
+  // --- BFS phase: circle markers fading in for the k-NN expansion.
+  function renderBfs(t: TileAnim, bfsCount: number): void {
+    if (t.bfsN <= 0 || bfsCount === t.lastBfs) return;
+    t.lastBfs = bfsCount;
+    const fd = t.fd;
+    const op = t.isWinner ? 1 : 0.35;
+    while (t.bfsDots.length < bfsCount) {
+      const ll = vertexLatLon(fd, t.trace.bfsVertices[t.bfsDots.length]);
+      const m = dotMarker(ll.lat, ll.lon, t.hue, op, true);
+      m.addTo(walkGroup);
+      t.bfsDots.push(m);
+    }
+  }
+
+  function updatePulse(t: TileAnim, elapsed: number): void {
+    if (!t.pulse || !animTiming) return;
+    const ps = elapsed - animTiming.bfsEnd;
+    if (ps <= 0) return;
+    const pulseDur = animTiming.totalEnd - animTiming.bfsEnd;
+    const wave = Math.abs(Math.sin((ps / pulseDur) * Math.PI * 2));
+    t.pulse.setRadius(6 + 8 * wave);
+    t.pulse.setStyle({
+      fillOpacity: 0.15 + 0.35 * wave,
+      opacity: 0.4 + 0.5 * wave,
+    });
+  }
+
+  function settleTile(t: TileAnim): void {
+    renderLocate(t, t.locN);
+    renderDescent(t, t.desN);
+    renderBfs(t, t.bfsN);
+    if (t.pulse) {
+      t.pulse.setRadius(7);
+      t.pulse.setStyle({ fillOpacity: 0.3, opacity: 0.9 });
+    }
+  }
+
+  function stepWalk(ts: number): void {
+    if (animStart === null) animStart = ts;
+    const timing = animTiming;
+    if (!timing) return;
+    const elapsed = ts - animStart;
+
+    // Each tile interpolates its own trace across the shared phase windows, so
+    // a huge non-winner trace advances many steps per frame rather than
+    // stretching the clock. renderLocate/Descent/Bfs draw incrementally from
+    // their last index up to the new one, so every hop is still drawn.
+    const descentDur = timing.descentEnd - timing.locateEnd;
+    const bfsDur = timing.bfsEnd - timing.descentEnd;
+    for (const t of animTiles) {
+      renderLocate(t, phaseIndex(elapsed, 0, timing.locateEnd, t.locN));
+      renderDescent(
+        t,
+        phaseIndex(elapsed, timing.locateEnd, descentDur, t.desN),
+      );
+      renderBfs(t, phaseIndex(elapsed, timing.descentEnd, bfsDur, t.bfsN));
+      if (t.isWinner) updatePulse(t, elapsed);
+    }
+
+    if (elapsed >= timing.totalEnd) {
+      // Settle every path at its final, fully-drawn state.
+      for (const t of animTiles) settleTile(t);
+      rafToken = null;
+      animStart = null;
+      return;
+    }
+    rafToken = requestAnimationFrame(stepWalk);
+  }
+
+  // ---------- Reconcile / refresh ----------
+
+  function reconcile(): void {
+    if (!open) return;
+    const loaded = deps.getLoadedTiles();
+    const entries = deps.getTileEntries();
+
+    if (layerState.mesh) reconcileMesh(loaded);
+    else {
+      meshGroup.clearLayers();
+      meshCache.clear();
+    }
+    if (layerState.grid) reconcileGrid(loaded, entries);
+    if (layerState.buffers) reconcileBuffers(loaded);
+
+    updateGroupMembership();
+
+    if (layerState.walk) {
+      runWalk();
+    } else {
+      cancelWalkAnimation();
+      walkGroup.clearLayers();
+    }
+
+    // When the walk layer isn't driving the readout, fall back to a mesh hint.
+    if (!layerState.walk) {
+      if (layerState.mesh && map.getZoom() < MESH_MIN_ZOOM) {
+        setStatus("zoom in for mesh");
+      } else {
+        setStatus("");
+      }
+    }
+  }
+
+  function runWalk(): void {
+    const ctx = deps.getQueryContext();
+    if (!ctx) {
+      cancelWalkAnimation();
+      walkGroup.clearLayers();
+      setStatus("no query yet");
+      lastWalkPos = null;
+      return;
+    }
+    const moved =
+      !lastWalkPos ||
+      Math.abs(lastWalkPos.lat - ctx.position.lat) > POS_EPSILON ||
+      Math.abs(lastWalkPos.lon - ctx.position.lon) > POS_EPSILON;
+    const empty = walkGroup.getLayers().length === 0;
+    if (moved || empty) {
+      lastWalkPos = { lat: ctx.position.lat, lon: ctx.position.lon };
+      startWalk();
+    }
+  }
+
+  // ---------- Panel DOM ----------
+
+  function buildPanel(): HTMLElement {
+    const root = document.createElement("div");
+    root.className = "xray-panel";
+
+    const header = document.createElement("div");
+    header.className = "xray-panel-header";
+    const title = document.createElement("span");
+    title.className = "xray-panel-title";
+    title.textContent = "X-ray";
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "xray-panel-close";
+    closeBtn.setAttribute("aria-label", "Close X-ray panel");
+    closeBtn.textContent = "×";
+    closeBtn.addEventListener("click", () => close());
+    header.append(title, closeBtn);
+    root.append(header);
+
+    const rows: [keyof LayerState, string][] = [
+      ["mesh", "Mesh"],
+      ["grid", "Tile grid"],
+      ["buffers", "Buffer zones"],
+      ["walk", "Walk"],
+    ];
+    for (const [keyName, label] of rows) {
+      const row = document.createElement("label");
+      row.className = "xray-row";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = layerState[keyName];
+      cb.addEventListener("change", () => {
+        layerState[keyName] = cb.checked;
+        saveLayerState(deps.storage, layerState);
+        // Force the affected layer to rebuild from scratch.
+        if (keyName === "grid") gridBuiltKey = "";
+        if (keyName === "buffers") bufferBuiltKey = "";
+        reconcile();
+      });
+      checkboxes[keyName] = cb;
+      const text = document.createElement("span");
+      text.textContent = label;
+      row.append(cb, text);
+      root.append(row);
+    }
+
+    const replay = document.createElement("button");
+    replay.type = "button";
+    replay.className = "xray-replay";
+    replay.textContent = "Replay walk";
+    replay.addEventListener("click", () => {
+      if (!layerState.walk) {
+        layerState.walk = true;
+        saveLayerState(deps.storage, layerState);
+        if (checkboxes.walk) checkboxes.walk.checked = true;
+        updateGroupMembership();
+      }
+      lastWalkPos = deps.getQueryContext()?.position ?? null;
+      startWalk();
+    });
+    root.append(replay);
+
+    const status = document.createElement("div");
+    status.className = "xray-status";
+    root.append(status);
+    statusEl = status;
+
+    L.DomEvent.disableClickPropagation(root);
+    L.DomEvent.disableScrollPropagation(root);
+    return root;
+  }
+
+  // ---------- Open / close ----------
+
+  const onMove = debounce(() => {
+    viewportEpoch++;
+    reconcile();
+  }, MOVE_DEBOUNCE_MS);
+
+  function open_(): void {
+    if (open) return;
+    open = true;
+    const panel = buildPanel();
+    control.onAdd = () => panel;
+    control.addTo(map);
+    map.on("moveend zoomend", onMove);
+    viewportEpoch++;
+    reconcile();
+  }
+
+  function close(): void {
+    if (!open) return;
+    open = false;
+    cancelWalkAnimation();
+    map.off("moveend zoomend", onMove);
+    onMove.cancel();
+    for (const group of [meshGroup, gridGroup, bufferGroup, walkGroup]) {
+      if (map.hasLayer(group)) map.removeLayer(group);
+      group.clearLayers();
+    }
+    meshCache.clear();
+    gridBuiltKey = "";
+    bufferBuiltKey = "";
+    lastWalkPos = null;
+    control.remove();
+    statusEl = null;
+  }
+
+  if (deps.initialOpen) open_();
+
+  return {
+    toggle(): void {
+      if (open) close();
+      else open_();
+    },
+    refresh(): void {
+      if (!open) return;
+      reconcile();
+    },
+    destroy(): void {
+      close();
+    },
+  };
+}

@@ -15,11 +15,24 @@ export interface BrowseMapHandle {
   destroy(): void;
 }
 
+/** The slice of the X-ray overlay the browse map drives. */
+export interface BrowseMapXRay {
+  toggle(): void;
+  refresh(): void;
+  destroy(): void;
+}
+
+export interface BrowseMapOptions {
+  /** Attach an X-ray overlay to the underlying Leaflet map. */
+  attachXRay?: (map: L.Map) => BrowseMapXRay;
+}
+
 export function createBrowseMap(
   container: HTMLElement,
   position: UserPosition,
   articles: NearbyArticle[],
   onSelectArticle: (article: NearbyArticle) => void,
+  options?: BrowseMapOptions,
 ): BrowseMapHandle {
   const wb = worldZoomBounds();
   const map = L.map(container, {
@@ -41,6 +54,13 @@ export function createBrowseMap(
   const userMarker = L.marker([position.lat, position.lon], {
     icon: locationPinIcon,
   }).addTo(map);
+
+  const xray = options?.attachXRay?.(map);
+  if (xray) {
+    // Right-click on desktop / long-press on mobile toggles the X-ray panel.
+    // Leaflet suppresses the native context menu while a listener is attached.
+    map.on("contextmenu", () => xray.toggle());
+  }
 
   let articleMarkers = new Map<string, L.Marker>();
   let highlightedTitle: string | null = null;
@@ -85,6 +105,8 @@ export function createBrowseMap(
         currentTitles = newTitles;
         fitToMarkers(newPosition, newArticles);
       }
+      // Position / article set may have changed which tiles are loaded.
+      xray?.refresh();
     },
     highlight(title) {
       // Remove previous highlight
@@ -110,6 +132,7 @@ export function createBrowseMap(
     },
     destroy() {
       removeResizeHandler();
+      xray?.destroy();
       map.remove();
     },
   };

@@ -56,6 +56,7 @@ const mocks = (L as any)._mocks as {
     setView: ReturnType<typeof vi.fn>;
     fitBounds: ReturnType<typeof vi.fn>;
     remove: ReturnType<typeof vi.fn>;
+    on: ReturnType<typeof vi.fn>;
     off: ReturnType<typeof vi.fn>;
   };
 };
@@ -388,6 +389,76 @@ describe("createBrowseMap", () => {
       const offOrder = mocks.mockMap.off.mock.invocationCallOrder[0];
       const removeOrder = mocks.mockMap.remove.mock.invocationCallOrder[0];
       expect(offOrder).toBeLessThan(removeOrder);
+    });
+  });
+
+  describe("X-ray overlay wiring", () => {
+    function makeXRay() {
+      return { toggle: vi.fn(), refresh: vi.fn(), destroy: vi.fn() };
+    }
+
+    it("attaches the overlay to the underlying map", () => {
+      const xray = makeXRay();
+      const attachXRay = vi.fn(() => xray);
+      const handle = createBrowseMap(container, pos(48, 2), [], vi.fn(), {
+        attachXRay,
+      });
+
+      expect(attachXRay).toHaveBeenCalledWith(mocks.mockMap);
+      handle.destroy();
+    });
+
+    it("toggles the overlay on map contextmenu (right-click / long-press)", () => {
+      const xray = makeXRay();
+      const handle = createBrowseMap(container, pos(48, 2), [], vi.fn(), {
+        attachXRay: () => xray,
+      });
+
+      const contextHandler = mocks.mockMap.on.mock.calls.find(
+        (call: unknown[]) => call[0] === "contextmenu",
+      )?.[1] as (() => void) | undefined;
+      expect(contextHandler).toBeDefined();
+      contextHandler!();
+
+      expect(xray.toggle).toHaveBeenCalledTimes(1);
+      handle.destroy();
+    });
+
+    it("refreshes the overlay when the map updates", () => {
+      const xray = makeXRay();
+      const handle = createBrowseMap(container, pos(48, 2), [], vi.fn(), {
+        attachXRay: () => xray,
+      });
+
+      handle.update(pos(49, 3), []);
+
+      expect(xray.refresh).toHaveBeenCalled();
+      handle.destroy();
+    });
+
+    it("destroys the overlay before removing the map", () => {
+      const xray = makeXRay();
+      const handle = createBrowseMap(container, pos(48, 2), [], vi.fn(), {
+        attachXRay: () => xray,
+      });
+
+      handle.destroy();
+
+      expect(xray.destroy).toHaveBeenCalledTimes(1);
+      const destroyOrder = xray.destroy.mock.invocationCallOrder[0];
+      const removeOrder = mocks.mockMap.remove.mock.invocationCallOrder[0];
+      expect(destroyOrder).toBeLessThan(removeOrder);
+    });
+
+    it("does not bind contextmenu or fail when no overlay is attached", () => {
+      const handle = createBrowseMap(container, pos(48, 2), [], vi.fn());
+
+      const boundContextmenu = mocks.mockMap.on.mock.calls.some(
+        (call: unknown[]) => call[0] === "contextmenu",
+      );
+      expect(boundContextmenu).toBe(false);
+      expect(() => handle.update(pos(49, 3), [])).not.toThrow();
+      expect(() => handle.destroy()).not.toThrow();
     });
   });
 });
