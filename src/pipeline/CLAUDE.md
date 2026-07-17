@@ -1,8 +1,22 @@
 # Pipeline & Extraction
 
+## Pageviews
+
+`npm run pageviews` downloads the monthly Wikimedia `pageview_complete` "user" dump (one ~6 GB bz2 covering all wikis) and splits it into small gzipped per-language TSVs under `data/pageviews/` (`pageviews-YYYYMM-{lang}.tsv.gz`, `page_id\tviews`, access methods summed). The multi-GB dump is streamed through `lbzip2`/`bzip2` and never written to disk.
+
+```bash
+# All supported languages, newest complete month
+npm run pageviews
+
+# Specific languages and month
+npm run pageviews -- --langs=en,sv --month=2026-06
+```
+
+Month defaults to the newest **complete** month, auto-resolved by HEAD-probing up to 3 months back.
+
 ## Extraction
 
-`npm run extract` downloads Wikipedia SQL dumps (`geo_tags`, `page`) and joins them to produce the full set of geotagged articles. This captures articles with coordinates via `{{coord}}` templates that may not be mirrored to Wikidata. Descriptions are fetched on demand by the app at runtime via the Wikipedia REST API.
+`npm run extract` downloads Wikipedia SQL dumps (`geo_tags`, `page`) and joins them to produce the full set of geotagged articles, then joins monthly pageviews onto each article by `page_id` (calling the pageviews step above automatically unless `--skip-download` is set). This captures articles with coordinates via `{{coord}}` templates that may not be mirrored to Wikidata. Descriptions are fetched on demand by the app at runtime via the Wikipedia REST API.
 
 Dump files are downloaded to `data/dumps/` and cached across runs. A full English extraction fetches ~1.2M articles.
 
@@ -10,11 +24,17 @@ Dump files are downloaded to `data/dumps/` and cached across runs. A full Englis
 # Full extraction
 npm run extract -- --lang=en
 
-# Skip download (reuse existing dumps)
+# Skip download (reuse existing dumps and pageviews file)
 npm run extract -- --lang=sv --skip-download
 
 # Geographic subset
 npm run extract -- --lang=en --bounds=5.73,49.44,6.53,50.19
+
+# Skip the pageviews join (faster, geo-only — all weights 0, Highlights empty)
+npm run extract -- --lang=en --no-pageviews
+
+# Pin the pageviews month instead of auto-resolving the newest
+npm run extract -- --lang=en --pageviews-month=2026-06
 
 # Inspect output
 head -3 data/articles-en.json
@@ -24,10 +44,10 @@ wc -l data/articles-en.json
 Output format (one JSON object per line):
 
 ```
-{"title":"Eiffel Tower","lat":48.8584,"lon":2.2945,"len":215625}
+{"title":"Eiffel Tower","lat":48.8584,"lon":2.2945,"views":512345}
 ```
 
-`len` is the article's page length in bytes (`page_len` from the page dump), used by the pipeline to derive a per-article weight class. It is omitted when `page_len` is missing or unparsable; such articles get weight 0 (unknown).
+`views` is the article's monthly pageview count, used by the pipeline to derive a per-article popularity-percentile weight class. It is omitted when zero or unmatched; such articles get weight 0 (unknown). Without `--skip-download`, extract ensures pageviews files exist for **all** supported languages in one pass (not just the language being extracted), so the 6 GB dump downloads once and is reused by every later `--lang=` run.
 
 ## Pipeline
 
@@ -52,16 +72,22 @@ Tile data is pipeline-generated and not checked into git. The app needs tiles in
 To generate tiles locally for a specific language:
 
 ```bash
-# Extract + build (downloads dumps on first run, ~5-15 min per language)
+# Extract + build (downloads dumps on first run, ~5-15 min per language;
+# the pageviews dump is a one-time ~6 GB download shared across every language)
 npm run extract -- --lang=de
 npm run pipeline -- --lang=de
 
-# Reuse cached dumps (faster, skips download)
+# Reuse cached dumps and pageviews file (faster, skips both downloads)
 npm run extract -- --lang=de --skip-download
 npm run pipeline -- --lang=de
 
 # Quick subset for testing (seconds instead of minutes)
 npm run extract -- --lang=de --bounds=5.73,49.44,6.53,50.19
+npm run pipeline -- --lang=de --bounds=5.73,49.44,6.53,50.19
+
+# Quick geo-only testing, skipping the pageviews download entirely
+# (all weights 0, so Highlights will be empty)
+npm run extract -- --lang=de --bounds=5.73,49.44,6.53,50.19 --no-pageviews
 npm run pipeline -- --lang=de --bounds=5.73,49.44,6.53,50.19
 ```
 
@@ -71,9 +97,10 @@ For browser testing with language switching, generate tiles for at least **en** 
 
 Data is refreshed automatically via GitHub Actions (`pipeline.yml`) on a monthly schedule or manual trigger. The workflow processes all 14 supported languages (from `SUPPORTED_LANGS` in `src/lang.ts`):
 
-1. **Extract** — Downloads Wikipedia SQL dumps and joins geo_tags/page for each language
-2. **Build** — Runs the pipeline to produce tiled output in `data/tiles/{lang}/`
-3. **Publish** — Uploads compressed tile archives to a `data-latest` GitHub Release
+1. **Pageviews** — Downloads and splits the monthly pageviews dump once, shared by every language
+2. **Extract** — Downloads Wikipedia SQL dumps, joins geo_tags/page, and joins the pre-split pageviews file for each language
+3. **Build** — Runs the pipeline to produce tiled output in `data/tiles/{lang}/`
+4. **Publish** — Uploads compressed tile archives to a `data-latest` GitHub Release
 
 Deployment (`deploy.yml`) is triggered manually via `workflow_dispatch`:
 

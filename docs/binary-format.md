@@ -59,7 +59,9 @@ This adjacency structure enables O(√N) triangle-walk point location — starti
 
 One weight class per vertex, in the same order as the vertex arrays. Begins at byte `24 + V*3*4 + V*4 + T*3*4 + T*3*4`.
 
-The weight encodes the Wikipedia article's page length (`page_len`, in bytes) on a logarithmic scale: `0` means unknown (no page length available), otherwise the value is `round(8 * log2(page_len))` clamped to `[1, 255]` (see `pageLenToWeight` in serialization.ts). For example, a 1 KiB stub maps to 80 and an 8 KiB article to 104; the scale saturates at 255 for pages of ~4 GB (2^31.875 bytes) and larger, so in practice all real articles fall well below the cap. Each step of 8 represents a doubling of page length. This lets the app prefer substantial articles over bot-generated stubs without storing the raw page length.
+The weight encodes the article's popularity **percentile** among all articles in the same language build, derived from Wikimedia monthly pageviews (see [data-extraction.md](data-extraction.md#pageviews)): `class = round(255 * belowCount / N)`, where `belowCount` is the number of articles in the build with strictly fewer views and `N` is the total article count (see `assignWeightClasses` in `src/pipeline/popularity.ts`). Articles with equal view counts share a class; `0` views (no recorded views, or the article wasn't matched during the pageviews join) always maps to class `0`.
+
+Because the scale is a percentile rather than a raw count, it self-calibrates per language: class `204` means "top 20% most-viewed" whether the build is English (over a million articles) or a small wiki dominated by bot-generated stubs. This lets the app apply one fixed threshold (`HIGHLIGHT_MIN_WEIGHT` in `src/app/config.ts`) across every language without per-language tuning. `--bounds`/`--limit` dev builds compute percentiles relative to the subset, not the full language.
 
 ## Articles Section
 

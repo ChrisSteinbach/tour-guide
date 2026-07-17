@@ -19,6 +19,7 @@ npm run build         # Production build → dist/app/
 npm run preview       # Preview production build locally
 npm run pipeline      # Run offline build pipeline (tsx src/pipeline/build.ts)
 npm run extract       # Extract geotagged articles from Wikipedia dumps → data/articles-{lang}.json (requires ~6 GB heap)
+npm run pageviews     # Download & split monthly Wikimedia pageviews dump → data/pageviews/ (~6 GB download, shared across languages)
 ```
 
 Run a single test file: `npx vitest run src/geometry/index.test.ts`
