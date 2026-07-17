@@ -1,6 +1,6 @@
 // Tile loading orchestration — fetches tile index and individual tiles on demand
 
-import { deserializeBinary } from "../geometry";
+import { deserializeBinary } from "spherical-delaunay";
 import {
   tileFor,
   tileId,

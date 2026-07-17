@@ -7,7 +7,7 @@
 // adapter. Drawing is skipped when a 2D context is unavailable
 // (jsdom), so interaction logic stays testable.
 
-import { initialBearing } from "../geometry/index";
+import { initialBearing } from "spherical-delaunay";
 import { formatDistance } from "./format";
 import {
   radarRange,

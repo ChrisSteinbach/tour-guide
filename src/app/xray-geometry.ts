@@ -3,8 +3,8 @@
 // No Leaflet, no DOM — just typed-array crunching over a FlatDelaunay plus
 // tile-rectangle math. Everything here is deterministic and unit-testable.
 
-import type { FlatDelaunay } from "../geometry";
-import { toLatLon } from "../geometry";
+import type { FlatDelaunay } from "spherical-delaunay";
+import { toLatLon } from "spherical-delaunay";
 import { BUFFER_DEG, GRID_DEG } from "../tiles";
 
 /**

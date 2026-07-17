@@ -3,7 +3,14 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   // Global ignores
-  { ignores: ["dist/", "data/", "node_modules/", "src/geometry/vendor/"] },
+  {
+    ignores: [
+      "dist/",
+      "data/",
+      "node_modules/",
+      "lib/spherical-delaunay/src/vendor/",
+    ],
+  },
 
   // Base JS recommended rules
   eslint.configs.recommended,

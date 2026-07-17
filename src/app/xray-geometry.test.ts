@@ -4,8 +4,8 @@ import {
   serialize,
   toCartesian,
   toFlatDelaunay,
-} from "../geometry";
-import type { FlatDelaunay, Point3D } from "../geometry";
+} from "spherical-delaunay";
+import type { FlatDelaunay, Point3D } from "spherical-delaunay";
 import {
   MAX_MESH_EDGE_RAD,
   meshSegments,
