@@ -9,7 +9,7 @@ import {
   loadTile,
 } from "./tile-loader";
 import type { TileLoaderDeps } from "./tile-loader";
-import { NearestQuery, toFlatDelaunay } from "./query";
+import { NearestQuery } from "./query";
 import type { TileIndex, TileEntry } from "../tiles";
 import { GRID_DEG } from "../tiles";
 import {
@@ -18,6 +18,7 @@ import {
   buildTriangulation,
   serialize,
   deserializeBinary,
+  toFlatDelaunay,
 } from "../geometry";
 import type { ArticleMeta, FlatDelaunay } from "../geometry";
 

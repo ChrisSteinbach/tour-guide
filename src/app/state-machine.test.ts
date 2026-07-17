@@ -14,7 +14,7 @@ import {
 } from "./state-machine";
 import type { NearbyArticle, UserPosition } from "./types";
 import type { LocationError } from "./location";
-import { NearestQuery, toFlatDelaunay } from "./query";
+import { NearestQuery } from "./query";
 import { GRID_DEG, type TileIndex, type TileEntry } from "../tiles";
 import { buildTileMap } from "./tile-loader";
 import {
@@ -22,6 +22,7 @@ import {
   convexHull,
   buildTriangulation,
   serialize,
+  toFlatDelaunay,
 } from "../geometry";
 
 // ── Test helpers ─────────────────────────────────────────────
