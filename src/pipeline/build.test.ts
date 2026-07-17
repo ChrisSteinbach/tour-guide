@@ -15,6 +15,7 @@ import {
   parseArgs,
   readArticles,
   buildTile,
+  attachWeights,
 } from "./build.js";
 import type { TileIndex } from "../tiles.js";
 import type { Article } from "./extract-dump.js";
@@ -232,14 +233,14 @@ describe("readArticles", () => {
     expect(articles.map((a) => a.title)).toEqual(["A", "B"]);
   });
 
-  it("preserves the optional len field and leaves it absent for old NDJSON", async () => {
-    const path = writeNdjson("len.ndjson", [
-      { title: "A", lat: 1, lon: 1, len: 2048 },
-      { title: "B", lat: 2, lon: 2 }, // old NDJSON line without len
+  it("preserves the optional views field and leaves it absent for old NDJSON", async () => {
+    const path = writeNdjson("views.ndjson", [
+      { title: "A", lat: 1, lon: 1, views: 2048 },
+      { title: "B", lat: 2, lon: 2 }, // old NDJSON line without views
     ]);
     const articles = await readArticles(path, Infinity, null);
-    expect(articles[0].len).toBe(2048);
-    expect(articles[1].len).toBeUndefined();
+    expect(articles[0].views).toBe(2048);
+    expect(articles[1].views).toBeUndefined();
   });
 });
 
@@ -254,7 +255,7 @@ describe("buildTile", () => {
       { title: "SW", lat: 11, lon: 1 },
       { title: "C", lat: 12.5, lon: 2.5 },
     ];
-    const buf = buildTile(articles);
+    const buf = buildTile(attachWeights(articles));
     expect(buf).not.toBeNull();
     expect(buf!.byteLength).toBeGreaterThan(0);
   });
@@ -267,31 +268,32 @@ describe("buildTile", () => {
       { title: "C", lat: 0, lon: 0.2 },
       { title: "D", lat: 0, lon: 0.3 },
     ];
-    expect(buildTile(collinear)).toBeNull();
+    expect(buildTile(attachWeights(collinear))).toBeNull();
   });
 
-  it("derives per-vertex weights from article page lengths", () => {
+  it("derives per-vertex weights from article views via percentile ranking", () => {
+    // class[i] = round(255 * rank / N), N = 5 articles, ranks 0..4 by views.
     const articles: Article[] = [
-      { title: "NE", lat: 14, lon: 4, len: 1024 }, // 8*log2(1024) = 80
-      { title: "NW", lat: 14, lon: 1, len: 8192 }, // 8*log2(8192) = 104
-      { title: "SE", lat: 11, lon: 4 }, // missing len → 0
-      { title: "SW", lat: 11, lon: 1, len: 1 }, // log2(1)=0, clamped → 1
-      { title: "C", lat: 12.5, lon: 2.5, len: 2 ** 40 }, // clamped → 255
+      { title: "NE", lat: 14, lon: 4, views: 10 }, // rank 0/5 → round(255*0/5) = 0
+      { title: "NW", lat: 14, lon: 1, views: 20 }, // rank 1/5 → round(255*1/5) = 51
+      { title: "SE", lat: 11, lon: 4, views: 30 }, // rank 2/5 → round(255*2/5) = 102
+      { title: "SW", lat: 11, lon: 1, views: 40 }, // rank 3/5 → round(255*3/5) = 153
+      { title: "C", lat: 12.5, lon: 2.5, views: 50 }, // rank 4/5 → round(255*4/5) = 204
     ];
 
-    const buf = buildTile(articles);
+    const buf = buildTile(attachWeights(articles));
     expect(buf).not.toBeNull();
     const { articles: metas, weights } = deserializeBinary(buf!);
 
     const weightByTitle = new Map(metas.map((m, i) => [m.title, weights[i]]));
-    expect(weightByTitle.get("NE")).toBe(80);
-    expect(weightByTitle.get("NW")).toBe(104);
-    expect(weightByTitle.get("SE")).toBe(0);
-    expect(weightByTitle.get("SW")).toBe(1);
-    expect(weightByTitle.get("C")).toBe(255);
+    expect(weightByTitle.get("NE")).toBe(0);
+    expect(weightByTitle.get("NW")).toBe(51);
+    expect(weightByTitle.get("SE")).toBe(102);
+    expect(weightByTitle.get("SW")).toBe(153);
+    expect(weightByTitle.get("C")).toBe(204);
   });
 
-  it("builds tiles with all-zero weights when no article has a len (old NDJSON)", () => {
+  it("builds tiles with all-zero weights when no article has views (old NDJSON)", () => {
     const articles: Article[] = [
       { title: "NE", lat: 14, lon: 4 },
       { title: "NW", lat: 14, lon: 1 },
@@ -299,10 +301,29 @@ describe("buildTile", () => {
       { title: "SW", lat: 11, lon: 1 },
     ];
 
-    const buf = buildTile(articles);
+    const buf = buildTile(attachWeights(articles));
     expect(buf).not.toBeNull();
     const { weights } = deserializeBinary(buf!);
     expect(Array.from(weights)).toEqual([0, 0, 0, 0]);
+  });
+
+  it("gives tied views the same class and zero/missing views class 0", () => {
+    const articles: Article[] = [
+      { title: "A", lat: 14, lon: 4, views: 100 },
+      { title: "B", lat: 14, lon: 1, views: 100 }, // tied with A
+      { title: "C", lat: 11, lon: 4, views: 0 }, // explicit zero
+      { title: "D", lat: 11, lon: 1 }, // missing views
+    ];
+
+    const buf = buildTile(attachWeights(articles));
+    expect(buf).not.toBeNull();
+    const { articles: metas, weights } = deserializeBinary(buf!);
+
+    const weightByTitle = new Map(metas.map((m, i) => [m.title, weights[i]]));
+    expect(weightByTitle.get("A")).toBe(weightByTitle.get("B"));
+    expect(weightByTitle.get("A")).toBeGreaterThan(0);
+    expect(weightByTitle.get("C")).toBe(0);
+    expect(weightByTitle.get("D")).toBe(0);
   });
 });
 

@@ -10,9 +10,10 @@ export interface NearbyArticle extends Article {
   /** Distance from the user in meters. */
   distanceM: number;
   /**
-   * Weight class 0-255 derived from page length (see pageLenToWeight in
-   * src/geometry); 0 or absent when unknown. Always populated on articles
-   * produced by nearest-neighbor queries.
+   * Weight class 0-255: popularity percentile among the language build's
+   * articles by monthly pageviews (see src/pipeline/popularity.ts); 0 or
+   * absent when unknown. Always populated on articles produced by
+   * nearest-neighbor queries.
    */
   weight?: number;
 }
@@ -28,7 +29,8 @@ export type PositionSource = "gps" | "picked";
 
 /**
  * Which articles the nearby list shows: "highlights" (default) keeps only
- * articles with substantial pages (weight >= HIGHLIGHT_MIN_WEIGHT in
- * config.ts); "all" shows everything, including bot-generated stubs.
+ * the most popular articles by monthly pageviews (weight >=
+ * HIGHLIGHT_MIN_WEIGHT in config.ts); "all" shows everything, including
+ * rarely-viewed stubs.
  */
 export type ArticleFilter = "highlights" | "all";

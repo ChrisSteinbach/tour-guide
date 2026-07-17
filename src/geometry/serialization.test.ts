@@ -8,7 +8,6 @@ import {
   deserialize,
   serializeBinary,
   deserializeBinary,
-  pageLenToWeight,
   BinaryFormatError,
 } from "./index";
 import type { Point3D, SphericalDelaunay, ArticleMeta } from "./index";
@@ -59,41 +58,6 @@ function bruteForceNearest(tri: SphericalDelaunay, query: Point3D): number {
   }
   return bestIdx;
 }
-
-// ---------- pageLenToWeight ----------
-
-describe("pageLenToWeight", () => {
-  it("maps 1024 bytes to weight 80 (8 * log2(1024))", () => {
-    expect(pageLenToWeight(1024)).toBe(80);
-  });
-
-  it("maps 8192 bytes to weight 104", () => {
-    expect(pageLenToWeight(8192)).toBe(104);
-  });
-
-  it("clamps a 1-byte page up to weight 1 (log2(1) = 0)", () => {
-    expect(pageLenToWeight(1)).toBe(1);
-  });
-
-  it("returns 0 for a zero-length page", () => {
-    expect(pageLenToWeight(0)).toBe(0);
-  });
-
-  it("returns 0 for undefined", () => {
-    expect(pageLenToWeight(undefined)).toBe(0);
-  });
-
-  it("returns 0 for negative and non-finite inputs", () => {
-    expect(pageLenToWeight(-100)).toBe(0);
-    expect(pageLenToWeight(NaN)).toBe(0);
-    expect(pageLenToWeight(Infinity)).toBe(0);
-  });
-
-  it("clamps huge page lengths to 255", () => {
-    expect(pageLenToWeight(Number.MAX_SAFE_INTEGER)).toBe(255);
-    expect(pageLenToWeight(2 ** 40)).toBe(255);
-  });
-});
 
 // ---------- serialize ----------
 
