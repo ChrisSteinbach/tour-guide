@@ -1,10 +1,13 @@
 import {
   toCartesian,
+  normalize,
+  sideOfGreatCircle,
   convexHull,
   buildTriangulation,
   flattenTriangulation,
   createQueryContext,
   findNearestVertices,
+  vertexNeighbors,
   createWalkTrace,
   vertexLatLon,
 } from "./index";
@@ -61,6 +64,378 @@ function chordSqToQuery(fd: FlatDelaunay, vertex: number, q: Point3D): number {
   const dz = vp[vi + 2] - q[2];
   return dx * dx + dy * dy + dz * dz;
 }
+
+// ---------- Full-sphere triangulations ----------
+
+/** 6 axis-aligned points forming an octahedron */
+const OCTAHEDRON_POINTS: Point3D[] = [
+  [1, 0, 0],
+  [-1, 0, 0],
+  [0, 1, 0],
+  [0, -1, 0],
+  [0, 0, 1],
+  [0, 0, -1],
+];
+
+const WORLD_CITIES = [
+  { lat: 48.8566, lon: 2.3522 }, // Paris
+  { lat: 40.7128, lon: -74.006 }, // New York
+  { lat: 35.6762, lon: 139.6503 }, // Tokyo
+  { lat: -33.8688, lon: 151.2093 }, // Sydney
+  { lat: 51.5074, lon: -0.1278 }, // London
+  { lat: -22.9068, lon: -43.1729 }, // Rio de Janeiro
+  { lat: 55.7558, lon: 37.6173 }, // Moscow
+  { lat: 1.3521, lon: 103.8198 }, // Singapore
+  { lat: -1.2921, lon: 36.8219 }, // Nairobi
+  { lat: 64.1466, lon: -21.9426 }, // Reykjavik
+];
+
+function vertexPoint(fd: FlatDelaunay, vertex: number): Point3D {
+  const vp = fd.vertexPoints;
+  return [vp[vertex * 3], vp[vertex * 3 + 1], vp[vertex * 3 + 2]];
+}
+
+/** Verify query is on the non-negative side of all three edges. */
+function triangleContains(
+  fd: FlatDelaunay,
+  triIdx: number,
+  query: Point3D,
+): boolean {
+  for (let e = 0; e < 3; e++) {
+    const a = vertexPoint(fd, fd.triangleVertices[triIdx * 3 + e]);
+    const b = vertexPoint(fd, fd.triangleVertices[triIdx * 3 + ((e + 1) % 3)]);
+    if (sideOfGreatCircle(a, b, query) < -1e-10) return false;
+  }
+  return true;
+}
+
+/** Linear scan to find the closest vertex — ground truth for comparison. */
+function bruteNearestVertex(fd: FlatDelaunay, q: Point3D): number {
+  let bestV = 0;
+  let bestSq = chordSqToQuery(fd, 0, q);
+  for (let v = 1; v < fd.vertexTriangles.length; v++) {
+    const sq = chordSqToQuery(fd, v, q);
+    if (sq < bestSq) {
+      bestSq = sq;
+      bestV = v;
+    }
+  }
+  return bestV;
+}
+
+/** The triangle the locate walk ended in (walks terminate by containment on full spheres). */
+function locateFinalTriangle(ctx: QueryContext, query: Point3D): number {
+  const trace = createWalkTrace();
+  findNearestVertices(ctx, query, 1, { trace });
+  expect(trace.locateTriangles.length).toBeGreaterThan(0);
+  return trace.locateTriangles[trace.locateTriangles.length - 1];
+}
+
+describe("locate walk (full sphere)", () => {
+  const octaFd = flattenTriangulation(buildTri(OCTAHEDRON_POINTS));
+  const octaCtx = createQueryContext(octaFd);
+
+  it("ends at a containing triangle for face-center queries", () => {
+    const T = octaFd.triangleVertices.length / 3;
+    for (let ti = 0; ti < T; ti++) {
+      const a = vertexPoint(octaFd, octaFd.triangleVertices[ti * 3]);
+      const b = vertexPoint(octaFd, octaFd.triangleVertices[ti * 3 + 1]);
+      const c = vertexPoint(octaFd, octaFd.triangleVertices[ti * 3 + 2]);
+      const center = normalize([
+        a[0] + b[0] + c[0],
+        a[1] + b[1] + c[1],
+        a[2] + b[2] + c[2],
+      ]);
+      const found = locateFinalTriangle(octaCtx, center);
+      expect(
+        triangleContains(octaFd, found, center),
+        `triangle ${ti} centroid not located correctly`,
+      ).toBe(true);
+    }
+  });
+
+  it("ends at a containing triangle for vertex and edge-midpoint queries", () => {
+    // Boundary queries sit on the edge of multiple triangles; any
+    // containing one is a valid answer.
+    for (let vi = 0; vi < octaFd.vertexTriangles.length; vi++) {
+      const v = vertexPoint(octaFd, vi);
+      const found = locateFinalTriangle(octaCtx, v);
+      expect(
+        triangleContains(octaFd, found, v),
+        `vertex ${vi} not located correctly`,
+      ).toBe(true);
+    }
+    const T = octaFd.triangleVertices.length / 3;
+    const visited = new Set<string>();
+    for (let ti = 0; ti < T; ti++) {
+      for (let e = 0; e < 3; e++) {
+        const ia = octaFd.triangleVertices[ti * 3 + e];
+        const ib = octaFd.triangleVertices[ti * 3 + ((e + 1) % 3)];
+        const key = `${Math.min(ia, ib)}-${Math.max(ia, ib)}`;
+        if (visited.has(key)) continue;
+        visited.add(key);
+        const a = vertexPoint(octaFd, ia);
+        const b = vertexPoint(octaFd, ib);
+        const mid = normalize([a[0] + b[0], a[1] + b[1], a[2] + b[2]]);
+        const found = locateFinalTriangle(octaCtx, mid);
+        expect(
+          triangleContains(octaFd, found, mid),
+          `edge midpoint ${key} not located correctly`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("converges from every start triangle on the octahedron", () => {
+    const query = normalize([1, 1, 1]);
+    const T = octaFd.triangleVertices.length / 3;
+    for (let start = 0; start < T; start++) {
+      const trace = createWalkTrace();
+      findNearestVertices(octaCtx, query, 1, { startTriangle: start, trace });
+      const found = trace.locateTriangles[trace.locateTriangles.length - 1];
+      expect(
+        triangleContains(octaFd, found, query),
+        `walk from triangle ${start} did not converge`,
+      ).toBe(true);
+    }
+  });
+
+  it("converges from a distant start on world cities", () => {
+    const tri = buildTri(WORLD_CITIES.map(toCartesian));
+    const fd = flattenTriangulation(tri);
+    const ctx = createQueryContext(fd);
+    // Query near Paris, start from the triangle of the last vertex (Reykjavik)
+    const query = toCartesian({ lat: 48.5, lon: 2.0 });
+    const distantStart = fd.vertexTriangles[fd.vertexTriangles.length - 1];
+    const trace = createWalkTrace();
+    findNearestVertices(ctx, query, 1, {
+      startTriangle: distantStart,
+      trace,
+    });
+    const found = trace.locateTriangles[trace.locateTriangles.length - 1];
+    expect(triangleContains(fd, found, query)).toBe(true);
+  });
+});
+
+describe("vertexNeighbors", () => {
+  describe("octahedron", () => {
+    const fd = flattenTriangulation(buildTri(OCTAHEDRON_POINTS));
+
+    it("returns exactly 4 neighbors for each vertex", () => {
+      for (let vi = 0; vi < fd.vertexTriangles.length; vi++) {
+        const neighbors = vertexNeighbors(fd, vi);
+        expect(
+          neighbors.length,
+          `vertex ${vi} should have 4 neighbors in octahedron`,
+        ).toBe(4);
+      }
+    });
+
+    it("returns no duplicates", () => {
+      for (let vi = 0; vi < fd.vertexTriangles.length; vi++) {
+        const neighbors = vertexNeighbors(fd, vi);
+        expect(
+          new Set(neighbors).size,
+          `vertex ${vi} has duplicate neighbors`,
+        ).toBe(neighbors.length);
+      }
+    });
+
+    it("does not include the vertex itself", () => {
+      for (let vi = 0; vi < fd.vertexTriangles.length; vi++) {
+        const neighbors = vertexNeighbors(fd, vi);
+        expect(
+          neighbors,
+          `vertex ${vi} found in its own neighbors`,
+        ).not.toContain(vi);
+      }
+    });
+
+    it("does not connect antipodal vertices", () => {
+      // In an octahedron, +x (index 0) should NOT neighbor -x (index 1)
+      const neighbors = vertexNeighbors(fd, 0);
+      const neighborPoints = neighbors.map((n) => vertexPoint(fd, n));
+      const hasAntipodal = neighborPoints.some(
+        (p) => p[0] < -0.5 && Math.abs(p[1]) < 0.1 && Math.abs(p[2]) < 0.1,
+      );
+      expect(hasAntipodal, "+x should not neighbor -x in octahedron").toBe(
+        false,
+      );
+    });
+  });
+
+  describe("world cities", () => {
+    const fd = flattenTriangulation(buildTri(WORLD_CITIES.map(toCartesian)));
+
+    it("neighbor relationship is symmetric", () => {
+      for (let vi = 0; vi < fd.vertexTriangles.length; vi++) {
+        const neighbors = vertexNeighbors(fd, vi);
+        for (const ni of neighbors) {
+          const reverseNeighbors = vertexNeighbors(fd, ni);
+          expect(
+            reverseNeighbors,
+            `vertex ${ni} should list ${vi} as neighbor (symmetry)`,
+          ).toContain(vi);
+        }
+      }
+    });
+
+    it("covers all edges from the triangulation", () => {
+      // Collect all edges from triangles
+      const triangleEdges = new Set<string>();
+      const T = fd.triangleVertices.length / 3;
+      for (let ti = 0; ti < T; ti++) {
+        for (let e = 0; e < 3; e++) {
+          const a = fd.triangleVertices[ti * 3 + e];
+          const b = fd.triangleVertices[ti * 3 + ((e + 1) % 3)];
+          triangleEdges.add(`${Math.min(a, b)}-${Math.max(a, b)}`);
+        }
+      }
+
+      // Collect all edges from vertexNeighbors
+      const neighborEdges = new Set<string>();
+      for (let vi = 0; vi < fd.vertexTriangles.length; vi++) {
+        for (const ni of vertexNeighbors(fd, vi)) {
+          neighborEdges.add(`${Math.min(vi, ni)}-${Math.max(vi, ni)}`);
+        }
+      }
+
+      expect(neighborEdges).toEqual(triangleEdges);
+    });
+  });
+});
+
+describe("findNearestVertices (full sphere)", () => {
+  describe("octahedron", () => {
+    const fd = flattenTriangulation(buildTri(OCTAHEDRON_POINTS));
+    const ctx = createQueryContext(fd);
+
+    it("returns the +x vertex for a query biased toward +x", () => {
+      const query = normalize([3, 0.1, 0.1]);
+      const { nearestVertex } = findNearestVertices(ctx, query);
+      const np = vertexPoint(fd, nearestVertex);
+      expect(np[0]).toBeCloseTo(1, 5);
+      expect(np[1]).toBeCloseTo(0, 5);
+      expect(np[2]).toBeCloseTo(0, 5);
+    });
+
+    it("finds nearest for exact vertex queries", () => {
+      for (let vi = 0; vi < fd.vertexTriangles.length; vi++) {
+        const { nearestVertex } = findNearestVertices(ctx, vertexPoint(fd, vi));
+        expect(nearestVertex, `vertex ${vi} not found as its own nearest`).toBe(
+          vi,
+        );
+      }
+    });
+  });
+
+  describe("world cities", () => {
+    const tri = buildTri(WORLD_CITIES.map(toCartesian));
+    const fd = flattenTriangulation(tri);
+    const ctx = createQueryContext(fd);
+
+    it("finds the correct city for nearby queries", () => {
+      for (let i = 0; i < WORLD_CITIES.length; i++) {
+        const { lat, lon } = WORLD_CITIES[i];
+        const query = toCartesian({ lat: lat + 0.01, lon: lon + 0.01 });
+        const { nearestVertex } = findNearestVertices(ctx, query);
+        expect(
+          tri.originalIndices[nearestVertex],
+          `city ${i} (${lat}, ${lon}) not found`,
+        ).toBe(i);
+      }
+    });
+  });
+
+  describe("brute-force comparison", () => {
+    it("matches brute force on 10 cities with 50 random queries", () => {
+      const fd = flattenTriangulation(buildTri(WORLD_CITIES.map(toCartesian)));
+      const ctx = createQueryContext(fd);
+
+      // Deterministic pseudo-random via simple LCG
+      let seed = 42;
+      function rand(): number {
+        seed = (seed * 1664525 + 1013904223) & 0x7fffffff;
+        return seed / 0x7fffffff;
+      }
+
+      for (let i = 0; i < 50; i++) {
+        const lat = rand() * 180 - 90;
+        const lon = rand() * 360 - 180;
+        const query = toCartesian({ lat, lon });
+        const { nearestVertex } = findNearestVertices(ctx, query);
+        expect(
+          nearestVertex,
+          `query ${i} (${lat.toFixed(2)}, ${lon.toFixed(2)})`,
+        ).toBe(bruteNearestVertex(fd, query));
+      }
+    });
+
+    it("matches brute force on 20 cities with 100 random queries", () => {
+      const extraCities = [
+        { lat: 37.7749, lon: -122.4194 }, // San Francisco
+        { lat: 19.4326, lon: -99.1332 }, // Mexico City
+        { lat: 30.0444, lon: 31.2357 }, // Cairo
+        { lat: 39.9042, lon: 116.4074 }, // Beijing
+        { lat: -34.6037, lon: -58.3816 }, // Buenos Aires
+        { lat: 59.3293, lon: 18.0686 }, // Stockholm
+        { lat: 13.7563, lon: 100.5018 }, // Bangkok
+        { lat: 41.0082, lon: 28.9784 }, // Istanbul
+        { lat: -26.2041, lon: 28.0473 }, // Johannesburg
+        { lat: 25.2048, lon: 55.2708 }, // Dubai
+      ];
+      const allCities = [...WORLD_CITIES, ...extraCities];
+      const fd = flattenTriangulation(buildTri(allCities.map(toCartesian)));
+      const ctx = createQueryContext(fd);
+
+      let seed = 123;
+      function rand(): number {
+        seed = (seed * 1664525 + 1013904223) & 0x7fffffff;
+        return seed / 0x7fffffff;
+      }
+
+      for (let i = 0; i < 100; i++) {
+        const lat = rand() * 180 - 90;
+        const lon = rand() * 360 - 180;
+        const query = toCartesian({ lat, lon });
+        const { nearestVertex } = findNearestVertices(ctx, query);
+        expect(
+          nearestVertex,
+          `query ${i} (${lat.toFixed(2)}, ${lon.toFixed(2)})`,
+        ).toBe(bruteNearestVertex(fd, query));
+      }
+    });
+  });
+
+  describe("edge cases", () => {
+    const fd = flattenTriangulation(buildTri(WORLD_CITIES.map(toCartesian)));
+    const ctx = createQueryContext(fd);
+
+    it("handles north and south pole queries", () => {
+      const northPole: Point3D = [0, 0, 1];
+      const southPole: Point3D = [0, 0, -1];
+
+      expect(findNearestVertices(ctx, northPole).nearestVertex).toBe(
+        bruteNearestVertex(fd, northPole),
+      );
+      expect(findNearestVertices(ctx, southPole).nearestVertex).toBe(
+        bruteNearestVertex(fd, southPole),
+      );
+    });
+
+    it("respects an explicit startTriangle", () => {
+      const query = toCartesian({ lat: 48.5, lon: 2.0 });
+      const T = fd.triangleVertices.length / 3;
+
+      // Should return the same result regardless of start
+      const fromDefault = findNearestVertices(ctx, query).nearestVertex;
+      const fromExplicit = findNearestVertices(ctx, query, 1, {
+        startTriangle: T - 1,
+      }).nearestVertex;
+      expect(fromExplicit).toBe(fromDefault);
+    });
+  });
+});
 
 // ---------- Degenerate triangulations ----------
 

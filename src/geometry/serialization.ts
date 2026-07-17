@@ -108,8 +108,8 @@ export function serialize(
 /**
  * Reconstruct a SphericalDelaunay from a serialized TriangulationFile.
  *
- * Circumcenter/circumradius are omitted — they are not used by
- * locateTriangle() or findNearest().
+ * Circumcenter/circumradius are omitted — they are not used by the
+ * nearest-neighbor queries.
  */
 export function deserialize(data: TriangulationFile): {
   tri: SphericalDelaunay;
