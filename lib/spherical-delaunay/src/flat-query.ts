@@ -864,7 +864,10 @@ function triangleSides(
  * A zero-area triangle (coincident input points — see tour-guide-895a for
  * the input-hygiene contract) can zero out every clamped side; all weight
  * then goes to the nearest of its three vertices — the interpolation limit
- * as a triangle collapses — so callers never see NaN.
+ * as a triangle collapses — so callers never see NaN. This guard remains
+ * necessary even though convexHull now drops exact duplicates at build time,
+ * because Float32 quantization at serialization can collapse near-duplicate
+ * vertices into bit-identical ones downstream of the hull.
  */
 function buildLocation(
   fd: FlatDelaunay,

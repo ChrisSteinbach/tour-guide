@@ -316,6 +316,103 @@ describe("convexHull", () => {
     });
   });
 
+  describe("exact duplicate inputs", () => {
+    it("drops an exact duplicate appended at the end", () => {
+      const points: Point3D[] = [
+        [1, 0, 0], // 0
+        [-1, 0, 0], // 1
+        [0, 1, 0], // 2
+        [0, -1, 0], // 3
+        [0, 0, 1], // 4
+        [0, 0, -1], // 5
+        [1, 0, 0], // 6 — exact duplicate of index 0
+      ];
+
+      const hull = convexHull(points);
+
+      expect(hull.faces.length).toBe(8);
+      const referenced = new Set(hull.faces.flatMap((f) => f.vertices));
+      expect(referenced).toEqual(new Set([0, 1, 2, 3, 4, 5]));
+      expect(hull.points.length).toBe(7);
+      expect(hull.points[6]).toEqual([1, 0, 0]);
+      validateHull(hull, false);
+    });
+
+    it("drops multiple exact duplicates of the same point", () => {
+      const points: Point3D[] = [
+        [1, 0, 0], // 0
+        [-1, 0, 0], // 1
+        [0, 1, 0], // 2
+        [0, -1, 0], // 3
+        [0, 0, 1], // 4
+        [0, 0, -1], // 5
+        [1, 0, 0], // 6 — duplicate of index 0
+        [1, 0, 0], // 7 — duplicate of index 0
+      ];
+
+      const hull = convexHull(points);
+
+      expect(hull.faces.length).toBe(8);
+      const referenced = new Set(hull.faces.flatMap((f) => f.vertices));
+      expect(referenced).toEqual(new Set([0, 1, 2, 3, 4, 5]));
+      expect(hull.points.length).toBe(8);
+      validateHull(hull, false);
+    });
+
+    it("keeps the first occurrence when the duplicate appears earlier in the array", () => {
+      const points: Point3D[] = [
+        [1, 0, 0], // 0 — first occurrence, kept
+        [1, 0, 0], // 1 — duplicate, dropped
+        [-1, 0, 0], // 2
+        [0, 1, 0], // 3
+        [0, -1, 0], // 4
+        [0, 0, 1], // 5
+        [0, 0, -1], // 6
+      ];
+
+      const hull = convexHull(points);
+
+      expect(hull.faces.length).toBe(8);
+      const referenced = new Set(hull.faces.flatMap((f) => f.vertices));
+      expect(referenced.has(1)).toBe(false);
+      expect(referenced).toEqual(new Set([0, 2, 3, 4, 5, 6]));
+      validateHull(hull, false);
+    });
+
+    it("throws when deduplication leaves fewer than 4 distinct points", () => {
+      const points: Point3D[] = [
+        [1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1],
+        [1, 0, 0], // duplicate of index 0 — only 3 distinct points remain
+      ];
+
+      expect(() => convexHull(points)).toThrow("Need at least 4 points");
+    });
+
+    it("preserves bit-distinct near-duplicates instead of merging them", () => {
+      // [1, 1e-8, 0] is bit-distinct from [1, 0, 0], but its length rounds to
+      // exactly 1.0 in double precision, so it's usable as-is.
+      const points: Point3D[] = [
+        [1, 0, 0], // 0
+        [-1, 0, 0], // 1
+        [0, 1, 0], // 2
+        [0, -1, 0], // 3
+        [0, 0, 1], // 4
+        [0, 0, -1], // 5
+        [1, 1e-8, 0], // 6 — near-duplicate of index 0, bit-distinct
+      ];
+
+      const hull = convexHull(points);
+
+      // All 7 inputs are hull vertices: F = 2V - 4 = 10
+      expect(hull.faces.length).toBe(10);
+      const referenced = new Set(hull.faces.flatMap((f) => f.vertices));
+      expect(referenced).toEqual(new Set([0, 1, 2, 3, 4, 5, 6]));
+      validateHull(hull, true);
+    });
+  });
+
   describe("near-degenerate inputs", () => {
     it("great circle: equator points + poles (maximally coplanar with origin)", () => {
       // 100 points on the equator are all coplanar through the origin,
@@ -416,9 +513,13 @@ describe("convexHull", () => {
         const theta = (2 * Math.PI * i) / 20;
         points.push([Math.cos(theta), Math.sin(theta), 0]);
       }
-      // Add points in the xz-plane
+      // Add points in the xz-plane, phase-shifted by half a step so they
+      // don't exactly coincide with the xy-plane loop at the shared x-axis
+      // crossing (theta=0 in both loops would otherwise produce a bit-exact
+      // duplicate of [1,0,0] — an incidental collision unrelated to the
+      // near-coplanarity this test targets).
       for (let i = 0; i < 20; i++) {
-        const theta = (2 * Math.PI * i) / 20;
+        const theta = (2 * Math.PI * (i + 0.5)) / 20;
         points.push([Math.cos(theta), 0, Math.sin(theta)]);
       }
 

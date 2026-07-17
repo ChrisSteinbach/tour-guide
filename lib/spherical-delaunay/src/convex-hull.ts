@@ -62,13 +62,18 @@ function removeFaceEdges(
 
 /**
  * Add a small deterministic random perturbation to each point to prevent
- * degenerate configurations (coincident/cospherical points) that produce
+ * degenerate configurations (near-coincident/cospherical points) that produce
  * zero-area triangles in the triangulation output.
  *
  * Robust predicates (Shewchuk) fix sign-correctness: orient3D returns the
  * exact sign even for near-coplanar inputs. Perturbation is complementary —
- * it prevents exactly-coincident points from producing degenerate hull faces
- * with zero area, which would break downstream triangle walks.
+ * it handles NEAR-degenerate configurations, breaking ties between points
+ * that are close enough to be coplanar/cospherical within floating-point
+ * noise, which would otherwise produce degenerate hull faces with zero area
+ * and break downstream triangle walks. Exact duplicates are a separate
+ * concern: they're removed before this function runs by convexHull's dedupe
+ * pass, since perturbing a duplicate can't be relied on to separate it
+ * cleanly from its source point.
  *
  * The perturbation is ~1e-6 per coordinate (≈0.1m on Earth's surface),
  * which is negligible for navigation. Only the perturbed copy is used for
@@ -309,6 +314,32 @@ function findInitialTetrahedron(
 }
 
 /**
+ * Drop exactly-coincident points (bit-identical x, y, z), keeping the first
+ * occurrence of each distinct value. Returns the deduplicated points plus a
+ * map from each deduplicated index back to its index in the original input.
+ *
+ * Uses `Number` → string round-tripping as the equality key, which is
+ * bit-exact for doubles (no false merges from near-but-distinct values).
+ */
+function dedupeExactPoints(points: Point3D[]): {
+  unique: Point3D[];
+  uniqueToOriginal: number[];
+} {
+  const unique: Point3D[] = [];
+  const uniqueToOriginal: number[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    const key = `${p[0]},${p[1]},${p[2]}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(p);
+    uniqueToOriginal.push(i);
+  }
+  return { unique, uniqueToOriginal };
+}
+
+/**
  * Compute the 3D convex hull of a set of points using the incremental algorithm.
  *
  * For unit-sphere points, the hull faces are the spherical Delaunay triangulation.
@@ -316,16 +347,28 @@ function findInitialTetrahedron(
  *
  * Uses point perturbation to handle degenerate inputs, a spatial grid index for
  * O(1) face lookup, and BFS for visible face discovery.
+ *
+ * Input contract: exactly-coincident points (bit-identical x, y, z) are
+ * dropped before the algorithm runs, keeping the first occurrence — no face
+ * ever references a dropped input. `hull.points` is always the full, original
+ * input array (including dropped duplicates), so face vertex indices remain
+ * valid indices into the caller's input array. Near-duplicate points (distinct
+ * bits, e.g. from independently normalized coordinates) are deliberately
+ * preserved: merging "close" points is domain policy that belongs to callers,
+ * not this algorithm.
  */
 export function convexHull(points: Point3D[]): ConvexHull {
-  // Validate on original points (clear error messages for degenerate input)
-  const [i0, i1, i2, i3] = findInitialTetrahedron(points);
+  // Drop exact duplicates before the algorithm runs (see JSDoc above).
+  const { unique, uniqueToOriginal } = dedupeExactPoints(points);
+
+  // Validate on deduped points (clear error messages for degenerate input)
+  const [i0, i1, i2, i3] = findInitialTetrahedron(unique);
 
   // Numeric edge key multiplier: must be > max vertex index
-  const edgeMul = points.length;
+  const edgeMul = unique.length;
 
   // Perturbed copy for orient3D tests; original points stored in output
-  const pp = perturbPoints(points);
+  const pp = perturbPoints(unique);
 
   const seedSet = new Set([i0, i1, i2, i3]);
 
@@ -360,7 +403,7 @@ export function convexHull(points: Point3D[]): ConvexHull {
   // Spatial grid index for fast face lookup (resolution scales with √n)
   const gridRes = Math.max(
     8,
-    Math.min(128, Math.ceil(Math.pow(points.length, 1 / 3))),
+    Math.min(128, Math.ceil(Math.pow(unique.length, 1 / 3))),
   );
   const faceGrid = new FaceGrid(gridRes);
   for (let fi = 0; fi < 4; fi++) faceGrid.update(pp, faces, fi);
@@ -369,7 +412,7 @@ export function convexHull(points: Point3D[]): ConvexHull {
   const freeSlots: number[] = [];
   let hintFace = 0;
   let liveFaces = 4;
-  for (let pi = 0; pi < points.length; pi++) {
+  for (let pi = 0; pi < unique.length; pi++) {
     if (seedSet.has(pi)) continue;
     const result = addPoint(
       pp,
@@ -386,8 +429,31 @@ export function convexHull(points: Point3D[]): ConvexHull {
     liveFaces += result[1];
   }
 
-  // Compact: remove deleted slots. Return original (unperturbed) points.
-  return compact(points, faces);
+  // Compact: remove deleted slots. `points` (the original, non-deduplicated
+  // input) is stored as hull.points as-is — compact() only threads it through.
+  const hull = compact(points, faces);
+
+  if (unique.length === points.length) {
+    // No duplicates were found, so uniqueToOriginal is the identity map and
+    // face vertex indices (built against `unique`) already match `points`.
+    // Skip the remap below — keeps the common (no-duplicate) path
+    // allocation-light.
+    return hull;
+  }
+
+  // Remap face vertex indices from deduped → original indices so they index
+  // into `points` (the ORIGINAL, non-deduplicated input already stored as
+  // hull.points above). Dropped duplicates simply end up unreferenced by any
+  // face; buildTriangulation already drops indices unreferenced by any face
+  // from originalIndices, so no changes are needed there.
+  for (const f of hull.faces) {
+    f.vertices = [
+      uniqueToOriginal[f.vertices[0]],
+      uniqueToOriginal[f.vertices[1]],
+      uniqueToOriginal[f.vertices[2]],
+    ];
+  }
+  return hull;
 }
 
 /**
