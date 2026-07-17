@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { deserializeBinary } from "spherical-delaunay";
+import { decodeArticlePayload } from "../article-payload.js";
 import {
   collectTileArticles,
   buildArticleIndex,
@@ -283,7 +284,8 @@ describe("buildTile", () => {
 
     const buf = buildTile(attachWeights(articles));
     expect(buf).not.toBeNull();
-    const { articles: metas, weights } = deserializeBinary(buf!);
+    const { payload } = deserializeBinary(buf!);
+    const { articles: metas, weights } = decodeArticlePayload(payload);
 
     const weightByTitle = new Map(metas.map((m, i) => [m.title, weights[i]]));
     expect(weightByTitle.get("NE")).toBe(0);
@@ -303,7 +305,8 @@ describe("buildTile", () => {
 
     const buf = buildTile(attachWeights(articles));
     expect(buf).not.toBeNull();
-    const { weights } = deserializeBinary(buf!);
+    const { payload } = deserializeBinary(buf!);
+    const { weights } = decodeArticlePayload(payload);
     expect(Array.from(weights)).toEqual([0, 0, 0, 0]);
   });
 
@@ -317,7 +320,8 @@ describe("buildTile", () => {
 
     const buf = buildTile(attachWeights(articles));
     expect(buf).not.toBeNull();
-    const { articles: metas, weights } = deserializeBinary(buf!);
+    const { payload } = deserializeBinary(buf!);
+    const { articles: metas, weights } = decodeArticlePayload(payload);
 
     const weightByTitle = new Map(metas.map((m, i) => [m.title, weights[i]]));
     expect(weightByTitle.get("A")).toBe(weightByTitle.get("B"));
@@ -394,12 +398,13 @@ describe("tiled pipeline (e2e)", () => {
       // Verify the .bin file exists and deserializes
       const binPath = join(tilesDir, `${tile.id}.bin`);
       const binBuf = readFileSync(binPath);
-      const { fd, articles } = deserializeBinary(
+      const { fd, payload } = deserializeBinary(
         binBuf.buffer.slice(
           binBuf.byteOffset,
           binBuf.byteOffset + binBuf.byteLength,
         ),
       );
+      const { articles } = decodeArticlePayload(payload);
 
       expect(articles.length).toBeGreaterThanOrEqual(tile.articles);
       expect(fd.vertexPoints.length).toBe(articles.length * 3);

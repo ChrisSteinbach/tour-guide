@@ -3,7 +3,6 @@
 // titles, weight classes, and distances in meters.
 
 import type {
-  ArticleMeta,
   FlatDelaunay,
   QueryContext,
   VertexHit,
@@ -15,6 +14,7 @@ import {
   toCartesian,
   vertexLatLon,
 } from "spherical-delaunay";
+import type { ArticleMeta } from "../article-payload";
 
 const EARTH_RADIUS_M = 6_371_000;
 

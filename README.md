@@ -151,16 +151,19 @@ Mismatched paths will cause tile loading to silently fail.
 ## Architecture
 
 ```
+lib/
+└── spherical-delaunay/  Geometry workspace package (convex hull, Delaunay, queries, serialization)
 src/
-├── geometry/    Spherical math, convex hull, Delaunay, point location, serialization
-├── pipeline/    Offline extraction and build (runs via tsx, not Vite)
-├── app/         PWA frontend (Vite root)
-├── lang.ts      Supported language definitions
-└── tiles.ts     Tile grid constants and ID computation
+├── pipeline/            Offline extraction and build (runs via tsx, not Vite)
+├── app/                 PWA frontend (Vite root)
+├── lang.ts              Supported language definitions
+├── tiles.ts             Tile grid constants and ID computation
+└── article-payload.ts   Article metadata payload codec (titles + weight classes)
 ```
 
-- **`geometry/`** — Coordinate conversion, great-circle distance, incremental 3D
-  convex hull, spherical Delaunay triangulation, triangle walks, and binary
+- **`lib/spherical-delaunay/`** — Standalone workspace package: coordinate
+  conversion, great-circle distance, incremental 3D convex hull, spherical
+  Delaunay triangulation, triangle walks, and metadata-agnostic binary
   serialization. Shared by both the pipeline and the app.
 - **`pipeline/`** — Downloads and parses Wikipedia SQL dumps, joins coordinates
   with article titles, and builds tiled binary triangulation files.

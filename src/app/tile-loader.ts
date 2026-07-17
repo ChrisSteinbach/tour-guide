@@ -1,6 +1,7 @@
 // Tile loading orchestration — fetches tile index and individual tiles on demand
 
 import { deserializeBinary } from "spherical-delaunay";
+import { decodeArticlePayload } from "../article-payload";
 import {
   tileFor,
   tileId,
@@ -503,7 +504,8 @@ export async function loadTile(
 
   // Fetch from network, with retry-with-backoff for transient failures
   const buf = await fetchTileBuffer(baseUrl, lang, entry.id, signal);
-  const { fd, articles, weights } = deserializeBinary(buf);
+  const { fd, payload } = deserializeBinary(buf);
+  const { articles, weights } = decodeArticlePayload(payload);
 
   // Cache in IDB
   if (db) {
