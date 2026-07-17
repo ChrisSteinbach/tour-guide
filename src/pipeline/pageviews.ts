@@ -18,10 +18,23 @@
  * per-language extract step joins by page_id.
  */
 
-import { createReadStream, existsSync, readdirSync } from "node:fs";
+import {
+  createReadStream,
+  createWriteStream,
+  existsSync,
+  readdirSync,
+} from "node:fs";
+import { mkdir, rename, rm } from "node:fs/promises";
 import { createInterface } from "node:readline";
-import { createGunzip } from "node:zlib";
+import { createGunzip, createGzip } from "node:zlib";
+import { spawn, spawnSync } from "node:child_process";
+import { Readable } from "node:stream";
+import type { ReadableStream as WebReadableStream } from "node:stream/web";
+import { fileURLToPath } from "node:url";
+import { SUPPORTED_LANGS } from "../lang.js";
 import type { Lang } from "../lang.js";
+import { fetchWithRetry, formatBytes } from "./dump-download.js";
+import { USER_AGENT } from "../user-agent.js";
 
 // ---------- Paths & months ----------
 
@@ -120,6 +133,8 @@ export interface EnsureViewsOptions {
   onPhase?: (phase: string) => void;
   /** Download progress: (bytesDownloaded, totalBytes | null). */
   onProgress?: (downloaded: number, total: number | null) => void;
+  /** Clock used to probe recent months when `month` isn't given (default: new Date()). */
+  now?: Date;
 }
 
 export interface EnsureViewsResult {
@@ -129,6 +144,97 @@ export interface EnsureViewsResult {
   paths: Record<string, string>;
   /** Whether the monthly dump was downloaded (false = all files existed). */
   downloaded: boolean;
+  /** Rows written per language (only present for languages split this run). */
+  rowCounts?: Record<string, number>;
+}
+
+/** Wrap fetch to include the required User-Agent header for Wikimedia. */
+function wikimediaFetch(
+  url: string | URL | Request,
+  init?: RequestInit,
+): Promise<Response> {
+  return fetch(url, { ...init, headers: { "User-Agent": USER_AGENT } });
+}
+
+let lbzip2Available: boolean | undefined;
+
+function isErrnoException(err: Error): err is NodeJS.ErrnoException {
+  return "code" in err;
+}
+
+/** Probe once whether the parallel lbzip2 binary is installed; cached. */
+function hasLbzip2(): boolean {
+  if (lbzip2Available === undefined) {
+    const probe = spawnSync("lbzip2", ["--version"], { stdio: "ignore" });
+    const err = probe.error;
+    lbzip2Available = !(err && isErrnoException(err) && err.code === "ENOENT");
+  }
+  return lbzip2Available;
+}
+
+/**
+ * Decompress a bz2 stream by shelling out to lbzip2 (parallel, faster) when
+ * available, falling back to bzip2. Child errors and non-zero exits surface
+ * as errors on the returned stream.
+ */
+function defaultDecompress(
+  input: NodeJS.ReadableStream,
+): NodeJS.ReadableStream {
+  const bin = hasLbzip2() ? "lbzip2" : "bzip2";
+  const child = spawn(bin, ["-dc"], { stdio: ["pipe", "pipe", "inherit"] });
+
+  input.on("error", (err: Error) => child.stdin.destroy(err));
+  input.pipe(child.stdin);
+
+  child.on("error", (err) => child.stdout.destroy(err));
+  child.on("exit", (code, signal) => {
+    if (code !== 0) {
+      child.stdout.destroy(
+        new Error(
+          `${bin} exited with code ${String(code)}${signal ? ` (signal ${signal})` : ""}`,
+        ),
+      );
+    }
+  });
+
+  return child.stdout;
+}
+
+/**
+ * Resolve which month's dump to use: the explicit `month` if given
+ * (validated as "YYYY-MM"), otherwise the newest of the last 3 months
+ * confirmed to exist via a HEAD request.
+ */
+async function resolveMonth(
+  opts: EnsureViewsOptions,
+  fetchFn: typeof fetch,
+): Promise<string> {
+  if (opts.month !== undefined) {
+    if (!/^\d{4}-\d{2}$/.test(opts.month)) {
+      throw new Error(`Invalid month: "${opts.month}" (expected YYYY-MM)`);
+    }
+    return opts.month;
+  }
+
+  const now = opts.now ?? new Date();
+  const tried: string[] = [];
+  for (let n = 1; n <= 3; n++) {
+    const month = monthBefore(now, n);
+    const url = monthlyDumpUrl(month);
+    const response = await fetchFn(url, { method: "HEAD" });
+    if (response.ok) return month;
+    tried.push(url);
+  }
+  throw new Error(
+    `No monthly pageviews dump found in the last 3 months. Tried:\n${tried.join("\n")}`,
+  );
+}
+
+interface ViewsWriter {
+  gzip: ReturnType<typeof createGzip>;
+  file: ReturnType<typeof createWriteStream>;
+  tmpPath: string;
+  rows: number;
 }
 
 /**
@@ -136,9 +242,209 @@ export interface EnsureViewsResult {
  * splitting the monthly pageview_complete dump in a single streaming pass if
  * any are missing. Never persists the multi-GB dump itself.
  */
-export function ensureViewsFiles(
+export async function ensureViewsFiles(
   opts: EnsureViewsOptions,
 ): Promise<EnsureViewsResult> {
-  void opts;
-  return Promise.reject(new Error("not implemented yet"));
+  const {
+    langs,
+    dir = PAGEVIEWS_DIR,
+    fetchFn = wikimediaFetch,
+    decompress = defaultDecompress,
+    onPhase,
+    onProgress,
+  } = opts;
+
+  const month = await resolveMonth(opts, fetchFn);
+
+  const paths: Record<string, string> = {};
+  for (const lang of langs) paths[lang] = viewsPath(lang, month, dir);
+
+  const missingLangs = langs.filter((lang) => !existsSync(paths[lang]));
+  if (missingLangs.length === 0) {
+    return { month, paths, downloaded: false };
+  }
+
+  const wikiToLang = new Map<string, Lang>(
+    missingLangs.map((lang): [string, Lang] => [`${lang}.wikipedia`, lang]),
+  );
+  const writers = new Map<Lang, ViewsWriter>();
+
+  function getWriter(lang: Lang): ViewsWriter {
+    let w = writers.get(lang);
+    if (!w) {
+      const tmpPath = `${paths[lang]}.tmp`;
+      const file = createWriteStream(tmpPath);
+      const gzip = createGzip();
+      gzip.pipe(file);
+      w = { gzip, file, tmpPath, rows: 0 };
+      writers.set(lang, w);
+    }
+    return w;
+  }
+
+  try {
+    await mkdir(dir, { recursive: true });
+    onPhase?.(`Downloading and splitting pageviews dump for ${month}`);
+
+    const url = monthlyDumpUrl(month);
+    const response = await fetchWithRetry(url, fetchFn);
+    if (!response.ok) {
+      throw new Error(
+        `Failed to download ${url}: ${response.status} ${response.statusText}`,
+      );
+    }
+    if (!response.body) {
+      throw new Error(`No response body for ${url}`);
+    }
+
+    const totalHeader = response.headers.get("content-length");
+    const total = totalHeader ? parseInt(totalHeader, 10) : null;
+
+    const nodeStream = Readable.fromWeb(response.body as WebReadableStream);
+    let downloadedBytes = 0;
+    nodeStream.on("data", (chunk: Buffer) => {
+      downloadedBytes += chunk.length;
+      onProgress?.(downloadedBytes, total);
+    });
+
+    const rl = createInterface({
+      input: decompress(nodeStream),
+      crlfDelay: Infinity,
+    });
+
+    // Rows for one article's access methods are adjacent in the dump, so a
+    // running (lang, pageId) key with a sum is enough — no big map needed.
+    let currentLang: Lang | null = null;
+    let currentPageId = 0;
+    let currentSum = 0;
+
+    const flush = (): void => {
+      if (currentLang === null) return;
+      const w = getWriter(currentLang);
+      w.gzip.write(`${currentPageId}\t${currentSum}\n`);
+      w.rows++;
+    };
+
+    for await (const line of rl) {
+      if (!line) continue;
+      const sp = line.indexOf(" ");
+      if (sp < 0) continue;
+      const lang = wikiToLang.get(line.slice(0, sp));
+      if (lang === undefined) continue;
+
+      const f = line.split(" ");
+      if (f.length < 6) continue;
+
+      const pageIdStr = f[f.length - 4];
+      if (!/^\d+$/.test(pageIdStr)) continue; // "null" or malformed
+      const pageId = Number(pageIdStr);
+
+      const count = Number(f[f.length - 2]);
+      if (!Number.isInteger(count) || count <= 0) continue;
+
+      if (lang === currentLang && pageId === currentPageId) {
+        currentSum += count;
+      } else {
+        flush();
+        currentLang = lang;
+        currentPageId = pageId;
+        currentSum = count;
+      }
+    }
+    flush();
+
+    // Every missing language gets a file, even with zero matching rows —
+    // its presence marks the month as processed.
+    for (const lang of missingLangs) getWriter(lang);
+
+    await Promise.all(
+      [...writers.values()].map(
+        (w) =>
+          new Promise<void>((resolve, reject) => {
+            w.file.on("error", reject);
+            w.gzip.on("error", reject);
+            w.file.on("finish", resolve);
+            w.gzip.end();
+          }),
+      ),
+    );
+
+    await Promise.all(
+      [...writers.entries()].map(([lang, w]) => rename(w.tmpPath, paths[lang])),
+    );
+  } catch (err) {
+    await Promise.allSettled(
+      [...writers.values()].map((w) => rm(w.tmpPath, { force: true })),
+    );
+    throw err;
+  }
+
+  const rowCounts: Record<string, number> = {};
+  for (const [lang, w] of writers) rowCounts[lang] = w.rows;
+
+  return { month, paths, downloaded: true, rowCounts };
+}
+
+// ---------- CLI ----------
+
+async function main() {
+  const args = process.argv.slice(2);
+  const flags = Object.fromEntries(
+    args
+      .filter((a) => a.startsWith("--"))
+      .map((a) => {
+        const [key, ...rest] = a.slice(2).split("=");
+        return [key, rest.length ? rest.join("=") : "true"];
+      }),
+  );
+
+  const langs = (
+    flags.langs ? flags.langs.split(",") : [...SUPPORTED_LANGS]
+  ) as Lang[];
+
+  for (const lang of langs) {
+    if (!SUPPORTED_LANGS.includes(lang)) {
+      console.error(
+        `Unsupported language: ${lang}. Supported: ${SUPPORTED_LANGS.join(", ")}`,
+      );
+      process.exit(1);
+    }
+  }
+
+  const dir = flags.dir ?? PAGEVIEWS_DIR;
+
+  console.error(`\nEnsuring pageviews files for ${langs.join(", ")}\n`);
+
+  const start = Date.now();
+
+  const result = await ensureViewsFiles({
+    langs,
+    month: flags.month,
+    dir,
+    onPhase: (phase) => console.error(`\n→ ${phase}`),
+    onProgress: (downloaded, total) => {
+      const totalStr = total ? ` / ${formatBytes(total)}` : "";
+      process.stderr.write(`\r  ${formatBytes(downloaded)}${totalStr}    `);
+    },
+  });
+
+  const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+  console.error(
+    `\n\nDone in ${elapsed}s — month ${result.month} (${
+      result.downloaded ? "downloaded and split" : "already up to date"
+    })`,
+  );
+  for (const lang of langs) {
+    const rows = result.rowCounts?.[lang];
+    const rowsInfo =
+      rows !== undefined ? `, ${rows.toLocaleString()} rows` : "";
+    console.error(`  ${lang}: ${result.paths[lang]}${rowsInfo}`);
+  }
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error("Fatal error:", err);
+    process.exit(1);
+  });
 }
