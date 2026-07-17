@@ -603,7 +603,12 @@ export interface NearestVerticesOptions {
 }
 
 export interface NearestVerticesResult {
-  /** Up to k matching vertices, sorted by ascending distance. */
+  /**
+   * Up to k matching vertices, sorted by ascending distance. Unfiltered,
+   * hits[0].vertex is always `nearestVertex`. Filtered, hits contains only
+   * filter-passing vertices, so hits[0] coincides with `nearestVertex`
+   * unless the filter excluded the globally nearest vertex.
+   */
   hits: VertexHit[];
   /**
    * The unfiltered nearest vertex — end of the locate walk and greedy
