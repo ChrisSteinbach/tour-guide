@@ -119,7 +119,7 @@ npm run pageviews -- --dir=/tmp/pageviews
 
 `npm run extract` joins the per-language views file onto the page map by `page_id`, summing across rows (defensive — the per-language split already sums access methods per page). Because the join key is `page_id` and the page map only contains non-redirect articles (namespace 0, `page_is_redirect=0`), a pageview logged against a **redirect's** own page_id has no matching entry and is silently dropped rather than credited to the redirect's target. This is a known, accepted limitation: an article's `views` count reflects only traffic to its own title, not traffic arriving via redirects or alternate names.
 
-With `--skip-download`, extraction reuses whatever pageviews TSV is already on disk for that language (the newest one present, regardless of `--pageviews-month`) and fails with guidance if none exists.
+With `--skip-download`, extraction reuses the pageviews TSV already on disk for that language — the newest one present, or exactly the requested month when `--pageviews-month` is also given — and fails with guidance if it doesn't exist.
 
 ## Descriptions
 

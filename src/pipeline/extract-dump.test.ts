@@ -531,5 +531,63 @@ describe("extractDump", () => {
         .map((l) => JSON.parse(l) as Article);
       expect(article.views).toBe(42);
     });
+
+    it("honors an explicit pageviews month under skipDownload instead of the newest file", async () => {
+      const dumpsDir = writeDumps(
+        "dumps-views-month",
+        [{ id: 100, title: "Eiffeltornet" }],
+        [{ pageId: 100, lat: 48.8584, lon: 2.2945 }],
+      );
+
+      const pageviewsDir = join(testDir, "views-month");
+      mkdirSync(pageviewsDir, { recursive: true });
+      makeViewsFile(pageviewsDir, "sv", "2026-05", [
+        { pageId: 100, views: 111 },
+      ]);
+      makeViewsFile(pageviewsDir, "sv", "2026-06", [
+        { pageId: 100, views: 999 },
+      ]);
+
+      const outputPath = join(testDir, "articles-views-month.json");
+      await extractDump({
+        lang: "sv",
+        skipDownload: true,
+        dumpsDir,
+        outputPath,
+        pageviewsDir,
+        pageviewsMonth: "2026-05",
+      });
+
+      const [article] = readFileSync(outputPath, "utf8")
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l) as Article);
+      expect(article.views).toBe(111);
+    });
+
+    it("rejects when the requested pageviews month has no file under skipDownload", async () => {
+      const dumpsDir = writeDumps(
+        "dumps-views-month-missing",
+        [{ id: 100, title: "Eiffeltornet" }],
+        [{ pageId: 100, lat: 48.8584, lon: 2.2945 }],
+      );
+
+      const pageviewsDir = join(testDir, "views-month-missing");
+      mkdirSync(pageviewsDir, { recursive: true });
+      makeViewsFile(pageviewsDir, "sv", "2026-06", [
+        { pageId: 100, views: 999 },
+      ]);
+
+      await expect(
+        extractDump({
+          lang: "sv",
+          skipDownload: true,
+          dumpsDir,
+          outputPath: join(testDir, "articles-views-month-missing.json"),
+          pageviewsDir,
+          pageviewsMonth: "2026-04",
+        }),
+      ).rejects.toThrow(/2026-04/);
+    });
   });
 });

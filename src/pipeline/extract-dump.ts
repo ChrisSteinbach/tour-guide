@@ -8,7 +8,7 @@
  * Output: NDJSON with {title, lat, lon, views?}.
  */
 
-import { createWriteStream } from "node:fs";
+import { createWriteStream, existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { SUPPORTED_LANGS, DEFAULT_LANG } from "../lang.js";
@@ -20,6 +20,7 @@ import {
   ensureViewsFiles,
   findViewsFile,
   loadViewsInto,
+  viewsPath,
   PAGEVIEWS_DIR,
 } from "./pageviews.js";
 
@@ -198,10 +199,13 @@ async function joinPageviews(
 
   let path: string;
   if (skipDownload) {
-    const found = findViewsFile(lang, pageviewsDir);
+    const found = pageviewsMonth
+      ? [viewsPath(lang, pageviewsMonth, pageviewsDir)].find(existsSync)
+      : findViewsFile(lang, pageviewsDir);
     if (!found) {
+      const monthNote = pageviewsMonth ? ` (month ${pageviewsMonth})` : "";
       throw new Error(
-        `No pageviews file found for "${lang}" in ${pageviewsDir}. Run \`npm run pageviews\` to download and split the monthly dump, or pass --no-pageviews to extract without it (all article weights will be 0).`,
+        `No pageviews file found for "${lang}"${monthNote} in ${pageviewsDir}. Run \`npm run pageviews\` to download and split the monthly dump, or pass --no-pageviews to extract without it (all article weights will be 0).`,
       );
     }
     path = found;

@@ -226,6 +226,31 @@ describe("ensureViewsFiles", () => {
     expect(result.rowCounts?.sv).toBe(1);
   });
 
+  it("preserves every row across gzip batch boundaries on large inputs", async () => {
+    // Rows are batched into ~64 KiB gzip writes (the OOM fix for the real
+    // ~25M-row dump); ~20k rows span several batches plus a final partial one.
+    const dir = join(testDir, "batching");
+    const rowCount = 20_000;
+    const lines: string[] = [];
+    for (let i = 0; i < rowCount; i++) {
+      lines.push(`en.wikipedia Article_${i} ${1000 + i} desktop ${i + 1} A1`);
+    }
+
+    const result = await ensureViewsFiles({
+      langs: ["en"],
+      month: "2026-06",
+      dir,
+      fetchFn: bodyFetch(lines.join("\n")),
+      decompress: identity,
+    });
+
+    const rows = readTsvGz(result.paths.en);
+    expect(rows.length).toBe(rowCount);
+    expect(rows[0]).toBe("1000\t1");
+    expect(rows[rowCount - 1]).toBe(`${1000 + rowCount - 1}\t${rowCount}`);
+    expect(result.rowCounts?.en).toBe(rowCount);
+  });
+
   it("still writes an empty file for a requested language with zero matching rows", async () => {
     const dir = join(testDir, "zero-rows");
     const fixtureText = ["en.wikipedia Eiffel_Tower 9232 desktop 300 A1"].join(

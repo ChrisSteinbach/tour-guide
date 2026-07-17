@@ -28,6 +28,7 @@ import { mkdir, rename, rm } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { createGunzip, createGzip } from "node:zlib";
 import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import { Readable } from "node:stream";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { fileURLToPath } from "node:url";
@@ -235,6 +236,47 @@ interface ViewsWriter {
   file: ReturnType<typeof createWriteStream>;
   tmpPath: string;
   rows: number;
+  /** Rows batched up until the next BATCH_BYTES-sized gzip write. */
+  pending: string[];
+  pendingBytes: number;
+  /** First error either stream emitted; checked at every batch flush. */
+  error?: Error;
+}
+
+/**
+ * Batch size for gzip writes. The split emits tens of millions of tiny rows;
+ * writing them individually queues faster than zlib drains and balloons the
+ * heap (writable buffering is per-write, not per-byte), so rows are joined
+ * into ~64 KiB chunks and backpressure (write() → false / 'drain') is honored.
+ */
+const BATCH_BYTES = 64 * 1024;
+
+/** Queue one row on a writer, flushing to the gzip stream at batch size. */
+async function writeRow(
+  w: ViewsWriter,
+  pageId: number,
+  views: number,
+): Promise<void> {
+  const row = `${pageId}\t${views}\n`;
+  w.pending.push(row);
+  w.pendingBytes += row.length;
+  w.rows++;
+  if (w.pendingBytes >= BATCH_BYTES) await flushPending(w);
+}
+
+/** Write the batched rows to the gzip stream, awaiting 'drain' when asked. */
+async function flushPending(w: ViewsWriter): Promise<void> {
+  const earlyError = w.error;
+  if (earlyError) throw earlyError;
+  if (w.pendingBytes === 0) return;
+  const chunk = w.pending.join("");
+  w.pending = [];
+  w.pendingBytes = 0;
+  if (!w.gzip.write(chunk)) {
+    await once(w.gzip, "drain");
+  }
+  const lateError = w.error;
+  if (lateError) throw lateError;
 }
 
 /**
@@ -276,7 +318,13 @@ export async function ensureViewsFiles(
       const file = createWriteStream(tmpPath);
       const gzip = createGzip();
       gzip.pipe(file);
-      w = { gzip, file, tmpPath, rows: 0 };
+      w = { gzip, file, tmpPath, rows: 0, pending: [], pendingBytes: 0 };
+      const writer = w;
+      const onError = (err: Error) => {
+        writer.error ??= err;
+      };
+      file.on("error", onError);
+      gzip.on("error", onError);
       writers.set(lang, w);
     }
     return w;
@@ -318,15 +366,15 @@ export async function ensureViewsFiles(
     let currentPageId = 0;
     let currentSum = 0;
 
-    const flush = (): void => {
+    const emitRun = async (): Promise<void> => {
       if (currentLang === null) return;
-      const w = getWriter(currentLang);
-      w.gzip.write(`${currentPageId}\t${currentSum}\n`);
-      w.rows++;
+      await writeRow(getWriter(currentLang), currentPageId, currentSum);
     };
 
     for await (const line of rl) {
-      if (!line) continue;
+      // Real rows are a few hundred bytes; anything huge is garbage, and
+      // running regexes over giant strings forces costly flattening.
+      if (!line || line.length > 4096) continue;
       const sp = line.indexOf(" ");
       if (sp < 0) continue;
       const lang = wikiToLang.get(line.slice(0, sp));
@@ -345,17 +393,18 @@ export async function ensureViewsFiles(
       if (lang === currentLang && pageId === currentPageId) {
         currentSum += count;
       } else {
-        flush();
+        await emitRun();
         currentLang = lang;
         currentPageId = pageId;
         currentSum = count;
       }
     }
-    flush();
+    await emitRun();
 
     // Every missing language gets a file, even with zero matching rows —
     // its presence marks the month as processed.
     for (const lang of missingLangs) getWriter(lang);
+    for (const w of writers.values()) await flushPending(w);
 
     await Promise.all(
       [...writers.values()].map(
