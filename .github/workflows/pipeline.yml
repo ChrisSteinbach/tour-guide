@@ -25,7 +25,7 @@ jobs:
     outputs:
       langs: ${{ steps.parse.outputs.langs }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           sparse-checkout: |
             src/lang.ts
@@ -51,7 +51,7 @@ jobs:
       max-parallel: 3
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
@@ -61,7 +61,7 @@ jobs:
       - run: npm ci
 
       - name: Restore dump cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: data/dumps
           key: dumps-v1-${{ matrix.lang }}
@@ -91,7 +91,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Download all artifacts
         uses: actions/download-artifact@v8
