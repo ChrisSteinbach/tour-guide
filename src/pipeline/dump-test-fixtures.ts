@@ -102,3 +102,25 @@ export function gzFile(dir: string, name: string, sql: string): string {
   writeFileSync(path, gzipSync(Buffer.from(sql, "utf8")));
   return path;
 }
+
+interface ViewsRow {
+  pageId: number;
+  views: number;
+}
+
+/**
+ * Write a gzipped per-language pageviews TSV ({page_id}\t{views} per line),
+ * named to match findViewsFile's pattern: pageviews-YYYYMM-{lang}.tsv.gz.
+ */
+export function makeViewsFile(
+  dir: string,
+  lang: string,
+  month: string,
+  rows: ViewsRow[],
+): string {
+  const compactMonth = month.replace("-", "");
+  const path = join(dir, `pageviews-${compactMonth}-${lang}.tsv.gz`);
+  const content = rows.map((r) => `${r.pageId}\t${r.views}`).join("\n") + "\n";
+  writeFileSync(path, gzipSync(Buffer.from(content, "utf8")));
+  return path;
+}
