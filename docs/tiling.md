@@ -158,6 +158,15 @@ When the user's position is known, the app:
 5. **Prefetches adjacent tiles** in the background (up to 8 adjacent tiles when near a corner, typically 1-2).
 6. **Merges results** when adjacent tiles finish loading.
 
+### Load resilience
+
+Some tiles are large (sv Stockholm `29-39` is 3.4 MB raw / ~1.8 MB on the wire) and disproportionately likely to fail or run long on cellular, so tile loading is defensive:
+
+- **Retry with backoff** — `loadTile()` retries transient fetch failures (network errors, HTTP 5xx/429) up to 3 attempts with 500 ms / 1500 ms backoff (`TILE_FETCH_RETRY_DELAYS_MS` in `tile-loader.ts`). Non-retryable statuses (e.g. 404) and aborts fail immediately. This matters most in pick-position mode, which has no GPS ticks to trigger re-requests.
+- **In-flight loads survive GPS ticks** — the state machine emits a `loadTiles` effect on every position event, but the effect executor only aborts in-flight loads when `loadGeneration` changed (language switch or re-pick, where the state machine has already discarded old tiles). Same-generation passes never abort: a slow fetch of a large tile must be allowed to finish across position updates. (Aborting per tick both prevented big tiles from ever completing on slow networks and left them permanently stuck in `loadingTiles`, since an aborted load intentionally dispatches no `tileLoadFailed`.)
+- **Primary keeps bandwidth priority** — within a pass, adjacent tiles start only after the primary settles; same-generation passes are additionally serialized behind the previous pass, so adjacent prefetches never compete with a still-downloading primary.
+- **Session diagnostics** — every tile load (cache hit, network success/failure, size, duration, attempts) is recorded in a session-scoped log (`tile-log.ts`) and echoed to the console.
+
 ### Cross-tile query merging
 
 The simplest correct approach: query each loaded tile's `NearestQuery` independently, concatenate all results, de-duplicate by title, sort by distance, and take the top k.

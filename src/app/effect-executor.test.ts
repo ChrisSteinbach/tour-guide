@@ -1,6 +1,6 @@
 import type { Mock } from "vitest";
 import type { NearbyArticle, UserPosition } from "./types";
-import type { AppState, QueryState } from "./state-machine";
+import type { AppState, Event, QueryState } from "./state-machine";
 import type {
   EffectDeps,
   RenderDeps,
@@ -304,12 +304,13 @@ describe("createEffectExecutor", () => {
 
   // ── Async orchestration: loadTiles ─────────────────────────
 
-  it("loadTiles aborts previous in-flight tile loads on re-pick", async () => {
+  it("aborts previous in-flight tile loads when load generation changes (re-pick / language switch)", async () => {
     let signalFromFirst: AbortSignal | undefined;
     const entry = makeTileEntry("t1");
     const tileMap = new Map([["t1", entry]]);
+    let gen = 1;
     const deps = makeDeps({
-      getState: vi.fn(() => tiledState(tileMap)),
+      getState: vi.fn(() => tiledState(tileMap, { loadGeneration: gen })),
       data: makeData({
         tilesForPosition: vi.fn(() => ({ primary: "t1", adjacent: [] })),
         getTileEntry: vi.fn((_map, id) => (id === "t1" ? entry : undefined)),
@@ -322,9 +323,156 @@ describe("createEffectExecutor", () => {
     const exec = createEffectExecutor(deps);
 
     exec({ type: "loadTiles", lang: "en" });
+    // Wait until the pass has started and captured the signal before we
+    // simulate the generation bump.
+    await vi.waitFor(() => {
+      expect(signalFromFirst).toBeDefined();
+    });
+
+    // Model a re-pick or language switch: the state machine bumps
+    // loadGeneration before the next loadTiles effect is emitted.
+    gen = 2;
     exec({ type: "loadTiles", lang: "en" });
 
     expect(signalFromFirst!.aborted).toBe(true);
+  });
+
+  it("does not abort in-flight tile loads on same-generation loadTiles (GPS tick)", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    const entry = makeTileEntry("t1");
+    const tileMap = new Map([["t1", entry]]);
+    let loadingTiles = new Set<string>();
+    const deps = makeDeps({
+      getState: vi.fn(() =>
+        tiledState(tileMap, { loadGeneration: 1, loadingTiles }),
+      ),
+      data: makeData({
+        tilesForPosition: vi.fn(() => ({ primary: "t1", adjacent: [] })),
+        getTileEntry: vi.fn((_map, id) => (id === "t1" ? entry : undefined)),
+        loadTile: vi.fn((_lang, _entry, signal) => {
+          capturedSignal = signal;
+          // Never settles — models a large tile fetch on slow cellular that
+          // outlives a single ~1s GPS tick interval.
+          return new Promise<NearestQuery>(() => {});
+        }),
+      }),
+    });
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "loadTiles", lang: "en" });
+    await vi.waitFor(() => {
+      expect(capturedSignal).toBeDefined();
+    });
+
+    // Mirror the state machine: once tileLoadStarted fires for "t1", it is
+    // marked loading, so the fake state for the next GPS tick reflects that.
+    loadingTiles = new Set(["t1"]);
+
+    exec({ type: "loadTiles", lang: "en" });
+    await Promise.resolve();
+
+    expect(capturedSignal!.aborted).toBe(false);
+    expect(deps.data.loadTile).toHaveBeenCalledTimes(1);
+  });
+
+  it("serializes passes: a same-generation loadTiles waits for the previous pass's primary before starting loads", async () => {
+    const entry1 = makeTileEntry("t1");
+    const entry2 = makeTileEntry("t2", "h2");
+    const tileMap = new Map<string, TileEntry>([
+      ["t1", entry1],
+      ["t2", entry2],
+    ]);
+    let primary = "t1";
+    const pendingResolvers = new Map<string, (q: NearestQuery) => void>();
+    const deps = makeDeps({
+      getState: vi.fn(() => tiledState(tileMap, { loadGeneration: 1 })),
+      data: makeData({
+        tilesForPosition: vi.fn(() => ({ primary, adjacent: [] })),
+        getTileEntry: vi.fn((_map, id) => tileMap.get(id as string)),
+        loadTile: vi.fn(
+          (_lang, entry: TileEntry) =>
+            new Promise<NearestQuery>((resolve) => {
+              pendingResolvers.set(entry.id, resolve);
+            }),
+        ),
+      }),
+    });
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "loadTiles", lang: "en" });
+    await vi.waitFor(() => {
+      expect(deps.data.loadTile).toHaveBeenCalledWith(
+        "en",
+        entry1,
+        expect.anything(),
+      );
+    });
+
+    // Position moves to a new tile before the first pass's primary settles.
+    primary = "t2";
+    exec({ type: "loadTiles", lang: "en" });
+
+    // The second pass is queued behind the first; it must not start loading
+    // "t2" while "t1" — the first pass's primary — is still in flight.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(deps.data.loadTile).not.toHaveBeenCalledWith(
+      "en",
+      entry2,
+      expect.anything(),
+    );
+
+    // Resolving "t1" lets the first pass finish, unblocking the second.
+    pendingResolvers.get("t1")!(stubNearestQuery);
+    await vi.waitFor(() => {
+      expect(deps.data.loadTile).toHaveBeenCalledWith(
+        "en",
+        entry2,
+        expect.anything(),
+      );
+    });
+  });
+
+  it("re-requests a tile on a later same-generation pass after it failed", async () => {
+    const entry = makeTileEntry("t1");
+    const tileMap = new Map([["t1", entry]]);
+    const loadingTiles = new Set<string>();
+    // Mirror the state machine's loadingTiles bookkeeping: tileLoadStarted
+    // marks a tile loading, tileLoadFailed clears it (see state-machine.ts),
+    // so a later pass is free to retry.
+    const dispatch = vi.fn((event: Event) => {
+      if (event.type === "tileLoadStarted") loadingTiles.add(event.id);
+      if (event.type === "tileLoadFailed") loadingTiles.delete(event.id);
+    });
+    const deps = makeDeps({
+      getState: vi.fn(() =>
+        tiledState(tileMap, { loadGeneration: 1, loadingTiles }),
+      ),
+      dispatch,
+      data: makeData({
+        tilesForPosition: vi.fn(() => ({ primary: "t1", adjacent: [] })),
+        getTileEntry: vi.fn((_map, id) => (id === "t1" ? entry : undefined)),
+        loadTile: vi.fn(async () => {
+          throw new Error("network error");
+        }),
+      }),
+    });
+    const exec = createEffectExecutor(deps);
+
+    exec({ type: "loadTiles", lang: "en" });
+    await vi.waitFor(() => {
+      expect(deps.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "tileLoadFailed", id: "t1" }),
+      );
+    });
+    expect(loadingTiles.has("t1")).toBe(false);
+
+    // A later same-generation pass (the next GPS tick) must retry "t1"
+    // rather than skip it forever.
+    exec({ type: "loadTiles", lang: "en" });
+    await vi.waitFor(() => {
+      expect(deps.data.loadTile).toHaveBeenCalledTimes(2);
+    });
   });
 
   it("loadTiles dispatches tileLoadStarted then tileLoaded", async () => {
@@ -383,6 +531,9 @@ describe("createEffectExecutor", () => {
     const exec = createEffectExecutor(deps);
 
     exec({ type: "loadTiles", lang: "en" });
+    // Flush a microtask so the pass has started regardless of whether it
+    // began synchronously or was chained behind a previous pass.
+    await Promise.resolve();
 
     // Primary tile must be loaded first and awaited before adjacent tiles start
     expect(loadOrder).toEqual(["tp"]);
@@ -580,6 +731,9 @@ describe("createEffectExecutor", () => {
     const exec = createEffectExecutor(deps);
 
     exec({ type: "loadTiles", lang: "en" });
+    // Flush a microtask so the pass has started regardless of whether it
+    // began synchronously or was chained behind a previous pass.
+    await Promise.resolve();
 
     // nearestExistingTiles should have been called
     expect(deps.data.nearestExistingTiles).toHaveBeenCalledWith(
@@ -655,6 +809,9 @@ describe("createEffectExecutor", () => {
     const exec = createEffectExecutor(deps);
 
     exec({ type: "loadTiles", lang: "en" });
+    // Flush a microtask so the pass has started regardless of whether it
+    // began synchronously or was chained behind a previous pass.
+    await Promise.resolve();
 
     // Fallback should trigger even though adjacent tile exists
     expect(deps.data.nearestExistingTiles).toHaveBeenCalledWith(
