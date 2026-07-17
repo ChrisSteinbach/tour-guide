@@ -72,6 +72,13 @@ export function greatCircleNormal(a: Point3D, b: Point3D): Point3D {
  * Sign of dot(cross(a, b), p).
  * Positive → p is to the left of the great circle from a to b.
  * Negative → right side. Zero → on the great circle.
+ *
+ * Magnitude scales with the a→b edge's angular extent and p's angular
+ * deviation from the great circle it defines — near zero for tiny or
+ * near-degenerate edges, up to ~0.5 for antipodal-scale ones. On real
+ * global data, genuine containment signals bottom out around ~1e-9 while
+ * pure roundoff sits near ~1e-16; don't derive a containment epsilon from
+ * raw side values — use locateTriangle, which already encapsulates it.
  */
 export function sideOfGreatCircle(a: Point3D, b: Point3D, p: Point3D): number {
   return dot(cross(a, b), p);
