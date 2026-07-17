@@ -5,14 +5,12 @@ import {
   serializeBinary,
   deserializeBinary,
   toCartesian,
-} from "../geometry";
-import type { Point3D } from "../geometry";
-import {
-  NearestQuery,
   toFlatDelaunay,
   createWalkTrace,
   vertexLatLon,
-} from "./query";
+} from "../geometry";
+import type { Point3D } from "../geometry";
+import { NearestQuery } from "./query";
 
 // ---------- Fixtures ----------
 

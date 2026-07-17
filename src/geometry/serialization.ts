@@ -155,6 +155,50 @@ export function deserialize(data: TriangulationFile): {
   return { tri: { vertices, triangles, originalIndices }, articles };
 }
 
+// ---------- Flat typed-array conversion ----------
+
+/** Convert a TriangulationFile's flat number arrays to typed arrays. */
+export function toFlatDelaunay(data: TriangulationFile): FlatDelaunay {
+  return {
+    vertexPoints: Float64Array.from(data.vertices),
+    vertexTriangles: Uint32Array.from(data.vertexTriangles),
+    triangleVertices: Uint32Array.from(data.triangleVertices),
+    triangleNeighbors: Uint32Array.from(data.triangleNeighbors),
+  };
+}
+
+/**
+ * Convert a SphericalDelaunay object graph to the flat typed-array
+ * representation the query functions operate on. For consumers that build
+ * a triangulation and query it in-memory, without a serialization
+ * round-trip. Circumcenters/circumradii are dropped.
+ */
+export function flattenTriangulation(tri: SphericalDelaunay): FlatDelaunay {
+  const V = tri.vertices.length;
+  const T = tri.triangles.length;
+  const vertexPoints = new Float64Array(V * 3);
+  const vertexTriangles = new Uint32Array(V);
+  for (let i = 0; i < V; i++) {
+    const v = tri.vertices[i];
+    vertexPoints[i * 3] = v.point[0];
+    vertexPoints[i * 3 + 1] = v.point[1];
+    vertexPoints[i * 3 + 2] = v.point[2];
+    vertexTriangles[i] = v.triangle;
+  }
+  const triangleVertices = new Uint32Array(T * 3);
+  const triangleNeighbors = new Uint32Array(T * 3);
+  for (let i = 0; i < T; i++) {
+    const t = tri.triangles[i];
+    triangleVertices[i * 3] = t.vertices[0];
+    triangleVertices[i * 3 + 1] = t.vertices[1];
+    triangleVertices[i * 3 + 2] = t.vertices[2];
+    triangleNeighbors[i * 3] = t.neighbor[0];
+    triangleNeighbors[i * 3 + 1] = t.neighbor[1];
+    triangleNeighbors[i * 3 + 2] = t.neighbor[2];
+  }
+  return { vertexPoints, vertexTriangles, triangleVertices, triangleNeighbors };
+}
+
 // ---------- Binary format ----------
 //
 // Header (24 bytes):

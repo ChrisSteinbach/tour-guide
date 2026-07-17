@@ -3,7 +3,9 @@ import {
   convexHull,
   buildTriangulation,
   sphericalDistance,
-  findNearest,
+  createQueryContext,
+  findNearestVertices,
+  flattenTriangulation,
   serialize,
   deserialize,
   serializeBinary,
@@ -179,10 +181,11 @@ describe("round-trip", () => {
     }
   });
 
-  it("findNearest on deserialized data matches brute-force for 50 random queries", () => {
+  it("nearest-vertex queries on deserialized data match brute-force for 50 random queries", () => {
     const { tri, articles } = buildFixture();
     const data = serialize(tri, articles);
     const { tri: restored } = deserialize(data);
+    const ctx = createQueryContext(flattenTriangulation(restored));
 
     // Deterministic pseudo-random via simple LCG
     let seed = 42;
@@ -195,7 +198,7 @@ describe("round-trip", () => {
       const lat = rand() * 180 - 90;
       const lon = rand() * 360 - 180;
       const query = toCartesian({ lat, lon });
-      const walkResult = findNearest(restored, query);
+      const walkResult = findNearestVertices(ctx, query).nearestVertex;
       const bruteResult = bruteForceNearest(restored, query);
       expect(walkResult).toBe(bruteResult);
     }
@@ -212,9 +215,10 @@ describe("round-trip", () => {
     expect(restored.triangles.length).toBe(tri.triangles.length);
     expect(restoredArticles).toEqual(articles);
 
-    // Verify findNearest still works after full JSON round-trip
+    // Verify nearest-vertex queries still work after full JSON round-trip
     const query = toCartesian({ lat: 48.5, lon: 2.0 });
-    const result = findNearest(restored, query);
+    const ctx = createQueryContext(flattenTriangulation(restored));
+    const result = findNearestVertices(ctx, query).nearestVertex;
     const brute = bruteForceNearest(restored, query);
     expect(result).toBe(brute);
   });

@@ -164,9 +164,24 @@ export type {
   SphericalDelaunay,
 } from "./delaunay";
 
-// ---------- Point location (re-exports) ----------
+// ---------- Nearest-neighbor queries (re-exports) ----------
 
-export { locateTriangle, findNearest, vertexNeighbors } from "./point-location";
+export {
+  createQueryContext,
+  findNearestVertices,
+  vertexNeighbors,
+  vertexLatLon,
+  createWalkTrace,
+  FILTERED_VISIT_FLOOR,
+  FILTERED_VISIT_PER_RESULT,
+} from "./flat-query";
+export type {
+  QueryContext,
+  NearestVerticesOptions,
+  NearestVerticesResult,
+  VertexHit,
+  WalkTrace,
+} from "./flat-query";
 
 // ---------- Serialization (re-exports) ----------
 
@@ -175,6 +190,8 @@ export {
   deserialize,
   serializeBinary,
   deserializeBinary,
+  toFlatDelaunay,
+  flattenTriangulation,
   BinaryFormatError,
 } from "./serialization";
 export type {

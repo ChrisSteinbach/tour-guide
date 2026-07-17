@@ -3,9 +3,9 @@ import {
   convexHull,
   serialize,
   toCartesian,
+  toFlatDelaunay,
 } from "../geometry";
 import type { FlatDelaunay, Point3D } from "../geometry";
-import { toFlatDelaunay } from "./query";
 import {
   MAX_MESH_EDGE_RAD,
   meshSegments,
