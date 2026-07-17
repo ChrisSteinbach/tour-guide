@@ -194,11 +194,32 @@ function markBackClosure(fd: FlatDelaunay): Uint8Array {
 }
 
 /**
- * Walk the triangulation toward query point (qx,qy,qz) and return the
- * vertex index to seed the greedy descent from: the vertex closest to the
- * query among all triangles the walk visited. Returns -1 if the walk got
- * stuck in a cycle (near-degenerate triangles from Float32 coordinate
- * quantization) — the caller falls back to a brute-force scan.
+ * How a locate walk ended, for the two consumers of the walk:
+ * nearest-vertex search reads `seedVertex`, point location reads
+ * `stopTriangle`.
+ */
+interface LocateExit {
+  /**
+   * Vertex to seed the greedy descent from: the vertex closest to the
+   * query among all triangles the walk visited. -1 if the walk got stuck
+   * in a cycle while still improving (near-degenerate triangles from
+   * Float32 coordinate quantization) — the caller falls back to a
+   * brute-force scan.
+   */
+  seedVertex: number;
+  /**
+   * The triangle where the walk stopped because no failing edge could be
+   * crossed — true containment (no failing edge at all) or a rim stall
+   * (every failing edge borders the back closure). -1 when the walk was
+   * cut short instead (patience, cycle, step cap) and its final triangle
+   * says nothing about containment.
+   */
+  stopTriangle: number;
+}
+
+/**
+ * Walk the triangulation toward query point (qx,qy,qz); see LocateExit
+ * for the two results a walk produces.
  *
  * For queries inside the patch the walk reaches the containing triangle
  * exactly as the textbook algorithm does. For queries outside the patch
@@ -241,8 +262,9 @@ function flatLocate(
   start: number | undefined,
   anchor: number | undefined,
   trace?: WalkTrace,
-): number {
-  if (fd.vertexTriangles.length === 0) return 0;
+): LocateExit {
+  if (fd.vertexTriangles.length === 0)
+    return { seedVertex: 0, stopTriangle: -1 };
   let cur = start ?? anchor ?? fd.vertexTriangles[0];
   // One restart credit: -1 once spent or when the walk already starts there.
   let restartTo = anchor !== undefined && anchor !== cur ? anchor : -1;
@@ -296,7 +318,11 @@ function flatLocate(
       }
       // Cycle while still improving = degenerate tangle → brute force.
       // Cycle after progress stopped = orbit closing → best-seen seeds fine.
-      return cycled && sinceImproved < HISTORY_SIZE / 2 ? -1 : bestVertex;
+      return {
+        seedVertex:
+          cycled && sinceImproved < HISTORY_SIZE / 2 ? -1 : bestVertex,
+        stopTriangle: -1,
+      };
     }
 
     history[step % HISTORY_SIZE] = cur;
@@ -317,9 +343,9 @@ function flatLocate(
         break;
       }
     }
-    if (!crossed) return bestVertex;
+    if (!crossed) return { seedVertex: bestVertex, stopTriangle: cur };
   }
-  return bestVertex;
+  return { seedVertex: bestVertex, stopTriangle: -1 };
 }
 
 /**
@@ -435,7 +461,7 @@ function flatFindNearest(
     startTri,
     anchorTri,
     trace,
-  );
+  ).seedVertex;
 
   // Walk got stuck in a degenerate cycle — fall back to brute force
   if (seed < 0) {
@@ -733,4 +759,264 @@ function collectFiltered(
 
   candidates.sort((a, b) => a.distance - b.distance);
   return candidates.slice(0, k);
+}
+
+// ---------- Point location ----------
+
+/**
+ * Absolute containment tolerance for point location. Side values
+ * (dot(cross(a, b), p)) scale with triangle size — from ~0.5 for giant
+ * open-ocean triangles down to ~1e-9 for genuine dense-cluster triangles —
+ * so the epsilon must sit below every real signal but above the noise:
+ * Float64 roundoff contributes ~1e-16, and querying Float32-quantized
+ * needle triangles (near-duplicate vertices, the binary tile format) with
+ * full-precision coordinates contributes displacement-times-tiny-normal
+ * terms up to ~1e-13. 1e-12 clears both noise sources with an order of
+ * magnitude to spare while staying three below the smallest genuine
+ * non-containment signal.
+ */
+const CONTAINMENT_EPS = 1e-12;
+
+/**
+ * Angular displacement (radians) below which a rim-edge violation does not
+ * prove a query lies outside the patch. A walk that stalls on the rim has
+ * p on the wrong side of a hull-supporting plane — proof of
+ * non-containment, but only up to how far the stored geometry sits from
+ * the true one: Float32 quantization moves vertices by up to ~6e-8 rad
+ * (side tests scale with the edge normal, so the violation is compared as
+ * side/|normal|). Beyond 1e-7 the violation is real and the walk answers
+ * null directly; within it, only the exhaustive scan can tell "just
+ * outside the rim" from "on a fuzz-degenerate hull face".
+ */
+const RIM_PROOF_EPS_RAD = 1e-7;
+
+/**
+ * True when no side test against triangle t can ever exceed
+ * CONTAINMENT_EPS: every edge normal (cross of its endpoints) is at most
+ * EPS long, so |side| ≤ |normal| ≤ EPS for any unit query point. Such a
+ * triangle — three coincident input points collapsed to one coordinate —
+ * would test "contained" for every point on the sphere. It can decide
+ * nothing, so point location skips it: a query genuinely at the collapsed
+ * position is also contained (within tolerance) by a genuine triangle
+ * incident to the same vertices. Kept out of the back-closure mask on
+ * purpose — that mask also gates vertexNeighbors emission, and hiding a
+ * coincident cluster's fan triangles would break k>1 searches there.
+ */
+function containmentBlind(fd: FlatDelaunay, t: number): boolean {
+  const ti = t * 3;
+  const vp = fd.vertexPoints;
+  const epsSq = CONTAINMENT_EPS * CONTAINMENT_EPS;
+  for (let e = 0; e < 3; e++) {
+    const ai = fd.triangleVertices[ti + e] * 3;
+    const bi = fd.triangleVertices[ti + ((e + 1) % 3)] * 3;
+    const nx = vp[ai + 1] * vp[bi + 2] - vp[ai + 2] * vp[bi + 1];
+    const ny = vp[ai + 2] * vp[bi] - vp[ai] * vp[bi + 2];
+    const nz = vp[ai] * vp[bi + 1] - vp[ai + 1] * vp[bi];
+    if (nx * nx + ny * ny + nz * nz > epsSq) return false;
+  }
+  return true;
+}
+
+/** A point located within a triangulation. */
+export interface PointLocation {
+  /** Containing triangle index. */
+  triangle: number;
+  /** The triangle's vertex indices, in triangleVertices order. */
+  vertices: [number, number, number];
+  /**
+   * Spherical barycentric weights ≥ 0 summing to 1, aligned with
+   * `vertices`: interpolate a per-vertex field f at p as Σ wᵢ·f(vᵢ).
+   */
+  weights: [number, number, number];
+}
+
+/**
+ * Signed side of (qx,qy,qz) against each of triangle t's three CCW edges:
+ * result[i] = dot(cross(vᵢ, vᵢ₊₁), q). All non-negative ⇔ q is contained.
+ */
+function triangleSides(
+  fd: FlatDelaunay,
+  t: number,
+  qx: number,
+  qy: number,
+  qz: number,
+): [number, number, number] {
+  const ti = t * 3;
+  const vp = fd.vertexPoints;
+  const ai = fd.triangleVertices[ti] * 3;
+  const bi = fd.triangleVertices[ti + 1] * 3;
+  const ci = fd.triangleVertices[ti + 2] * 3;
+  return [
+    side(vp, ai, bi, qx, qy, qz),
+    side(vp, bi, ci, qx, qy, qz),
+    side(vp, ci, ai, qx, qy, qz),
+  ];
+}
+
+/**
+ * Assemble a PointLocation from a containing triangle's edge sides.
+ *
+ * Vertex i's raw weight is the side value of its opposite edge — the
+ * spherical barycentric determinant det[q, vⱼ, vₖ]. Sides within
+ * CONTAINMENT_EPS below zero (q on an edge, up to roundoff) clamp to 0 so
+ * weights stay non-negative.
+ *
+ * A zero-area triangle (coincident input points — see tour-guide-895a for
+ * the input-hygiene contract) can zero out every clamped side; all weight
+ * then goes to the nearest of its three vertices — the interpolation limit
+ * as a triangle collapses — so callers never see NaN.
+ */
+function buildLocation(
+  fd: FlatDelaunay,
+  triangle: number,
+  sides: [number, number, number],
+  qx: number,
+  qy: number,
+  qz: number,
+): PointLocation {
+  const ti = triangle * 3;
+  const vertices: [number, number, number] = [
+    fd.triangleVertices[ti],
+    fd.triangleVertices[ti + 1],
+    fd.triangleVertices[ti + 2],
+  ];
+  const raw: [number, number, number] = [
+    Math.max(sides[1], 0),
+    Math.max(sides[2], 0),
+    Math.max(sides[0], 0),
+  ];
+  const sum = raw[0] + raw[1] + raw[2];
+  if (sum > 0) {
+    return {
+      triangle,
+      vertices,
+      weights: [raw[0] / sum, raw[1] / sum, raw[2] / sum],
+    };
+  }
+  const weights: [number, number, number] = [0, 0, 0];
+  let nearest = 0;
+  let nearestD = dist(fd.vertexPoints, vertices[0] * 3, qx, qy, qz);
+  for (let i = 1; i < 3; i++) {
+    const d = dist(fd.vertexPoints, vertices[i] * 3, qx, qy, qz);
+    if (d < nearestD) {
+      nearestD = d;
+      nearest = i;
+    }
+  }
+  weights[nearest] = 1;
+  return { triangle, vertices, weights };
+}
+
+/**
+ * Locate the triangle containing `p` and p's spherical barycentric weights
+ * within it — the primitive field interpolation needs ("blend the values at
+ * the three vertices surrounding p").
+ *
+ * The walk is the same hardened locate machinery findNearestVertices uses
+ * (back-closure masking, patience, cycle detection, anchor restart), so it
+ * survives the same real-data pathologies. `startTriangle` warm-starts it:
+ * threading the previous result's triangle through spatially-coherent
+ * queries (scanline rendering, moving readouts) makes each locate O(1)
+ * instead of O(√N) — 25× on a 1M-query render benchmark.
+ *
+ * Returns null when no triangle of the patch front contains p. For a patch
+ * triangulation (thin-lens hull), queries beyond the patch rim have no
+ * containing triangle, and back-closure facets are never returned — a
+ * region covered only by the hull's underside is outside the triangulated
+ * surface. Interpolating there is undefined; nearest-vertex queries remain
+ * available for "closest data point anyway" semantics. On a full-sphere
+ * triangulation every point is contained and null is never returned.
+ *
+ * Containment tolerance is absolute (CONTAINMENT_EPS): p within roundoff
+ * beyond an edge — including the patch rim — counts as contained, with the
+ * off-edge weight clamped to 0.
+ *
+ * A walk cut short by degeneracy (cycles in Float32-quantized slivers), or
+ * stopped on a masked triangle by a stale warm start, falls back to the
+ * exhaustive locateTriangleByScan; on healthy data the walk terminates by
+ * containment or rim stall and the scan never runs.
+ */
+export function locateTriangle(
+  ctx: QueryContext,
+  p: Point3D,
+  startTriangle?: number,
+): PointLocation | null {
+  const { fd, backClosure, anchorTriangle } = ctx;
+  if (fd.triangleVertices.length === 0) return null;
+  const [qx, qy, qz] = p;
+  const { stopTriangle } = flatLocate(
+    fd,
+    backClosure,
+    qx,
+    qy,
+    qz,
+    startTriangle ?? anchorTriangle,
+    anchorTriangle,
+  );
+  if (
+    stopTriangle >= 0 &&
+    backClosure[stopTriangle] === 0 &&
+    !containmentBlind(fd, stopTriangle)
+  ) {
+    const sides = triangleSides(fd, stopTriangle, qx, qy, qz);
+    if (Math.min(sides[0], sides[1], sides[2]) >= -CONTAINMENT_EPS) {
+      return buildLocation(fd, stopTriangle, sides, qx, qy, qz);
+    }
+    // Rim stall: the walk stopped even though an edge test genuinely
+    // fails, so every failing edge borders the back closure — a rim
+    // (silhouette) edge. The plane through the sphere center and a rim
+    // edge supports the whole hull, so p outside one by more than
+    // geometry fuzz (see RIM_PROOF_EPS_RAD) proves no front triangle
+    // contains p. All violations within fuzz → let the scan decide.
+    const ti = stopTriangle * 3;
+    const vp = fd.vertexPoints;
+    for (let e = 0; e < 3; e++) {
+      if (sides[e] >= -CONTAINMENT_EPS) continue;
+      const ai = fd.triangleVertices[ti + e] * 3;
+      const bi = fd.triangleVertices[ti + ((e + 1) % 3)] * 3;
+      const nx = vp[ai + 1] * vp[bi + 2] - vp[ai + 2] * vp[bi + 1];
+      const ny = vp[ai + 2] * vp[bi] - vp[ai] * vp[bi + 2];
+      const nz = vp[ai] * vp[bi + 1] - vp[ai + 1] * vp[bi];
+      const normal = Math.sqrt(nx * nx + ny * ny + nz * nz);
+      if (sides[e] < -RIM_PROOF_EPS_RAD * normal) return null;
+    }
+  }
+  // Walk cut short (degenerate cycle, patience, step cap), stranded on a
+  // masked or containment-blind triangle, or rim-stalled within geometry
+  // fuzz — only the exhaustive scan is reliable here.
+  return locateTriangleByScan(ctx, p);
+}
+
+/**
+ * Brute-force point location: scan every front (non-back-closure) triangle
+ * and pick the one maximizing min(edge sides). Same contract as
+ * locateTriangle — same weights, same null-beyond-the-rim semantics — at
+ * O(triangles) per query. Exported as the oracle for consumers testing
+ * warm-started walks against ground truth; also the internal fallback when
+ * a walk is cut short.
+ */
+export function locateTriangleByScan(
+  ctx: QueryContext,
+  p: Point3D,
+): PointLocation | null {
+  const { fd, backClosure } = ctx;
+  const [qx, qy, qz] = p;
+  const T = fd.triangleVertices.length / 3;
+  let bestTriangle = -1;
+  let bestSides: [number, number, number] = [0, 0, 0];
+  let bestMin = -Infinity;
+  for (let t = 0; t < T; t++) {
+    if (backClosure[t] === 1) continue;
+    const sides = triangleSides(fd, t, qx, qy, qz);
+    const min = Math.min(sides[0], sides[1], sides[2]);
+    // Blindness checked only for would-be winners: near-universal misses
+    // keep the scan at three side tests per triangle.
+    if (min > bestMin && !containmentBlind(fd, t)) {
+      bestMin = min;
+      bestTriangle = t;
+      bestSides = sides;
+    }
+  }
+  if (bestTriangle < 0 || bestMin < -CONTAINMENT_EPS) return null;
+  return buildLocation(fd, bestTriangle, bestSides, qx, qy, qz);
 }

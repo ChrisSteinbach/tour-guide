@@ -169,6 +169,8 @@ export type {
 export {
   createQueryContext,
   findNearestVertices,
+  locateTriangle,
+  locateTriangleByScan,
   vertexNeighbors,
   vertexLatLon,
   createWalkTrace,
@@ -179,6 +181,7 @@ export type {
   QueryContext,
   NearestVerticesOptions,
   NearestVerticesResult,
+  PointLocation,
   VertexHit,
   WalkTrace,
 } from "./flat-query";

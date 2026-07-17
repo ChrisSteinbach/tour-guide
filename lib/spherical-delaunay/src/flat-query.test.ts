@@ -1,6 +1,7 @@
 import {
   toCartesian,
   normalize,
+  dot,
   sideOfGreatCircle,
   convexHull,
   buildTriangulation,
@@ -10,6 +11,8 @@ import {
   vertexNeighbors,
   createWalkTrace,
   vertexLatLon,
+  locateTriangle,
+  locateTriangleByScan,
 } from "./index";
 import type {
   FlatDelaunay,
@@ -1047,5 +1050,374 @@ describe("findNearestVertices (walk tracing)", () => {
       expect(y).toBeCloseTo(fd.vertexPoints[vi + 1], 7);
       expect(z).toBeCloseTo(fd.vertexPoints[vi + 2], 7);
     }
+  });
+});
+
+// ---------- Point location ----------
+
+/** Deterministic PRNG (mulberry32) — same seed always yields the same sequence. */
+function mulberry32(seed: number): () => number {
+  let state = seed;
+  return () => {
+    state |= 0;
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Uniform random point on the sphere, in degrees. */
+function randomLatLon(rand: () => number): { lat: number; lon: number } {
+  const u = rand();
+  const v = rand();
+  return {
+    lat: (Math.asin(2 * u - 1) * 180) / Math.PI,
+    lon: 360 * v - 180,
+  };
+}
+
+/** Minimum of a triangle's three signed edge-side values — negative means p is outside that edge. */
+function minSideOfTriangle(
+  fd: FlatDelaunay,
+  vertices: [number, number, number],
+  p: Point3D,
+): number {
+  const v0 = vertexPoint(fd, vertices[0]);
+  const v1 = vertexPoint(fd, vertices[1]);
+  const v2 = vertexPoint(fd, vertices[2]);
+  return Math.min(
+    sideOfGreatCircle(v0, v1, p),
+    sideOfGreatCircle(v1, v2, p),
+    sideOfGreatCircle(v2, v0, p),
+  );
+}
+
+describe("locateTriangle (full sphere)", () => {
+  const octaFd = flattenTriangulation(buildTri(OCTAHEDRON_POINTS));
+  const octaCtx = createQueryContext(octaFd);
+
+  it("returns positive weights summing to 1 at a face-interior point, aligned to the correct face", () => {
+    const p = toCartesian({ lat: 30, lon: 30 });
+    const loc = locateTriangle(octaCtx, p);
+
+    expect(loc).not.toBeNull();
+    const { vertices, weights } = loc!;
+    expect(weights[0]).toBeGreaterThan(0);
+    expect(weights[1]).toBeGreaterThan(0);
+    expect(weights[2]).toBeGreaterThan(0);
+    expect(Math.abs(weights[0] + weights[1] + weights[2] - 1)).toBeLessThan(
+      1e-12,
+    );
+
+    // Octahedron coordinates are exact — compare the returned vertices'
+    // coordinates as a set rather than assuming a flat vertex index order.
+    const got = vertices
+      .map((v) => JSON.stringify(vertexPoint(octaFd, v)))
+      .sort();
+    const expected = (
+      [
+        [1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1],
+      ] as Point3D[]
+    )
+      .map((v) => JSON.stringify(v))
+      .sort();
+    expect(got).toEqual(expected);
+  });
+
+  it("assigns weight ~1 to the queried vertex when p lands exactly on it", () => {
+    const p: Point3D = [1, 0, 0];
+    const loc = locateTriangle(octaCtx, p);
+
+    expect(loc).not.toBeNull();
+    const { vertices, weights } = loc!;
+    const pos = vertices.findIndex((v) => {
+      const vp = vertexPoint(octaFd, v);
+      return vp[0] === 1 && vp[1] === 0 && vp[2] === 0;
+    });
+    expect(pos).toBeGreaterThanOrEqual(0);
+    weights.forEach((w, i) => {
+      const expected = i === pos ? 1 : 0;
+      expect(Math.abs(w - expected)).toBeLessThan(1e-9);
+    });
+  });
+
+  it("splits weight 50/50 between the two vertices at an edge midpoint", () => {
+    const p = toCartesian({ lat: 0, lon: 45 }); // midpoint of [1,0,0] and [0,1,0]
+    const loc = locateTriangle(octaCtx, p);
+
+    expect(loc).not.toBeNull();
+    const { vertices, weights } = loc!;
+    const xPos = vertices.findIndex((v) => {
+      const vp = vertexPoint(octaFd, v);
+      return vp[0] === 1 && vp[1] === 0 && vp[2] === 0;
+    });
+    const yPos = vertices.findIndex((v) => {
+      const vp = vertexPoint(octaFd, v);
+      return vp[0] === 0 && vp[1] === 1 && vp[2] === 0;
+    });
+    expect(xPos).toBeGreaterThanOrEqual(0);
+    expect(yPos).toBeGreaterThanOrEqual(0);
+    const zPos = 3 - xPos - yPos;
+
+    expect(Math.abs(weights[xPos] - 0.5)).toBeLessThan(1e-9);
+    expect(Math.abs(weights[yPos] - 0.5)).toBeLessThan(1e-9);
+    expect(Math.abs(weights[zPos])).toBeLessThan(1e-9);
+  });
+
+  it("reconstructs the query direction from weighted vertices on random data", () => {
+    const pointRand = mulberry32(42);
+    const points = Array.from({ length: 60 }, () =>
+      toCartesian(randomLatLon(pointRand)),
+    );
+    const fd = flattenTriangulation(buildTri(points));
+    const ctx = createQueryContext(fd);
+    const queryRand = mulberry32(1234);
+
+    for (let i = 0; i < 300; i++) {
+      const p = toCartesian(randomLatLon(queryRand));
+      const loc = locateTriangle(ctx, p);
+
+      expect(loc, `query ${i}`).not.toBeNull();
+      const { vertices, weights } = loc!;
+      const sum = weights[0] + weights[1] + weights[2];
+      expect(Math.abs(sum - 1), `query ${i}`).toBeLessThan(1e-9);
+      for (const w of weights) {
+        expect(w, `query ${i}`).toBeGreaterThanOrEqual(0);
+        expect(w, `query ${i}`).toBeLessThanOrEqual(1);
+      }
+
+      const v0 = vertexPoint(fd, vertices[0]);
+      const v1 = vertexPoint(fd, vertices[1]);
+      const v2 = vertexPoint(fd, vertices[2]);
+      const combo: Point3D = [
+        weights[0] * v0[0] + weights[1] * v1[0] + weights[2] * v2[0],
+        weights[0] * v0[1] + weights[1] * v1[1] + weights[2] * v2[1],
+        weights[0] * v0[2] + weights[1] * v1[2] + weights[2] * v2[2],
+      ];
+      expect(dot(normalize(combo), p), `query ${i}`).toBeGreaterThan(1 - 1e-9);
+    }
+  });
+
+  it("agrees with the scan oracle on random data, or lands on an edge-adjacent triangle", () => {
+    const pointRand = mulberry32(42);
+    const points = Array.from({ length: 60 }, () =>
+      toCartesian(randomLatLon(pointRand)),
+    );
+    const fd = flattenTriangulation(buildTri(points));
+    const ctx = createQueryContext(fd);
+    const queryRand = mulberry32(1234);
+
+    for (let i = 0; i < 300; i++) {
+      const p = toCartesian(randomLatLon(queryRand));
+      const walked = locateTriangle(ctx, p);
+      const scan = locateTriangleByScan(ctx, p);
+
+      expect(walked, `query ${i}`).not.toBeNull();
+      expect(scan, `query ${i}`).not.toBeNull();
+      const sameTriangle = walked!.triangle === scan!.triangle;
+      const walkedMinSide = minSideOfTriangle(fd, walked!.vertices, p);
+      expect(sameTriangle || walkedMinSide >= -1e-12, `query ${i}`).toBe(true);
+    }
+  });
+
+  it("gives the same result from a nearby startTriangle hint as with no hint", () => {
+    const first = locateTriangle(octaCtx, toCartesian({ lat: 30, lon: 30 }));
+    expect(first).not.toBeNull();
+    const p2 = toCartesian({ lat: 30.5, lon: 30 });
+
+    const hinted = locateTriangle(octaCtx, p2, first!.triangle);
+    const unhinted = locateTriangle(octaCtx, p2);
+
+    expect(hinted).not.toBeNull();
+    expect(unhinted).not.toBeNull();
+    expect(hinted!.triangle).toBe(unhinted!.triangle);
+    expect(hinted!.weights).toEqual(unhinted!.weights);
+  });
+
+  it("still converges to the oracle's triangle from a deliberately far startTriangle hint", () => {
+    const tv = octaFd.triangleVertices;
+    const corners = [0, 1, 2].map((i) => vertexPoint(octaFd, tv[i]));
+    const centroid: Point3D = [
+      corners[0][0] + corners[1][0] + corners[2][0],
+      corners[0][1] + corners[1][1] + corners[2][1],
+      corners[0][2] + corners[1][2] + corners[2][2],
+    ];
+    const antipodal = normalize([-centroid[0], -centroid[1], -centroid[2]]);
+
+    const result = locateTriangle(octaCtx, antipodal, 0);
+    const oracle = locateTriangleByScan(octaCtx, antipodal);
+
+    expect(result).not.toBeNull();
+    expect(oracle).not.toBeNull();
+    expect(result!.triangle).toBe(oracle!.triangle);
+  });
+});
+
+describe("locateTriangle (patch, thin-lens hull)", () => {
+  let patch: ReturnType<typeof buildPatch>;
+
+  beforeAll(() => {
+    patch = buildPatch();
+  });
+
+  it("locates in-patch queries in a front triangle, agreeing with the scan oracle", () => {
+    const probes: [number, number][] = [
+      [57.5, 17.5],
+      [56.2, 16.1],
+      [59.0, 19.2],
+    ];
+    for (const [lat, lon] of probes) {
+      const p = toCartesian({ lat, lon });
+      const label = `(${lat}, ${lon})`;
+      const loc = locateTriangle(patch.ctx, p);
+      const oracle = locateTriangleByScan(patch.ctx, p);
+
+      expect(loc, label).not.toBeNull();
+      expect(oracle, label).not.toBeNull();
+      expect(patch.ctx.backClosure[loc!.triangle], label).toBe(0);
+
+      const sum = loc!.weights[0] + loc!.weights[1] + loc!.weights[2];
+      expect(Math.abs(sum - 1), label).toBeLessThan(1e-9);
+      for (const w of loc!.weights) expect(w, label).toBeGreaterThanOrEqual(0);
+
+      const sameTriangle = loc!.triangle === oracle!.triangle;
+      const minSide = minSideOfTriangle(patch.fd, loc!.vertices, p);
+      expect(sameTriangle || minSide >= -1e-12, label).toBe(true);
+    }
+  });
+
+  it("returns null from both walk and scan for queries beyond the patch rim", () => {
+    // ~1° beyond each edge and corner of the 55..60 / 15..20 patch, plus the
+    // antipode of the patch center — no containing triangle exists for any
+    // of these.
+    const probes: [number, number][] = [
+      [61.0, 17.5],
+      [54.0, 17.5],
+      [57.5, 21.0],
+      [57.5, 14.0],
+      [61, 21],
+      [54, 14],
+      [-57.5, -162.5],
+    ];
+    for (const [lat, lon] of probes) {
+      const p = toCartesian({ lat, lon });
+      const label = `(${lat}, ${lon})`;
+      expect(locateTriangle(patch.ctx, p), label).toBeNull();
+      expect(locateTriangleByScan(patch.ctx, p), label).toBeNull();
+    }
+  });
+
+  it("agrees with the scan oracle on null-vs-contained across a probe grid spanning the rim", () => {
+    for (let lat = 54; lat <= 61; lat += 0.5) {
+      for (let lon = 14; lon <= 21; lon += 0.5) {
+        const p = toCartesian({ lat, lon });
+        const label = `(${lat}, ${lon})`;
+        const walk = locateTriangle(patch.ctx, p);
+        const scan = locateTriangleByScan(patch.ctx, p);
+
+        expect(walk === null, label).toBe(scan === null);
+        if (walk !== null) {
+          expect(patch.ctx.backClosure[walk.triangle], label).toBe(0);
+          expect(
+            minSideOfTriangle(patch.fd, walk.vertices, p),
+            label,
+          ).toBeGreaterThanOrEqual(-1e-12);
+        }
+      }
+    }
+  });
+
+  it("recovers the correct in-patch location from a warm start taken outside the patch", () => {
+    const outside = findNearestVertices(
+      patch.ctx,
+      toCartesian({ lat: 61, lon: 17.5 }),
+    );
+    const startTriangle = patch.fd.vertexTriangles[outside.nearestVertex];
+    const target = toCartesian({ lat: 57.5, lon: 17.5 });
+
+    const warm = locateTriangle(patch.ctx, target, startTriangle);
+    const cold = locateTriangle(patch.ctx, target);
+
+    expect(warm).not.toBeNull();
+    expect(warm).toEqual(cold);
+  });
+
+  it("returns finite, non-negative weights when the query lands on a coincident-duplicate cluster", () => {
+    const p = toCartesian({ lat: 57.31, lon: 17.42 });
+    const loc = locateTriangle(patch.ctx, p);
+
+    expect(loc).not.toBeNull();
+    const { weights } = loc!;
+    for (const w of weights) {
+      expect(Number.isFinite(w)).toBe(true);
+      expect(w).toBeGreaterThanOrEqual(0);
+    }
+    expect(Math.abs(weights[0] + weights[1] + weights[2] - 1)).toBeLessThan(
+      1e-9,
+    );
+  });
+});
+
+describe("locateTriangle (degenerate triangulations)", () => {
+  it("never returns NaN weights when the input contains an exact duplicate point (tour-guide-895a)", () => {
+    const points: Point3D[] = [...OCTAHEDRON_POINTS, [1, 0, 0]];
+    const ctx = createQueryContext(flattenTriangulation(buildTri(points)));
+
+    const rand = mulberry32(7);
+    const queries: { p: Point3D; label: string }[] = [
+      { p: [1, 0, 0], label: "duplicated vertex" },
+    ];
+    for (let i = 0; i < 50; i++) {
+      const { lat, lon } = randomLatLon(rand);
+      queries.push({ p: toCartesian({ lat, lon }), label: `query ${i}` });
+    }
+
+    for (const { p, label } of queries) {
+      const loc = locateTriangle(ctx, p);
+      expect(loc, label).not.toBeNull();
+      const { weights } = loc!;
+      for (const w of weights) {
+        expect(Number.isFinite(w), label).toBe(true);
+        expect(w, label).toBeGreaterThanOrEqual(0);
+      }
+      expect(
+        Math.abs(weights[0] + weights[1] + weights[2] - 1),
+        label,
+      ).toBeLessThan(1e-9);
+    }
+  });
+
+  it("locates a query on the Stockholm Float32-quantization fixture (tour-guide-mae)", () => {
+    const inputs = [
+      { lat: 59.3208, lon: 18.0594 }, // Stockholm A
+      { lat: 59.3208, lon: 18.05941 }, // Stockholm B, ~0.07m from A
+      { lat: 59.3209, lon: 18.0594 }, // Stockholm C
+      { lat: -59.0, lon: -160.0 }, // Antipode
+    ];
+    const tri = buildTri(inputs.map(toCartesian));
+    const fd = quantizeToFloat32(flattenTriangulation(tri));
+    const ctx = createQueryContext(fd);
+    const p = toCartesian(inputs[0]);
+
+    const loc = locateTriangle(ctx, p);
+    const oracle = locateTriangleByScan(ctx, p);
+
+    expect(loc).not.toBeNull();
+    expect(oracle).not.toBeNull();
+    const { weights } = loc!;
+    for (const w of weights) {
+      expect(Number.isFinite(w)).toBe(true);
+      expect(w).toBeGreaterThanOrEqual(0);
+    }
+    expect(Math.abs(weights[0] + weights[1] + weights[2] - 1)).toBeLessThan(
+      1e-9,
+    );
+
+    const sameTriangle = loc!.triangle === oracle!.triangle;
+    const minSide = minSideOfTriangle(fd, loc!.vertices, p);
+    expect(sameTriangle || minSide >= -1e-12).toBe(true);
   });
 });
