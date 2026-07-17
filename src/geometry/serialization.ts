@@ -14,9 +14,10 @@ import type { Point3D } from "./index";
 export interface ArticleMeta {
   title: string;
   /**
-   * Weight class 0-255: 0 = unknown, else round(8*log2(page_len)) clamped
-   * to [1,255] (see pageLenToWeight). Optional so callers without weight
-   * data (e.g. hand-built fixtures) can omit it; treated as 0 when absent.
+   * Weight class 0-255: popularity percentile of the article among its
+   * language build's articles by monthly pageviews (see
+   * src/pipeline/popularity.ts); 0 = no views / unknown. Optional so callers
+   * without weight data can omit it; treated as 0 when absent.
    */
   weight?: number;
 }
@@ -38,16 +39,6 @@ export interface FlatDelaunay {
   vertexTriangles: Uint32Array; // incident triangle index per vertex
   triangleVertices: Uint32Array; // [v0,v1,v2, ...] — 3 per triangle
   triangleNeighbors: Uint32Array; // [n0,n1,n2, ...] — 3 per triangle
-}
-
-// ---------- Weight encoding ----------
-
-/** Map a page byte length to a 1-byte weight class: 0 = unknown, else round(8*log2(len)) clamped to [1,255]. */
-export function pageLenToWeight(pageLen: number | undefined): number {
-  if (pageLen === undefined || !Number.isFinite(pageLen) || pageLen <= 0) {
-    return 0;
-  }
-  return Math.min(255, Math.max(1, Math.round(8 * Math.log2(pageLen))));
 }
 
 // ---------- Serialize ----------

@@ -14,9 +14,9 @@ import {
   buildTriangulation,
   serialize,
   serializeBinary,
-  pageLenToWeight,
 } from "../geometry/index.js";
 import type { ArticleMeta } from "../geometry/index.js";
+import { assignWeightClasses } from "./popularity.js";
 import { SUPPORTED_LANGS, DEFAULT_LANG } from "../lang.js";
 import type { Lang } from "../lang.js";
 import { isInBounds, parseBounds } from "./extract-dump.js";
@@ -96,6 +96,22 @@ export async function readArticles(
   return articles;
 }
 
+// ---------- Weight assignment ----------
+
+/** An article with its popularity weight class attached. */
+export type WeightedArticle = Article & { weight: number };
+
+/**
+ * Attach a 0-255 popularity weight class to each article, computed once over
+ * the full input set. Percentiles are relative to the article set being
+ * built, so --limit/--bounds dev subsets get subset-relative classes;
+ * production builds always run the full language.
+ */
+export function attachWeights(articles: Article[]): WeightedArticle[] {
+  const weights = assignWeightClasses(articles.map((a) => a.views ?? 0));
+  return articles.map((a, i) => ({ ...a, weight: weights[i] }));
+}
+
 // ---------- Tiling ----------
 
 const MIN_ARTICLES = 4;
@@ -108,11 +124,13 @@ function normalizeLon(lon: number, refLon: number): number {
 }
 
 /** Spatial index mapping tile IDs to their articles. */
-export type ArticleIndex = Map<string, Article[]>;
+export type ArticleIndex<T extends Article = Article> = Map<string, T[]>;
 
 /** Build a spatial index of articles keyed by tile ID. */
-export function buildArticleIndex(articles: Article[]): ArticleIndex {
-  const index: ArticleIndex = new Map();
+export function buildArticleIndex<T extends Article>(
+  articles: T[],
+): ArticleIndex<T> {
+  const index: ArticleIndex<T> = new Map();
   for (const a of articles) {
     const { row, col } = tileFor(a.lat, a.lon);
     const id = tileId(row, col);
@@ -127,11 +145,11 @@ export function buildArticleIndex(articles: Article[]): ArticleIndex {
 }
 
 /** Collect articles for a tile: native articles + buffer zone from adjacent tiles. */
-export function collectTileArticles(
-  index: ArticleIndex,
+export function collectTileArticles<T extends Article>(
+  index: ArticleIndex<T>,
   row: number,
   col: number,
-): { native: Article[]; all: Article[] } {
+): { native: T[]; all: T[] } {
   const south = row * GRID_DEG - 90;
   const north = south + GRID_DEG;
   const west = col * GRID_DEG - 180;
@@ -145,8 +163,8 @@ export function collectTileArticles(
   };
 
   const tileCenterLon = (west + east) / 2;
-  const native: Article[] = [];
-  const all: Article[] = [];
+  const native: T[] = [];
+  const all: T[] = [];
 
   for (let dr = -1; dr <= 1; dr++) {
     const nr = row + dr;
@@ -173,7 +191,7 @@ export function collectTileArticles(
 }
 
 /** Build a single tile's triangulation and return the binary buffer, or null if hull fails. */
-export function buildTile(tileArticles: Article[]): ArrayBuffer | null {
+export function buildTile(tileArticles: WeightedArticle[]): ArrayBuffer | null {
   const points = tileArticles.map((a) =>
     toCartesian({ lat: a.lat, lon: a.lon }),
   );
@@ -187,7 +205,7 @@ export function buildTile(tileArticles: Article[]): ArrayBuffer | null {
   const tri = buildTriangulation(hull);
   const meta: ArticleMeta[] = tri.originalIndices.map((i) => ({
     title: tileArticles[i].title,
-    weight: pageLenToWeight(tileArticles[i].len),
+    weight: tileArticles[i].weight,
   }));
   const data = serialize(tri, meta);
   return serializeBinary(data);
@@ -205,9 +223,14 @@ function hashBuffer(buf: ArrayBuffer): string {
 async function buildTiled(articles: Article[], lang: Lang): Promise<void> {
   const t0 = performance.now();
 
+  // Percentiles are relative to the article set being built: --limit/--bounds
+  // dev subsets get subset-relative classes, while production builds always
+  // run the full language and get true population-relative classes.
+  const weighted = attachWeights(articles);
+
   // Step 2: Assign articles to tiles
   console.log("\nStep 2: Assigning articles to tiles...");
-  const articleIndex = buildArticleIndex(articles);
+  const articleIndex = buildArticleIndex(weighted);
   const tileMap = new Map<string, { row: number; col: number }>();
   for (const id of articleIndex.keys()) {
     const bucket = articleIndex.get(id)!;

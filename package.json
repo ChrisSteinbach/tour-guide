@@ -12,6 +12,7 @@
     "test:coverage": "vitest run --coverage",
     "pipeline": "tsx src/pipeline/build.ts",
     "extract": "tsx --max-old-space-size=6144 src/pipeline/extract-dump.ts",
+    "pageviews": "tsx src/pipeline/pageviews.ts",
     "lint": "tsc --noEmit && eslint src/ && stylelint \"src/**/*.css\" && prettier --check .",
     "lint:fix": "eslint src/ --fix && stylelint \"src/**/*.css\" --fix && prettier --write .",
     "lint:stylelint": "stylelint \"src/**/*.css\"",

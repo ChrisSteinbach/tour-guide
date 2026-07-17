@@ -3,11 +3,12 @@
  *
  * 1. Download SQL dump files from dumps.wikimedia.org
  * 2. Stream-parse and join tables by page_id
+ * 3. Join monthly pageviews (Wikimedia pageview_complete dumps) by page_id
  *
- * Output: NDJSON with {title, lat, lon, len?}.
+ * Output: NDJSON with {title, lat, lon, views?}.
  */
 
-import { createWriteStream } from "node:fs";
+import { createWriteStream, existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { SUPPORTED_LANGS, DEFAULT_LANG } from "../lang.js";
@@ -15,6 +16,13 @@ import type { Lang } from "../lang.js";
 import { downloadAllDumps, dumpPath, formatBytes } from "./dump-download.js";
 import { streamDump } from "./dump-parser.js";
 import { validateCanary } from "./canary.js";
+import {
+  ensureViewsFiles,
+  findViewsFile,
+  loadViewsInto,
+  viewsPath,
+  PAGEVIEWS_DIR,
+} from "./pageviews.js";
 
 // ---------- Types ----------
 
@@ -22,15 +30,15 @@ export interface Article {
   title: string;
   lat: number;
   lon: number;
-  /** Page length in bytes (page_len from the page dump); omitted when unknown. */
-  len?: number;
+  /** Monthly user pageviews (Wikimedia pageviews dump); omitted when zero/unknown. */
+  views?: number;
 }
 
 /** Page metadata joined onto geo_tags rows by page_id. */
 export interface PageInfo {
   title: string;
-  /** Page length in bytes; omitted when page_len is missing or unparsable. */
-  len?: number;
+  /** Monthly user pageviews; omitted when zero/unknown. */
+  views?: number;
 }
 
 export interface Bounds {
@@ -47,6 +55,12 @@ export interface ExtractDumpOptions {
   dumpsDir?: string;
   outputPath?: string;
   fetchFn?: typeof fetch;
+  /** Join monthly pageviews onto articles by page_id (default: true). */
+  pageviews?: boolean;
+  /** Pageviews month ("YYYY-MM"); default: newest available. */
+  pageviewsMonth?: string;
+  /** Directory for per-language pageviews TSVs (default: PAGEVIEWS_DIR). */
+  pageviewsDir?: string;
   onPhase?: (phase: string) => void;
   onProgress?: (phase: string, count: number) => void;
 }
@@ -65,20 +79,11 @@ const PAGE_ID = "page_id";
 const PAGE_NAMESPACE = "page_namespace";
 const PAGE_TITLE = "page_title";
 const PAGE_IS_REDIRECT = "page_is_redirect";
-const PAGE_LEN = "page_len";
 
 // ---------- Phase 1: Build page map ----------
 
-/** Parse a page_len SQL value to a positive integer, or undefined if unparsable. */
-function parsePageLen(value: string | number | null): number | undefined {
-  if (value === null) return undefined;
-  const n = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(n) || n <= 0) return undefined;
-  return Math.trunc(n);
-}
-
 /**
- * Build a map of page_id → {title, len} from the page dump.
+ * Build a map of page_id → {title} from the page dump.
  * Filters: namespace=0 (articles), not redirect.
  */
 export async function buildPageMap(
@@ -87,32 +92,17 @@ export async function buildPageMap(
 ): Promise<Map<number, PageInfo>> {
   const pages = new Map<number, PageInfo>();
 
-  for await (const [
-    pageId,
-    namespace,
-    title,
-    isRedirect,
-    pageLen,
-  ] of streamDump({
+  for await (const [pageId, namespace, title, isRedirect] of streamDump({
     filePath,
     tableName: "page",
-    requiredColumns: [
-      PAGE_ID,
-      PAGE_NAMESPACE,
-      PAGE_TITLE,
-      PAGE_IS_REDIRECT,
-      PAGE_LEN,
-    ],
+    requiredColumns: [PAGE_ID, PAGE_NAMESPACE, PAGE_TITLE, PAGE_IS_REDIRECT],
     onProgress,
     progressInterval: 500_000,
   })) {
     if (namespace === 0 && isRedirect === 0) {
-      const info: PageInfo = {
+      pages.set(pageId as number, {
         title: (title as string).replace(/_/g, " "),
-      };
-      const len = parsePageLen(pageLen);
-      if (len !== undefined) info.len = len;
-      pages.set(pageId as number, info);
+      });
     }
   }
 
@@ -180,9 +170,74 @@ export async function* streamGeoArticles(
       lat: lat as number,
       lon: lon as number,
     };
-    if (page.len !== undefined) article.len = page.len;
+    if (page.views !== undefined) article.views = page.views;
     yield article;
   }
+}
+
+// ---------- Phase 1.5: Join pageviews ----------
+
+interface JoinPageviewsOptions {
+  lang: Lang;
+  skipDownload: boolean;
+  pageviewsMonth?: string;
+  pageviewsDir: string;
+  fetchFn?: typeof fetch;
+}
+
+/**
+ * Resolve the per-language pageviews file — reusing one already on disk
+ * under skipDownload, otherwise ensuring it exists (downloading and
+ * splitting the monthly dump if needed) — then sum view counts onto the
+ * page map by page_id. Rows for unknown page_ids are ignored.
+ */
+async function joinPageviews(
+  pages: Map<number, PageInfo>,
+  opts: JoinPageviewsOptions,
+): Promise<void> {
+  const { lang, skipDownload, pageviewsMonth, pageviewsDir, fetchFn } = opts;
+
+  let path: string;
+  if (skipDownload) {
+    const found = pageviewsMonth
+      ? [viewsPath(lang, pageviewsMonth, pageviewsDir)].find(existsSync)
+      : findViewsFile(lang, pageviewsDir);
+    if (!found) {
+      const monthNote = pageviewsMonth ? ` (month ${pageviewsMonth})` : "";
+      throw new Error(
+        `No pageviews file found for "${lang}"${monthNote} in ${pageviewsDir}. Run \`npm run pageviews\` to download and split the monthly dump, or pass --no-pageviews to extract without it (all article weights will be 0).`,
+      );
+    }
+    path = found;
+  } else {
+    const result = await ensureViewsFiles({
+      langs: [...SUPPORTED_LANGS],
+      month: pageviewsMonth,
+      dir: pageviewsDir,
+      fetchFn,
+      onPhase: (phase) => process.stderr.write(`\n  ${phase}\n`),
+      onProgress: (downloaded, total) => {
+        const pct = total
+          ? ` (${((downloaded / total) * 100).toFixed(0)}%)`
+          : "";
+        process.stderr.write(`\r  ${formatBytes(downloaded)}${pct}    `);
+      },
+    });
+    path = result.paths[lang];
+  }
+
+  let matched = 0;
+  const rows = await loadViewsInto(path, (pageId, views) => {
+    const page = pages.get(pageId);
+    if (!page) return;
+    if (page.views === undefined) matched++;
+    page.views = (page.views ?? 0) + views;
+  });
+
+  const pct = pages.size ? ((matched / pages.size) * 100).toFixed(0) : "0";
+  console.error(
+    `  Views: ${rows.toLocaleString()} rows → ${matched.toLocaleString()} of ${pages.size.toLocaleString()} pages matched (${pct}%)`,
+  );
 }
 
 // ---------- Main orchestrator ----------
@@ -198,6 +253,9 @@ export async function extractDump(opts: ExtractDumpOptions): Promise<{
     dumpsDir = "data/dumps",
     outputPath = `data/articles-${lang}.json`,
     fetchFn,
+    pageviews = true,
+    pageviewsMonth,
+    pageviewsDir = PAGEVIEWS_DIR,
     onPhase,
     onProgress,
   } = opts;
@@ -230,6 +288,22 @@ export async function extractDump(opts: ExtractDumpOptions): Promise<{
     onProgress?.("page", n),
   );
   console.error(`  Page map: ${pageMap.size.toLocaleString()} articles`);
+
+  // Phase 1.5: Join pageviews
+  if (pageviews) {
+    onPhase?.("Joining pageviews");
+    await joinPageviews(pageMap, {
+      lang,
+      skipDownload,
+      pageviewsMonth,
+      pageviewsDir,
+      fetchFn,
+    });
+  } else {
+    console.error(
+      "  ⚠ Pageviews disabled (--no-pageviews): all articles will have weight 0 and the Highlights filter will be empty.",
+    );
+  }
 
   // Phase 2: Stream geo_tags, join, deduplicate, and write NDJSON
   onPhase?.("Streaming geo_tags and joining");
@@ -331,6 +405,15 @@ async function main() {
 
   const bounds = flags.bounds ? parseBounds(flags.bounds) : undefined;
   const skipDownload = flags["skip-download"] === "true";
+  const pageviews = flags["no-pageviews"] !== "true";
+
+  const pageviewsMonth = flags["pageviews-month"];
+  if (pageviewsMonth && !/^\d{4}-\d{2}$/.test(pageviewsMonth)) {
+    console.error(
+      `Invalid --pageviews-month: ${pageviewsMonth} (expected format YYYY-MM)`,
+    );
+    process.exit(1);
+  }
 
   console.error(`\nExtracting ${lang} articles from Wikipedia dumps\n`);
 
@@ -340,6 +423,8 @@ async function main() {
     lang,
     bounds,
     skipDownload,
+    pageviews,
+    pageviewsMonth,
     onPhase: (phase) => console.error(`\n→ ${phase}`),
   });
 

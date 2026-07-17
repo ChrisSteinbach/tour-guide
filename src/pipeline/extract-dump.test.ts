@@ -10,7 +10,12 @@ import {
   extractDump,
 } from "./extract-dump.js";
 import type { Article } from "./extract-dump.js";
-import { makePageDump, makeGeoDump, gzFile } from "./dump-test-fixtures.js";
+import {
+  makePageDump,
+  makeGeoDump,
+  makeViewsFile,
+  gzFile,
+} from "./dump-test-fixtures.js";
 
 // --- Shared test infrastructure ---
 
@@ -128,35 +133,11 @@ describe("buildPageMap", () => {
     expect(map.has(3)).toBe(false);
   });
 
-  it("extracts page_len as the page length in bytes", async () => {
+  it("ignores the page_len column present in real dumps", async () => {
     const path = gzFile(
       testDir,
-      "page-len.sql.gz",
+      "page-len-present.sql.gz",
       makePageDump([{ id: 1, title: "Eiffel_Tower", len: 2048 }]),
-    );
-
-    const map = await buildPageMap(path);
-
-    expect(map.get(1)).toEqual({ title: "Eiffel Tower", len: 2048 });
-  });
-
-  it("omits len when page_len is garbage", async () => {
-    const path = gzFile(
-      testDir,
-      "page-len-garbage.sql.gz",
-      makePageDump([{ id: 1, title: "Eiffel_Tower", len: "not-a-number" }]),
-    );
-
-    const map = await buildPageMap(path);
-
-    expect(map.get(1)).toEqual({ title: "Eiffel Tower" });
-  });
-
-  it("omits len when page_len is NULL", async () => {
-    const path = gzFile(
-      testDir,
-      "page-len-null.sql.gz",
-      makePageDump([{ id: 1, title: "Eiffel_Tower", len: null }]),
     );
 
     const map = await buildPageMap(path);
@@ -192,10 +173,10 @@ describe("streamGeoArticles", () => {
     expect(articles[1].title).toBe("Statue of Liberty");
   });
 
-  it("carries page length onto joined articles and omits it when unknown", async () => {
+  it("carries page views onto joined articles and omits it when unknown", async () => {
     const geoPath = gzFile(
       testDir,
-      "geo_tags_len.sql.gz",
+      "geo_tags_views.sql.gz",
       makeGeoDump([
         { pageId: 100, lat: 48.8584, lon: 2.2945 },
         { pageId: 200, lat: 40.7128, lon: -74.006 },
@@ -203,14 +184,14 @@ describe("streamGeoArticles", () => {
     );
 
     const pages = new Map([
-      [100, { title: "Eiffel Tower", len: 4096 }],
-      [200, { title: "Statue of Liberty" }], // no page_len available
+      [100, { title: "Eiffel Tower", views: 512345 }],
+      [200, { title: "Statue of Liberty" }], // no pageviews joined
     ]);
 
     const articles = await collectArticles(streamGeoArticles(geoPath, pages));
 
-    expect(articles[0].len).toBe(4096);
-    expect(articles[1]).not.toHaveProperty("len");
+    expect(articles[0].views).toBe(512345);
+    expect(articles[1]).not.toHaveProperty("views");
   });
 
   it("filters non-earth globes and non-primary tags", async () => {
@@ -316,6 +297,7 @@ describe("extractDump", () => {
       skipDownload: true,
       dumpsDir,
       outputPath,
+      pageviews: false,
     });
 
     expect(result.articleCount).toBe(3);
@@ -331,14 +313,13 @@ describe("extractDump", () => {
     const eiffel = articles.find((a) => a.title === "Eiffeltornet");
     expect(eiffel).toBeDefined();
     expect(eiffel!.lat).toBeCloseTo(48.8584, 3);
-    expect(eiffel!.len).toBe(2048);
+    expect(eiffel).not.toHaveProperty("len");
 
     const liljeholmen = articles.find(
       (a) => a.title === "Liljeholmens brandstation",
     );
     expect(liljeholmen).toBeDefined();
     expect(liljeholmen!.lat).toBeCloseTo(59.308, 2);
-    // page_len was garbage — the field is omitted, not written as NaN
     expect(liljeholmen).not.toHaveProperty("len");
   });
 
@@ -363,6 +344,7 @@ describe("extractDump", () => {
       skipDownload: true,
       dumpsDir,
       outputPath,
+      pageviews: false,
     });
 
     expect(result.articleCount).toBe(1);
@@ -392,9 +374,220 @@ describe("extractDump", () => {
       skipDownload: true,
       dumpsDir,
       outputPath,
+      pageviews: false,
     });
 
     // Same_Place deduped to 1, plus Eiffeltornet (canary landmark)
     expect(result.articleCount).toBe(2);
+  });
+
+  describe("pageviews join", () => {
+    it("joins views onto matching articles by page_id and leaves the rest unset", async () => {
+      const dumpsDir = writeDumps(
+        "dumps-views",
+        [
+          { id: 100, title: "Eiffeltornet" },
+          { id: 200, title: "Frihetsgudinnan" },
+        ],
+        [
+          { pageId: 100, lat: 48.8584, lon: 2.2945 },
+          { pageId: 200, lat: 40.7128, lon: -74.006 },
+        ],
+      );
+
+      const pageviewsDir = join(testDir, "views-basic");
+      mkdirSync(pageviewsDir, { recursive: true });
+      makeViewsFile(pageviewsDir, "sv", "2026-06", [
+        { pageId: 100, views: 512345 },
+      ]);
+
+      const outputPath = join(testDir, "articles-views-basic.json");
+      await extractDump({
+        lang: "sv",
+        skipDownload: true,
+        dumpsDir,
+        outputPath,
+        pageviewsDir,
+      });
+
+      const articles = readFileSync(outputPath, "utf8")
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l) as Article);
+
+      const eiffel = articles.find((a) => a.title === "Eiffeltornet");
+      const statue = articles.find((a) => a.title === "Frihetsgudinnan");
+
+      expect(eiffel!.views).toBe(512345);
+      expect(statue).not.toHaveProperty("views");
+      expect(eiffel).not.toHaveProperty("len");
+    });
+
+    it("sums duplicate view rows for the same page_id", async () => {
+      const dumpsDir = writeDumps(
+        "dumps-views-dup",
+        [{ id: 100, title: "Eiffeltornet" }],
+        [{ pageId: 100, lat: 48.8584, lon: 2.2945 }],
+      );
+
+      const pageviewsDir = join(testDir, "views-dup");
+      mkdirSync(pageviewsDir, { recursive: true });
+      makeViewsFile(pageviewsDir, "sv", "2026-06", [
+        { pageId: 100, views: 300 },
+        { pageId: 100, views: 200 },
+      ]);
+
+      const outputPath = join(testDir, "articles-views-dup.json");
+      await extractDump({
+        lang: "sv",
+        skipDownload: true,
+        dumpsDir,
+        outputPath,
+        pageviewsDir,
+      });
+
+      const [article] = readFileSync(outputPath, "utf8")
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l) as Article);
+
+      expect(article.views).toBe(500);
+    });
+
+    it("emits no views and does not throw when pageviews is disabled", async () => {
+      const dumpsDir = writeDumps(
+        "dumps-views-disabled",
+        [{ id: 100, title: "Eiffeltornet" }],
+        [{ pageId: 100, lat: 48.8584, lon: 2.2945 }],
+      );
+
+      const outputPath = join(testDir, "articles-views-disabled.json");
+      const result = await extractDump({
+        lang: "sv",
+        skipDownload: true,
+        dumpsDir,
+        outputPath,
+        pageviews: false,
+      });
+
+      expect(result.articleCount).toBe(1);
+      const [article] = readFileSync(outputPath, "utf8")
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l) as Article);
+      expect(article).not.toHaveProperty("views");
+    });
+
+    it("rejects with an actionable message when skipDownload is set and no views file exists", async () => {
+      const dumpsDir = writeDumps(
+        "dumps-views-missing",
+        [{ id: 100, title: "Eiffeltornet" }],
+        [{ pageId: 100, lat: 48.8584, lon: 2.2945 }],
+      );
+
+      await expect(
+        extractDump({
+          lang: "sv",
+          skipDownload: true,
+          dumpsDir,
+          outputPath: join(testDir, "articles-views-missing.json"),
+          pageviewsDir: join(testDir, "views-nonexistent"),
+        }),
+      ).rejects.toThrow(/--no-pageviews/);
+    });
+
+    it("joins from an existing views file under skipDownload without downloading", async () => {
+      const dumpsDir = writeDumps(
+        "dumps-views-offline",
+        [{ id: 100, title: "Eiffeltornet" }],
+        [{ pageId: 100, lat: 48.8584, lon: 2.2945 }],
+      );
+
+      const pageviewsDir = join(testDir, "views-offline");
+      mkdirSync(pageviewsDir, { recursive: true });
+      makeViewsFile(pageviewsDir, "sv", "2026-06", [
+        { pageId: 100, views: 42 },
+      ]);
+
+      const outputPath = join(testDir, "articles-views-offline.json");
+      const fetchFn = (async () => {
+        throw new Error(
+          "fetchFn should not be called when a views file already exists",
+        );
+      }) as unknown as typeof fetch;
+
+      await extractDump({
+        lang: "sv",
+        skipDownload: true,
+        dumpsDir,
+        outputPath,
+        pageviewsDir,
+        fetchFn,
+      });
+
+      const [article] = readFileSync(outputPath, "utf8")
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l) as Article);
+      expect(article.views).toBe(42);
+    });
+
+    it("honors an explicit pageviews month under skipDownload instead of the newest file", async () => {
+      const dumpsDir = writeDumps(
+        "dumps-views-month",
+        [{ id: 100, title: "Eiffeltornet" }],
+        [{ pageId: 100, lat: 48.8584, lon: 2.2945 }],
+      );
+
+      const pageviewsDir = join(testDir, "views-month");
+      mkdirSync(pageviewsDir, { recursive: true });
+      makeViewsFile(pageviewsDir, "sv", "2026-05", [
+        { pageId: 100, views: 111 },
+      ]);
+      makeViewsFile(pageviewsDir, "sv", "2026-06", [
+        { pageId: 100, views: 999 },
+      ]);
+
+      const outputPath = join(testDir, "articles-views-month.json");
+      await extractDump({
+        lang: "sv",
+        skipDownload: true,
+        dumpsDir,
+        outputPath,
+        pageviewsDir,
+        pageviewsMonth: "2026-05",
+      });
+
+      const [article] = readFileSync(outputPath, "utf8")
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l) as Article);
+      expect(article.views).toBe(111);
+    });
+
+    it("rejects when the requested pageviews month has no file under skipDownload", async () => {
+      const dumpsDir = writeDumps(
+        "dumps-views-month-missing",
+        [{ id: 100, title: "Eiffeltornet" }],
+        [{ pageId: 100, lat: 48.8584, lon: 2.2945 }],
+      );
+
+      const pageviewsDir = join(testDir, "views-month-missing");
+      mkdirSync(pageviewsDir, { recursive: true });
+      makeViewsFile(pageviewsDir, "sv", "2026-06", [
+        { pageId: 100, views: 999 },
+      ]);
+
+      await expect(
+        extractDump({
+          lang: "sv",
+          skipDownload: true,
+          dumpsDir,
+          outputPath: join(testDir, "articles-views-month-missing.json"),
+          pageviewsDir,
+          pageviewsMonth: "2026-04",
+        }),
+      ).rejects.toThrow(/2026-04/);
+    });
   });
 });
