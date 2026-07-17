@@ -1,6 +1,6 @@
 # Binary Serialization Format
 
-The `.bin` files produced by the build pipeline (`npm run pipeline`) encode a spherical Delaunay triangulation and its associated article metadata in a single compact binary blob. This document specifies the byte-level layout so that anyone reading or modifying `src/geometry/serialization.ts` or `src/app/query.ts` knows exactly what to expect.
+The `.bin` files produced by the build pipeline (`npm run pipeline`) encode a spherical Delaunay triangulation and its associated article metadata in a single compact binary blob. This document specifies the byte-level layout so that anyone reading or modifying `lib/spherical-delaunay/src/serialization.ts` or `src/app/query.ts` knows exactly what to expect.
 
 Notation: **V** = vertex count, **T** = triangle count. All multi-byte integers and floats are **little-endian**. All Float32/Uint32 sections are **4-byte aligned**; the Vertex Weights section is Uint8 and alignment-free.
 
@@ -89,9 +89,9 @@ For reference, encoding all English articles (over a million; see [data-extracti
 
 ## Producing and Consuming
 
-**Writer:** `serializeBinary()` in `src/geometry/serialization.ts` — takes a `TriangulationFile` (JSON-friendly intermediate format) and returns an `ArrayBuffer`.
+**Writer:** `serializeBinary()` in `lib/spherical-delaunay/src/serialization.ts` — takes a `TriangulationFile` (JSON-friendly intermediate format) and returns an `ArrayBuffer`.
 
-**Reader:** `deserializeBinary()` in `src/geometry/serialization.ts` — takes an `ArrayBuffer` and returns a `FlatDelaunay` (typed-array views), an `ArticleMeta[]` array (each entry's `weight` populated from the Vertex Weights section), and the per-vertex `weights` as a `Uint8Array`. Uint32 and Uint8 sections are zero-copy views into the original buffer. Float32 vertex data is copied into a Float64Array for runtime precision.
+**Reader:** `deserializeBinary()` in `lib/spherical-delaunay/src/serialization.ts` — takes an `ArrayBuffer` and returns a `FlatDelaunay` (typed-array views), an `ArticleMeta[]` array (each entry's `weight` populated from the Vertex Weights section), and the per-vertex `weights` as a `Uint8Array`. Uint32 and Uint8 sections are zero-copy views into the original buffer. Float32 vertex data is copied into a Float64Array for runtime precision.
 
 **Pipeline:** `src/pipeline/build.ts` calls `serialize()` then `serializeBinary()` and writes the result with `fs.writeFileSync`.
 

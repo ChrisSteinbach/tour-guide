@@ -8,7 +8,7 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
-import { deserializeBinary } from "../geometry/serialization.js";
+import { deserializeBinary } from "spherical-delaunay";
 import {
   collectTileArticles,
   buildArticleIndex,

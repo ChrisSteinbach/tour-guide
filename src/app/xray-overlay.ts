@@ -4,8 +4,8 @@
 // injected XRayDeps and never reaches into app state directly.
 
 import L from "leaflet";
-import type { FlatDelaunay, WalkTrace } from "../geometry";
-import { createWalkTrace, vertexLatLon } from "../geometry";
+import type { FlatDelaunay, WalkTrace } from "spherical-delaunay";
+import { createWalkTrace, vertexLatLon } from "spherical-delaunay";
 import type { TileEntry } from "../tiles";
 import type { NearestQuery, QueryResult } from "./query";
 import type { GeoBounds, WalkTimeline } from "./xray-geometry";

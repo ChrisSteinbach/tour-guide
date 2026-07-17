@@ -1,4 +1,4 @@
-import { haversineDistance } from "../geometry/index";
+import { haversineDistance } from "spherical-delaunay";
 import type { UserPosition } from "./types";
 import type { Lang } from "../lang";
 

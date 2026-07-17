@@ -23,7 +23,7 @@ import {
   buildTriangulation,
   serialize,
   toFlatDelaunay,
-} from "../geometry";
+} from "spherical-delaunay";
 
 // ── Test helpers ─────────────────────────────────────────────
 

@@ -12,7 +12,7 @@ The Delaunay property guarantees that each point's nearest neighbor is one of it
 
 ### Build phase (pipeline)
 
-`convexHull()` in `src/geometry/convex-hull.ts` builds the triangulation via incremental insertion:
+`convexHull()` in `lib/spherical-delaunay/src/convex-hull.ts` builds the triangulation via incremental insertion:
 
 1. **Perturbation** — All points receive ~1e-6 deterministic perturbation (seeded LCG PRNG) to avoid degenerate coplanar configurations. Perturbed copies are used for `orient3D` tests only; original coordinates are stored in the output.
 
@@ -27,15 +27,15 @@ The Delaunay property guarantees that each point's nearest neighbor is one of it
 
 4. **Fallback strategies** — If the greedy walk fails to find a visible face: FaceGrid spatial index lookup → local BFS from walk endpoint → linear scan (rare, typically <1% of points).
 
-5. **Post-processing** (`buildTriangulation()` in `src/geometry/delaunay.ts`) — Computes circumcenters, builds vertex-to-triangle mapping, drops interior points, remaps indices.
+5. **Post-processing** (`buildTriangulation()` in `lib/spherical-delaunay/src/delaunay.ts`) — Computes circumcenters, builds vertex-to-triangle mapping, drops interior points, remaps indices.
 
-The core geometric predicate is `orient3D(a, b, c, d)` — the sign of the 4×4 determinant giving the signed volume of tetrahedron `abcd`. This uses Shewchuk's robust exact arithmetic (vendored via mourner's `robust-predicates` port in `src/geometry/vendor/`). Positive means `d` is visible from face `(a, b, c)`.
+The core geometric predicate is `orient3D(a, b, c, d)` — the sign of the 4×4 determinant giving the signed volume of tetrahedron `abcd`. This uses Shewchuk's robust exact arithmetic (vendored via mourner's `robust-predicates` port in `lib/spherical-delaunay/src/vendor/`). Positive means `d` is visible from face `(a, b, c)`.
 
 **Complexity:** O(N log N) for typical geographic distributions; O(N²) worst case (adversarial insertion orders). The implementation uses deterministic (not randomized) incremental insertion, so the O(N log N) expected-case guarantee of Clarkson-Shor does not formally apply — but real geotagged article distributions are far from worst-case. FaceGrid provides O(1) amortized face lookup. The implementation uses multiple fallback strategies (greedy walk → FaceGrid lookup → BFS → linear scan) to handle the pathological cases gracefully.
 
 ### Query phase (app runtime)
 
-Queries run against flat typed arrays to avoid GC pressure, implemented once in `src/geometry/flat-query.ts` and hardened for the realities of tile data (see "Tile patches" below). `src/app/query.ts` is a thin adapter: its `NearestQuery` class wraps `createQueryContext`/`findNearestVertices` and maps vertex indices to article titles, weight classes, and distances in meters.
+Queries run against flat typed arrays to avoid GC pressure, implemented once in `lib/spherical-delaunay/src/flat-query.ts` and hardened for the realities of tile data (see "Tile patches" below). `src/app/query.ts` is a thin adapter: its `NearestQuery` class wraps `createQueryContext`/`findNearestVertices` and maps vertex indices to article titles, weight classes, and distances in meters.
 
 **Step 1: Triangle walk** (`flatLocate` in `flat-query.ts`)
 
@@ -76,9 +76,9 @@ The expansion (and the filtered variant — the search takes a vertex predicate;
 
 ## Distance computation
 
-`sphericalDistance` in `src/geometry/index.ts` uses `acos(dot(a, b))`, which is fine for Float64 pipeline math.
+`sphericalDistance` in `lib/spherical-delaunay/src/index.ts` uses `acos(dot(a, b))`, which is fine for Float64 pipeline math.
 
-The query module (`src/geometry/flat-query.ts`) uses **chord distance** instead: `2 * asin(||v - q|| / 2)` (with clamping guards for numerical safety). This avoids catastrophic cancellation when vertex coordinates originate from Float32 storage (the binary format). For nearby points, the dot product is approximately 1 and `(1 - dot)` falls below Float32 rounding error, causing `acos` to collapse to 0. Chord distance computes differences instead, which stay above the noise floor.
+The query module (`lib/spherical-delaunay/src/flat-query.ts`) uses **chord distance** instead: `2 * asin(||v - q|| / 2)` (with clamping guards for numerical safety). This avoids catastrophic cancellation when vertex coordinates originate from Float32 storage (the binary format). For nearby points, the dot product is approximately 1 and `(1 - dot)` falls below Float32 rounding error, causing `acos` to collapse to 0. Chord distance computes differences instead, which stay above the noise floor.
 
 Both are monotonically related to great-circle distance, so they produce the same nearest-neighbor ordering.
 

@@ -80,7 +80,7 @@ IDB uses a single object store (created via `onupgradeneeded`) with versioned ke
 
 ### Nearest-Neighbor Query (`query.ts`)
 
-The `NearestQuery` class wraps the flat Delaunay data for a single tile and provides `findNearest(lat, lon, k)`. The query algorithms live in the geometry library (`src/geometry/flat-query.ts`, entered through `createQueryContext` and `findNearestVertices`); `NearestQuery` is the adapter that maps vertex indices to article titles, weight classes (its `minWeight` option becomes a vertex predicate), and distances in meters. Cross-tile merging is handled by `findNearestTiled()` in `tile-loader.ts`, which queries each loaded tile independently, de-duplicates by title, sorts by distance, and returns the top k.
+The `NearestQuery` class wraps the flat Delaunay data for a single tile and provides `findNearest(lat, lon, k)`. The query algorithms live in the geometry library (`lib/spherical-delaunay/src/flat-query.ts`, entered through `createQueryContext` and `findNearestVertices`); `NearestQuery` is the adapter that maps vertex indices to article titles, weight classes (its `minWeight` option becomes a vertex predicate), and distances in meters. Cross-tile merging is handled by `findNearestTiled()` in `tile-loader.ts`, which queries each loaded tile independently, de-duplicates by title, sorts by distance, and returns the top k.
 
 Per-tile query steps:
 
@@ -184,7 +184,7 @@ Data and app code are decoupled — data updates don't require app rebuilds, and
 
 ## Geometry Library
 
-All modules live under `src/geometry/` and are shared by the pipeline and app.
+All modules live under `lib/spherical-delaunay/src/` and are shared by the pipeline and app.
 
 ### Coordinate System
 
@@ -255,7 +255,7 @@ src/pipeline/
   canary.ts            Post-extraction landmark validation
   dump-test-fixtures.ts Test fixture generator for dump parser
 
-src/geometry/
+lib/spherical-delaunay/src/
   index.ts             Coord conversion, distance, bearing, circumcenter
   convex-hull.ts       Incremental 3D convex hull
   delaunay.ts          Spherical Delaunay from convex hull

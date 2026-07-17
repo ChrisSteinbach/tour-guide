@@ -8,13 +8,13 @@ import type {
   QueryContext,
   VertexHit,
   WalkTrace,
-} from "../geometry";
+} from "spherical-delaunay";
 import {
   createQueryContext,
   findNearestVertices,
   toCartesian,
   vertexLatLon,
-} from "../geometry";
+} from "spherical-delaunay";
 
 const EARTH_RADIUS_M = 6_371_000;
 

@@ -14,8 +14,8 @@ import {
   buildTriangulation,
   serialize,
   serializeBinary,
-} from "../geometry/index.js";
-import type { ArticleMeta } from "../geometry/index.js";
+} from "spherical-delaunay";
+import type { ArticleMeta } from "spherical-delaunay";
 import { assignWeightClasses } from "./popularity.js";
 import { SUPPORTED_LANGS, DEFAULT_LANG } from "../lang.js";
 import type { Lang } from "../lang.js";
