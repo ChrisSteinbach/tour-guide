@@ -92,6 +92,8 @@ export function createEffectExecutor(
   // Operational handles (not part of state machine)
   let stopWatcher: StopFn | null = null;
   let loadController = new AbortController();
+  let lastTilesGen = -1;
+  let tilePassChain: Promise<void> = Promise.resolve();
 
   function fetchAndRenderSummary(article: NearbyArticle): void {
     deps.ui.renderDetailLoading(article);
@@ -258,15 +260,44 @@ export function createEffectExecutor(
         loadController = new AbortController();
         loadLanguageData(effect.lang, loadController.signal);
         break;
-      case "loadTiles":
-        loadController.abort();
-        loadController = new AbortController();
-        void loadTilesForPosition(
-          effect.lang,
-          deps.getState().loadGeneration,
-          loadController.signal,
-        );
+      case "loadTiles": {
+        const gen = deps.getState().loadGeneration;
+        const lang = effect.lang;
+        if (gen !== lastTilesGen) {
+          // Generation bump = language switch or re-pick: the state machine
+          // has already discarded old tiles, and the gen guard would drop
+          // any results from in-flight loads — abort them to reclaim
+          // bandwidth. Start the new pass immediately (not chained behind
+          // the aborted one) so a caller that synchronously dispatched the
+          // generation-bumping event still observes the new pass's first
+          // fetch beginning right away — this preserves the synchronous-
+          // start contract the dispatch loop has always had for pickPosition
+          // and langSelected (see dispatch-loop.test.ts).
+          lastTilesGen = gen;
+          loadController.abort();
+          loadController = new AbortController();
+          tilePassChain = loadTilesForPosition(
+            lang,
+            gen,
+            loadController.signal,
+          ).catch(() => {});
+          break;
+        }
+        // Same generation = GPS tick: never abort. A slow in-flight fetch of
+        // a large tile must survive position updates (aborting it each tick
+        // both prevents it from ever completing and leaves it stuck in
+        // loadingTiles, because the aborted catch intentionally skips
+        // tileLoadFailed). Chain this pass behind the previous one so a new
+        // pass's loads don't start while the previous pass is still
+        // awaiting its primary tile — the primary keeps bandwidth priority
+        // across ticks. Stale queued passes exit via the gen/abort guards
+        // at the top of loadTilesForPosition.
+        const signal = loadController.signal;
+        tilePassChain = tilePassChain
+          .then(() => loadTilesForPosition(lang, gen, signal))
+          .catch(() => {});
         break;
+      }
       case "pushHistory":
         deps.pushState(effect.state, "");
         break;

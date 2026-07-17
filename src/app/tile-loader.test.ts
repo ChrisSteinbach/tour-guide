@@ -733,14 +733,16 @@ describe("loadTile", () => {
   });
 
   it("throws on non-OK HTTP response", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: false, status: 500 }),
-    );
+    // 404 is non-retryable, so this rejects on the first attempt without
+    // requiring any timer advancement (5xx/429 retry — see "retry with
+    // backoff" below).
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 404 });
+    vi.stubGlobal("fetch", fetchMock);
 
     await expect(
       loadTile("/base/", "en", entry, undefined, makeDeps()),
-    ).rejects.toThrow("HTTP 500");
+    ).rejects.toThrow("HTTP 404");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("works without IDB", async () => {
@@ -823,20 +825,39 @@ describe("loadTile", () => {
     expect(result).toBeInstanceOf(NearestQuery);
   });
 
-  it("propagates error when response.arrayBuffer() rejects", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        arrayBuffer: () =>
-          Promise.reject(new TypeError("network error during body read")),
-      }),
-    );
+  it("propagates error when response.arrayBuffer() rejects on every attempt", async () => {
+    // A rejecting arrayBuffer() is retryable, so this now retries twice
+    // (fake timers) before the final rejection propagates.
+    vi.useFakeTimers();
+    try {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          arrayBuffer: () =>
+            Promise.reject(new TypeError("network error during body read")),
+        }),
+      );
 
-    await expect(
-      loadTile("/base/", "en", entry, undefined, makeDeps()),
-    ).rejects.toThrow("network error during body read");
+      const resultPromise = loadTile(
+        "/base/",
+        "en",
+        entry,
+        undefined,
+        makeDeps(),
+      );
+      const assertion = expect(resultPromise).rejects.toThrow(
+        "network error during body read",
+      );
+
+      await vi.advanceTimersByTimeAsync(500);
+      await vi.advanceTimersByTimeAsync(1500);
+
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("falls through to network when cached.articles contains non-string elements", async () => {
@@ -985,6 +1006,163 @@ describe("loadTile", () => {
     deps.putAny = () => Promise.reject(new Error("IDB quota exceeded"));
     const result = await loadTile("/base/", "en", entry, undefined, deps);
     expect(result).toBeInstanceOf(NearestQuery);
+  });
+
+  // ---------- retry with backoff ----------
+
+  describe("retry with backoff", () => {
+    it("retries once after a network error, then resolves", async () => {
+      vi.useFakeTimers();
+      try {
+        vi.mocked(deserializeBinary).mockReturnValueOnce({
+          fd: fakeFd,
+          articles: fakeArticles,
+          weights: fakeWeights,
+        });
+
+        const fetchMock = vi
+          .fn()
+          .mockRejectedValueOnce(new TypeError("network error"))
+          .mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+          });
+        vi.stubGlobal("fetch", fetchMock);
+
+        const resultPromise = loadTile(
+          "/base/",
+          "en",
+          entry,
+          undefined,
+          makeDeps(),
+        );
+
+        // Flush the microtask chain up to (but not past) the backoff timer.
+        await vi.advanceTimersByTimeAsync(0);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+
+        await vi.advanceTimersByTimeAsync(500);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+
+        await expect(resultPromise).resolves.toBeInstanceOf(NearestQuery);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("retries once after an HTTP 503, then resolves", async () => {
+      vi.useFakeTimers();
+      try {
+        vi.mocked(deserializeBinary).mockReturnValueOnce({
+          fd: fakeFd,
+          articles: fakeArticles,
+          weights: fakeWeights,
+        });
+
+        const fetchMock = vi
+          .fn()
+          .mockResolvedValueOnce({ ok: false, status: 503 })
+          .mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+          });
+        vi.stubGlobal("fetch", fetchMock);
+
+        const resultPromise = loadTile(
+          "/base/",
+          "en",
+          entry,
+          undefined,
+          makeDeps(),
+        );
+
+        await vi.advanceTimersByTimeAsync(0);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+
+        await vi.advanceTimersByTimeAsync(500);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+
+        await expect(resultPromise).resolves.toBeInstanceOf(NearestQuery);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("rejects immediately on HTTP 404 without retrying", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 404 });
+      vi.stubGlobal("fetch", fetchMock);
+
+      await expect(
+        loadTile("/base/", "en", entry, undefined, makeDeps()),
+      ).rejects.toThrow(`Failed to fetch tile ${entry.id}: HTTP 404`);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("exhausts retries on a persistent network error and rejects with the final error", async () => {
+      vi.useFakeTimers();
+      try {
+        const fetchMock = vi
+          .fn()
+          .mockRejectedValue(new TypeError("persistent network error"));
+        vi.stubGlobal("fetch", fetchMock);
+
+        const resultPromise = loadTile(
+          "/base/",
+          "en",
+          entry,
+          undefined,
+          makeDeps(),
+        );
+        const assertion = expect(resultPromise).rejects.toThrow(
+          "persistent network error",
+        );
+
+        await vi.advanceTimersByTimeAsync(500);
+        await vi.advanceTimersByTimeAsync(1500);
+
+        await assertion;
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("rejects promptly when aborted during backoff, and does not retry afterward", async () => {
+      vi.useFakeTimers();
+      try {
+        const fetchMock = vi
+          .fn()
+          .mockRejectedValue(new TypeError("network error"));
+        vi.stubGlobal("fetch", fetchMock);
+
+        const controller = new AbortController();
+        const resultPromise = loadTile(
+          "/base/",
+          "en",
+          entry,
+          controller.signal,
+          makeDeps(),
+        );
+        const assertion = expect(resultPromise).rejects.toThrow();
+
+        // Let attempt 1 fail and enter the backoff wait, without advancing
+        // the clock past it.
+        await vi.advanceTimersByTimeAsync(0);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+
+        controller.abort();
+        await assertion;
+
+        // The pending backoff timer must have been cleared on abort:
+        // advancing time afterward must not trigger a second fetch.
+        await vi.advanceTimersByTimeAsync(2000);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   // ---------- touchLru integration ----------
