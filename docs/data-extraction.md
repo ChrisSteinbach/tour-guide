@@ -90,11 +90,11 @@ Wikimedia publishes a monthly `pageview_complete` dump: one ~6 GB bz2 file cover
 en.wikipedia Eiffel_Tower 9232 desktop 512345 A17102B16544...
 ```
 
-Rows are sorted by wiki then title, so an article's desktop/mobile-web/mobile-app rows are adjacent. Non-content pages carry a `null` page ID and are skipped.
+Non-content pages carry a `null` page ID and are skipped. One article's views are split across several rows — access methods (desktop/mobile-web/mobile-app), internal file sections, and redirect titles resolved to the same page ID — and those rows are not all adjacent; a popular article can span dozens of rows spread through the file.
 
 ### Download & Split
 
-Because one file covers every language, `ensureViewsFiles()` downloads it once, streams it through `lbzip2 -dc` (parallel, used when available) or `bzip2 -dc` as a fallback, and splits it into small gzipped per-language TSVs — `data/pageviews/pageviews-YYYYMM-{lang}.tsv.gz`, one `{page_id}\t{views}` row per article with access methods summed. The multi-GB decompressed stream is never written to disk.
+Because one file covers every language, `ensureViewsFiles()` downloads it once, streams it through `lbzip2 -dc` (parallel, used when available) or `bzip2 -dc` as a fallback, and splits it into gzipped per-language TSVs — `data/pageviews/pageviews-YYYYMM-{lang}.tsv.gz`, `{page_id}\t{views}` rows with adjacent same-id runs pre-summed. A page ID can still appear on multiple rows (the dump scatters an article's rows); the extraction join sums duplicates, so totals are exact regardless. The multi-GB decompressed stream is never written to disk.
 
 `npm run extract` calls this automatically (unless `--skip-download` is set) and, in a single pass, ensures views files exist for **every** supported language — not just the one being extracted — so the 6 GB dump is downloaded once and reused by every subsequent `--lang=` run.
 

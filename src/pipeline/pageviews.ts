@@ -9,13 +9,19 @@
  *   en.wikipedia Eiffel_Tower 9232 desktop 512345 A17102B16544...
  *
  * Titles are underscored (never contain spaces) and may be quoted when they
- * contain quotes. Lines are sorted by wiki code then title, so the
- * access-method rows (desktop / mobile-web / mobile-app) of one article are
- * adjacent. Non-content pages carry a "null" page ID.
+ * contain quotes. Non-content pages carry a "null" page ID. One article's
+ * views are usually split across several lines — access methods
+ * (desktop / mobile-web / mobile-app), internal file sections, and redirect
+ * titles resolved to the same page ID — and those lines are NOT all
+ * adjacent (measured: a popular en article spans ~40 rows spread widely
+ * through the 2026-06 monthly file).
  *
  * Because one file covers every language, we download it once and split it
- * into small per-language TSVs ({page_id}\t{views}, gzipped) that the
- * per-language extract step joins by page_id.
+ * into per-language TSVs ({page_id}\t{views}, gzipped) that the
+ * per-language extract step joins by page_id. The splitter collapses
+ * adjacent same-id runs opportunistically; exact totals come from consumers
+ * summing duplicate ids (see loadViewsInto), so correctness never depends
+ * on the dump's sort order.
  */
 
 import {
@@ -360,8 +366,9 @@ export async function ensureViewsFiles(
       crlfDelay: Infinity,
     });
 
-    // Rows for one article's access methods are adjacent in the dump, so a
-    // running (lang, pageId) key with a sum is enough — no big map needed.
+    // A running (lang, pageId) key collapses adjacent same-article rows
+    // (e.g. access methods) without a big map. Non-adjacent repeats of an
+    // id simply emit multiple rows; consumers sum duplicates.
     let currentLang: Lang | null = null;
     let currentPageId = 0;
     let currentSum = 0;

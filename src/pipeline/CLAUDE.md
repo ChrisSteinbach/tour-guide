@@ -2,7 +2,7 @@
 
 ## Pageviews
 
-`npm run pageviews` downloads the monthly Wikimedia `pageview_complete` "user" dump (one ~6 GB bz2 covering all wikis) and splits it into small gzipped per-language TSVs under `data/pageviews/` (`pageviews-YYYYMM-{lang}.tsv.gz`, `page_id\tviews`, access methods summed). The multi-GB dump is streamed through `lbzip2`/`bzip2` and never written to disk.
+`npm run pageviews` downloads the monthly Wikimedia `pageview_complete` "user" dump (one ~6 GB bz2 covering all wikis) and splits it into small gzipped per-language TSVs under `data/pageviews/` (`pageviews-YYYYMM-{lang}.tsv.gz`, `page_id\tviews`; a page id can repeat and consumers sum duplicates). The multi-GB dump is streamed through `lbzip2`/`bzip2` and never written to disk.
 
 ```bash
 # All supported languages, newest complete month
