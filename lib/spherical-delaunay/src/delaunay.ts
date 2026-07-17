@@ -31,8 +31,12 @@ export interface SphericalDelaunay {
   /**
    * Original input index for each vertex.
    * When all input points are on the hull, this is [0, 1, 2, ...].
-   * When some points are interior (e.g. regional data on a spherical cap),
-   * interior points are dropped and this maps new → original indices.
+   * Indices can be dropped from this list for two reasons: (1) the point is
+   * interior (e.g. regional data on a spherical cap) rather than on the hull,
+   * or (2) the point was an exact duplicate of an earlier input point —
+   * convexHull's dedupe pass keeps only the first occurrence, so later
+   * duplicates are never referenced by any face. Either way, this maps
+   * new → original indices for whichever vertices remain.
    */
   originalIndices: number[];
 }

@@ -315,6 +315,81 @@ describe("buildTriangulation", () => {
 
       validateTriangulation(tri);
     });
+
+    it("drops an exact duplicate before triangulation, keeping circumcenters finite", () => {
+      // Pre-fix, this produced 7 vertices / 10 triangles with two NaN
+      // circumcenters (the bug's repro). convexHull now drops the exact
+      // duplicate, so buildTriangulation only ever sees the 6 distinct points.
+      const points: Point3D[] = [
+        [1, 0, 0], // 0
+        [-1, 0, 0], // 1
+        [0, 1, 0], // 2
+        [0, -1, 0], // 3
+        [0, 0, 1], // 4
+        [0, 0, -1], // 5
+        [1, 0, 0], // 6 — exact duplicate of index 0
+      ];
+
+      const hull = convexHull(points);
+      const tri = buildTriangulation(hull);
+
+      expect(tri.vertices.length).toBe(6);
+      expect(tri.triangles.length).toBe(8);
+      expect(tri.originalIndices).toEqual([0, 1, 2, 3, 4, 5]);
+      for (const t of tri.triangles) {
+        expect(Number.isFinite(t.circumcenter![0])).toBe(true);
+        expect(Number.isFinite(t.circumcenter![1])).toBe(true);
+        expect(Number.isFinite(t.circumcenter![2])).toBe(true);
+        expect(Number.isFinite(t.circumradius!)).toBe(true);
+      }
+      validateTriangulation(tri);
+    });
+
+    it("maps to the first occurrence when a duplicate appears earlier in the array", () => {
+      const points: Point3D[] = [
+        [1, 0, 0], // 0 — first occurrence, kept
+        [1, 0, 0], // 1 — duplicate, dropped
+        [-1, 0, 0], // 2
+        [0, 1, 0], // 3
+        [0, -1, 0], // 4
+        [0, 0, 1], // 5
+        [0, 0, -1], // 6
+      ];
+
+      const hull = convexHull(points);
+      const tri = buildTriangulation(hull);
+
+      expect(tri.originalIndices).toEqual([0, 2, 3, 4, 5, 6]);
+      validateTriangulation(tri);
+    });
+
+    it("keeps a bit-distinct near-duplicate pair separate through triangulation", () => {
+      // [1, 1e-8, 0] is bit-distinct from [1, 0, 0], so both survive the
+      // dedupe pass and both remain hull vertices.
+      const points: Point3D[] = [
+        [1, 0, 0], // 0
+        [-1, 0, 0], // 1
+        [0, 1, 0], // 2
+        [0, -1, 0], // 3
+        [0, 0, 1], // 4
+        [0, 0, -1], // 5
+        [1, 1e-8, 0], // 6 — near-duplicate of index 0, bit-distinct
+      ];
+
+      const hull = convexHull(points);
+      const tri = buildTriangulation(hull);
+
+      expect(tri.vertices.length).toBe(7);
+      expect(tri.triangles.length).toBe(10); // F = 2V - 4 for 7 hull vertices
+      expect(tri.originalIndices).toEqual([0, 1, 2, 3, 4, 5, 6]);
+      for (const t of tri.triangles) {
+        expect(Number.isFinite(t.circumcenter![0])).toBe(true);
+        expect(Number.isFinite(t.circumcenter![1])).toBe(true);
+        expect(Number.isFinite(t.circumcenter![2])).toBe(true);
+        expect(Number.isFinite(t.circumradius!)).toBe(true);
+      }
+      validateTriangulation(tri);
+    });
   });
 
   describe("world cities (10 points)", () => {
