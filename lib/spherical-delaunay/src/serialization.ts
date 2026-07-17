@@ -29,8 +29,17 @@ export interface TriangulationFile {
 export interface FlatDelaunay {
   vertexPoints: Float64Array; // [x0,y0,z0, x1,y1,z1, ...] — 3 per vertex
   vertexTriangles: Uint32Array; // incident triangle index per vertex
-  triangleVertices: Uint32Array; // [v0,v1,v2, ...] — 3 per triangle
-  triangleNeighbors: Uint32Array; // [n0,n1,n2, ...] — 3 per triangle
+  /**
+   * [v0,v1,v2, ...] — 3 per triangle. Vertex indices wind CCW as viewed
+   * from outside the sphere (same convention as DelaunayTriangle.vertices).
+   */
+  triangleVertices: Uint32Array;
+  /**
+   * [n0,n1,n2, ...] — 3 per triangle. For a given triangle, the neighbor
+   * at slot i shares the edge from vertex slot i to vertex slot (i+1)%3 of
+   * that same triangle (same convention as DelaunayTriangle.neighbor).
+   */
+  triangleNeighbors: Uint32Array;
 }
 
 // ---------- JSON ----------
@@ -128,7 +137,12 @@ export function fromJson(data: TriangulationFile): SphericalDelaunay {
 
 // ---------- Flat typed-array conversion ----------
 
-/** Convert a TriangulationFile's flat number arrays to typed arrays. */
+/**
+ * Convert a TriangulationFile's flat number arrays to typed arrays.
+ *
+ * Preserves vertex/triangle index order and the winding + neighbor
+ * conventions of the source triangulation verbatim (see FlatDelaunay).
+ */
 export function toFlatDelaunay(data: TriangulationFile): FlatDelaunay {
   return {
     vertexPoints: Float64Array.from(data.vertices),
@@ -143,6 +157,9 @@ export function toFlatDelaunay(data: TriangulationFile): FlatDelaunay {
  * representation the query functions operate on. For consumers that build
  * a triangulation and query it in-memory, without a serialization
  * round-trip. Circumcenters/circumradii are dropped.
+ *
+ * Preserves vertex/triangle index order and the winding + neighbor
+ * conventions of the source triangulation verbatim (see FlatDelaunay).
  */
 export function flattenTriangulation(tri: SphericalDelaunay): FlatDelaunay {
   const V = tri.vertices.length;
