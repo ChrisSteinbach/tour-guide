@@ -51,8 +51,8 @@ function truncate8(n: number): number {
 /**
  * Serialize a SphericalDelaunay triangulation and article metadata to flat arrays.
  *
- * Skips circumcenter/circumradius — they are not used by point-location or
- * nearest-neighbor search, and can be recomputed if ever needed.
+ * Skips circumcenter/circumradius — they are not used by nearest-neighbor
+ * search, and can be recomputed if ever needed.
  */
 export function serialize(
   tri: SphericalDelaunay,

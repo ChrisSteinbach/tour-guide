@@ -35,9 +35,9 @@ The core geometric predicate is `orient3D(a, b, c, d)` — the sign of the 4×4 
 
 ### Query phase (app runtime)
 
-The app uses flat typed-array versions of the same algorithms to avoid GC pressure. `src/geometry/point-location.ts` is the textbook reference implementation (used by pipeline tests on full-sphere triangulations); `src/app/query.ts` is the runtime version, hardened for the realities of tile data (see "Tile patches" below).
+Queries run against flat typed arrays to avoid GC pressure, implemented once in `src/geometry/flat-query.ts` and hardened for the realities of tile data (see "Tile patches" below). `src/app/query.ts` is a thin adapter: its `NearestQuery` class wraps `createQueryContext`/`findNearestVertices` and maps vertex indices to article titles, weight classes, and distances in meters.
 
-**Step 1: Triangle walk** (`flatLocate` in `query.ts`, `locateTriangle` in `point-location.ts`)
+**Step 1: Triangle walk** (`flatLocate` in `flat-query.ts`)
 
 Starting from a hint triangle (or the default), test which edge of the current triangle the query point lies outside of. Cross to the neighbor sharing that edge. Repeat until the query is inside all three edges.
 
@@ -45,7 +45,7 @@ The edge test uses the sign of `dot(cross(a, b), q)` — the scalar triple produ
 
 **Expected steps:** O(√N) for uniformly distributed points.
 
-**Step 2: Greedy vertex walk** (`flatFindNearest` in `query.ts`, `findNearest` in `point-location.ts`)
+**Step 2: Greedy vertex walk** (`flatFindNearest` in `flat-query.ts`)
 
 Starting from a seed vertex, check all Delaunay neighbors. Move to any closer one. Repeat until no improvement. The Delaunay property guarantees this converges to the true nearest vertex on a full-sphere triangulation.
 
@@ -66,19 +66,19 @@ Two data artifacts compound this. Float32 coordinate quantization (the binary ti
 
 With these, a 9,240-query sweep over seven production tiles (in-patch and out-of-patch positions) matches brute force exactly, with walks averaging ~150–225 hops and bounded by ~520 — versus averages of 10k–18k hops, frequent O(V) brute-force fallbacks, and 268 wrong results for the textbook walk.
 
-Neighbors are enumerated by walking the triangle fan around a vertex (`flatNeighbors` / `vertexNeighbors`).
+Neighbors are enumerated by walking the triangle fan around a vertex (`vertexNeighbors`).
 
-**Step 3: BFS expansion** (k > 1, `NearestQuery.findNearest` in `query.ts`)
+**Step 3: BFS expansion** (k > 1 or filtered, `findNearestVertices` in `flat-query.ts`)
 
 For k-nearest queries, expand from the nearest vertex through Delaunay edges via BFS, collecting `max(2k, k+6)` candidates. Sort by distance, return top k. The oversampling margin (`k+6` for small k, `2k` for large k) ensures at least one full neighbor ring beyond the nearest vertex.
 
-The expansion (and the weight-filtered variant) skips fan edges contributed by back-closure triangles. Rim vertices are graph-connected to distant rim vertices through the hull's underside chords, and a BFS seeded at the rim — every query from outside the patch is — would otherwise teleport along the patch boundary, scattering its visit budget over rim clusters hundreds of kilometres away and breaking the "hop order roughly tracks distance order" assumption the budget relies on. The greedy descent keeps the full fan: a chord can only ever shortcut it closer.
+The expansion (and the filtered variant — the search takes a vertex predicate; the app's `minWeight` option becomes a weight-class predicate) skips fan edges contributed by back-closure triangles. Rim vertices are graph-connected to distant rim vertices through the hull's underside chords, and a BFS seeded at the rim — every query from outside the patch is — would otherwise teleport along the patch boundary, scattering its visit budget over rim clusters hundreds of kilometres away and breaking the "hop order roughly tracks distance order" assumption the budget relies on. The greedy descent keeps the full fan: a chord can only ever shortcut it closer.
 
 ## Distance computation
 
-The pipeline's geometry library (`src/geometry/index.ts`) uses `acos(dot(a, b))` for spherical distance, which is fine for Float64 pipeline math.
+`sphericalDistance` in `src/geometry/index.ts` uses `acos(dot(a, b))`, which is fine for Float64 pipeline math.
 
-The app's runtime query module (`src/app/query.ts`) uses **chord distance** instead: `2 * asin(||v - q|| / 2)` (with clamping guards for numerical safety). This avoids catastrophic cancellation when vertex coordinates originate from Float32 storage (the binary format). For nearby points, the dot product is approximately 1 and `(1 - dot)` falls below Float32 rounding error, causing `acos` to collapse to 0. Chord distance computes differences instead, which stay above the noise floor.
+The query module (`src/geometry/flat-query.ts`) uses **chord distance** instead: `2 * asin(||v - q|| / 2)` (with clamping guards for numerical safety). This avoids catastrophic cancellation when vertex coordinates originate from Float32 storage (the binary format). For nearby points, the dot product is approximately 1 and `(1 - dot)` falls below Float32 rounding error, causing `acos` to collapse to 0. Chord distance computes differences instead, which stay above the noise floor.
 
 Both are monotonically related to great-circle distance, so they produce the same nearest-neighbor ordering.
 

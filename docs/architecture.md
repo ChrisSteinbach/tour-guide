@@ -80,11 +80,11 @@ IDB uses a single object store (created via `onupgradeneeded`) with versioned ke
 
 ### Nearest-Neighbor Query (`query.ts`)
 
-The `NearestQuery` class wraps the flat Delaunay data for a single tile and provides `findNearest(lat, lon, k)`. Cross-tile merging is handled by `findNearestTiled()` in `tile-loader.ts`, which queries each loaded tile independently, de-duplicates by title, sorts by distance, and returns the top k.
+The `NearestQuery` class wraps the flat Delaunay data for a single tile and provides `findNearest(lat, lon, k)`. The query algorithms live in the geometry library (`src/geometry/flat-query.ts`, entered through `createQueryContext` and `findNearestVertices`); `NearestQuery` is the adapter that maps vertex indices to article titles, weight classes (its `minWeight` option becomes a vertex predicate), and distances in meters. Cross-tile merging is handled by `findNearestTiled()` in `tile-loader.ts`, which queries each loaded tile independently, de-duplicates by title, sorts by distance, and returns the top k.
 
 Per-tile query steps:
 
-1. **Triangle walk** (`flatLocate`) — Starting from `defaultTriangle` (or a warm-start hint), walk adjacent triangles by testing which edge the query point lies outside of. Each step crosses to the neighbor sharing that edge. Converges in O(√N) steps.
+1. **Triangle walk** (`flatLocate`) — Starting from the tile's anchor triangle (or a warm-start hint), walk adjacent triangles by testing which edge the query point lies outside of. Each step crosses to the neighbor sharing that edge. Converges in O(√N) steps.
 2. **Seed vertex** — The closest vertex of the containing triangle.
 3. **Greedy vertex walk** — Check all Delaunay neighbors of the current best; move to any closer one. Repeat until no improvement.
 4. **BFS expansion** (k > 1) — Expand from the nearest vertex through Delaunay edges, collecting max(2k, k+6) candidates. Sort by distance, return top k.
@@ -223,13 +223,13 @@ Incremental 3D convex hull algorithm. For unit-sphere points, hull faces are exa
 - Drops interior points (those not on the hull), remaps indices
 - Returns `SphericalDelaunay` with `originalIndices` mapping back to input
 
-### Point Location (`point-location.ts`)
+### Nearest-Neighbor Queries (`flat-query.ts`)
 
-- `locateTriangle(tri, query, startTriangle?)` — Triangle walk: O(√N) steps
-- `findNearest(tri, query, startTriangle?)` — Locate triangle → closest vertex → greedy walk through Delaunay neighbors
-- `vertexNeighbors(tri, v)` — Walks the triangle fan around a vertex
+- `createQueryContext(fd)` — Per-triangulation state computed once: back-closure mask + walk anchor triangle
+- `findNearestVertices(ctx, query, k, opts?)` — Triangle walk (O(√N) steps) → greedy descent through Delaunay neighbors → BFS k-nearest expansion; `opts` takes a warm-start triangle, a vertex filter predicate, and a `WalkTrace` to fill for visualization
+- `vertexNeighbors(fd, v, skipTriangles?)` — Walks the triangle fan around a vertex
 
-All three are standalone functions taking a `SphericalDelaunay` as the first argument.
+All operate on `FlatDelaunay` typed arrays — the representation `deserializeBinary` returns — so runtime queries need no object-graph conversion. `flattenTriangulation` converts a built `SphericalDelaunay` for in-memory use. The walk is hardened for tile patches and Float32 quantization; see `nearest-neighbor.md`.
 
 ### Serialization (`serialization.ts`)
 
@@ -259,7 +259,7 @@ src/geometry/
   index.ts             Coord conversion, distance, bearing, circumcenter
   convex-hull.ts       Incremental 3D convex hull
   delaunay.ts          Spherical Delaunay from convex hull
-  point-location.ts    Triangle walk, greedy nearest-neighbor
+  flat-query.ts        Triangle walk, greedy nearest-neighbor, BFS k-NN
   serialization.ts     Typed arrays ↔ binary format
   predicates.ts        Robust orient3D (Shewchuk)
 
