@@ -15,6 +15,7 @@ import { NearestQuery } from "./query";
 import type { FindNearestOptions, QueryResult } from "./query";
 import { idbOpen, idbGetAny, idbPutAny, idbDelete } from "./idb";
 import type { Lang } from "../lang";
+import { recordTileLoad } from "./tile-log";
 
 const MAX_ROW = ROWS - 1; // 35
 
@@ -305,6 +306,141 @@ export async function loadTileIndex(
   }
 }
 
+// ---------- Tile fetch with retry-with-backoff ----------
+
+/** Delay (ms) before each retry attempt. length + 1 = max fetch attempts. */
+export const TILE_FETCH_RETRY_DELAYS_MS = [500, 1500];
+
+/**
+ * Wait `ms` milliseconds, or reject promptly if `signal` fires "abort"
+ * during the wait. Always cleans up both the timer and the abort listener.
+ */
+function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      // signal.reason is typed `any`: it's whatever the aborting caller
+      // passed to controller.abort(reason), not necessarily an Error.
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+      reject(
+        signal?.reason ??
+          new DOMException("The operation was aborted.", "AbortError"),
+      );
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort);
+  });
+}
+
+type TileFetchAttempt =
+  | { ok: true; buf: ArrayBuffer }
+  | { ok: false; retryable: boolean; error: Error };
+
+/**
+ * One fetch attempt. A rejection from fetch() or response.arrayBuffer()
+ * (network error, abort, ...) is always retryable. Non-ok responses are
+ * retryable only for 5xx/429 — other statuses (404, 403, ...) are
+ * permanent failures.
+ */
+async function attemptTileFetch(
+  url: string,
+  id: string,
+  signal?: AbortSignal,
+): Promise<TileFetchAttempt> {
+  try {
+    const response = await fetch(url, signal ? { signal } : undefined);
+    if (!response.ok) {
+      const error = new Error(
+        `Failed to fetch tile ${id}: HTTP ${response.status}`,
+      );
+      return {
+        ok: false,
+        retryable: response.status >= 500 || response.status === 429,
+        error,
+      };
+    }
+    const buf = await response.arrayBuffer();
+    return { ok: true, buf };
+  } catch (err) {
+    return {
+      ok: false,
+      retryable: true,
+      error: err instanceof Error ? err : new Error(String(err)),
+    };
+  }
+}
+
+/**
+ * Fetch a tile .bin with retry-with-backoff for transient failures
+ * (network errors, HTTP 5xx/429). Non-retryable HTTP statuses throw
+ * immediately with no retry. An abort mid-fetch or mid-backoff propagates
+ * immediately without further retries or delays.
+ *
+ * Records the outcome exactly once, at final settle, via recordTileLoad —
+ * except when the signal is aborted, since an abort is cancellation, not a
+ * failure, and must not pollute failure stats.
+ */
+async function fetchTileBuffer(
+  baseUrl: string,
+  lang: Lang,
+  id: string,
+  signal?: AbortSignal,
+): Promise<ArrayBuffer> {
+  const url = `${baseUrl}tiles/${lang}/${id}.bin`;
+  const start = performance.now();
+  const maxAttempts = TILE_FETCH_RETRY_DELAYS_MS.length + 1;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const result = await attemptTileFetch(url, id, signal);
+
+    if (result.ok) {
+      recordTileLoad({
+        at: Date.now(),
+        lang,
+        id,
+        source: "network",
+        ok: true,
+        ms: performance.now() - start,
+        bytes: result.buf.byteLength,
+        attempts: attempt,
+      });
+      return result.buf;
+    }
+
+    const aborted = signal?.aborted ?? false;
+    const isLastAttempt = attempt === maxAttempts;
+
+    if (!result.retryable || aborted || isLastAttempt) {
+      if (!aborted) {
+        recordTileLoad({
+          at: Date.now(),
+          lang,
+          id,
+          source: "network",
+          ok: false,
+          ms: performance.now() - start,
+          attempts: attempt,
+          error: result.error.message,
+        });
+      }
+      throw result.error;
+    }
+
+    const delayMs = TILE_FETCH_RETRY_DELAYS_MS[attempt - 1];
+    console.warn(
+      `[tile] ${lang}/${id} fetch attempt ${attempt} failed (${result.error.message}); retrying in ${delayMs} ms`,
+    );
+    await abortableDelay(delayMs, signal);
+  }
+
+  // Unreachable: the loop above always returns or throws by the last attempt.
+  throw new Error(`Failed to fetch tile ${id}: exhausted retries`);
+}
+
 /**
  * Fetch a single tile .bin, deserialize, and return a NearestQuery.
  * Caches in IDB keyed by `tile-v2-{lang}-{id}` with hash.
@@ -317,6 +453,7 @@ export async function loadTile(
   signal?: AbortSignal,
   deps: TileLoaderDeps = defaultDeps,
 ): Promise<NearestQuery> {
+  const loadStart = performance.now();
   const cacheKey = `tile-v2-${lang}-${entry.id}`;
   const db = await deps.openDb();
 
@@ -349,6 +486,14 @@ export async function loadTile(
         );
         // Touch LRU only after NearestQuery construction succeeds
         touchLru(db, lang, entry.id, deps).catch(() => undefined);
+        recordTileLoad({
+          at: Date.now(),
+          lang,
+          id: entry.id,
+          source: "cache",
+          ok: true,
+          ms: performance.now() - loadStart,
+        });
         return query;
       }
     } catch (cacheErr) {
@@ -356,16 +501,8 @@ export async function loadTile(
     }
   }
 
-  // Fetch from network
-  const url = `${baseUrl}tiles/${lang}/${entry.id}.bin`;
-  const response = await fetch(url, signal ? { signal } : undefined);
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch tile ${entry.id}: HTTP ${response.status}`,
-    );
-  }
-
-  const buf = await response.arrayBuffer();
+  // Fetch from network, with retry-with-backoff for transient failures
+  const buf = await fetchTileBuffer(baseUrl, lang, entry.id, signal);
   const { fd, articles, weights } = deserializeBinary(buf);
 
   // Cache in IDB
