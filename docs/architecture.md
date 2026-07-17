@@ -52,7 +52,7 @@ Reads extracted NDJSON and produces per-tile binary files for the app:
 
 ### Binary Format
 
-Each tile is a compact binary blob containing a 24-byte header, four typed-array sections (vertex coordinates, vertex-to-triangle mapping, triangle vertices, triangle neighbors), and a UTF-8 JSON article title array. See [binary-format.md](binary-format.md) for the full byte-level specification.
+Each tile is a compact binary blob containing a 24-byte header, four typed-array sections (vertex coordinates, vertex-to-triangle mapping, triangle vertices, triangle neighbors), and an opaque payload carrying WikiRadar's article metadata (titles + weight classes). See [binary-format.md](binary-format.md) for the full byte-level specification.
 
 Float32 vertices give sub-meter precision on Earth. On deserialization, Uint32 index sections are zero-copy views into the original ArrayBuffer; Float32 vertices are copied into Float64Arrays for numerical stability.
 
@@ -73,10 +73,10 @@ The app uses geographic tiling — instead of downloading a monolithic file, it 
 
 1. **Fetch tile index** — `loadTileIndex()` fetches `tiles/{lang}/index.json` (small manifest of all tiles with content hashes). Cached in IDB for offline use.
 2. **Determine tiles** — `tilesForPosition()` (in `tile-loader.ts`) computes the primary tile from the user's GPS position plus adjacent tiles if the user is within 1° of a tile boundary. If no tiles exist at the position (e.g., open ocean), `loadTilesForPosition()` in `effect-executor.ts` falls back to `nearestExistingTiles()`, which expands outward ring by ring via `tilesAtRing()` up to `MAX_RING` until populated tiles are found.
-3. **Load tiles** — `loadTile()` fetches individual `.bin` files, calls `deserializeBinary()` (Float32→Float64 upcast for math precision, Uint32 views are zero-copy), and caches the result in IDB keyed by `tile-v1-{lang}-{id}` with content hash for freshness.
+3. **Load tiles** — `loadTile()` fetches individual `.bin` files, calls `deserializeBinary()` (Float32→Float64 upcast for math precision, Uint32 views are zero-copy), and caches the result in IDB keyed by `tile-v2-{lang}-{id}` with content hash for freshness.
 4. **IDB cache hit** — Returns instantly (~1ms). Compares the cached tile's hash against the index; only refetches tiles whose hash changed.
 
-IDB uses a single object store (created via `onupgradeneeded`) with versioned key prefixes (e.g. `tile-index-v1-{lang}`, `tile-v1-{lang}-{id}`, `tile-lru-v1-{lang}`). Data migration is handled by bumping the version in the prefix — old keys are orphaned and cleaned up on startup, avoiding the need for `onupgradeneeded`-based data migration. This strategy works because all data shares one object store; adding a second store would require bumping the IDB version and using `onupgradeneeded`. See `idb.ts` for the full key inventory.
+IDB uses a single object store (created via `onupgradeneeded`) with versioned key prefixes (e.g. `tile-index-v1-{lang}`, `tile-v2-{lang}-{id}`, `tile-lru-v1-{lang}`). Data migration is handled by bumping the version in the prefix — old keys are orphaned and cleaned up on startup, avoiding the need for `onupgradeneeded`-based data migration. This strategy works because all data shares one object store; adding a second store would require bumping the IDB version and using `onupgradeneeded`. See `idb.ts` for the full key inventory.
 
 ### Nearest-Neighbor Query (`query.ts`)
 
@@ -124,7 +124,7 @@ The app is designed for mobile networks where failures are common. Each subsyste
 | Scenario                                                                                         | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                 | User experience                                                                                                                                         |
 | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Tile fetch failure**                                                                           | Effect executor dispatches `tileLoadFailed` event to the state machine, which tracks failures in `loadingTiles`; if all pending tiles fail during the loading phase, transitions to empty browsing                                                                                                                                                                                                                                                       | Results from other loaded tiles still display; if no tiles load at all, the app shows an empty state                                                    |
-| **Binary deserialization failure** (corrupt `.bin`, truncated download, format version mismatch) | `deserializeBinary` validates magic bytes (`"WKRD"`), format version, section bounds, and article JSON — throws `BinaryFormatError` on any mismatch; `loadTile` propagates the error, which is caught and logged; app continues with remaining tiles                                                                                                                                                                                                     | Same as tile fetch failure — results from other tiles still display; corrupt tile is not cached in IDB                                                  |
+| **Binary deserialization failure** (corrupt `.bin`, truncated download, format version mismatch) | `deserializeBinary` validates magic bytes (`"SDLT"`), format version, and section bounds — throws `BinaryFormatError` on any mismatch; `decodeArticlePayload` separately validates the article payload, throwing a plain `Error` on corruption; `loadTile` propagates either error, which is caught and logged; app continues with remaining tiles                                                                                                       | Same as tile fetch failure — results from other tiles still display; corrupt tile is not cached in IDB                                                  |
 | **Tile index fetch failure**                                                                     | Falls back to IDB-cached index if available; if no cache, transitions to "data unavailable" screen                                                                                                                                                                                                                                                                                                                                                       | Offline revisit works; first-time offline shows language picker with "No data available" message                                                        |
 | **IndexedDB unavailable** (private browsing, quota exceeded)                                     | `idbOpen()` logs `console.warn` and returns `null`; the cached promise is cleared so subsequent calls retry (transient failures recover automatically); IDB reads/writes skip when `null` is returned                                                                                                                                                                                                                                                    | App works normally but without caching — tiles reload from network on each visit; transient failures self-heal                                          |
 | **IDB data corruption** (invalid JSON, schema mismatch, partial writes)                          | Corrupted LRU lists fall back to empty (fresh start); corrupted tile cache entries are treated as cache misses and re-fetched from the network; no error propagates to the state machine                                                                                                                                                                                                                                                                 | App continues operating normally — user sees no difference except a one-time network refetch for affected tiles                                         |
@@ -233,16 +233,17 @@ All operate on `FlatDelaunay` typed arrays — the representation `deserializeBi
 
 ### Serialization (`serialization.ts`)
 
-Two formats sharing the same logical structure:
+Metadata-agnostic: the library serializes only geometry (vertices and adjacency), in two formats sharing the same logical structure:
 
 |          | JSON (`TriangulationFile`)    | Binary         |
 | -------- | ----------------------------- | -------------- |
 | Vertices | `number[]` (8 decimal places) | `Float32Array` |
 | Indices  | `number[]`                    | `Uint32Array`  |
-| Articles | `string[]`                    | UTF-8 JSON     |
 | Use case | Intermediate / debugging      | Production     |
 
-`deserializeBinary()` copies Float32 vertices into Float64 for math precision. Uint32 sections are zero-copy typed array views directly into the ArrayBuffer.
+`toJson(tri)` / `fromJson(data)` convert a `SphericalDelaunay` to/from the JSON-friendly `TriangulationFile`. `serializeBinary(tri, payload?)` / `deserializeBinary(buf)` do the binary equivalent, plus an optional opaque `payload: Uint8Array` that the library copies verbatim and never interprets — `deserializeBinary()` copies Float32 vertices into Float64 for math precision, Uint32 sections are zero-copy typed array views directly into the ArrayBuffer, and `payload` comes back as a standalone copy (empty when absent).
+
+WikiRadar layers its article metadata (titles + weight classes) on top of the binary format as that opaque payload, via `src/article-payload.ts`'s `encodeArticlePayload()` / `decodeArticlePayload()`. See [binary-format.md](binary-format.md) for the full byte-level spec of both layers.
 
 ## Key Files
 
@@ -313,8 +314,9 @@ src/app/
   drawer-gesture.ts           Swipe/drag gesture handling for the map drawer
   map-picker-lifecycle.ts     Lazy-loads and manages the full-screen map picker overlay
 
-src/lang.ts            Supported languages (en, de, fr, es, it, ru, zh, pt, pl, nl, ko, ar, sv, ja)
-src/tiles.ts           Tile types, grid constants, tile ID computation, column wrapping
+src/lang.ts             Supported languages (en, de, fr, es, it, ru, zh, pt, pl, nl, ko, ar, sv, ja)
+src/tiles.ts            Tile types, grid constants, tile ID computation, column wrapping
+src/article-payload.ts  Article metadata payload codec (titles + weight classes), shared by pipeline and app
 
 src/app/CLAUDE.md      Module-specific dev instructions (browser verification workflow)
 src/pipeline/CLAUDE.md Module-specific dev instructions (extraction and pipeline commands)

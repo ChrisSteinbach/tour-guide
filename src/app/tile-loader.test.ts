@@ -16,11 +16,12 @@ import {
   toCartesian,
   convexHull,
   buildTriangulation,
-  serialize,
   deserializeBinary,
-  toFlatDelaunay,
+  flattenTriangulation,
 } from "spherical-delaunay";
-import type { ArticleMeta, FlatDelaunay } from "spherical-delaunay";
+import type { FlatDelaunay } from "spherical-delaunay";
+import { encodeArticlePayload } from "../article-payload";
+import type { ArticleMeta } from "../article-payload";
 
 vi.mock("spherical-delaunay", async (importOriginal) => {
   // eslint-disable-next-line @typescript-eslint/consistent-type-imports
@@ -37,17 +38,12 @@ function buildQuery(
   const points = articles.map((a) => toCartesian({ lat: a.lat, lon: a.lon }));
   const hull = convexHull(points);
   const tri = buildTriangulation(hull);
+  const fd = flattenTriangulation(tri);
   const meta: ArticleMeta[] = tri.originalIndices.map((i) => ({
     title: articles[i].title,
     weight: articles[i].weight,
   }));
-  const data = serialize(tri, meta);
-  const fd = toFlatDelaunay(data);
-  const metas = data.articles.map((title, i) => ({
-    title,
-    weight: data.weights[i],
-  }));
-  return new NearestQuery(fd, metas);
+  return new NearestQuery(fd, meta);
 }
 
 /** Create a minimal TileIndex with the given tile IDs. */
@@ -571,6 +567,7 @@ describe("loadTile", () => {
     { title: "C" },
   ];
   const fakeWeights = new Uint8Array([0, 0, 0]);
+  const fakePayload = encodeArticlePayload(fakeArticles);
 
   const cachedTile = {
     vertexPoints: fakeFd.vertexPoints,
@@ -606,12 +603,11 @@ describe("loadTile", () => {
   it("preserves article weights across the IDB cache round trip", async () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
-      articles: [
+      payload: encodeArticlePayload([
         { title: "A", weight: 80 },
         { title: "B", weight: 104 },
         { title: "C", weight: 0 },
-      ],
-      weights: new Uint8Array([80, 104, 0]),
+      ]),
     });
 
     vi.stubGlobal(
@@ -646,8 +642,7 @@ describe("loadTile", () => {
   it("falls through to network when cached entry lacks weights", async () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
-      articles: fakeArticles,
-      weights: fakeWeights,
+      payload: fakePayload,
     });
 
     vi.stubGlobal(
@@ -678,8 +673,7 @@ describe("loadTile", () => {
   it("fetches from network on cache miss", async () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
-      articles: fakeArticles,
-      weights: fakeWeights,
+      payload: fakePayload,
     });
 
     const fakeBuf = new ArrayBuffer(8);
@@ -710,8 +704,7 @@ describe("loadTile", () => {
 
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
-      articles: fakeArticles,
-      weights: fakeWeights,
+      payload: fakePayload,
     });
 
     vi.stubGlobal(
@@ -749,8 +742,7 @@ describe("loadTile", () => {
   it("works without IDB", async () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
-      articles: fakeArticles,
-      weights: fakeWeights,
+      payload: fakePayload,
     });
 
     vi.stubGlobal(
@@ -775,8 +767,7 @@ describe("loadTile", () => {
   it("falls through to network when IDB read throws", async () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
-      articles: fakeArticles,
-      weights: fakeWeights,
+      payload: fakePayload,
     });
 
     vi.stubGlobal(
@@ -802,8 +793,7 @@ describe("loadTile", () => {
   it("returns valid NearestQuery even when LRU bookkeeping throws", async () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
-      articles: fakeArticles,
-      weights: fakeWeights,
+      payload: fakePayload,
     });
 
     vi.stubGlobal(
@@ -864,8 +854,7 @@ describe("loadTile", () => {
   it("falls through to network when cached.articles contains non-string elements", async () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
-      articles: fakeArticles,
-      weights: fakeWeights,
+      payload: fakePayload,
     });
 
     vi.stubGlobal(
@@ -899,8 +888,7 @@ describe("loadTile", () => {
   it("falls through to network when cached data has matching hash but corrupt arrays", async () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
-      articles: fakeArticles,
-      weights: fakeWeights,
+      payload: fakePayload,
     });
 
     vi.stubGlobal(
@@ -935,8 +923,7 @@ describe("loadTile", () => {
   it("falls through to network when cached TypedArrays are plain arrays", async () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
-      articles: fakeArticles,
-      weights: fakeWeights,
+      payload: fakePayload,
     });
 
     vi.stubGlobal(
@@ -990,8 +977,7 @@ describe("loadTile", () => {
   it("returns valid NearestQuery even when cache write fails", async () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
-      articles: fakeArticles,
-      weights: fakeWeights,
+      payload: fakePayload,
     });
 
     vi.stubGlobal(
@@ -1017,8 +1003,7 @@ describe("loadTile", () => {
       try {
         vi.mocked(deserializeBinary).mockReturnValueOnce({
           fd: fakeFd,
-          articles: fakeArticles,
-          weights: fakeWeights,
+          payload: fakePayload,
         });
 
         const fetchMock = vi
@@ -1057,8 +1042,7 @@ describe("loadTile", () => {
       try {
         vi.mocked(deserializeBinary).mockReturnValueOnce({
           fd: fakeFd,
-          articles: fakeArticles,
-          weights: fakeWeights,
+          payload: fakePayload,
         });
 
         const fetchMock = vi
@@ -1174,8 +1158,7 @@ describe("loadTile", () => {
   it("updates tile-lru key in IDB after loading a tile from network", async () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
-      articles: fakeArticles,
-      weights: fakeWeights,
+      payload: fakePayload,
     });
 
     vi.stubGlobal(
@@ -1198,8 +1181,7 @@ describe("loadTile", () => {
   it("deletes oldest tile cache key when LRU exceeds capacity", async () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
-      articles: fakeArticles,
-      weights: fakeWeights,
+      payload: fakePayload,
     });
 
     vi.stubGlobal(
@@ -1254,8 +1236,7 @@ describe("loadTile", () => {
   it("proceeds with fresh LRU list when getAny rejects for LRU key", async () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
-      articles: fakeArticles,
-      weights: fakeWeights,
+      payload: fakePayload,
     });
 
     vi.stubGlobal(
@@ -1290,8 +1271,7 @@ describe("loadTile", () => {
   it("defaults to fresh LRU when getAny resolves with a non-array value", async () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
-      articles: fakeArticles,
-      weights: fakeWeights,
+      payload: fakePayload,
     });
 
     vi.stubGlobal(
@@ -1326,8 +1306,7 @@ describe("loadTile", () => {
   it("serializes concurrent touchLru calls so both tiles appear in LRU", async () => {
     vi.mocked(deserializeBinary).mockReturnValue({
       fd: fakeFd,
-      articles: fakeArticles,
-      weights: fakeWeights,
+      payload: fakePayload,
     });
 
     vi.stubGlobal(
@@ -1367,8 +1346,7 @@ describe("loadTile", () => {
   it("queues a successful touchLru after a prior LRU write failure for the same language", async () => {
     vi.mocked(deserializeBinary).mockReturnValue({
       fd: fakeFd,
-      articles: fakeArticles,
-      weights: fakeWeights,
+      payload: fakePayload,
     });
 
     vi.stubGlobal(
@@ -1414,8 +1392,7 @@ describe("loadTile", () => {
   it("keeps per-language LRU lists independent", async () => {
     vi.mocked(deserializeBinary).mockReturnValue({
       fd: fakeFd,
-      articles: fakeArticles,
-      weights: fakeWeights,
+      payload: fakePayload,
     });
 
     vi.stubGlobal(

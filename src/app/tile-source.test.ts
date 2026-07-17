@@ -3,8 +3,7 @@ import { NearestQuery } from "./query";
 import {
   buildTriangulation,
   convexHull,
-  serialize,
-  toFlatDelaunay,
+  flattenTriangulation,
 } from "spherical-delaunay";
 import { GRID_DEG, tileFor, tileId, type TileEntry } from "../tiles";
 
@@ -36,12 +35,8 @@ function makeNearestQuery(title: string): NearestQuery {
   const articles = points.map((_, i) => ({ title: `${title}-${i}` }));
   const hull = convexHull(points);
   const tri = buildTriangulation(hull);
-  const data = serialize(tri, articles);
-  const fd = toFlatDelaunay(data);
-  return new NearestQuery(
-    fd,
-    data.articles.map((t) => ({ title: t })),
-  );
+  const fd = flattenTriangulation(tri);
+  return new NearestQuery(fd, articles);
 }
 
 describe("createTileSource", () => {

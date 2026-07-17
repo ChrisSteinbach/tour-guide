@@ -12,10 +12,10 @@ import {
   toCartesian,
   convexHull,
   buildTriangulation,
-  serialize,
   serializeBinary,
 } from "spherical-delaunay";
-import type { ArticleMeta } from "spherical-delaunay";
+import { encodeArticlePayload } from "../article-payload.js";
+import type { ArticleMeta } from "../article-payload.js";
 import { assignWeightClasses } from "./popularity.js";
 import { SUPPORTED_LANGS, DEFAULT_LANG } from "../lang.js";
 import type { Lang } from "../lang.js";
@@ -207,8 +207,7 @@ export function buildTile(tileArticles: WeightedArticle[]): ArrayBuffer | null {
     title: tileArticles[i].title,
     weight: tileArticles[i].weight,
   }));
-  const data = serialize(tri, meta);
-  return serializeBinary(data);
+  return serializeBinary(tri, encodeArticlePayload(meta));
 }
 
 /** SHA-256 hash of a buffer, truncated to 8 hex characters. */

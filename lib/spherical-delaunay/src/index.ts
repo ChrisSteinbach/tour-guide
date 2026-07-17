@@ -186,16 +186,12 @@ export type {
 // ---------- Serialization (re-exports) ----------
 
 export {
-  serialize,
-  deserialize,
+  toJson,
+  fromJson,
   serializeBinary,
   deserializeBinary,
   toFlatDelaunay,
   flattenTriangulation,
   BinaryFormatError,
 } from "./serialization";
-export type {
-  TriangulationFile,
-  ArticleMeta,
-  FlatDelaunay,
-} from "./serialization";
+export type { TriangulationFile, FlatDelaunay } from "./serialization";

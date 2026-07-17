@@ -226,7 +226,7 @@ For the **demo data** path ("Use demo data" button), the app loads a hardcoded t
 
 ### IDB caching
 
-Each tile is cached independently in IndexedDB, keyed by `tile-v1-{lang}-{id}` with the content hash from the manifest. On subsequent visits:
+Each tile is cached independently in IndexedDB, keyed by `tile-v2-{lang}-{id}` with the content hash from the manifest. On subsequent visits:
 
 1. App fetches the tile index (always, to check for updates).
 2. Compares cached tile hashes against the index.
@@ -248,7 +248,7 @@ The `deserializeBinary()` function in `lib/spherical-delaunay/src/serialization.
 Tiled cache keys use three prefixes:
 
 - `tile-index-v1-{lang}` — tile index JSON (one per language)
-- `tile-v1-{lang}-{id}` — individual tile data (one entry per tile per language)
+- `tile-v2-{lang}-{id}` — individual tile data (one entry per tile per language)
 - `tile-lru-v1-{lang}` — tile LRU eviction list (tracks access order for cache eviction)
 
 ## Summary

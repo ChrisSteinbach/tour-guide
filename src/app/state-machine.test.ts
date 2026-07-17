@@ -21,8 +21,7 @@ import {
   toCartesian,
   convexHull,
   buildTriangulation,
-  serialize,
-  toFlatDelaunay,
+  flattenTriangulation,
 } from "spherical-delaunay";
 
 // ── Test helpers ─────────────────────────────────────────────
@@ -209,9 +208,8 @@ describe("getNearby", () => {
     const points = articles.map((a) => toCartesian(a));
     const hull = convexHull(points);
     const tri = buildTriangulation(hull);
+    const fd = flattenTriangulation(tri);
     const meta = articles.map((a) => ({ title: a.title }));
-    const data = serialize(tri, meta);
-    const fd = toFlatDelaunay(data);
     return new NearestQuery(fd, meta);
   }
 
@@ -246,22 +244,16 @@ describe("getNearby", () => {
     const points = weighted.map((a) => toCartesian(a));
     const hull = convexHull(points);
     const tri = buildTriangulation(hull);
+    const fd = flattenTriangulation(tri);
     const meta = tri.originalIndices.map((i) => ({
       title: weighted[i].title,
       weight: weighted[i].weight,
-    }));
-    const data = serialize(tri, meta);
-    const orderedMeta = data.articles.map((title, i) => ({
-      title,
-      weight: data.weights[i],
     }));
     const query: QueryState = {
       mode: "tiled",
       index: sampleIndex,
       tileMap: buildTileMap(sampleIndex),
-      tiles: new Map([
-        ["27-36", new NearestQuery(toFlatDelaunay(data), orderedMeta)],
-      ]),
+      tiles: new Map([["27-36", new NearestQuery(fd, meta)]]),
     };
 
     const unfiltered = getNearby(query, paris, 3);

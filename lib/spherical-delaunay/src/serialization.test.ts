@@ -6,45 +6,34 @@ import {
   createQueryContext,
   findNearestVertices,
   flattenTriangulation,
-  serialize,
-  deserialize,
+  toJson,
+  fromJson,
   serializeBinary,
   deserializeBinary,
   BinaryFormatError,
 } from "./index";
-import type { Point3D, SphericalDelaunay, ArticleMeta } from "./index";
+import type { Point3D, SphericalDelaunay } from "./index";
 
 // ---------- Fixtures ----------
 
-// Weights deliberately cover both extremes (0 = unknown, 255 = max class)
 const WORLD_CITIES = [
-  { lat: 48.8566, lon: 2.3522, title: "Eiffel Tower", weight: 104 },
-  { lat: 40.7128, lon: -74.006, title: "Statue of Liberty", weight: 0 },
-  { lat: 35.6762, lon: 139.6503, title: "Tokyo Tower", weight: 255 },
-  { lat: -33.8688, lon: 151.2093, title: "Sydney Opera House", weight: 80 },
-  { lat: 51.5074, lon: -0.1278, title: "Big Ben", weight: 1 },
-  { lat: -22.9068, lon: -43.1729, title: "Christ the Redeemer", weight: 120 },
-  { lat: 55.7558, lon: 37.6173, title: "Kremlin", weight: 96 },
-  { lat: 1.3521, lon: 103.8198, title: "Merlion", weight: 64 },
-  { lat: -1.2921, lon: 36.8219, title: "Nairobi National Park", weight: 200 },
-  { lat: 64.1466, lon: -21.9426, title: "Hallgrímskirkja", weight: 33 },
+  { lat: 48.8566, lon: 2.3522 }, // Eiffel Tower
+  { lat: 40.7128, lon: -74.006 }, // Statue of Liberty
+  { lat: 35.6762, lon: 139.6503 }, // Tokyo Tower
+  { lat: -33.8688, lon: 151.2093 }, // Sydney Opera House
+  { lat: 51.5074, lon: -0.1278 }, // Big Ben
+  { lat: -22.9068, lon: -43.1729 }, // Christ the Redeemer
+  { lat: 55.7558, lon: 37.6173 }, // Kremlin
+  { lat: 1.3521, lon: 103.8198 }, // Merlion
+  { lat: -1.2921, lon: 36.8219 }, // Nairobi National Park
+  { lat: 64.1466, lon: -21.9426 }, // Hallgrímskirkja
 ];
 
-function buildFixture(): {
-  tri: SphericalDelaunay;
-  articles: ArticleMeta[];
-  points: Point3D[];
-} {
-  const points = WORLD_CITIES.map((c) =>
-    toCartesian({ lat: c.lat, lon: c.lon }),
-  );
+function buildFixture(): { tri: SphericalDelaunay; points: Point3D[] } {
+  const points = WORLD_CITIES.map(toCartesian);
   const hull = convexHull(points);
   const tri = buildTriangulation(hull);
-  const articles = WORLD_CITIES.map((c) => ({
-    title: c.title,
-    weight: c.weight,
-  }));
-  return { tri, articles, points };
+  return { tri, points };
 }
 
 /** Linear scan for ground-truth nearest vertex. */
@@ -61,12 +50,12 @@ function bruteForceNearest(tri: SphericalDelaunay, query: Point3D): number {
   return bestIdx;
 }
 
-// ---------- serialize ----------
+// ---------- toJson ----------
 
-describe("serialize", () => {
+describe("toJson", () => {
   it("produces correct array lengths", () => {
-    const { tri, articles } = buildFixture();
-    const data = serialize(tri, articles);
+    const { tri } = buildFixture();
+    const data = toJson(tri);
 
     expect(data.vertexCount).toBe(tri.vertices.length);
     expect(data.triangleCount).toBe(tri.triangles.length);
@@ -74,13 +63,11 @@ describe("serialize", () => {
     expect(data.vertexTriangles.length).toBe(tri.vertices.length);
     expect(data.triangleVertices.length).toBe(tri.triangles.length * 3);
     expect(data.triangleNeighbors.length).toBe(tri.triangles.length * 3);
-    expect(data.articles.length).toBe(tri.vertices.length);
-    expect(data.weights.length).toBe(tri.vertices.length);
   });
 
   it("truncates floats to at most 8 decimal places", () => {
-    const { tri, articles } = buildFixture();
-    const data = serialize(tri, articles);
+    const { tri } = buildFixture();
+    const data = toJson(tri);
 
     for (const v of data.vertices) {
       const s = v.toString();
@@ -90,30 +77,15 @@ describe("serialize", () => {
       }
     }
   });
-
-  it("preserves article metadata", () => {
-    const { tri, articles } = buildFixture();
-    const data = serialize(tri, articles);
-
-    for (let i = 0; i < articles.length; i++) {
-      expect(data.articles[i]).toBe(articles[i].title);
-      expect(data.weights[i]).toBe(articles[i].weight);
-    }
-  });
-
-  it("throws on article/vertex count mismatch", () => {
-    const { tri, articles } = buildFixture();
-    expect(() => serialize(tri, articles.slice(0, 5))).toThrow(/count/i);
-  });
 });
 
-// ---------- deserialize ----------
+// ---------- fromJson ----------
 
-describe("deserialize", () => {
+describe("fromJson", () => {
   it("reconstructs vertex points", () => {
-    const { tri, articles } = buildFixture();
-    const data = serialize(tri, articles);
-    const { tri: restored } = deserialize(data);
+    const { tri } = buildFixture();
+    const data = toJson(tri);
+    const restored = fromJson(data);
 
     expect(restored.vertices.length).toBe(tri.vertices.length);
     for (let i = 0; i < tri.vertices.length; i++) {
@@ -125,9 +97,9 @@ describe("deserialize", () => {
   });
 
   it("reconstructs vertex triangles", () => {
-    const { tri, articles } = buildFixture();
-    const data = serialize(tri, articles);
-    const { tri: restored } = deserialize(data);
+    const { tri } = buildFixture();
+    const data = toJson(tri);
+    const restored = fromJson(data);
 
     for (let i = 0; i < tri.vertices.length; i++) {
       expect(restored.vertices[i].triangle).toBe(tri.vertices[i].triangle);
@@ -135,9 +107,9 @@ describe("deserialize", () => {
   });
 
   it("reconstructs triangle vertices and neighbors", () => {
-    const { tri, articles } = buildFixture();
-    const data = serialize(tri, articles);
-    const { tri: restored } = deserialize(data);
+    const { tri } = buildFixture();
+    const data = toJson(tri);
+    const restored = fromJson(data);
 
     expect(restored.triangles.length).toBe(tri.triangles.length);
     for (let i = 0; i < tri.triangles.length; i++) {
@@ -146,12 +118,14 @@ describe("deserialize", () => {
     }
   });
 
-  it("reconstructs article metadata", () => {
-    const { tri, articles } = buildFixture();
-    const data = serialize(tri, articles);
-    const { articles: restored } = deserialize(data);
+  it("assigns identity originalIndices", () => {
+    const { tri } = buildFixture();
+    const data = toJson(tri);
+    const restored = fromJson(data);
 
-    expect(restored).toEqual(articles);
+    expect(restored.originalIndices).toEqual(
+      Array.from({ length: tri.vertices.length }, (_, i) => i),
+    );
   });
 });
 
@@ -159,9 +133,9 @@ describe("deserialize", () => {
 
 describe("round-trip", () => {
   it("preserves vertex positions within 1e-3 radians", () => {
-    const { tri, articles } = buildFixture();
-    const data = serialize(tri, articles);
-    const { tri: restored } = deserialize(data);
+    const { tri } = buildFixture();
+    const data = toJson(tri);
+    const restored = fromJson(data);
 
     for (let i = 0; i < tri.vertices.length; i++) {
       expect(
@@ -171,9 +145,9 @@ describe("round-trip", () => {
   });
 
   it("preserves triangle topology exactly", () => {
-    const { tri, articles } = buildFixture();
-    const data = serialize(tri, articles);
-    const { tri: restored } = deserialize(data);
+    const { tri } = buildFixture();
+    const data = toJson(tri);
+    const restored = fromJson(data);
 
     for (let i = 0; i < tri.triangles.length; i++) {
       expect(restored.triangles[i].vertices).toEqual(tri.triangles[i].vertices);
@@ -182,9 +156,9 @@ describe("round-trip", () => {
   });
 
   it("nearest-vertex queries on deserialized data match brute-force for 50 random queries", () => {
-    const { tri, articles } = buildFixture();
-    const data = serialize(tri, articles);
-    const { tri: restored } = deserialize(data);
+    const { tri } = buildFixture();
+    const data = toJson(tri);
+    const restored = fromJson(data);
     const ctx = createQueryContext(flattenTriangulation(restored));
 
     // Deterministic pseudo-random via simple LCG
@@ -205,15 +179,14 @@ describe("round-trip", () => {
   });
 
   it("survives JSON.parse round-trip", () => {
-    const { tri, articles } = buildFixture();
-    const data = serialize(tri, articles);
+    const { tri } = buildFixture();
+    const data = toJson(tri);
     const json = JSON.stringify(data);
     const parsed = JSON.parse(json);
-    const { tri: restored, articles: restoredArticles } = deserialize(parsed);
+    const restored = fromJson(parsed);
 
     expect(restored.vertices.length).toBe(tri.vertices.length);
     expect(restored.triangles.length).toBe(tri.triangles.length);
-    expect(restoredArticles).toEqual(articles);
 
     // Verify nearest-vertex queries still work after full JSON round-trip
     const query = toCartesian({ lat: 48.5, lon: 2.0 });
@@ -227,164 +200,183 @@ describe("round-trip", () => {
 // ---------- binary serialization ----------
 
 describe("binary serialization", () => {
-  let data: ReturnType<typeof serialize>;
-  let buf: ArrayBuffer;
-
-  beforeAll(() => {
-    const { tri, articles } = buildFixture();
-    data = serialize(tri, articles);
-    buf = serializeBinary(data);
-  });
-
   it("header contains magic bytes and version", () => {
+    const { tri } = buildFixture();
+    const buf = serializeBinary(tri);
+
     const magic = new Uint8Array(buf, 0, 4);
-    expect(String.fromCharCode(...magic)).toBe("WKRD");
+    expect(Array.from(magic)).toEqual([0x53, 0x44, 0x4c, 0x54]); // "SDLT"
     const view = new DataView(buf);
-    expect(view.getUint32(4, true)).toBe(2); // FORMAT_VERSION
+    expect(view.getUint32(4, true)).toBe(1); // FORMAT_VERSION
   });
 
   it("header counts match input", () => {
+    const { tri } = buildFixture();
+    const buf = serializeBinary(tri);
+
     const view = new DataView(buf);
-    expect(view.getUint32(8, true)).toBe(data.vertexCount);
-    expect(view.getUint32(12, true)).toBe(data.triangleCount);
+    expect(view.getUint32(8, true)).toBe(tri.vertices.length);
+    expect(view.getUint32(12, true)).toBe(tri.triangles.length);
   });
 
   it("round-trips vertex positions within Float32 tolerance", () => {
+    const { tri } = buildFixture();
+    const buf = serializeBinary(tri);
     const { fd } = deserializeBinary(buf);
-    expect(fd.vertexPoints.length).toBe(data.vertices.length);
-    for (let i = 0; i < data.vertices.length; i++) {
-      expect(fd.vertexPoints[i]).toBeCloseTo(data.vertices[i], 6);
+
+    expect(fd.vertexPoints.length).toBe(tri.vertices.length * 3);
+    for (let i = 0; i < tri.vertices.length; i++) {
+      const p = tri.vertices[i].point;
+      expect(fd.vertexPoints[i * 3]).toBeCloseTo(p[0], 6);
+      expect(fd.vertexPoints[i * 3 + 1]).toBeCloseTo(p[1], 6);
+      expect(fd.vertexPoints[i * 3 + 2]).toBeCloseTo(p[2], 6);
     }
   });
 
   it("round-trips integer topology exactly", () => {
+    const { tri } = buildFixture();
+    const data = toJson(tri);
+    const buf = serializeBinary(tri);
     const { fd } = deserializeBinary(buf);
+
     expect(Array.from(fd.vertexTriangles)).toEqual(data.vertexTriangles);
     expect(Array.from(fd.triangleVertices)).toEqual(data.triangleVertices);
     expect(Array.from(fd.triangleNeighbors)).toEqual(data.triangleNeighbors);
   });
 
-  it("round-trips article metadata exactly", () => {
-    const { articles } = deserializeBinary(buf);
-    const expected = WORLD_CITIES.map((c) => ({
-      title: c.title,
-      weight: c.weight,
-    }));
-    expect(articles).toEqual(expected);
-  });
-
-  it("round-trips per-vertex weights exactly, including 0 and 255", () => {
-    const { weights } = deserializeBinary(buf);
-    expect(weights).toBeInstanceOf(Uint8Array);
-    expect(Array.from(weights)).toEqual(WORLD_CITIES.map((c) => c.weight));
-    expect(Array.from(weights)).toContain(0);
-    expect(Array.from(weights)).toContain(255);
-  });
-
   it("produces Float64Array vertex points (upcast from Float32)", () => {
+    const { tri } = buildFixture();
+    const buf = serializeBinary(tri);
     const { fd } = deserializeBinary(buf);
+
     expect(fd.vertexPoints).toBeInstanceOf(Float64Array);
   });
 
-  it("rejects buffer too small for header", () => {
-    expect(() => deserializeBinary(new ArrayBuffer(16))).toThrow(/too small/);
-  });
-
-  it("rejects articles section extending beyond buffer", () => {
-    const badBuf = new ArrayBuffer(24);
-    const bytes = new Uint8Array(badBuf);
-    bytes.set([0x57, 0x4b, 0x52, 0x44]); // magic "WKRD"
-    const view = new DataView(badBuf);
-    view.setUint32(4, 2, true); // version=2
-    view.setUint32(8, 0, true); // V=0
-    view.setUint32(12, 0, true); // T=0
-    view.setUint32(16, 24, true); // articlesOffset=24
-    view.setUint32(20, 100, true); // articlesLength=100 — extends beyond
-    expect(() => deserializeBinary(badBuf)).toThrow(/extends beyond/);
-  });
-
   it("binary is smaller than JSON", () => {
+    const { tri } = buildFixture();
+    const data = toJson(tri);
+    const buf = serializeBinary(tri);
+
     const jsonSize = JSON.stringify(data).length;
     expect(buf.byteLength).toBeLessThan(jsonSize);
   });
 
-  it("rejects wrong magic bytes", () => {
-    const badBuf = new ArrayBuffer(24);
-    const view = new DataView(badBuf);
-    view.setUint32(0, 0x00000000, true); // not "WKRD"
-    view.setUint32(4, 1, true);
-    expect(() => deserializeBinary(badBuf)).toThrow(/magic bytes/i);
+  describe("payload", () => {
+    it("defaults to an empty payload with payloadOffset 0 when omitted", () => {
+      const { tri } = buildFixture();
+      const buf = serializeBinary(tri);
+
+      const view = new DataView(buf);
+      expect(view.getUint32(16, true)).toBe(0); // payloadOffset
+      expect(view.getUint32(20, true)).toBe(0); // payloadLength
+
+      const { payload } = deserializeBinary(buf);
+      expect(payload).toBeInstanceOf(Uint8Array);
+      expect(payload.length).toBe(0);
+    });
+
+    it("round-trips verbatim, including a non-4-aligned length and boundary byte values", () => {
+      const { tri } = buildFixture();
+      // 7 bytes: not a multiple of 4, exercises padding; includes 0 and 255
+      const payload = new Uint8Array([0, 1, 2, 255, 254, 3, 0]);
+      const buf = serializeBinary(tri, payload);
+
+      const { payload: restored } = deserializeBinary(buf);
+      expect(Array.from(restored)).toEqual(Array.from(payload));
+    });
+
+    it("survives alongside geometry in the same buffer", () => {
+      const { tri } = buildFixture();
+      const payload = new Uint8Array([9, 8, 7, 6, 5]);
+      const buf = serializeBinary(tri, payload);
+
+      const { fd, payload: restoredPayload } = deserializeBinary(buf);
+      expect(fd.vertexPoints.length).toBe(tri.vertices.length * 3);
+      expect(fd.triangleVertices.length).toBe(tri.triangles.length * 3);
+      for (let i = 0; i < tri.vertices.length; i++) {
+        const p = tri.vertices[i].point;
+        expect(fd.vertexPoints[i * 3]).toBeCloseTo(p[0], 6);
+        expect(fd.vertexPoints[i * 3 + 1]).toBeCloseTo(p[1], 6);
+        expect(fd.vertexPoints[i * 3 + 2]).toBeCloseTo(p[2], 6);
+      }
+      expect(Array.from(restoredPayload)).toEqual(Array.from(payload));
+    });
   });
 
-  it("rejects unsupported format version", () => {
-    const badBuf = new ArrayBuffer(24);
-    new Uint8Array(badBuf, 0, 4).set([0x57, 0x4b, 0x52, 0x44]);
-    const view = new DataView(badBuf);
-    view.setUint32(4, 99, true); // version=99
-    expect(() => deserializeBinary(badBuf)).toThrow(/version/i);
-  });
+  describe("errors", () => {
+    it("rejects buffer too small for header", () => {
+      expect(() => deserializeBinary(new ArrayBuffer(16))).toThrow(/too small/);
+      expect(() => deserializeBinary(new ArrayBuffer(16))).toThrow(
+        BinaryFormatError,
+      );
+    });
 
-  it("rejects version-1 tiles (weights section is mandatory in v2)", () => {
-    const v1Buf = new ArrayBuffer(24);
-    new Uint8Array(v1Buf, 0, 4).set([0x57, 0x4b, 0x52, 0x44]);
-    const view = new DataView(v1Buf);
-    view.setUint32(4, 1, true); // old format version
-    expect(() => deserializeBinary(v1Buf)).toThrow(BinaryFormatError);
-    expect(() => deserializeBinary(v1Buf)).toThrow(/version: 1/);
-  });
+    it("rejects wrong magic bytes", () => {
+      const badBuf = new ArrayBuffer(24);
+      const view = new DataView(badBuf);
+      view.setUint32(0, 0x00000000, true); // not "SDLT"
+      view.setUint32(4, 1, true);
+      expect(() => deserializeBinary(badBuf)).toThrow(/SDLT/);
+      expect(() => deserializeBinary(badBuf)).toThrow(BinaryFormatError);
+    });
 
-  it("rejects V/T counts that exceed buffer capacity", () => {
-    const badBuf = new ArrayBuffer(24);
-    new Uint8Array(badBuf, 0, 4).set([0x57, 0x4b, 0x52, 0x44]);
-    const view = new DataView(badBuf);
-    view.setUint32(4, 2, true); // version=2
-    view.setUint32(8, 0xffffffff, true); // V=huge
-    view.setUint32(12, 0, true); // T=0
-    expect(() => deserializeBinary(badBuf)).toThrow(/too small for V=/i);
-  });
+    it("rejects unsupported format version", () => {
+      const badBuf = new ArrayBuffer(24);
+      new Uint8Array(badBuf, 0, 4).set([0x53, 0x44, 0x4c, 0x54]);
+      const view = new DataView(badBuf);
+      view.setUint32(4, 99, true); // version=99
+      expect(() => deserializeBinary(badBuf)).toThrow(/version/i);
+      expect(() => deserializeBinary(badBuf)).toThrow(BinaryFormatError);
+    });
 
-  it("rejects garbage T count that exceeds buffer", () => {
-    const badBuf = new ArrayBuffer(24);
-    new Uint8Array(badBuf, 0, 4).set([0x57, 0x4b, 0x52, 0x44]);
-    const view = new DataView(badBuf);
-    view.setUint32(4, 2, true); // version=2
-    view.setUint32(8, 0, true); // V=0
-    view.setUint32(12, 0xffffffff, true); // T=huge
-    expect(() => deserializeBinary(badBuf)).toThrow(/too small for V=/i);
-  });
+    it("rejects V/T counts that exceed buffer capacity", () => {
+      const badBuf = new ArrayBuffer(24);
+      new Uint8Array(badBuf, 0, 4).set([0x53, 0x44, 0x4c, 0x54]);
+      const view = new DataView(badBuf);
+      view.setUint32(4, 1, true); // version=1
+      view.setUint32(8, 0xffffffff, true); // V=huge
+      view.setUint32(12, 0, true); // T=0
+      expect(() => deserializeBinary(badBuf)).toThrow(/too small for V=/i);
+      expect(() => deserializeBinary(badBuf)).toThrow(BinaryFormatError);
+    });
 
-  it("rejects malformed articles JSON", () => {
-    // Build a minimal valid buffer with corrupt articles section
-    const articlesBytes = new TextEncoder().encode("{not valid json[");
-    const articlesOffset = 24; // HEADER_SIZE, V=0 T=0 so no numeric data
-    const totalSize =
-      articlesOffset + Math.ceil(articlesBytes.byteLength / 4) * 4;
-    const badBuf = new ArrayBuffer(totalSize);
-    new Uint8Array(badBuf, 0, 4).set([0x57, 0x4b, 0x52, 0x44]);
-    const view = new DataView(badBuf);
-    view.setUint32(4, 2, true); // version=2
-    view.setUint32(8, 0, true); // V=0
-    view.setUint32(12, 0, true); // T=0
-    view.setUint32(16, articlesOffset, true);
-    view.setUint32(20, articlesBytes.byteLength, true);
-    new Uint8Array(badBuf, articlesOffset, articlesBytes.byteLength).set(
-      articlesBytes,
-    );
-    expect(() => deserializeBinary(badBuf)).toThrow(/articles JSON/i);
-  });
+    it("rejects garbage T count that exceeds buffer", () => {
+      const badBuf = new ArrayBuffer(24);
+      new Uint8Array(badBuf, 0, 4).set([0x53, 0x44, 0x4c, 0x54]);
+      const view = new DataView(badBuf);
+      view.setUint32(4, 1, true); // version=1
+      view.setUint32(8, 0, true); // V=0
+      view.setUint32(12, 0xffffffff, true); // T=huge
+      expect(() => deserializeBinary(badBuf)).toThrow(/too small for V=/i);
+      expect(() => deserializeBinary(badBuf)).toThrow(BinaryFormatError);
+    });
 
-  it("throws BinaryFormatError for all validation failures", () => {
-    // Too small
-    expect(() => deserializeBinary(new ArrayBuffer(8))).toThrow(
-      BinaryFormatError,
-    );
-    // Wrong magic
-    const badMagic = new ArrayBuffer(24);
-    expect(() => deserializeBinary(badMagic)).toThrow(BinaryFormatError);
-    // Wrong version
-    const badVer = new ArrayBuffer(24);
-    new Uint8Array(badVer, 0, 4).set([0x57, 0x4b, 0x52, 0x44]);
-    new DataView(badVer).setUint32(4, 99, true);
-    expect(() => deserializeBinary(badVer)).toThrow(BinaryFormatError);
+    it("rejects payload offset that overlaps numeric data", () => {
+      // V=0, T=0 so numeric data ends right at HEADER_SIZE (24); claim the
+      // payload starts inside the header instead, which must be rejected.
+      const badBuf = new ArrayBuffer(32);
+      new Uint8Array(badBuf, 0, 4).set([0x53, 0x44, 0x4c, 0x54]);
+      const view = new DataView(badBuf);
+      view.setUint32(4, 1, true); // version=1
+      view.setUint32(8, 0, true); // V=0
+      view.setUint32(12, 0, true); // T=0
+      view.setUint32(16, 4, true); // payloadOffset=4 — overlaps header
+      view.setUint32(20, 4, true); // payloadLength=4
+      expect(() => deserializeBinary(badBuf)).toThrow(/overlaps/i);
+      expect(() => deserializeBinary(badBuf)).toThrow(BinaryFormatError);
+    });
+
+    it("rejects payload extending beyond the buffer", () => {
+      const badBuf = new ArrayBuffer(24);
+      new Uint8Array(badBuf, 0, 4).set([0x53, 0x44, 0x4c, 0x54]);
+      const view = new DataView(badBuf);
+      view.setUint32(4, 1, true); // version=1
+      view.setUint32(8, 0, true); // V=0
+      view.setUint32(12, 0, true); // T=0
+      view.setUint32(16, 24, true); // payloadOffset=24
+      view.setUint32(20, 100, true); // payloadLength=100 — extends beyond
+      expect(() => deserializeBinary(badBuf)).toThrow(/extends beyond/i);
+      expect(() => deserializeBinary(badBuf)).toThrow(BinaryFormatError);
+    });
   });
 });

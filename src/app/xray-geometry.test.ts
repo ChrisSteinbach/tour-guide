@@ -1,9 +1,8 @@
 import {
   buildTriangulation,
   convexHull,
-  serialize,
+  flattenTriangulation,
   toCartesian,
-  toFlatDelaunay,
 } from "spherical-delaunay";
 import type { FlatDelaunay, Point3D } from "spherical-delaunay";
 import {
@@ -23,8 +22,7 @@ import {
 function flatFromPoints(points: Point3D[]): FlatDelaunay {
   const hull = convexHull(points);
   const tri = buildTriangulation(hull);
-  const articles = tri.vertices.map((_, i) => ({ title: `V${i}` }));
-  return toFlatDelaunay(serialize(tri, articles));
+  return flattenTriangulation(tri);
 }
 
 /**

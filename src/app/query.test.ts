@@ -1,9 +1,8 @@
 import {
   convexHull,
   buildTriangulation,
-  serialize,
+  flattenTriangulation,
   toCartesian,
-  toFlatDelaunay,
   createWalkTrace,
 } from "spherical-delaunay";
 import type { Point3D } from "spherical-delaunay";
@@ -30,11 +29,9 @@ function buildNearestQuery(): NearestQuery {
   const points = OCTAHEDRON.map((o) => o.point);
   const hull = convexHull(points);
   const tri = buildTriangulation(hull);
+  const fd = flattenTriangulation(tri);
   const articles = OCTAHEDRON.map((o) => ({ title: o.title }));
-  const data = serialize(tri, articles);
-  const fd = toFlatDelaunay(data);
-  const metas = data.articles.map((title) => ({ title }));
-  return new NearestQuery(fd, metas);
+  return new NearestQuery(fd, articles);
 }
 
 // Build once, share across tests
@@ -117,17 +114,12 @@ function buildWeightedQuery(
   const points = articles.map((a) => toCartesian({ lat: a.lat, lon: a.lon }));
   const hull = convexHull(points);
   const tri = buildTriangulation(hull);
+  const fd = flattenTriangulation(tri);
   const meta = tri.originalIndices.map((i) => ({
     title: articles[i].title,
     weight: articles[i].weight,
   }));
-  const data = serialize(tri, meta);
-  const fd = toFlatDelaunay(data);
-  const metas = data.articles.map((title, i) => ({
-    title,
-    weight: data.weights[i],
-  }));
-  return new NearestQuery(fd, metas);
+  return new NearestQuery(fd, meta);
 }
 
 /**
@@ -238,12 +230,7 @@ describe("NearestQuery (accessors)", () => {
       [0, 0, -1],
     ];
     const tri = buildTriangulation(convexHull(points));
-    const fd = toFlatDelaunay(
-      serialize(
-        tri,
-        tri.originalIndices.map((i) => ({ title: `placeholder ${i}` })),
-      ),
-    );
+    const fd = flattenTriangulation(tri);
     const articles = [
       { title: "Alpha", weight: 5 },
       { title: "Beta", weight: 0 },

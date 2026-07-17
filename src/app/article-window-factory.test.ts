@@ -5,8 +5,7 @@ import { NearestQuery } from "./query";
 import {
   buildTriangulation,
   convexHull,
-  serialize,
-  toFlatDelaunay,
+  flattenTriangulation,
 } from "spherical-delaunay";
 import { GRID_DEG, tileFor, tileId, type TileEntry } from "../tiles";
 import type { UserPosition } from "./types";
@@ -50,12 +49,8 @@ function makeNearestQuery(title: string): NearestQuery {
   const articles = points.map((_, i) => ({ title: `${title}-${i}` }));
   const hull = convexHull(points);
   const tri = buildTriangulation(hull);
-  const data = serialize(tri, articles);
-  const fd = toFlatDelaunay(data);
-  return new NearestQuery(
-    fd,
-    data.articles.map((t) => ({ title: t })),
-  );
+  const fd = flattenTriangulation(tri);
+  return new NearestQuery(fd, articles);
 }
 
 /**
@@ -110,13 +105,9 @@ function makeWeightedQuery(): NearestQuery {
   }));
   const hull = convexHull(points);
   const tri = buildTriangulation(hull);
+  const fd = flattenTriangulation(tri);
   const meta = tri.originalIndices.map((i) => input[i]);
-  const data = serialize(tri, meta);
-  const fd = toFlatDelaunay(data);
-  return new NearestQuery(
-    fd,
-    data.articles.map((t, i) => ({ title: t, weight: data.weights[i] })),
-  );
+  return new NearestQuery(fd, meta);
 }
 
 describe("createArticleWindowFactory", () => {
