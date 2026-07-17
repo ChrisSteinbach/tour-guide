@@ -24,6 +24,8 @@ export interface Article {
   lon: number;
   /** Page length in bytes (page_len from the page dump); omitted when unknown. */
   len?: number;
+  /** Monthly user pageviews (Wikimedia pageviews dump); omitted when zero/unknown. */
+  views?: number;
 }
 
 /** Page metadata joined onto geo_tags rows by page_id. */
@@ -31,6 +33,8 @@ export interface PageInfo {
   title: string;
   /** Page length in bytes; omitted when page_len is missing or unparsable. */
   len?: number;
+  /** Monthly user pageviews; omitted when zero/unknown. */
+  views?: number;
 }
 
 export interface Bounds {
