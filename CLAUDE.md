@@ -22,7 +22,7 @@ npm run extract       # Extract geotagged articles from Wikipedia dumps → data
 npm run pageviews     # Download & split monthly Wikimedia pageviews dump → data/pageviews/ (~6 GB download, shared across languages)
 ```
 
-Run a single test file: `npx vitest run lib/spherical-delaunay/src/index.test.ts`
+Run a single test file: `npx vitest run src/app/query.test.ts`
 
 Requires **Node.js 18+** (ES2022 target; tested with Node 20 and 22).
 
@@ -32,16 +32,16 @@ Husky runs lint-staged on every commit, auto-fixing ESLint and Prettier on stage
 
 ## Architecture
 
-Two directories under `src/` plus one workspace package, with three shared files:
+Two directories under `src/`, three shared files, and one external geometry dependency:
 
-- **`lib/spherical-delaunay/`** — Standalone npm workspace package: spherical math primitives (coordinate conversion, great-circle distance, Delaunay triangulation). Imported as `spherical-delaunay`.
+- **[`spherical-delaunay`](https://github.com/ChrisSteinbach/spherical-delaunay)** — External npm package (not part of this repo): spherical math primitives (coordinate conversion, great-circle distance, Delaunay triangulation). Imported as `spherical-delaunay`.
 - **`src/pipeline/`** — Offline build: extracts Wikipedia coordinates, computes triangulation, outputs static tiles. Run via `tsx`.
 - **`src/app/`** — PWA frontend: loads pre-computed data, performs nearest-neighbor queries. Vite root (`root: "src/app"`).
 - **`src/lang.ts`** — Supported language definitions, shared by all modules.
 - **`src/tiles.ts`** — Tile grid constants, ID computation, and column wrapping, shared by pipeline and app.
 - **`src/article-payload.ts`** — Article metadata payload codec (titles + weight classes), shared by pipeline and app.
 
-Core algorithm: spherical Delaunay triangulation (3D convex hull) → O(√N) nearest-neighbor via triangle walks. See `docs/` for theory and data flow details.
+Core algorithm: spherical Delaunay triangulation (3D convex hull) → O(√N) nearest-neighbor via triangle walks, provided by `spherical-delaunay`. See `docs/` for how WikiRadar integrates it and for data flow details.
 
 ## Testing
 

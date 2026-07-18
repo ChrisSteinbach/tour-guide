@@ -1,6 +1,6 @@
 # Binary Serialization Format
 
-The `.bin` files produced by the build pipeline (`npm run pipeline`) wrap a spherical Delaunay triangulation in `spherical-delaunay`'s metadata-agnostic binary container, with WikiRadar's article metadata (titles + popularity weight classes) carried inside that container as an opaque payload. This document specifies the byte-level layout of both layers, so that anyone reading or modifying `lib/spherical-delaunay/src/serialization.ts`, `src/article-payload.ts`, or `src/app/query.ts` knows exactly what to expect.
+The `.bin` files produced by the build pipeline (`npm run pipeline`) wrap a spherical Delaunay triangulation in `spherical-delaunay`'s metadata-agnostic binary container, with WikiRadar's article metadata (titles + popularity weight classes) carried inside that container as an opaque payload. This document specifies the byte-level layout of both layers, so that anyone working with the `spherical-delaunay` package's binary serialization, `src/article-payload.ts`, or `src/app/query.ts` knows exactly what to expect.
 
 Notation: **V** = vertex count, **T** = triangle count. All multi-byte integers and floats are **little-endian**. All Layer 1 numeric sections are **4-byte aligned**.
 
@@ -21,7 +21,7 @@ The first five blocks (header + four numeric sections) are the geometry containe
 
 ## Layer 1: Geometry Container (`spherical-delaunay`)
 
-Defined in `lib/spherical-delaunay/src/serialization.ts`. Encodes the triangulation only — vertex positions and the adjacency arrays needed for triangle-walk queries. Knows nothing about articles, titles, or weights; those live entirely inside the opaque payload.
+Defined in the external [`spherical-delaunay`](https://github.com/ChrisSteinbach/spherical-delaunay) package's serialization module. Encodes the triangulation only — vertex positions and the adjacency arrays needed for triangle-walk queries. Knows nothing about articles, titles, or weights; those live entirely inside the opaque payload.
 
 ### Header (24 bytes)
 
@@ -109,7 +109,7 @@ For reference, encoding all English articles (over a million; see [data-extracti
 
 ## Producing and Consuming
 
-**Writer:** `buildTile()` in `src/pipeline/build.ts` calls `encodeArticlePayload()` (`src/article-payload.ts`) to pack each tile's article titles and weight classes into an opaque payload, then `serializeBinary(tri, payload)` (`lib/spherical-delaunay/src/serialization.ts`) to write the triangulation plus that payload into an `ArrayBuffer`, and writes the result with `fs.writeFileSync`.
+**Writer:** `buildTile()` in `src/pipeline/build.ts` calls `encodeArticlePayload()` (`src/article-payload.ts`) to pack each tile's article titles and weight classes into an opaque payload, then `serializeBinary(tri, payload)` (from the `spherical-delaunay` package) to write the triangulation plus that payload into an `ArrayBuffer`, and writes the result with `fs.writeFileSync`.
 
 **Reader:** `loadTile()` in `src/app/tile-loader.ts` fetches `.bin` tile files over HTTP, calls `deserializeBinary()` to get `{ fd, payload }` (Uint32 sections are zero-copy views into the buffer; Float32 vertex data is copied into a Float64Array for runtime precision), then `decodeArticlePayload(payload)` to recover `{ articles, weights }`, and caches the typed arrays and article data in IndexedDB.
 
