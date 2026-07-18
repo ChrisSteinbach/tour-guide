@@ -211,7 +211,7 @@ describe("getNearby", () => {
     const hull = convexHull(points);
     const tri = buildTriangulation(hull);
     const fd = flattenTriangulation(tri);
-    const meta = articles.map((a) => ({ title: a.title }));
+    const meta = articles.map((a) => [{ title: a.title }]);
     return new NearestQuery(fd, meta);
   }
 
@@ -247,10 +247,12 @@ describe("getNearby", () => {
     const hull = convexHull(points);
     const tri = buildTriangulation(hull);
     const fd = flattenTriangulation(tri);
-    const meta = tri.originalIndices.map((i) => ({
-      title: weighted[i].title,
-      weight: weighted[i].weight,
-    }));
+    const meta = tri.originalIndices.map((i) => [
+      {
+        title: weighted[i].title,
+        weight: weighted[i].weight,
+      },
+    ]);
     const query: QueryState = {
       mode: "tiled",
       index: sampleIndex,

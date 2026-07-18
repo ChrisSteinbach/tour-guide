@@ -39,7 +39,7 @@ Two directories under `src/`, three shared files, and one external geometry depe
 - **`src/app/`** — PWA frontend: loads pre-computed data, performs nearest-neighbor queries. Vite root (`root: "src/app"`).
 - **`src/lang.ts`** — Supported language definitions, shared by all modules.
 - **`src/tiles.ts`** — Tile grid constants, ID computation, and column wrapping, shared by pipeline and app.
-- **`src/article-payload.ts`** — Article metadata payload codec (titles + weight classes), shared by pipeline and app.
+- **`src/article-payload.ts`** — Article metadata payload codec (per-vertex article groups of titles + weight classes), shared by pipeline and app.
 
 Core algorithm: spherical Delaunay triangulation (3D convex hull) → O(√N) nearest-neighbor via triangle walks, provided by `spherical-delaunay`. See `docs/` for how WikiRadar integrates it and for data flow details.
 

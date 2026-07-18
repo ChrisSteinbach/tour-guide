@@ -62,6 +62,12 @@ Each tile gets its own self-contained spherical Delaunay triangulation. The pipe
 
 This means the binary format (docs/binary-format.md) is reused unchanged — a tile file is structurally identical to a single monolithic file, just smaller.
 
+### Coincident coordinates
+
+Distinct articles occasionally share bit-identical coordinates — a building and the institution sited in it, or every year's running of an event at one venue. Exactly-coincident points converge to the same convex-hull vertex, so before tiling, `mergeCoincident()` in `src/pipeline/build.ts` collapses each such cluster (run once over the full weighted article set, after `attachWeights` and before tile assignment) into a single unit carrying the whole group of co-located articles, most-notable first. Without this step the geometry library would silently keep only one arbitrary survivor per location. `buildTile()` then writes one payload group per vertex instead of one article — see [binary-format.md](binary-format.md) for the group payload layout.
+
+This is a different kind of duplicate from the buffer-zone overlap described below: coincident-coordinate merging combines _distinct_ articles sharing one location within a single tile, while buffer duplicates are the _same_ article appearing natively in one tile and in a neighbor's buffer.
+
 ### Buffer zone
 
 A tile's triangulation must include articles slightly beyond its boundary. Without this, nearest-neighbor queries for users near a tile edge would miss candidates in the adjacent tile. The triangle walk (`flatLocate`) would also produce degenerate triangulations at the boundary if the point set is artificially clipped to a rectangle.

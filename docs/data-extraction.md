@@ -29,7 +29,7 @@ Files are downloaded to `data/dumps/` and cached across runs. Wikipedia publishe
 2. **Build page map** — Parses the `page` dump into a `Map<page_id, title>`. Filters to namespace 0 (main articles) and excludes redirects.
 3. **Join pageviews** — Sums monthly view counts onto the page map by `page_id` (see [Pageviews](#pageviews)). Skipped entirely with `--no-pageviews`.
 4. **Join geo_tags** — Streams the `geo_tags` dump row by row. For each row, filters to `globe=earth` and `primary=1`, validates coordinates (rejects NaN, out-of-range, and Null Island 0,0), applies optional bounding box, and looks up the title (and joined view count) from the page map.
-5. **Deduplicate** — Keeps the first occurrence of each title.
+5. **Deduplicate** — Keeps the first occurrence of each title. This is a title-level dedup only: distinct articles that happen to share exact coordinates (e.g. a building and the institution sited in it) are different titles, so both pass through untouched here — they're merged later, in the build pipeline, which collapses same-coordinate articles into one triangulation vertex carrying the full group (see [binary-format.md](binary-format.md) or [tiling.md](tiling.md)), so no coincident article is silently dropped.
 6. **Write NDJSON** — Outputs one JSON object per line.
 7. **Canary validation** — Checks per-language landmarks against the output (`canary.ts`). Each supported language has its own landmark set (e.g. en: Eiffel Tower, Statue of Liberty, Sydney Opera House; sv: Eiffeltornet, Globen; ja: エッフェル塔, 東京タワー). Coordinate mismatches fail the pipeline. Missing landmarks (expected for `--bounds` or `--limit` extractions) are reported but tolerated.
 
@@ -73,7 +73,7 @@ npm run extract -- --lang=en --pageviews-month=2026-06
 {"title":"Louvre","lat":48.8606,"lon":2.3376,"views":87018}
 ```
 
-`views` is the article's monthly pageview count (see [Pageviews](#pageviews)). It is omitted when the article had zero or unmatched views; the build pipeline then assigns the article weight class 0 (unknown). See [binary-format.md](binary-format.md) for how views map to the per-vertex weight class — a per-language popularity percentile, not the raw count.
+`views` is the article's monthly pageview count (see [Pageviews](#pageviews)). It is omitted when the article had zero or unmatched views; the build pipeline then assigns the article weight class 0 (unknown). See [binary-format.md](binary-format.md) for how views map to an article's weight class — a per-language popularity percentile, not the raw count.
 
 A full English extraction produces ~1.2M articles.
 

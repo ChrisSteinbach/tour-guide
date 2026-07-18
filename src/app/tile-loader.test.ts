@@ -40,10 +40,12 @@ function buildQuery(
   const hull = convexHull(points);
   const tri = buildTriangulation(hull);
   const fd = flattenTriangulation(tri);
-  const meta: ArticleMeta[] = tri.originalIndices.map((i) => ({
-    title: articles[i].title,
-    weight: articles[i].weight,
-  }));
+  const meta: ArticleMeta[][] = tri.originalIndices.map((i) => [
+    {
+      title: articles[i].title,
+      weight: articles[i].weight,
+    },
+  ]);
   return new NearestQuery(fd, meta);
 }
 
@@ -562,10 +564,10 @@ describe("loadTile", () => {
     triangleVertices: new Uint32Array([0, 1, 2]),
     triangleNeighbors: new Uint32Array([0, 0, 0]),
   };
-  const fakeArticles: ArticleMeta[] = [
-    { title: "A" },
-    { title: "B" },
-    { title: "C" },
+  const fakeArticles: ArticleMeta[][] = [
+    [{ title: "A" }],
+    [{ title: "B" }],
+    [{ title: "C" }],
   ];
   const fakeWeights = new Uint8Array([0, 0, 0]);
   const fakePayload = encodeArticlePayload(fakeArticles);
@@ -575,7 +577,7 @@ describe("loadTile", () => {
     vertexTriangles: fakeFd.vertexTriangles,
     triangleVertices: fakeFd.triangleVertices,
     triangleNeighbors: fakeFd.triangleNeighbors,
-    articles: ["A", "B", "C"],
+    titles: [["A"], ["B"], ["C"]],
     weights: fakeWeights,
     hash: "abc123",
   };
@@ -605,9 +607,9 @@ describe("loadTile", () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       payload: encodeArticlePayload([
-        { title: "A", weight: 80 },
-        { title: "B", weight: 104 },
-        { title: "C", weight: 0 },
+        [{ title: "A", weight: 80 }],
+        [{ title: "B", weight: 104 }],
+        [{ title: "C", weight: 0 }],
       ]),
     });
 
@@ -885,7 +887,7 @@ describe("loadTile", () => {
     }
   });
 
-  it("falls through to network when cached.articles contains non-string elements", async () => {
+  it("falls through to network when cached.titles contains non-string elements", async () => {
     vi.mocked(deserializeBinary).mockReturnValueOnce({
       fd: fakeFd,
       payload: fakePayload,
@@ -900,12 +902,12 @@ describe("loadTile", () => {
       }),
     );
 
-    const corruptArticlesCache = {
+    const corruptTitlesCache = {
       ...cachedTile,
-      articles: [null, 42, {}],
+      titles: [[null], [42], [{}]],
     };
     const store = new Map<string, unknown>([
-      ["tile-v2-en-18-36", corruptArticlesCache],
+      ["tile-v2-en-18-36", corruptTitlesCache],
     ]);
     const result = await loadTile(
       "/base/",
@@ -969,14 +971,14 @@ describe("loadTile", () => {
       }),
     );
 
-    // Matching hash, valid articles, but TypedArray fields are plain number[]
+    // Matching hash, valid titles, but TypedArray fields are plain number[]
     // — would not throw but would produce silently wrong query results.
     const plainArrayCache = {
       vertexPoints: [1, 0, 0, 0, 1, 0, 0, 0, 1],
       vertexTriangles: [0, 0, 0],
       triangleVertices: [0, 1, 2],
       triangleNeighbors: [0, 0, 0],
-      articles: ["A", "B", "C"],
+      titles: [["A"], ["B"], ["C"]],
       weights: [0, 0, 0],
       hash: "abc123",
     };
