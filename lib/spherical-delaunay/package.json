@@ -1,14 +1,35 @@
 {
   "name": "spherical-delaunay",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Spherical Delaunay triangulation via 3D convex hull, with O(sqrt(N)) nearest-neighbor queries",
-  "type": "module",
-  "exports": {
-    ".": "./src/index.ts"
+  "license": "ISC",
+  "author": "Chris Steinbach",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChrisSteinbach/tour-guide.git",
+    "directory": "lib/spherical-delaunay"
   },
-  "types": "./src/index.ts",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "src",
+    "!src/**/*.test.ts"
+  ],
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
     "test": "vitest run"
   }
 }

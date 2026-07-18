@@ -11,8 +11,8 @@ import {
   serializeBinary,
   deserializeBinary,
   BinaryFormatError,
-} from "./index";
-import type { Point3D, SphericalDelaunay } from "./index";
+} from "./index.js";
+import type { Point3D, SphericalDelaunay } from "./index.js";
 
 // ---------- Fixtures ----------
 

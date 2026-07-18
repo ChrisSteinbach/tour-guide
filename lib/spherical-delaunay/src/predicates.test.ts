@@ -1,5 +1,5 @@
-import { orient3D } from "./predicates";
-import type { Point3D } from "./index";
+import { orient3D } from "./predicates.js";
+import type { Point3D } from "./index.js";
 
 describe("orient3D (robust predicates)", () => {
   it("positive when d is above plane(a,b,c)", () => {

@@ -338,6 +338,16 @@ describe("tiled pipeline (e2e)", () => {
   const dataDir = join(testDir, "data");
   const articlesPath = join(dataDir, "articles-en.json");
 
+  // These subprocesses run tsx with cwd inside a throwaway temp dir. tsx
+  // discovers tsconfig `paths` from its cwd, so from outside the repo it can't
+  // map the `spherical-delaunay` workspace specifier to live TS source and
+  // falls back to the package's published `dist/` entry (absent in dev). Point
+  // tsx at the repo tsconfig explicitly so it resolves to source regardless.
+  const pipelineEnv = {
+    ...process.env,
+    TSX_TSCONFIG_PATH: join(process.cwd(), "tsconfig.json"),
+  };
+
   beforeAll(() => {
     mkdirSync(dataDir, { recursive: true });
 
@@ -368,7 +378,7 @@ describe("tiled pipeline (e2e)", () => {
     execFileSync(
       join(process.cwd(), "node_modules", ".bin", "tsx"),
       [join(process.cwd(), "src/pipeline/build.ts")],
-      { cwd: testDir, timeout: 30_000 },
+      { cwd: testDir, timeout: 30_000, env: pipelineEnv },
     );
 
     const tilesDir = join(dataDir, "tiles", "en");
@@ -445,7 +455,11 @@ describe("tiled pipeline (e2e)", () => {
         makeArticles(0),
         "utf-8",
       );
-      execFileSync(tsxBin, [buildScript], { cwd: testDir1, timeout: 30_000 });
+      execFileSync(tsxBin, [buildScript], {
+        cwd: testDir1,
+        timeout: 30_000,
+        env: pipelineEnv,
+      });
       const index1: TileIndex = JSON.parse(
         readFileSync(join(dataDir1, "tiles", "en", "index.json"), "utf-8"),
       );
@@ -458,7 +472,11 @@ describe("tiled pipeline (e2e)", () => {
         makeArticles(0.5),
         "utf-8",
       );
-      execFileSync(tsxBin, [buildScript], { cwd: testDir2, timeout: 30_000 });
+      execFileSync(tsxBin, [buildScript], {
+        cwd: testDir2,
+        timeout: 30_000,
+        env: pipelineEnv,
+      });
       const index2: TileIndex = JSON.parse(
         readFileSync(join(dataDir2, "tiles", "en", "index.json"), "utf-8"),
       );

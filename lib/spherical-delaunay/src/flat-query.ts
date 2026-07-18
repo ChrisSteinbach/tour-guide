@@ -8,9 +8,9 @@
 // (queries outside the patch have no containing triangle), and Float32
 // coordinate quantization (degenerate slivers, coincident duplicates).
 
-import type { FlatDelaunay } from "./serialization";
-import type { LatLon, Point3D } from "./index";
-import { toLatLon } from "./index";
+import type { FlatDelaunay } from "./serialization.js";
+import type { LatLon, Point3D } from "./index.js";
+import { toLatLon } from "./index.js";
 
 // ---------- Walk tracing ----------
 

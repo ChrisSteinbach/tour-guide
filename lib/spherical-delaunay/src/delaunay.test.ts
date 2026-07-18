@@ -1,8 +1,13 @@
-import { buildTriangulation } from "./delaunay";
-import type { SphericalDelaunay } from "./delaunay";
-import type { ConvexHull } from "./convex-hull";
-import { convexHull, sphericalDistance, toCartesian, vecLength } from "./index";
-import type { Point3D } from "./index";
+import { buildTriangulation } from "./delaunay.js";
+import type { SphericalDelaunay } from "./delaunay.js";
+import type { ConvexHull } from "./convex-hull.js";
+import {
+  convexHull,
+  sphericalDistance,
+  toCartesian,
+  vecLength,
+} from "./index.js";
+import type { Point3D } from "./index.js";
 
 // ---------- Structural invariant validator ----------
 

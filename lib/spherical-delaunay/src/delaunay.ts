@@ -1,9 +1,9 @@
 // Spherical Delaunay triangulation extracted from 3D convex hull
 // Each hull face is a Delaunay triangle; face adjacency is the navigation structure.
 
-import type { Point3D } from "./index";
-import type { ConvexHull } from "./convex-hull";
-import { sphericalCircumcenter, sphericalDistance } from "./index";
+import type { Point3D } from "./index.js";
+import type { ConvexHull } from "./convex-hull.js";
+import { sphericalCircumcenter, sphericalDistance } from "./index.js";
 
 // ---------- Types ----------
 

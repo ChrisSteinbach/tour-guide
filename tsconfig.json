@@ -9,6 +9,9 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "noEmit": true,
+    "paths": {
+      "spherical-delaunay": ["./lib/spherical-delaunay/src/index.ts"]
+    },
     "types": ["vitest/globals", "node", "vite/client"]
   },
   "include": ["src", "lib/spherical-delaunay/src"]

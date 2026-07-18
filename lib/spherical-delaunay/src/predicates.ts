@@ -1,7 +1,7 @@
 // Robust geometric predicates — thin adapter over vendored Shewchuk/mourner code
 
-import type { Point3D } from "./index";
-import { orient3d } from "./vendor/robust-predicates/orient3d";
+import type { Point3D } from "./index.js";
+import { orient3d } from "./vendor/robust-predicates/orient3d.js";
 
 /**
  * Signed volume of tetrahedron (a, b, c, d).
