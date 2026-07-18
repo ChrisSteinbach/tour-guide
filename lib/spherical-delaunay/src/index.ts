@@ -158,18 +158,18 @@ export function sphericalCircumcenter(
 
 // ---------- Convex hull (re-exports) ----------
 
-export { convexHull } from "./convex-hull";
-export { orient3D } from "./predicates";
-export type { HullFace, ConvexHull } from "./convex-hull";
+export { convexHull } from "./convex-hull.js";
+export { orient3D } from "./predicates.js";
+export type { HullFace, ConvexHull } from "./convex-hull.js";
 
 // ---------- Delaunay triangulation (re-exports) ----------
 
-export { buildTriangulation } from "./delaunay";
+export { buildTriangulation } from "./delaunay.js";
 export type {
   DelaunayTriangle,
   DelaunayVertex,
   SphericalDelaunay,
-} from "./delaunay";
+} from "./delaunay.js";
 
 // ---------- Nearest-neighbor queries (re-exports) ----------
 
@@ -183,7 +183,7 @@ export {
   createWalkTrace,
   FILTERED_VISIT_FLOOR,
   FILTERED_VISIT_PER_RESULT,
-} from "./flat-query";
+} from "./flat-query.js";
 export type {
   QueryContext,
   NearestVerticesOptions,
@@ -191,7 +191,7 @@ export type {
   PointLocation,
   VertexHit,
   WalkTrace,
-} from "./flat-query";
+} from "./flat-query.js";
 
 // ---------- Serialization (re-exports) ----------
 
@@ -203,5 +203,5 @@ export {
   toFlatDelaunay,
   flattenTriangulation,
   BinaryFormatError,
-} from "./serialization";
-export type { TriangulationFile, FlatDelaunay } from "./serialization";
+} from "./serialization.js";
+export type { TriangulationFile, FlatDelaunay } from "./serialization.js";

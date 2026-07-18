@@ -5,7 +5,7 @@ export default tseslint.config(
   // Global ignores
   {
     ignores: [
-      "dist/",
+      "**/dist/",
       "data/",
       "node_modules/",
       "lib/spherical-delaunay/src/vendor/",

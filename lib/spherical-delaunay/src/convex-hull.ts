@@ -1,8 +1,8 @@
 // Incremental 3D convex hull algorithm
 // For unit-sphere points, the convex hull faces are the spherical Delaunay triangulation
 
-import type { Point3D } from "./index";
-import { orient3D } from "./predicates";
+import type { Point3D } from "./index.js";
+import { orient3D } from "./predicates.js";
 
 // ---------- Types ----------
 

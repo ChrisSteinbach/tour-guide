@@ -1,8 +1,8 @@
-import { convexHull } from "./convex-hull";
-import type { ConvexHull } from "./convex-hull";
-import { orient3D } from "./predicates";
-import { toCartesian } from "./index";
-import type { Point3D } from "./index";
+import { convexHull } from "./convex-hull.js";
+import type { ConvexHull } from "./convex-hull.js";
+import { orient3D } from "./predicates.js";
+import { toCartesian } from "./index.js";
+import type { Point3D } from "./index.js";
 
 // ---------- Structural invariant validator ----------
 

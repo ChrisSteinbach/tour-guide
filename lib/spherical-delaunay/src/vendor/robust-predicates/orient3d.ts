@@ -10,7 +10,7 @@ import {
   vec,
   sum,
   scale,
-} from "./util";
+} from "./util.js";
 
 const o3derrboundA = (7 + 56 * epsilon) * epsilon;
 const o3derrboundB = (3 + 28 * epsilon) * epsilon;

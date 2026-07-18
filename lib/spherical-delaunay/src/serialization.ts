@@ -11,8 +11,8 @@ import type {
   SphericalDelaunay,
   DelaunayVertex,
   DelaunayTriangle,
-} from "./delaunay";
-import type { Point3D } from "./index";
+} from "./delaunay.js";
+import type { Point3D } from "./index.js";
 
 // ---------- Types ----------
 

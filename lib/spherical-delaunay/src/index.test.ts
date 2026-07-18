@@ -7,8 +7,8 @@ import {
   haversineDistance,
   initialBearing,
   sphericalCircumcenter,
-} from "./index";
-import type { Point3D, LatLon } from "./index";
+} from "./index.js";
+import type { Point3D, LatLon } from "./index.js";
 
 const EPSILON = 1e-10;
 

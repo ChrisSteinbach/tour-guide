@@ -13,13 +13,13 @@ import {
   vertexLatLon,
   locateTriangle,
   locateTriangleByScan,
-} from "./index";
+} from "./index.js";
 import type {
   FlatDelaunay,
   Point3D,
   QueryContext,
   SphericalDelaunay,
-} from "./index";
+} from "./index.js";
 
 const EARTH_RADIUS_M = 6_371_000;
 
