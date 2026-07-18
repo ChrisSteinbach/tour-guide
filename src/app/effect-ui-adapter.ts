@@ -72,6 +72,16 @@ export function createEffectUIAdapter(deps: EffectUIAdapterDeps): RenderDeps {
       });
     };
 
+  // A service-worker update auto-reloads the page onto the fresh code. Guard
+  // against reloading more than once — several reloadApp effects can queue
+  // (repeated controllerchange, a deferred reload firing) but the first wins.
+  let reloadRequested = false;
+  const reloadApp = (): void => {
+    if (reloadRequested) return;
+    reloadRequested = true;
+    window.location.reload();
+  };
+
   return {
     render: () => deps.renderer.renderPhase(),
     renderBrowsingList: () => {
@@ -110,7 +120,7 @@ export function createEffectUIAdapter(deps: EffectUIAdapterDeps): RenderDeps {
         pickedOrigin(),
       );
     },
-    renderAppUpdateBanner: () => deps.renderer.renderAppUpdateBanner(),
+    reloadApp,
     showMapPicker: () => {
       // resetDrawerForMapPicker() destroys the prior mapPicker/spatialPanel;
       // mapPicker.show() re-initializes it. The destroy-then-show sequence

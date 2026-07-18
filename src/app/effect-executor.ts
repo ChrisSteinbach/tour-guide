@@ -33,7 +33,7 @@ export interface RenderDeps {
     onRetry: () => void,
     lang: Lang,
   ) => void;
-  renderAppUpdateBanner: () => void;
+  reloadApp: () => void;
   showMapPicker: () => void;
   scrollToTop: () => void;
   restoreScrollTop: (firstVisibleIndex: number) => void;
@@ -307,8 +307,8 @@ export function createEffectExecutor(
       case "showMapPicker":
         deps.ui.showMapPicker();
         break;
-      case "showAppUpdateBanner":
-        deps.ui.renderAppUpdateBanner();
+      case "reloadApp":
+        deps.ui.reloadApp();
         break;
       case "requery": {
         const state = deps.getState();

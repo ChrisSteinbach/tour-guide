@@ -699,64 +699,6 @@ body:has(.app-scroll) {
   margin-top: 0;
 }
 
-/* Update banner */
-
-.update-banner {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 100;
-  background: #323232;
-  color: #fff;
-  padding: 12px 16px;
-  padding-bottom: max(12px, env(safe-area-inset-bottom));
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-  animation: update-banner-slide-up 0.25s ease-out;
-}
-
-@keyframes update-banner-slide-up {
-  from {
-    transform: translateY(100%);
-  }
-
-  to {
-    transform: translateY(0);
-  }
-}
-
-.update-banner-text {
-  font-size: 0.9rem;
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.update-banner-actions {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.update-banner-btn {
-  background: none;
-  border: none;
-  color: #8ab4f8;
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  padding: 6px 12px;
-  border-radius: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-
-.update-banner-btn:active {
-  background: rgb(255 255 255 / 10%);
-}
-
 /* Map picker */
 
 #app:has(.map-picker-container) {
@@ -948,11 +890,6 @@ body:has(.app-scroll) {
   .detail-content {
     max-width: 720px;
     margin: 0 auto;
-  }
-
-  .update-banner {
-    padding-left: max(16px, calc((100% - 720px) / 2));
-    padding-right: max(16px, calc((100% - 720px) / 2));
   }
 }
 

@@ -50,7 +50,6 @@ export interface Renderer {
   renderPhase: () => void;
   renderBrowsingList: () => void;
   renderBrowsingHeader: () => void;
-  renderAppUpdateBanner: () => void;
   /**
    * Reset drawer state before showing the map picker. This destroys the
    * existing mapPicker and spatialPanel instances and closes the drawer; the
@@ -270,30 +269,6 @@ export function createRenderer(deps: RendererDeps): Renderer {
     }
   }
 
-  function renderAppUpdateBanner(): void {
-    if (document.getElementById("app-update-banner")) return;
-    const banner = document.createElement("div");
-    banner.id = "app-update-banner";
-    banner.className = "update-banner";
-    const text = document.createElement("span");
-    text.className = "update-banner-text";
-    text.textContent = "App update available";
-
-    const actions = document.createElement("div");
-    actions.className = "update-banner-actions";
-
-    const reloadBtn = document.createElement("button");
-    reloadBtn.className = "update-banner-btn update-banner-accept";
-    reloadBtn.textContent = "Reload";
-    reloadBtn.addEventListener("click", () => {
-      window.location.reload();
-    });
-
-    actions.appendChild(reloadBtn);
-    banner.append(text, actions);
-    document.body.appendChild(banner);
-  }
-
   function resetDrawerForMapPicker(): void {
     deps.mapPicker.destroy();
     deps.spatialPanel.destroy();
@@ -306,7 +281,6 @@ export function createRenderer(deps: RendererDeps): Renderer {
     renderPhase,
     renderBrowsingList: renderBrowsingListDOM,
     renderBrowsingHeader: renderBrowsingHeaderDOM,
-    renderAppUpdateBanner,
     resetDrawerForMapPicker,
   };
 }

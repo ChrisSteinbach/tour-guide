@@ -55,7 +55,7 @@ function tiledBrowsingState(
     loadGeneration: 1,
     loadingTiles: new Set(),
     downloadProgress: -1,
-    updateBanner: null,
+    pendingReload: false,
     hasGeolocation: true,
     gpsSignalLost: false,
     viewportFillCount: 15,
@@ -718,37 +718,6 @@ describe("renderer renderInfiniteScrollDOM active branch", () => {
     renderer.renderBrowsingList();
 
     expect(update).toHaveBeenCalledWith(pos, [a1, a2], "picked");
-  });
-});
-
-// ── App-update banner ───────────────────────────────────────
-
-describe("renderer renderAppUpdateBanner", () => {
-  afterEach(() => {
-    document.body
-      .querySelectorAll("#app-update-banner")
-      .forEach((el) => el.remove());
-  });
-
-  it("appends a single banner with a Reload button", () => {
-    const renderer = createRenderer(makeDeps());
-
-    renderer.renderAppUpdateBanner();
-
-    const banners = document.querySelectorAll("#app-update-banner");
-    expect(banners).toHaveLength(1);
-    expect(banners[0].querySelector(".update-banner-accept")?.textContent).toBe(
-      "Reload",
-    );
-  });
-
-  it("is idempotent — calling twice still leaves a single banner", () => {
-    const renderer = createRenderer(makeDeps());
-
-    renderer.renderAppUpdateBanner();
-    renderer.renderAppUpdateBanner();
-
-    expect(document.querySelectorAll("#app-update-banner")).toHaveLength(1);
   });
 });
 

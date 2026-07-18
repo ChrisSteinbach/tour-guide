@@ -110,8 +110,11 @@ export interface AppState {
   loadGeneration: number;
   loadingTiles: Set<string>;
   downloadProgress: number;
-  /** Which update banner (if any) is showing. App updates take priority. */
-  updateBanner: null | "app";
+  /** A service-worker update arrived while the user was mid-article (detail)
+   *  or mid-pick (mapPicker) — phases whose view state is not encoded in the
+   *  URL hash. The reload is deferred until they return to a hash-restorable
+   *  phase. See the swUpdateAvailable handler and the transition() wrapper. */
+  pendingReload: boolean;
   hasGeolocation: boolean;
   /** True when GPS signal is lost mid-session (cleared on next position). */
   gpsSignalLost: boolean;
@@ -183,7 +186,7 @@ export type Effect =
   | { type: "pushHistory"; state: unknown }
   | { type: "fetchSummary"; article: NearbyArticle }
   | { type: "showMapPicker" }
-  | { type: "showAppUpdateBanner" }
+  | { type: "reloadApp" }
   | { type: "requery"; pos: UserPosition; count: number }
   | { type: "fetchListSummaries" }
   | { type: "scrollToTop" }
@@ -259,21 +262,34 @@ function forceRequery(state: AppState): TransitionResult {
 // If the About button is added to other phases, update this set.
 const ABOUT_PHASES = new Set<Phase["phase"]>(["welcome", "browsing"]);
 
+// Phases whose view state is NOT encoded in the URL hash, so a service-worker
+// reload would discard it. A pending reload waits until the app leaves these.
+const RELOAD_DEFER_PHASES = new Set<Phase["phase"]>(["detail", "mapPicker"]);
+
 export function transition(state: AppState, event: Event): TransitionResult {
   const result = transitionCore(state, event);
+  let next = result.next;
+  let effects = result.effects;
+
   // Auto-dismiss the about dialog when leaving a phase where it can be open.
   if (
     state.aboutOpen &&
-    result.next.phase.phase !== state.phase.phase &&
+    next.phase.phase !== state.phase.phase &&
     ABOUT_PHASES.has(state.phase.phase)
   ) {
-    return {
-      ...result,
-      next: { ...result.next, aboutOpen: false },
-      effects: [{ type: "hideAbout" }, ...result.effects],
-    };
+    next = { ...next, aboutOpen: false };
+    effects = [{ type: "hideAbout" }, ...effects];
   }
-  return result;
+
+  // Fire a deferred service-worker reload once the app lands on a phase whose
+  // state survives a reload (anything but detail/mapPicker). swUpdateAvailable
+  // only sets pendingReload while in a deferred phase, so this never loops.
+  if (next.pendingReload && !RELOAD_DEFER_PHASES.has(next.phase.phase)) {
+    next = { ...next, pendingReload: false };
+    effects = [...effects, { type: "reloadApp" }];
+  }
+
+  return { next, effects };
 }
 
 function transitionCore(state: AppState, event: Event): TransitionResult {
@@ -760,13 +776,19 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
     // ── Update banner (tour-guide-2lw) ─────────────────────
 
     case "swUpdateAvailable": {
-      if (state.updateBanner === "app") {
-        return { next: state, effects: [] };
+      // registerType 'autoUpdate' means the incoming service worker has already
+      // skipWaited and claimed clients by the time controllerchange fires — the
+      // caches and SW are new, and only the JS running in this tab is stale (and
+      // outright broken after a tile-format flip: old code + new tiles = silent
+      // empty list). Reload to match. App state survives via the URL hash, so
+      // the reload is cheap. Defer only while mid-article or mid-pick, whose
+      // view state is not hash-encoded; the transition() wrapper fires the
+      // reload when the user returns to a hash-restorable phase.
+      if (RELOAD_DEFER_PHASES.has(state.phase.phase)) {
+        if (state.pendingReload) return { next: state, effects: [] };
+        return { next: { ...state, pendingReload: true }, effects: [] };
       }
-      return {
-        next: { ...state, updateBanner: "app" },
-        effects: [{ type: "showAppUpdateBanner" }],
-      };
+      return { next: state, effects: [{ type: "reloadApp" }] };
     }
 
     case "showAbout": {

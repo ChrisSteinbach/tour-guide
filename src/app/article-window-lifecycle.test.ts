@@ -62,7 +62,7 @@ function tiledAppState(): AppState {
     loadGeneration: 1,
     loadingTiles: new Set(),
     downloadProgress: -1,
-    updateBanner: null,
+    pendingReload: false,
     hasGeolocation: true,
     gpsSignalLost: false,
     viewportFillCount: 15,

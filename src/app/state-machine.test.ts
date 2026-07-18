@@ -37,7 +37,7 @@ function makeState(overrides: Partial<AppState> = {}): AppState {
     loadGeneration: 0,
     loadingTiles: new Set(),
     downloadProgress: -1,
-    updateBanner: null,
+    pendingReload: false,
     hasGeolocation: true,
     gpsSignalLost: false,
     viewportFillCount: DEFAULT_VIEWPORT_FILL,
@@ -1252,32 +1252,71 @@ describe("forwardToDetail event", () => {
 // ── swUpdateAvailable event (tour-guide-2lw) ─────────────
 
 describe("swUpdateAvailable event", () => {
-  it("sets updateBanner and emits showAppUpdateBanner", () => {
-    const state = makeState();
-    const { next, effects } = transition(state, {
-      type: "swUpdateAvailable",
-    });
-    expect(next.updateBanner).toBe("app");
-    expect(effectTypes(effects)).toContain("showAppUpdateBanner");
-  });
-
-  it("no-ops when app update banner already showing", () => {
-    const state = makeState({ updateBanner: "app" });
-    const { next, effects } = transition(state, {
-      type: "swUpdateAvailable",
-    });
-    expect(next).toBe(state);
-    expect(effects).toEqual([]);
-  });
-
-  it("works in any phase", () => {
+  it("reloads immediately when not mid-article or mid-pick", () => {
     const state = browsingState();
     const { next, effects } = transition(state, {
       type: "swUpdateAvailable",
     });
-    expect(next.updateBanner).toBe("app");
+    expect(effectTypes(effects)).toContain("reloadApp");
+    expect(next.pendingReload).toBe(false);
+  });
+
+  it("defers the reload while viewing an article", () => {
+    const state = browsingState();
+    const browsing = expectBrowsing(state);
+    const { next: detail } = transition(state, {
+      type: "selectArticle",
+      article: browsing.articles[0],
+      firstVisibleIndex: 0,
+    });
+    const { next, effects } = transition(detail, {
+      type: "swUpdateAvailable",
+    });
+    expect(effectTypes(effects)).not.toContain("reloadApp");
+    expect(next.pendingReload).toBe(true);
+  });
+
+  it("defers the reload while picking on the map", () => {
+    const state = browsingState();
+    const { next: picker } = transition(state, { type: "showMapPicker" });
+    expect(picker.phase.phase).toBe("mapPicker");
+    const { next, effects } = transition(picker, {
+      type: "swUpdateAvailable",
+    });
+    expect(effectTypes(effects)).not.toContain("reloadApp");
+    expect(next.pendingReload).toBe(true);
+  });
+
+  it("is a no-op when a reload is already pending", () => {
+    const state = browsingState();
+    const browsing = expectBrowsing(state);
+    const { next: detail } = transition(state, {
+      type: "selectArticle",
+      article: browsing.articles[0],
+      firstVisibleIndex: 0,
+    });
+    const pending = { ...detail, pendingReload: true };
+    const { next, effects } = transition(pending, {
+      type: "swUpdateAvailable",
+    });
+    expect(next).toBe(pending);
+    expect(effects).toEqual([]);
+    expect(next.pendingReload).toBe(true);
+  });
+
+  it("fires the deferred reload when returning from detail to browsing", () => {
+    const state = browsingState({ nearbyCount: 20, paused: true });
+    const browsing = expectBrowsing(state);
+    const { next: detail } = transition(state, {
+      type: "selectArticle",
+      article: browsing.articles[0],
+      firstVisibleIndex: 0,
+    });
+    const pending = { ...detail, pendingReload: true };
+    const { next, effects } = transition(pending, { type: "back" });
+    expect(effectTypes(effects)).toContain("reloadApp");
+    expect(next.pendingReload).toBe(false);
     expect(next.phase.phase).toBe("browsing");
-    expect(effectTypes(effects)).toContain("showAppUpdateBanner");
   });
 });
 
