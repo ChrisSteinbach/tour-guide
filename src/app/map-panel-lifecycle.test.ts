@@ -13,8 +13,8 @@ let drawerStub: MapDrawer;
 let spatialPanelStub: SpatialPanelLifecycle;
 let mapPickerStub: MapPickerLifecycle;
 let capturedOnSelect:
-  | ((article: { title: string; lat: number; lon: number }) => void)
-  | null = null;
+  ((article: { title: string; lat: number; lon: number }) => void) | null =
+  null;
 
 vi.mock("./map-drawer", () => ({
   createMapDrawer: vi.fn(() => drawerStub),
