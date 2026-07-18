@@ -46,11 +46,12 @@ function makeNearestQuery(title: string): NearestQuery {
     [0, 0, 1],
     [0, 0, -1],
   ];
-  const articles = points.map((_, i) => ({ title: `${title}-${i}` }));
+  // One article per vertex → a singleton group each.
+  const groups = points.map((_, i) => [{ title: `${title}-${i}` }]);
   const hull = convexHull(points);
   const tri = buildTriangulation(hull);
   const fd = flattenTriangulation(tri);
-  return new NearestQuery(fd, articles);
+  return new NearestQuery(fd, groups);
 }
 
 /**
@@ -106,7 +107,7 @@ function makeWeightedQuery(): NearestQuery {
   const hull = convexHull(points);
   const tri = buildTriangulation(hull);
   const fd = flattenTriangulation(tri);
-  const meta = tri.originalIndices.map((i) => input[i]);
+  const meta = tri.originalIndices.map((i) => [input[i]]);
   return new NearestQuery(fd, meta);
 }
 

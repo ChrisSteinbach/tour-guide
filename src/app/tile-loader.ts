@@ -1,7 +1,7 @@
 // Tile loading orchestration — fetches tile index and individual tiles on demand
 
 import { deserializeBinary } from "spherical-delaunay";
-import { decodeArticlePayload } from "../article-payload";
+import { decodeArticlePayload, zipTitlesWeights } from "../article-payload";
 import {
   tileFor,
   tileId,
@@ -227,8 +227,12 @@ interface CachedTileData {
   vertexTriangles: Uint32Array;
   triangleVertices: Uint32Array;
   triangleNeighbors: Uint32Array;
-  articles: string[];
-  /** Weight class per vertex (0-255), same ordering as articles. */
+  /** Titles per vertex — an array of co-located-article titles per vertex. */
+  titles: string[][];
+  /**
+   * Weight class per article (0-255), flattened in vertex-major order to match
+   * `titles` when zipped back together (each vertex's articles contiguous).
+   */
   weights: Uint8Array;
   hash: string;
 }
@@ -470,8 +474,12 @@ export async function loadTile(
         cached.triangleVertices instanceof Uint32Array &&
         cached.triangleNeighbors instanceof Uint32Array &&
         cached.weights instanceof Uint8Array &&
-        Array.isArray(cached.articles) &&
-        cached.articles.every((a) => typeof a === "string")
+        Array.isArray(cached.titles) &&
+        cached.titles.every(
+          (g) => Array.isArray(g) && g.every((t) => typeof t === "string"),
+        ) &&
+        cached.titles.reduce((n, g) => n + g.length, 0) ===
+          cached.weights.length
       ) {
         const query = new NearestQuery(
           {
@@ -480,10 +488,7 @@ export async function loadTile(
             triangleVertices: cached.triangleVertices,
             triangleNeighbors: cached.triangleNeighbors,
           },
-          cached.articles.map((title, i) => ({
-            title,
-            weight: cached.weights[i],
-          })),
+          zipTitlesWeights(cached.titles, cached.weights),
         );
         // Touch LRU only after NearestQuery construction succeeds
         touchLru(db, lang, entry.id, deps).catch(() => undefined);
@@ -528,7 +533,7 @@ export async function loadTile(
     throw err;
   }
   const { fd } = deserialized;
-  const { articles, weights } = decoded;
+  const { groups } = decoded;
 
   // Cache in IDB
   if (db) {
@@ -537,8 +542,10 @@ export async function loadTile(
       vertexTriangles: fd.vertexTriangles,
       triangleVertices: fd.triangleVertices,
       triangleNeighbors: fd.triangleNeighbors,
-      articles: articles.map((a) => a.title),
-      weights,
+      titles: groups.map((g) => g.map((a) => a.title)),
+      weights: Uint8Array.from(
+        groups.flatMap((g) => g.map((a) => a.weight ?? 0)),
+      ),
       hash: entry.hash,
     };
     deps
@@ -547,5 +554,5 @@ export async function loadTile(
     touchLru(db, lang, entry.id, deps).catch(() => undefined);
   }
 
-  return new NearestQuery(fd, articles);
+  return new NearestQuery(fd, groups);
 }

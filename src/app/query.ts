@@ -14,7 +14,7 @@ import {
   toCartesian,
   vertexLatLon,
 } from "spherical-delaunay";
-import type { ArticleMeta } from "../article-payload";
+import type { VertexArticles } from "../article-payload";
 
 const EARTH_RADIUS_M = 6_371_000;
 
@@ -49,11 +49,15 @@ export class NearestQuery {
   readonly size: number;
   readonly defaultTriangle: number;
   private ctx: QueryContext;
-  private articles: ArticleMeta[];
+  // One group of articles per vertex: several distinct articles can share
+  // bit-identical coordinates and so collapse to a single vertex. Each group is
+  // ordered most-notable first (weight desc), so `group[0]` is the vertex's
+  // representative.
+  private groups: VertexArticles[];
 
-  constructor(fd: FlatDelaunay, articles: ArticleMeta[]) {
+  constructor(fd: FlatDelaunay, groups: VertexArticles[]) {
     this.ctx = createQueryContext(fd);
-    this.articles = articles;
+    this.groups = groups;
     this.size = fd.vertexTriangles.length;
     this.defaultTriangle = this.ctx.anchorTriangle;
   }
@@ -72,9 +76,12 @@ export class NearestQuery {
       k,
       {
         startTriangle,
+        // A vertex qualifies when its most-notable article does (groups are
+        // weight-ordered, so `group[0]` is the max); expansion below then keeps
+        // only the co-located articles that individually clear the floor.
         filter:
           minWeight !== undefined
-            ? (vertex) => (this.articles[vertex].weight ?? 0) >= minWeight
+            ? (vertex) => (this.groups[vertex][0]?.weight ?? 0) >= minWeight
             : undefined,
         trace: opts?.trace,
       },
@@ -83,20 +90,26 @@ export class NearestQuery {
     // lastTriangle is the walk-start optimization for the next query —
     // always derived from the unfiltered nearest vertex.
     return {
-      results: hits.map((hit) => this.buildResult(hit)),
+      results: hits.flatMap((hit) => this.buildResults(hit, minWeight)),
       lastTriangle: this.ctx.fd.vertexTriangles[nearestVertex],
     };
   }
 
-  private buildResult(hit: VertexHit): QueryResult {
+  /**
+   * Expand one vertex hit into a result per co-located article (all sharing the
+   * vertex's coordinate and distance), skipping articles below `minWeight` when
+   * a floor is set. Order follows the group's weight-desc ordering.
+   */
+  private buildResults(hit: VertexHit, minWeight?: number): QueryResult[] {
     const { lat, lon } = vertexLatLon(this.ctx.fd, hit.vertex);
-    return {
-      title: this.articles[hit.vertex].title,
-      lat,
-      lon,
-      distanceM: hit.distance * EARTH_RADIUS_M,
-      weight: this.articles[hit.vertex].weight ?? 0,
-    };
+    const distanceM = hit.distance * EARTH_RADIUS_M;
+    const results: QueryResult[] = [];
+    for (const article of this.groups[hit.vertex]) {
+      const weight = article.weight ?? 0;
+      if (minWeight !== undefined && weight < minWeight) continue;
+      results.push({ title: article.title, lat, lon, distanceM, weight });
+    }
+    return results;
   }
 
   /** The underlying triangulation arrays. Callers must not mutate them. */
@@ -104,13 +117,13 @@ export class NearestQuery {
     return this.ctx.fd;
   }
 
-  /** Title of the article at a vertex index. */
+  /** Representative (most-notable) article title at a vertex index. */
   articleTitle(vertex: number): string {
-    return this.articles[vertex].title;
+    return this.groups[vertex][0].title;
   }
 
-  /** Weight class of the article at a vertex index; 0 when absent. */
+  /** Representative article's weight class at a vertex index; 0 when absent. */
   articleWeight(vertex: number): number {
-    return this.articles[vertex].weight ?? 0;
+    return this.groups[vertex][0]?.weight ?? 0;
   }
 }

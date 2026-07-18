@@ -17,6 +17,7 @@ import {
   readArticles,
   buildTile,
   attachWeights,
+  mergeCoincident,
 } from "./build.js";
 import type { TileIndex } from "../tiles.js";
 import type { Article } from "./extract-dump.js";
@@ -256,7 +257,7 @@ describe("buildTile", () => {
       { title: "SW", lat: 11, lon: 1 },
       { title: "C", lat: 12.5, lon: 2.5 },
     ];
-    const buf = buildTile(attachWeights(articles));
+    const buf = buildTile(mergeCoincident(attachWeights(articles)));
     expect(buf).not.toBeNull();
     expect(buf!.byteLength).toBeGreaterThan(0);
   });
@@ -269,7 +270,7 @@ describe("buildTile", () => {
       { title: "C", lat: 0, lon: 0.2 },
       { title: "D", lat: 0, lon: 0.3 },
     ];
-    expect(buildTile(attachWeights(collinear))).toBeNull();
+    expect(buildTile(mergeCoincident(attachWeights(collinear)))).toBeNull();
   });
 
   it("derives per-vertex weights from article views via percentile ranking", () => {
@@ -282,12 +283,14 @@ describe("buildTile", () => {
       { title: "C", lat: 12.5, lon: 2.5, views: 50 }, // rank 4/5 → round(255*4/5) = 204
     ];
 
-    const buf = buildTile(attachWeights(articles));
+    const buf = buildTile(mergeCoincident(attachWeights(articles)));
     expect(buf).not.toBeNull();
     const { payload } = deserializeBinary(buf!);
-    const { articles: metas, weights } = decodeArticlePayload(payload);
+    const { groups } = decodeArticlePayload(payload);
 
-    const weightByTitle = new Map(metas.map((m, i) => [m.title, weights[i]]));
+    const weightByTitle = new Map(
+      groups.flat().map((m) => [m.title, m.weight]),
+    );
     expect(weightByTitle.get("NE")).toBe(0);
     expect(weightByTitle.get("NW")).toBe(51);
     expect(weightByTitle.get("SE")).toBe(102);
@@ -303,11 +306,11 @@ describe("buildTile", () => {
       { title: "SW", lat: 11, lon: 1 },
     ];
 
-    const buf = buildTile(attachWeights(articles));
+    const buf = buildTile(mergeCoincident(attachWeights(articles)));
     expect(buf).not.toBeNull();
     const { payload } = deserializeBinary(buf!);
-    const { weights } = decodeArticlePayload(payload);
-    expect(Array.from(weights)).toEqual([0, 0, 0, 0]);
+    const { groups } = decodeArticlePayload(payload);
+    expect(groups.flat().map((m) => m.weight)).toEqual([0, 0, 0, 0]);
   });
 
   it("gives tied views the same class and zero/missing views class 0", () => {
@@ -318,16 +321,95 @@ describe("buildTile", () => {
       { title: "D", lat: 11, lon: 1 }, // missing views
     ];
 
-    const buf = buildTile(attachWeights(articles));
+    const buf = buildTile(mergeCoincident(attachWeights(articles)));
     expect(buf).not.toBeNull();
     const { payload } = deserializeBinary(buf!);
-    const { articles: metas, weights } = decodeArticlePayload(payload);
+    const { groups } = decodeArticlePayload(payload);
 
-    const weightByTitle = new Map(metas.map((m, i) => [m.title, weights[i]]));
+    const weightByTitle = new Map(
+      groups.flat().map((m) => [m.title, m.weight]),
+    );
     expect(weightByTitle.get("A")).toBe(weightByTitle.get("B"));
     expect(weightByTitle.get("A")).toBeGreaterThan(0);
     expect(weightByTitle.get("C")).toBe(0);
     expect(weightByTitle.get("D")).toBe(0);
+  });
+});
+
+// ---------- mergeCoincident ----------
+
+describe("mergeCoincident", () => {
+  it("groups articles at bit-identical coordinates into one unit", () => {
+    const merged = mergeCoincident([
+      { title: "Building", lat: 40, lon: -74, weight: 100 },
+      { title: "Museum", lat: 40, lon: -74, weight: 200 },
+      { title: "Elsewhere", lat: 41, lon: -75, weight: 50 },
+    ]);
+
+    expect(merged).toHaveLength(2);
+    // Unit order follows first occurrence of each coordinate; within a group,
+    // articles are ordered most-notable first.
+    expect(merged[0].group.map((a) => a.title)).toEqual(["Museum", "Building"]);
+    expect(merged[1].group.map((a) => a.title)).toEqual(["Elsewhere"]);
+  });
+
+  it("orders a group by weight desc, then title asc, and takes group[0] as representative", () => {
+    const merged = mergeCoincident([
+      { title: "Zeta", lat: 0, lon: 0, weight: 10 },
+      { title: "Alpha", lat: 0, lon: 0, weight: 10 }, // tie → title breaks it
+      { title: "Top", lat: 0, lon: 0, weight: 99 },
+    ]);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0].group.map((a) => a.title)).toEqual([
+      "Top",
+      "Alpha",
+      "Zeta",
+    ]);
+    expect(merged[0].title).toBe("Top");
+    expect(merged[0].weight).toBe(99);
+  });
+
+  it("leaves distinct coordinates as singleton units", () => {
+    const merged = mergeCoincident([
+      { title: "A", lat: 1, lon: 1, weight: 0 },
+      { title: "B", lat: 2, lon: 2, weight: 0 },
+    ]);
+
+    expect(merged.map((u) => u.group.length)).toEqual([1, 1]);
+  });
+});
+
+describe("buildTile (coincident articles)", () => {
+  it("keeps every co-located article in one vertex group instead of dropping it", () => {
+    // Four distinct corners plus two articles sharing the center coordinate.
+    const merged = mergeCoincident(
+      attachWeights([
+        { title: "Center Tower", lat: 12.5, lon: 2.5, views: 500 },
+        { title: "Center Museum", lat: 12.5, lon: 2.5, views: 100 },
+        { title: "NE", lat: 14, lon: 4 },
+        { title: "NW", lat: 14, lon: 1 },
+        { title: "SE", lat: 11, lon: 4 },
+        { title: "SW", lat: 11, lon: 1 },
+      ]),
+    );
+
+    const buf = buildTile(merged);
+    expect(buf).not.toBeNull();
+    const { groups } = decodeArticlePayload(deserializeBinary(buf!).payload);
+
+    // All six survive — none silently dropped by the hull's coincident dedupe.
+    expect(new Set(groups.flat().map((a) => a.title))).toEqual(
+      new Set(["Center Tower", "Center Museum", "NE", "NW", "SE", "SW"]),
+    );
+    // The two coincident articles are carried together on one vertex.
+    const centerGroup = groups.find((g) =>
+      g.some((a) => a.title === "Center Tower"),
+    );
+    expect(centerGroup!.map((a) => a.title).sort()).toEqual([
+      "Center Museum",
+      "Center Tower",
+    ]);
   });
 });
 
@@ -414,10 +496,12 @@ describe("tiled pipeline (e2e)", () => {
           binBuf.byteOffset + binBuf.byteLength,
         ),
       );
-      const { articles } = decodeArticlePayload(payload);
+      const { groups } = decodeArticlePayload(payload);
 
-      expect(articles.length).toBeGreaterThanOrEqual(tile.articles);
-      expect(fd.vertexPoints.length).toBe(articles.length * 3);
+      // Total articles (summed across per-vertex groups) covers at least the
+      // tile's native count; vertex count is one per group.
+      expect(groups.flat().length).toBeGreaterThanOrEqual(tile.articles);
+      expect(fd.vertexPoints.length).toBe(groups.length * 3);
     }
 
     // Verify total native article count matches input

@@ -7,6 +7,7 @@ import {
 } from "spherical-delaunay";
 import type { Point3D } from "spherical-delaunay";
 import { NearestQuery } from "./query";
+import type { ArticleMeta } from "../article-payload";
 
 // The query algorithms themselves (locate walk, plateau escape, filtered
 // BFS expansion, tracing) are tested in src/geometry/flat-query.test.ts.
@@ -30,8 +31,9 @@ function buildNearestQuery(): NearestQuery {
   const hull = convexHull(points);
   const tri = buildTriangulation(hull);
   const fd = flattenTriangulation(tri);
-  const articles = OCTAHEDRON.map((o) => ({ title: o.title }));
-  return new NearestQuery(fd, articles);
+  // One article per vertex → a singleton group each.
+  const groups = OCTAHEDRON.map((o) => [{ title: o.title }]);
+  return new NearestQuery(fd, groups);
 }
 
 // Build once, share across tests
@@ -115,11 +117,10 @@ function buildWeightedQuery(
   const hull = convexHull(points);
   const tri = buildTriangulation(hull);
   const fd = flattenTriangulation(tri);
-  const meta = tri.originalIndices.map((i) => ({
-    title: articles[i].title,
-    weight: articles[i].weight,
-  }));
-  return new NearestQuery(fd, meta);
+  const groups = tri.originalIndices.map((i) => [
+    { title: articles[i].title, weight: articles[i].weight },
+  ]);
+  return new NearestQuery(fd, groups);
 }
 
 /**
@@ -217,6 +218,76 @@ describe("NearestQuery (weight filtering)", () => {
   });
 });
 
+// ---------- Coincident-article groups ----------
+
+/** Build a NearestQuery from per-point article groups (weight-desc within). */
+function buildGroupedQuery(
+  pointGroups: { point: Point3D; group: ArticleMeta[] }[],
+): NearestQuery {
+  const points = pointGroups.map((p) => p.point);
+  const tri = buildTriangulation(convexHull(points));
+  const fd = flattenTriangulation(tri);
+  const groups = tri.originalIndices.map((i) => pointGroups[i].group);
+  return new NearestQuery(fd, groups);
+}
+
+describe("NearestQuery (coincident-article groups)", () => {
+  // Octahedron whose +Z vertex carries three co-located articles of differing
+  // weight — mimicking a venue with several articles at one exact coordinate.
+  const pointGroups: { point: Point3D; group: ArticleMeta[] }[] = [
+    { point: [1, 0, 0], group: [{ title: "Point +X", weight: 0 }] },
+    { point: [-1, 0, 0], group: [{ title: "Point -X", weight: 0 }] },
+    { point: [0, 1, 0], group: [{ title: "Point +Y", weight: 0 }] },
+    { point: [0, -1, 0], group: [{ title: "Point -Y", weight: 0 }] },
+    {
+      point: [0, 0, 1],
+      group: [
+        { title: "Summit museum", weight: 200 },
+        { title: "Summit chapel", weight: 80 },
+        { title: "Summit marker", weight: 5 },
+      ],
+    },
+    { point: [0, 0, -1], group: [{ title: "Point -Z", weight: 0 }] },
+  ];
+
+  it("expands one vertex hit into a result per co-located article", () => {
+    const q = buildGroupedQuery(pointGroups);
+
+    // k=1 asks for the single nearest VERTEX (+Z), which expands to 3 results.
+    const { results } = q.findNearest(90, 0, 1);
+
+    expect(results.map((r) => r.title)).toEqual([
+      "Summit museum",
+      "Summit chapel",
+      "Summit marker",
+    ]);
+    // All three share the vertex's coordinate and distance.
+    expect(results[0].lat).toBeCloseTo(90, 0);
+    expect(results[1].distanceM).toBe(results[0].distanceM);
+    expect(results[2].distanceM).toBe(results[0].distanceM);
+  });
+
+  it("keeps only group members meeting minWeight, preserving order", () => {
+    const q = buildGroupedQuery(pointGroups);
+
+    const { results } = q.findNearest(90, 0, 1, undefined, { minWeight: 50 });
+
+    expect(results.map((r) => r.title)).toEqual([
+      "Summit museum",
+      "Summit chapel",
+    ]);
+  });
+
+  it("drops the whole vertex when its representative is below minWeight", () => {
+    const q = buildGroupedQuery(pointGroups);
+
+    // 201 exceeds every article's weight, including the +Z representative (200).
+    const { results } = q.findNearest(90, 0, 6, undefined, { minWeight: 201 });
+
+    expect(results).toEqual([]);
+  });
+});
+
 // ---------- Accessors ----------
 
 describe("NearestQuery (accessors)", () => {
@@ -231,15 +302,15 @@ describe("NearestQuery (accessors)", () => {
     ];
     const tri = buildTriangulation(convexHull(points));
     const fd = flattenTriangulation(tri);
-    const articles = [
-      { title: "Alpha", weight: 5 },
-      { title: "Beta", weight: 0 },
-      { title: "Gamma", weight: 42 },
-      { title: "Delta" }, // no weight → reported as 0
-      { title: "Epsilon", weight: 255 },
-      { title: "Zeta", weight: 17 },
+    const groups = [
+      [{ title: "Alpha", weight: 5 }],
+      [{ title: "Beta", weight: 0 }],
+      [{ title: "Gamma", weight: 42 }],
+      [{ title: "Delta" }], // no weight → reported as 0
+      [{ title: "Epsilon", weight: 255 }],
+      [{ title: "Zeta", weight: 17 }],
     ];
-    const q = new NearestQuery(fd, articles);
+    const q = new NearestQuery(fd, groups);
 
     expect(q.delaunay).toBe(fd);
     expect(q.articleTitle(2)).toBe("Gamma");

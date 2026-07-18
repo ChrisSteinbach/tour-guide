@@ -112,6 +112,55 @@ export function attachWeights(articles: Article[]): WeightedArticle[] {
   return articles.map((a, i) => ({ ...a, weight: weights[i] }));
 }
 
+// ---------- Coincident-article merge ----------
+
+/**
+ * A group of articles sharing bit-identical coordinates, collapsed into a
+ * single triangulation vertex. Carries the representative (highest-weight)
+ * article's fields — so it satisfies `Article` and tiles by lat/lon like any
+ * other — plus the full `group`: every co-located article, most-notable first.
+ */
+export type MergedArticle = WeightedArticle & { group: ArticleMeta[] };
+
+/**
+ * Collapse articles at bit-identical coordinates into one unit per location.
+ * Exactly-coincident points converge to a single hull vertex, so without this
+ * the geometry library silently drops all but one co-located article (keeping
+ * an arbitrary, input-order-dependent survivor); merging keeps them all
+ * findable, attached to the shared vertex.
+ *
+ * Within a group, articles are ordered most-notable first — weight descending,
+ * then title ascending by code point as a deterministic, input-order- and
+ * locale-independent tiebreak — so `group[0]` is the representative. Units
+ * preserve first-occurrence order.
+ */
+export function mergeCoincident(articles: WeightedArticle[]): MergedArticle[] {
+  const groups = new Map<string, WeightedArticle[]>();
+  const order: string[] = [];
+  for (const a of articles) {
+    const key = `${a.lat},${a.lon}`;
+    let bucket = groups.get(key);
+    if (!bucket) {
+      bucket = [];
+      groups.set(key, bucket);
+      order.push(key);
+    }
+    bucket.push(a);
+  }
+
+  return order.map((key) => {
+    const bucket = groups.get(key)!;
+    bucket.sort((a, b) => {
+      if (b.weight !== a.weight) return b.weight - a.weight;
+      return a.title < b.title ? -1 : a.title > b.title ? 1 : 0;
+    });
+    return {
+      ...bucket[0],
+      group: bucket.map((a) => ({ title: a.title, weight: a.weight })),
+    };
+  });
+}
+
 // ---------- Tiling ----------
 
 const MIN_ARTICLES = 4;
@@ -191,7 +240,7 @@ export function collectTileArticles<T extends Article>(
 }
 
 /** Build a single tile's triangulation and return the binary buffer, or null if hull fails. */
-export function buildTile(tileArticles: WeightedArticle[]): ArrayBuffer | null {
+export function buildTile(tileArticles: MergedArticle[]): ArrayBuffer | null {
   const points = tileArticles.map((a) =>
     toCartesian({ lat: a.lat, lon: a.lon }),
   );
@@ -203,11 +252,12 @@ export function buildTile(tileArticles: WeightedArticle[]): ArrayBuffer | null {
     return null;
   }
   const tri = buildTriangulation(hull);
-  const meta: ArticleMeta[] = tri.originalIndices.map((i) => ({
-    title: tileArticles[i].title,
-    weight: tileArticles[i].weight,
-  }));
-  return serializeBinary(tri, encodeArticlePayload(meta));
+  // One vertex per coincident-coordinate unit; each carries its full group of
+  // co-located articles so none are dropped.
+  const groups: ArticleMeta[][] = tri.originalIndices.map(
+    (i) => tileArticles[i].group,
+  );
+  return serializeBinary(tri, encodeArticlePayload(groups));
 }
 
 /** SHA-256 hash of a buffer, truncated to 8 hex characters. */
@@ -227,9 +277,15 @@ async function buildTiled(articles: Article[], lang: Lang): Promise<void> {
   // run the full language and get true population-relative classes.
   const weighted = attachWeights(articles);
 
+  // Collapse articles at bit-identical coordinates into one vertex-unit each,
+  // after weighting (so every article contributes its true popularity
+  // percentile) but before tiling (coincident articles share a coordinate, so
+  // they always land in the same tile and buffer set).
+  const merged = mergeCoincident(weighted);
+
   // Step 2: Assign articles to tiles
   console.log("\nStep 2: Assigning articles to tiles...");
-  const articleIndex = buildArticleIndex(weighted);
+  const articleIndex = buildArticleIndex(merged);
   const tileMap = new Map<string, { row: number; col: number }>();
   for (const id of articleIndex.keys()) {
     const bucket = articleIndex.get(id)!;
@@ -273,7 +329,7 @@ async function buildTiled(articles: Article[], lang: Lang): Promise<void> {
       north: south + GRID_DEG,
       west: col * GRID_DEG - 180,
       east: col * GRID_DEG - 180 + GRID_DEG,
-      articles: native.length,
+      articles: native.reduce((n, u) => n + u.group.length, 0),
       bytes: buf.byteLength,
       hash: hashBuffer(buf),
     });

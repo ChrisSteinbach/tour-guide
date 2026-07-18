@@ -156,7 +156,7 @@ src/
 ├── app/                 PWA frontend (Vite root)
 ├── lang.ts              Supported language definitions
 ├── tiles.ts             Tile grid constants and ID computation
-└── article-payload.ts   Article metadata payload codec (titles + weight classes)
+└── article-payload.ts   Article metadata payload codec (per-vertex article groups of titles + weight classes)
 ```
 
 - **[`spherical-delaunay`](https://github.com/ChrisSteinbach/spherical-delaunay)**

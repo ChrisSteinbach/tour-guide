@@ -52,7 +52,7 @@ Reads extracted NDJSON and produces per-tile binary files for the app:
 
 ### Binary Format
 
-Each tile is a compact binary blob containing a 24-byte header, four typed-array sections (vertex coordinates, vertex-to-triangle mapping, triangle vertices, triangle neighbors), and an opaque payload carrying WikiRadar's article metadata (titles + weight classes). See [binary-format.md](binary-format.md) for the full byte-level specification.
+Each tile is a compact binary blob containing a 24-byte header, four typed-array sections (vertex coordinates, vertex-to-triangle mapping, triangle vertices, triangle neighbors), and an opaque payload carrying WikiRadar's article metadata — per-vertex groups of titles + weight classes, since distinct articles that share coordinates collapse to one vertex and travel together. See [binary-format.md](binary-format.md) for the full byte-level specification.
 
 Float32 vertices give sub-meter precision on Earth. On deserialization, Uint32 index sections are zero-copy views into the original ArrayBuffer; Float32 vertices are copied into Float64Arrays for numerical stability.
 
@@ -80,7 +80,7 @@ IDB uses a single object store (created via `onupgradeneeded`) with versioned ke
 
 ### Nearest-Neighbor Query (`query.ts`)
 
-The `NearestQuery` class wraps the flat Delaunay data for a single tile and provides `findNearest(lat, lon, k)`. The query algorithms live in the external [`spherical-delaunay`](https://github.com/ChrisSteinbach/spherical-delaunay) package (its flat-query module, entered through `createQueryContext` and `findNearestVertices`); `NearestQuery` is the adapter that maps vertex indices to article titles, weight classes (its `minWeight` option becomes a vertex predicate), and distances in meters. Cross-tile merging is handled by `findNearestTiled()` in `tile-loader.ts`, which queries each loaded tile independently, de-duplicates by title, sorts by distance, and returns the top k.
+The `NearestQuery` class wraps the flat Delaunay data for a single tile and provides `findNearest(lat, lon, k)`. The query algorithms live in the external [`spherical-delaunay`](https://github.com/ChrisSteinbach/spherical-delaunay) package (its flat-query module, entered through `createQueryContext` and `findNearestVertices`); `NearestQuery` is the adapter that maps each vertex index to its group of co-located articles (several distinct articles can share bit-identical coordinates and collapse to one vertex), expanding every hit into one result per article — title, weight class, and shared distance in meters — and filtering on the group's max weight when `minWeight` is set. Cross-tile merging is handled by `findNearestTiled()` in `tile-loader.ts`, which queries each loaded tile independently, de-duplicates by title, sorts by distance, and returns the top k.
 
 Per-tile query steps:
 
@@ -243,7 +243,7 @@ Metadata-agnostic: the library serializes only geometry (vertices and adjacency)
 
 `toJson(tri)` / `fromJson(data)` convert a `SphericalDelaunay` to/from the JSON-friendly `TriangulationFile`. `serializeBinary(tri, payload?)` / `deserializeBinary(buf)` do the binary equivalent, plus an optional opaque `payload: Uint8Array` that the library copies verbatim and never interprets — `deserializeBinary()` copies Float32 vertices into Float64 for math precision, Uint32 sections are zero-copy typed array views directly into the ArrayBuffer, and `payload` comes back as a standalone copy (empty when absent).
 
-WikiRadar layers its article metadata (titles + weight classes) on top of the binary format as that opaque payload, via `src/article-payload.ts`'s `encodeArticlePayload()` / `decodeArticlePayload()`. See [binary-format.md](binary-format.md) for the full byte-level spec of both layers.
+WikiRadar layers its article metadata — per-vertex groups of titles + weight classes — on top of the binary format as that opaque payload, via `src/article-payload.ts`'s `encodeArticlePayload()` / `decodeArticlePayload()`. See [binary-format.md](binary-format.md) for the full byte-level spec of both layers.
 
 ## Key Files
 
@@ -312,7 +312,7 @@ src/app/
 
 src/lang.ts             Supported languages (en, de, fr, es, it, ru, zh, pt, pl, nl, ko, ar, sv, ja)
 src/tiles.ts            Tile types, grid constants, tile ID computation, column wrapping
-src/article-payload.ts  Article metadata payload codec (titles + weight classes), shared by pipeline and app
+src/article-payload.ts  Article metadata payload codec (per-vertex article groups of titles + weight classes), shared by pipeline and app
 
 src/app/CLAUDE.md      Module-specific dev instructions (browser verification workflow)
 src/pipeline/CLAUDE.md Module-specific dev instructions (extraction and pipeline commands)
