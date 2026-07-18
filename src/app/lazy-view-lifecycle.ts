@@ -11,6 +11,10 @@ export interface SpatialViewHandle {
     position: UserPosition,
     articles: NearbyArticle[],
     source: PositionSource,
+    /** The nearest tile failed to load, so `articles` are absent or distant.
+     *  Views may reflect this (the radar labels its empty state accordingly);
+     *  those that don't simply ignore the flag. */
+    degraded?: boolean,
   ): void;
   highlight(title: string | null): void;
   resize(): void;
@@ -41,6 +45,7 @@ export interface LazyViewLifecycle {
     position: UserPosition,
     articles: NearbyArticle[],
     source: PositionSource,
+    degraded?: boolean,
   ): void;
   highlight(title: string | null): void;
   resize(): void;
@@ -55,6 +60,7 @@ export function createLazyViewLifecycle(
   let pendingPosition: UserPosition | null = null;
   let pendingArticles: NearbyArticle[] | null = null;
   let pendingSource: PositionSource | null = null;
+  let pendingDegraded: boolean | null = null;
   let pendingHighlight: string | null | undefined = undefined;
 
   const selector = `.${deps.className}`;
@@ -68,6 +74,7 @@ export function createLazyViewLifecycle(
     pendingPosition = null;
     pendingArticles = null;
     pendingSource = null;
+    pendingDegraded = null;
     pendingHighlight = undefined;
     const el = deps.container.querySelector(selector);
     el?.remove();
@@ -81,12 +88,13 @@ export function createLazyViewLifecycle(
     position: UserPosition,
     articles: NearbyArticle[],
     source: PositionSource,
+    degraded = false,
   ): void {
     // If the view handle exists and its container is still in the DOM, just update.
     if (handle) {
       const existing = deps.container.querySelector(selector);
       if (existing && deps.container.contains(existing)) {
-        handle.update(position, articles, source);
+        handle.update(position, articles, source, degraded);
         return;
       }
       // Container was cleared externally — release the orphaned view's
@@ -100,6 +108,7 @@ export function createLazyViewLifecycle(
       pendingPosition = position;
       pendingArticles = articles;
       pendingSource = source;
+      pendingDegraded = degraded;
       return;
     }
     creating = true;
@@ -130,15 +139,18 @@ export function createLazyViewLifecycle(
             pendingPosition = null;
             pendingArticles = null;
             pendingSource = null;
+            pendingDegraded = null;
             pendingHighlight = undefined;
             return;
           }
           const finalPosition = pendingPosition ?? position;
           const finalArticles = pendingArticles ?? articles;
           const finalSource = pendingSource ?? source;
+          const finalDegraded = pendingDegraded ?? degraded;
           pendingPosition = null;
           pendingArticles = null;
           pendingSource = null;
+          pendingDegraded = null;
           handle = createView(
             viewEl,
             finalPosition,
@@ -147,6 +159,12 @@ export function createLazyViewLifecycle(
             finalSource,
           );
           creating = false;
+          // createView renders with the initial data but no degraded flag;
+          // push it through so a view first built during a failure (e.g. an
+          // empty picked-position radar) shows the right caption immediately.
+          if (finalDegraded) {
+            handle.update(finalPosition, finalArticles, finalSource, true);
+          }
           if (pendingHighlight !== undefined) {
             handle.highlight(pendingHighlight);
             pendingHighlight = undefined;
@@ -160,6 +178,7 @@ export function createLazyViewLifecycle(
         pendingPosition = null;
         pendingArticles = null;
         pendingSource = null;
+        pendingDegraded = null;
         pendingHighlight = undefined;
         viewEl?.remove();
       });

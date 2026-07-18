@@ -75,6 +75,7 @@ describe("BrowseMapLifecycle", () => {
         { lat: 52, lon: 1 },
         [],
         "gps",
+        false,
       );
     });
 

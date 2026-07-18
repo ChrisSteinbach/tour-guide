@@ -699,6 +699,85 @@ body:has(.app-scroll) {
   margin-top: 0;
 }
 
+/* Tile-load failure notice */
+
+.tile-failure-notice {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 16px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  background: #3a2a1a;
+  color: #fff;
+  border-top: 2px solid #e0913a;
+  animation: tile-failure-slide-up 0.25s ease-out;
+}
+
+@keyframes tile-failure-slide-up {
+  from {
+    transform: translateY(100%);
+  }
+
+  to {
+    transform: translateY(0);
+  }
+}
+
+.tile-failure-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.9rem;
+}
+
+.tile-failure-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.tile-failure-btn {
+  background: none;
+  border: none;
+  color: #ffd7a8;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 4px;
+}
+
+.tile-failure-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.tile-failure-retry {
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.tile-failure-retry:active {
+  background: rgb(255 255 255 / 10%);
+}
+
+.tile-failure-dismiss {
+  font-size: 1.3rem;
+  line-height: 1;
+  padding: 2px 8px;
+  color: rgb(255 255 255 / 70%);
+}
+
+.tile-failure-dismiss:hover {
+  color: #fff;
+}
+
 /* Map picker */
 
 #app:has(.map-picker-container) {
@@ -890,6 +969,11 @@ body:has(.app-scroll) {
   .detail-content {
     max-width: 720px;
     margin: 0 auto;
+  }
+
+  .tile-failure-notice {
+    padding-left: max(16px, calc((100% - 720px) / 2));
+    padding-right: max(16px, calc((100% - 720px) / 2));
   }
 }
 

@@ -118,6 +118,16 @@ export interface AppState {
   hasGeolocation: boolean;
   /** True when GPS signal is lost mid-session (cleared on next position). */
   gpsSignalLost: boolean;
+  /** The nearest ("primary") tile for the current position failed to load and
+   *  has not since succeeded. When the list still fills from adjacent tiles the
+   *  results are real but distant; when nothing loaded the list is empty. Drives
+   *  the tile-load failure notice and the empty-state retry affordance. Set and
+   *  cleared as the primary tile settles (see tileLoaded/tileLoadFailed); reset
+   *  when the load context changes (language switch, re-pick, GPS switch). */
+  primaryTileFailed: boolean;
+  /** The user dismissed the degraded-results notice. Reset whenever the
+   *  primary-tile failure state changes so a fresh failure re-shows it. */
+  tileFailureDismissed: boolean;
   /** How many articles to show in the initial viewport-filling view. */
   viewportFillCount: number;
   /** Whether the About dialog is currently open. */
@@ -138,8 +148,15 @@ export type Event =
       lang: Lang;
       gen: number;
     }
-  | { type: "tileLoaded"; id: string; tileQuery: NearestQuery; gen: number }
-  | { type: "tileLoadFailed"; id: string; gen: number }
+  | {
+      type: "tileLoaded";
+      id: string;
+      tileQuery: NearestQuery;
+      gen: number;
+      /** Whether this was the nearest tile attempted for the position. */
+      primary: boolean;
+    }
+  | { type: "tileLoadFailed"; id: string; gen: number; primary: boolean }
   | { type: "downloadProgress"; fraction: number; gen: number }
   | { type: "langChanged"; lang: Lang; persist?: boolean }
   | {
@@ -162,6 +179,8 @@ export type Event =
       count: number;
     }
   | { type: "noTilesNearby" }
+  | { type: "retryTiles" }
+  | { type: "dismissTileFailure" }
   | { type: "swUpdateAvailable" }
   | { type: "articlesSync"; articles: NearbyArticle[] }
   | { type: "showAbout" }
@@ -570,6 +589,8 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
         positionSource: "gps",
         position: hasGpsPosition ? state.position : null,
         phase: updatedPhase,
+        primaryTileFailed: false,
+        tileFailureDismissed: false,
       };
       const effects: Effect[] = [{ type: "startGps" }];
 
@@ -826,6 +847,8 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
         loadGeneration: state.loadGeneration + 1,
         loadingTiles: new Set(),
         downloadProgress: -1,
+        primaryTileFailed: false,
+        tileFailureDismissed: false,
         phase: hasStarted
           ? { phase: "downloading", progress: -1 }
           : state.phase,
@@ -921,13 +944,31 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
         ...state,
         query: { ...state.query, tiles: newTiles },
         loadingTiles: newLoadingTiles,
+        // The nearest tile recovered — clear any failure notice.
+        ...(event.primary
+          ? { primaryTileFailed: false, tileFailureDismissed: false }
+          : {}),
       };
 
       if (state.phase.phase === "loadingTiles" && state.position) {
         return enterBrowsing(next);
       }
       if (state.phase.phase === "browsing" || state.phase.phase === "detail") {
-        return forceRequery(next);
+        const rq = forceRequery(next);
+        // On primary recovery while browsing, re-sync the notice even if the
+        // article list is unchanged (requery would otherwise emit only
+        // updateDistances, which doesn't touch the notice).
+        if (
+          event.primary &&
+          state.primaryTileFailed &&
+          rq.next.phase.phase === "browsing"
+        ) {
+          return {
+            next: rq.next,
+            effects: [...rq.effects, { type: "renderBrowsingHeader" }],
+          };
+        }
+        return rq;
       }
       return { next, effects: [] };
     }
@@ -938,7 +979,14 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
       }
       const failedLoadingTiles = new Set(state.loadingTiles);
       failedLoadingTiles.delete(event.id);
-      const next: AppState = { ...state, loadingTiles: failedLoadingTiles };
+      const next: AppState = {
+        ...state,
+        loadingTiles: failedLoadingTiles,
+        // The nearest tile failed — surface the notice / empty-state retry.
+        ...(event.primary
+          ? { primaryTileFailed: true, tileFailureDismissed: false }
+          : {}),
+      };
       if (
         state.phase.phase === "loadingTiles" &&
         state.position &&
@@ -968,6 +1016,11 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
           effects: [{ type: "renderBrowsingList" }],
         };
       }
+      // Primary failed while already browsing (e.g. a GPS move into a region
+      // whose nearest tile won't load): surface the notice over the list.
+      if (event.primary && state.phase.phase === "browsing") {
+        return { next, effects: [{ type: "renderBrowsingHeader" }] };
+      }
       return { next, effects: [] };
     }
 
@@ -992,6 +1045,30 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
           },
         },
         effects: [{ type: "renderBrowsingList" }],
+      };
+    }
+
+    case "retryTiles": {
+      // Re-attempt tiles for the current position. A failed tile sits in
+      // neither `tiles` nor `loadingTiles`, so loadTiles picks it up again.
+      // This is the only retry path in picked-position mode, where there are
+      // no GPS ticks to re-drive tile loading.
+      if (state.query.mode !== "tiled" || !state.position) {
+        return { next: state, effects: [] };
+      }
+      return {
+        next: state,
+        effects: [{ type: "loadTiles", lang: state.currentLang }],
+      };
+    }
+
+    case "dismissTileFailure": {
+      if (!state.primaryTileFailed || state.tileFailureDismissed) {
+        return { next: state, effects: [] };
+      }
+      return {
+        next: { ...state, tileFailureDismissed: true },
+        effects: [{ type: "renderBrowsingHeader" }],
       };
     }
 
@@ -1038,6 +1115,8 @@ function handlePickPosition(
     query: { ...state.query, tiles: new Map() },
     loadingTiles: new Set(),
     loadGeneration: state.loadGeneration + 1,
+    primaryTileFailed: false,
+    tileFailureDismissed: false,
   };
   const result = enterBrowsing(cleared);
   return {

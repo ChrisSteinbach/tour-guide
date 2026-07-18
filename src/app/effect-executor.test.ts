@@ -76,6 +76,8 @@ function browsingState(overrides: Partial<AppState> = {}): AppState {
     pendingReload: false,
     hasGeolocation: true,
     gpsSignalLost: false,
+    primaryTileFailed: false,
+    tileFailureDismissed: false,
     viewportFillCount: 15,
     aboutOpen: false,
     ...overrides,
@@ -107,6 +109,8 @@ function detailState(overrides: Partial<AppState> = {}): AppState {
     pendingReload: false,
     hasGeolocation: true,
     gpsSignalLost: false,
+    primaryTileFailed: false,
+    tileFailureDismissed: false,
     viewportFillCount: 15,
     aboutOpen: false,
     ...overrides,
@@ -462,7 +466,11 @@ describe("createEffectExecutor", () => {
     exec({ type: "loadTiles", lang: "en" });
     await vi.waitFor(() => {
       expect(deps.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "tileLoadFailed", id: "t1" }),
+        expect.objectContaining({
+          type: "tileLoadFailed",
+          id: "t1",
+          primary: true,
+        }),
       );
     });
     expect(loadingTiles.has("t1")).toBe(false);
@@ -494,7 +502,11 @@ describe("createEffectExecutor", () => {
         expect.objectContaining({ type: "tileLoadStarted", id: "t1" }),
       );
       expect(deps.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "tileLoaded", id: "t1" }),
+        expect.objectContaining({
+          type: "tileLoaded",
+          id: "t1",
+          primary: true,
+        }),
       );
     });
   });
@@ -689,7 +701,7 @@ describe("createEffectExecutor", () => {
     exec({ type: "loadTiles", lang: "en" });
     await vi.waitFor(() => {
       expect(deps.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "tileLoaded" }),
+        expect.objectContaining({ type: "tileLoaded", primary: true }),
       );
     });
 
@@ -766,10 +778,18 @@ describe("createEffectExecutor", () => {
     resolvers[1]();
     await vi.waitFor(() => {
       expect(deps.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "tileLoaded", id: "t-nearby1" }),
+        expect.objectContaining({
+          type: "tileLoaded",
+          id: "t-nearby1",
+          primary: true,
+        }),
       );
       expect(deps.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "tileLoaded", id: "t-nearby2" }),
+        expect.objectContaining({
+          type: "tileLoaded",
+          id: "t-nearby2",
+          primary: false,
+        }),
       );
     });
 
@@ -908,7 +928,11 @@ describe("createEffectExecutor", () => {
     exec({ type: "loadTiles", lang: "en" });
     await vi.waitFor(() => {
       expect(deps.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "tileLoadFailed", id: "t1" }),
+        expect.objectContaining({
+          type: "tileLoadFailed",
+          id: "t1",
+          primary: true,
+        }),
       );
     });
   });

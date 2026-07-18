@@ -93,6 +93,9 @@ export function createEffectUIAdapter(deps: EffectUIAdapterDeps): RenderDeps {
     showAbout,
     hideAbout,
     renderDetailLoading: (article) => {
+      // Entering detail emits no render effect, so clear the browsing-only
+      // tile-failure notice here rather than leave it floating over the article.
+      deps.renderer.syncTileFailureNotice();
       deps.spatialPanel.highlight(article.title);
       renderDetailLoading(deps.app, article, goBack);
     },

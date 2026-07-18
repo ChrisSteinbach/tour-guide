@@ -189,12 +189,23 @@ export function createEffectExecutor(
         .loadTile(lang, entry, signal)
         .then((tileQuery) => {
           if (gen !== deps.getState().loadGeneration) return;
-          deps.dispatch({ type: "tileLoaded", id, tileQuery, gen });
+          deps.dispatch({
+            type: "tileLoaded",
+            id,
+            tileQuery,
+            gen,
+            primary: isPrimary,
+          });
         })
         .catch(() => {
           if (signal.aborted) return;
           if (gen !== deps.getState().loadGeneration) return;
-          deps.dispatch({ type: "tileLoadFailed", id, gen });
+          deps.dispatch({
+            type: "tileLoadFailed",
+            id,
+            gen,
+            primary: isPrimary,
+          });
         });
 
       if (isPrimary) {

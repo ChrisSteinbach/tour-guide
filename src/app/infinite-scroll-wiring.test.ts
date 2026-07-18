@@ -79,6 +79,8 @@ function makeBrowsingState(overrides: Partial<AppState> = {}): AppState {
     pendingReload: false,
     hasGeolocation: true,
     gpsSignalLost: false,
+    primaryTileFailed: false,
+    tileFailureDismissed: false,
     viewportFillCount: 15,
     aboutOpen: false,
     ...overrides,
@@ -287,6 +289,7 @@ describe("createInfiniteScrollWiring", () => {
         pos,
         [stockholm, uppsala],
         "gps",
+        false,
       );
     });
 
@@ -451,7 +454,7 @@ describe("createInfiniteScrollWiring", () => {
 
       capturedDeps!.initSpatialView();
 
-      expect(spatialPanel.update).toHaveBeenCalledWith(pos, [], "gps");
+      expect(spatialPanel.update).toHaveBeenCalledWith(pos, [], "gps", false);
     });
 
     it("initSpatialView is a no-op when no position is set", () => {

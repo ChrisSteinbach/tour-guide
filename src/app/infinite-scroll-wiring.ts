@@ -92,6 +92,7 @@ export function createInfiniteScrollWiring(
             state.position,
             articles as NearbyArticle[],
             state.positionSource ?? "gps",
+            state.primaryTileFailed,
           );
         }
       },
@@ -159,6 +160,7 @@ export function createInfiniteScrollWiring(
             state.position,
             [],
             state.positionSource ?? "gps",
+            state.primaryTileFailed,
           );
         }
       },

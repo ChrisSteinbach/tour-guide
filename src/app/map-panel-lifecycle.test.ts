@@ -73,6 +73,8 @@ function makeBrowsingState(): AppState {
     pendingReload: false,
     hasGeolocation: true,
     gpsSignalLost: false,
+    primaryTileFailed: false,
+    tileFailureDismissed: false,
     viewportFillCount: 15,
     aboutOpen: false,
   };

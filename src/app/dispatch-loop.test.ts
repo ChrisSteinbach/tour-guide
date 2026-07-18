@@ -125,6 +125,8 @@ function buildDispatchLoop(opts: {
     pendingReload: false,
     hasGeolocation: true,
     gpsSignalLost: false,
+    primaryTileFailed: false,
+    tileFailureDismissed: false,
     viewportFillCount: DEFAULT_VIEWPORT_FILL,
     aboutOpen: false,
   };

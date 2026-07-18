@@ -50,6 +50,8 @@ let appState: AppState = {
   pendingReload: false,
   hasGeolocation: true,
   gpsSignalLost: false,
+  primaryTileFailed: false,
+  tileFailureDismissed: false,
   viewportFillCount,
   aboutOpen: false,
 };

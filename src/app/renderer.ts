@@ -51,6 +51,13 @@ export interface Renderer {
   renderBrowsingList: () => void;
   renderBrowsingHeader: () => void;
   /**
+   * Show or remove the tile-load failure notice from the current state. Safe to
+   * call in any phase — it only appears while browsing with a failed primary
+   * tile. Exposed so the detail render path can clear it when the user opens an
+   * article (entering detail emits no render effect of its own).
+   */
+  syncTileFailureNotice: () => void;
+  /**
    * Reset drawer state before showing the map picker. This destroys the
    * existing mapPicker and spatialPanel instances and closes the drawer; the
    * caller is responsible for calling mapPicker.show() (or otherwise
@@ -86,7 +93,66 @@ export function createRenderer(deps: RendererDeps): Renderer {
     return Math.floor(deps.getScrollContainer().scrollTop / deps.itemHeight);
   }
 
+  // Mode-independent tile-load failure notice. A body-level fixed banner so it
+  // works identically in viewport and infinite-scroll modes (and while the
+  // radar/map drawer is open). Rebuilt from state on every browsing render.
+  function syncTileFailureNotice(): void {
+    const state = deps.getState();
+    const existing = document.getElementById("tile-failure-notice");
+    if (state.phase.phase !== "browsing" || !state.primaryTileFailed) {
+      existing?.remove();
+      return;
+    }
+    const empty = state.phase.articles.length === 0;
+    // Degraded (real but distant results) is dismissible; the empty-failure
+    // state is the whole content, so it stays until a retry succeeds.
+    if (!empty && state.tileFailureDismissed) {
+      existing?.remove();
+      return;
+    }
+
+    existing?.remove();
+    const notice = document.createElement("div");
+    notice.id = "tile-failure-notice";
+    notice.className = "tile-failure-notice";
+    notice.setAttribute("role", "status");
+
+    const text = document.createElement("span");
+    text.className = "tile-failure-text";
+    text.textContent = empty
+      ? "Couldn’t load nearby articles."
+      : "Couldn’t load nearby articles — showing more distant results.";
+
+    const actions = document.createElement("div");
+    actions.className = "tile-failure-actions";
+
+    const retry = document.createElement("button");
+    retry.className = "tile-failure-btn tile-failure-retry";
+    retry.textContent = "Retry";
+    retry.addEventListener("click", () => {
+      retry.disabled = true;
+      retry.textContent = "Retrying…";
+      deps.dispatch({ type: "retryTiles" });
+    });
+    actions.appendChild(retry);
+
+    if (!empty) {
+      const dismiss = document.createElement("button");
+      dismiss.className = "tile-failure-btn tile-failure-dismiss";
+      dismiss.setAttribute("aria-label", "Dismiss");
+      dismiss.textContent = "×";
+      dismiss.addEventListener("click", () =>
+        deps.dispatch({ type: "dismissTileFailure" }),
+      );
+      actions.appendChild(dismiss);
+    }
+
+    notice.append(text, actions);
+    document.body.appendChild(notice);
+  }
+
   function renderBrowsingHeaderDOM(): void {
+    syncTileFailureNotice();
     if (deps.getState().phase.phase !== "browsing") return;
     if (deps.infiniteScroll.isActive()) {
       deps.infiniteScroll.updateHeader();
@@ -118,6 +184,7 @@ export function createRenderer(deps: RendererDeps): Renderer {
       deps.infiniteScroll.destroy();
       renderViewportListDOM();
     }
+    syncTileFailureNotice();
   }
 
   function renderViewportListDOM(): void {
@@ -152,6 +219,7 @@ export function createRenderer(deps: RendererDeps): Renderer {
       state.position,
       state.phase.articles,
       state.positionSource ?? "gps",
+      state.primaryTileFailed,
     );
     if (isGps && !state.phase.paused) {
       setupScrollPauseListener();
@@ -204,6 +272,7 @@ export function createRenderer(deps: RendererDeps): Renderer {
             state.position,
             visible,
             state.positionSource ?? "gps",
+            state.primaryTileFailed,
           );
         }
       }
@@ -216,6 +285,7 @@ export function createRenderer(deps: RendererDeps): Renderer {
     teardownScrollPauseListener();
     deps.mapPicker.destroy();
     const state = deps.getState();
+    syncTileFailureNotice();
     // spatialPanel + drawer persist across browsing↔detail so the map/radar stays
     // visible while viewing an article. Teardown only fires when the next
     // phase is outside that pair (welcome, mapPicker, error, etc.).
@@ -281,6 +351,7 @@ export function createRenderer(deps: RendererDeps): Renderer {
     renderPhase,
     renderBrowsingList: renderBrowsingListDOM,
     renderBrowsingHeader: renderBrowsingHeaderDOM,
+    syncTileFailureNotice,
     resetDrawerForMapPicker,
   };
 }

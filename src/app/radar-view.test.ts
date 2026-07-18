@@ -71,6 +71,28 @@ describe("createRadarView", () => {
     view.destroy();
   });
 
+  it("captions the empty state as a tile-load failure when degraded", () => {
+    const el = makeContainer();
+    const view = createRadarView(el, POSITION, [], vi.fn());
+    const empty = el.querySelector<HTMLElement>(".radar-empty");
+
+    view.update(POSITION, [], "gps", true);
+
+    expect(empty?.textContent).toBe("Couldn’t load nearby articles");
+    view.destroy();
+  });
+
+  it("captions the empty state as ordinary no-results when not degraded", () => {
+    const el = makeContainer();
+    const view = createRadarView(el, POSITION, [articleNorth(1)], vi.fn());
+    const empty = el.querySelector<HTMLElement>(".radar-empty");
+
+    view.update(POSITION, [], "gps", false);
+
+    expect(empty?.textContent).toBe("No articles in range");
+    view.destroy();
+  });
+
   it("selects the article whose blip is clicked", () => {
     const el = makeContainer();
     const onSelect = vi.fn();

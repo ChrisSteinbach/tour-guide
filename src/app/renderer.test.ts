@@ -58,6 +58,8 @@ function tiledBrowsingState(
     pendingReload: false,
     hasGeolocation: true,
     gpsSignalLost: false,
+    primaryTileFailed: false,
+    tileFailureDismissed: false,
     viewportFillCount: 15,
     aboutOpen: false,
     ...overrides,
@@ -717,7 +719,7 @@ describe("renderer renderInfiniteScrollDOM active branch", () => {
     const renderer = createRenderer(deps);
     renderer.renderBrowsingList();
 
-    expect(update).toHaveBeenCalledWith(pos, [a1, a2], "picked");
+    expect(update).toHaveBeenCalledWith(pos, [a1, a2], "picked", false);
   });
 });
 
@@ -873,5 +875,135 @@ describe("renderer renderBrowsingList desktop-first render", () => {
     // Wait for the rAF to flush.
     await new Promise<void>((r) => requestAnimationFrame(() => r()));
     expect(resize).toHaveBeenCalled();
+  });
+});
+
+// ── Tile-load failure notice ────────────────────────────────
+
+describe("renderer syncTileFailureNotice", () => {
+  // The notice is appended straight to document.body (not deps.app) so it
+  // stays visible across viewport/infinite-scroll modes and the map drawer.
+  // Clean it up so a leftover notice from one test can't leak into the next.
+  afterEach(() => {
+    document.getElementById("tile-failure-notice")?.remove();
+  });
+
+  it("shows retry and dismiss buttons with a distant-results message when results are present", () => {
+    const deps = makeDeps({
+      getState: vi.fn(() =>
+        tiledBrowsingState(
+          { primaryTileFailed: true, tileFailureDismissed: false },
+          { articles: [article] },
+        ),
+      ),
+    });
+    const renderer = createRenderer(deps);
+
+    renderer.syncTileFailureNotice();
+
+    const notice = document.getElementById("tile-failure-notice");
+    expect(notice).not.toBeNull();
+    expect(notice!.querySelector(".tile-failure-retry")).not.toBeNull();
+    expect(notice!.querySelector(".tile-failure-dismiss")).not.toBeNull();
+    expect(notice!.querySelector(".tile-failure-text")?.textContent).toContain(
+      "distant",
+    );
+  });
+
+  it("shows only the retry button when no articles loaded at all", () => {
+    const deps = makeDeps({
+      getState: vi.fn(() =>
+        tiledBrowsingState(
+          { primaryTileFailed: true, tileFailureDismissed: false },
+          { articles: [] },
+        ),
+      ),
+    });
+    const renderer = createRenderer(deps);
+
+    renderer.syncTileFailureNotice();
+
+    const notice = document.getElementById("tile-failure-notice");
+    expect(notice).not.toBeNull();
+    expect(notice!.querySelector(".tile-failure-retry")).not.toBeNull();
+    expect(notice!.querySelector(".tile-failure-dismiss")).toBeNull();
+  });
+
+  it("hides the notice once dismissed while results are present", () => {
+    const deps = makeDeps({
+      getState: vi.fn(() =>
+        tiledBrowsingState(
+          { primaryTileFailed: true, tileFailureDismissed: true },
+          { articles: [article] },
+        ),
+      ),
+    });
+    const renderer = createRenderer(deps);
+
+    renderer.syncTileFailureNotice();
+
+    expect(document.getElementById("tile-failure-notice")).toBeNull();
+  });
+
+  it("shows no notice when the primary tile has not failed", () => {
+    const deps = makeDeps({
+      getState: vi.fn(() =>
+        tiledBrowsingState(
+          { primaryTileFailed: false },
+          { articles: [article] },
+        ),
+      ),
+    });
+    const renderer = createRenderer(deps);
+
+    renderer.syncTileFailureNotice();
+
+    expect(document.getElementById("tile-failure-notice")).toBeNull();
+  });
+
+  it("dispatches retryTiles when the retry button is clicked", () => {
+    const dispatch = vi.fn();
+    const deps = makeDeps({
+      dispatch,
+      getState: vi.fn(() =>
+        tiledBrowsingState(
+          { primaryTileFailed: true, tileFailureDismissed: false },
+          { articles: [article] },
+        ),
+      ),
+    });
+    const renderer = createRenderer(deps);
+    renderer.syncTileFailureNotice();
+
+    const retry = document.querySelector<HTMLButtonElement>(
+      ".tile-failure-retry",
+    );
+    expect(retry).not.toBeNull();
+    retry!.click();
+
+    expect(dispatch).toHaveBeenCalledWith({ type: "retryTiles" });
+  });
+
+  it("dispatches dismissTileFailure when the dismiss button is clicked", () => {
+    const dispatch = vi.fn();
+    const deps = makeDeps({
+      dispatch,
+      getState: vi.fn(() =>
+        tiledBrowsingState(
+          { primaryTileFailed: true, tileFailureDismissed: false },
+          { articles: [article] },
+        ),
+      ),
+    });
+    const renderer = createRenderer(deps);
+    renderer.syncTileFailureNotice();
+
+    const dismiss = document.querySelector<HTMLButtonElement>(
+      ".tile-failure-dismiss",
+    );
+    expect(dismiss).not.toBeNull();
+    dismiss!.click();
+
+    expect(dispatch).toHaveBeenCalledWith({ type: "dismissTileFailure" });
   });
 });

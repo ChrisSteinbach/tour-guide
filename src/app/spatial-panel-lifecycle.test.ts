@@ -196,7 +196,12 @@ describe("SpatialPanelLifecycle", () => {
 
       container.querySelector<HTMLButtonElement>(".spatial-tab-radar")!.click();
 
-      expect(radarHandle.update).toHaveBeenLastCalledWith(POS, newer, "gps");
+      expect(radarHandle.update).toHaveBeenLastCalledWith(
+        POS,
+        newer,
+        "gps",
+        false,
+      );
     });
 
     it("keeps working when the preference cannot be persisted", async () => {
@@ -228,7 +233,12 @@ describe("SpatialPanelLifecycle", () => {
       await flushImportAndRaf();
       panel.update(POS, [], "gps");
 
-      expect(radarHandle.update).toHaveBeenLastCalledWith(POS, [], "gps");
+      expect(radarHandle.update).toHaveBeenLastCalledWith(
+        POS,
+        [],
+        "gps",
+        false,
+      );
       expect(mapHandle.update).not.toHaveBeenCalled();
       expect(container).toBeTruthy();
     });
