@@ -5,6 +5,7 @@
 
 import { updateNearbyDistances } from "./render";
 import { hideAbout, showAbout } from "./about";
+import { getTileLoadLog } from "./tile-log";
 import {
   renderDetailLoading,
   renderDetailReady,
@@ -90,7 +91,15 @@ export function createEffectUIAdapter(deps: EffectUIAdapterDeps): RenderDeps {
     },
     renderBrowsingHeader: () => deps.renderer.renderBrowsingHeader(),
     updateDistances: (articles) => updateNearbyDistances(deps.app, articles),
-    showAbout,
+    showAbout: (onClose) => {
+      const state = deps.getState();
+      showAbout(onClose, {
+        lang: state.currentLang,
+        generated:
+          state.query.mode === "tiled" ? state.query.index.generated : null,
+        log: getTileLoadLog(),
+      });
+    },
     hideAbout,
     renderDetailLoading: (article) => {
       // Entering detail emits no render effect, so clear the browsing-only

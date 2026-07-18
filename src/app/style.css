@@ -1255,6 +1255,27 @@ dialog.about-dialog::backdrop {
   outline-offset: 2px;
 }
 
+.about-diag-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.about-diag-list dt {
+  color: #999;
+  white-space: nowrap;
+}
+
+.about-diag-list dd {
+  margin: 0;
+  color: #333;
+  overflow-wrap: break-word;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── X-ray overlay panel ───────────────────────────────────── */
 
 .xray-panel {

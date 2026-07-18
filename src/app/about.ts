@@ -1,5 +1,52 @@
 import { APP_NAME } from "./config";
 import { createCloseIcon, createInfoIcon } from "./icons";
+import type { TileLoadRecord } from "./tile-log";
+
+/** Session tile-load diagnostics rendered in the About dialog. */
+export interface AboutDiagnostics {
+  /** Active Wikipedia language code. */
+  lang: string;
+  /** Tile-index `generated` timestamp, or null when no index is loaded yet. */
+  generated: string | null;
+  /** Session tile-load log (see tile-log.ts). */
+  log: readonly TileLoadRecord[];
+}
+
+/** Build the collapsible diagnostics section from the session tile-load log. */
+function buildDiagnosticsSection(diag: AboutDiagnostics): HTMLElement {
+  const section = document.createElement("div");
+  section.className = "about-section about-diagnostics";
+
+  const heading = document.createElement("h3");
+  heading.textContent = "Diagnostics";
+  section.appendChild(heading);
+
+  const list = document.createElement("dl");
+  list.className = "about-diag-list";
+  const row = (label: string, value: string): void => {
+    const dt = document.createElement("dt");
+    dt.textContent = label;
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    list.append(dt, dd);
+  };
+
+  const loaded = diag.log.filter((r) => r.ok);
+  const cacheHits = loaded.filter((r) => r.source === "cache").length;
+  const failures = diag.log.filter((r) => !r.ok);
+  const failedIds = [...new Set(failures.map((r) => r.id))];
+
+  row("Language", diag.lang);
+  row("Tile data", diag.generated ?? "not loaded yet");
+  row("Tiles loaded", `${loaded.length} (${cacheHits} from cache)`);
+  row("Tiles failed", String(failures.length));
+  if (failedIds.length > 0) {
+    row("Failed tiles", failedIds.join(", "));
+  }
+
+  section.appendChild(list);
+  return section;
+}
 
 const CC_BY_SA_URL = "https://creativecommons.org/licenses/by-sa/3.0/";
 const WIKIPEDIA_TOS_URL =
@@ -24,7 +71,10 @@ function link(text: string, href: string): HTMLAnchorElement {
 }
 
 /** Show the About dialog. Use hideAbout() to close programmatically. */
-export function showAbout(onClose?: () => void): void {
+export function showAbout(
+  onClose?: () => void,
+  diagnostics?: AboutDiagnostics,
+): void {
   // Prevent stacking — call teardown so listeners are cleaned up
   if (activeTeardown) activeTeardown();
 
@@ -98,6 +148,9 @@ export function showAbout(onClose?: () => void): void {
   );
 
   dialog.append(close, title, tagline, section, privacySection);
+  if (diagnostics) {
+    dialog.appendChild(buildDiagnosticsSection(diagnostics));
+  }
   document.body.appendChild(dialog);
   dialog.showModal();
 

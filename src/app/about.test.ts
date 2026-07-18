@@ -175,6 +175,55 @@ describe("showAbout", () => {
     });
   });
 
+  describe("diagnostics content", () => {
+    it("omits the diagnostics section when no diagnostics are passed", () => {
+      showAbout();
+      expect(document.querySelector(".about-diagnostics")).toBeNull();
+    });
+
+    it("renders language, tile-data timestamp, and load counts", () => {
+      showAbout(undefined, {
+        lang: "sv",
+        generated: "2026-06-01T00:00:00Z",
+        log: [
+          {
+            at: 1,
+            lang: "sv",
+            id: "29-39",
+            source: "network",
+            ok: true,
+            ms: 9,
+          },
+          { at: 2, lang: "sv", id: "30-39", source: "cache", ok: true, ms: 2 },
+          {
+            at: 3,
+            lang: "sv",
+            id: "28-39",
+            source: "network",
+            ok: false,
+            ms: 5,
+            error: "boom",
+          },
+        ],
+      });
+      const diag = document.querySelector(".about-diagnostics");
+      expect(diag).not.toBeNull();
+      const text = diag!.textContent ?? "";
+      expect(text).toContain("sv");
+      expect(text).toContain("2026-06-01T00:00:00Z");
+      expect(text).toContain("2 (1 from cache)");
+      // The failed tile's id is surfaced for field bug reports.
+      expect(text).toContain("28-39");
+    });
+
+    it("shows a placeholder and no failed-tiles row when nothing is loaded", () => {
+      showAbout(undefined, { lang: "en", generated: null, log: [] });
+      const diag = document.querySelector(".about-diagnostics");
+      expect(diag!.textContent).toContain("not loaded yet");
+      expect(diag!.textContent).not.toContain("Failed tiles");
+    });
+  });
+
   describe("privacy content", () => {
     it("includes a Privacy heading", () => {
       showAbout();
