@@ -4,12 +4,7 @@ import tseslint from "typescript-eslint";
 export default tseslint.config(
   // Global ignores
   {
-    ignores: [
-      "**/dist/",
-      "data/",
-      "node_modules/",
-      "lib/spherical-delaunay/src/vendor/",
-    ],
+    ignores: ["**/dist/", "data/", "node_modules/"],
   },
 
   // Base JS recommended rules
