@@ -47,9 +47,11 @@ let appState: AppState = {
   loadGeneration: 0,
   loadingTiles: new Set(),
   downloadProgress: -1,
-  updateBanner: null,
+  pendingReload: false,
   hasGeolocation: true,
   gpsSignalLost: false,
+  primaryTileFailed: false,
+  tileFailureDismissed: false,
   viewportFillCount,
   aboutOpen: false,
 };

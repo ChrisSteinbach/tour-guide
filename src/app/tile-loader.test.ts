@@ -10,6 +10,7 @@ import {
 } from "./tile-loader";
 import type { TileLoaderDeps } from "./tile-loader";
 import { NearestQuery } from "./query";
+import { getTileLoadLog, clearTileLoadLog } from "./tile-log";
 import type { TileIndex, TileEntry } from "../tiles";
 import { GRID_DEG } from "../tiles";
 import {
@@ -737,6 +738,39 @@ describe("loadTile", () => {
       loadTile("/base/", "en", entry, undefined, makeDeps()),
     ).rejects.toThrow("HTTP 404");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("records a tile-log failure entry when deserialization throws", async () => {
+    // The bytes arrive (fetchTileBuffer logs a successful network load), but a
+    // corrupt or old-format tile makes deserializeBinary throw. loadTile must
+    // record the failure so the tile does not silently show up as a healthy
+    // fetch in the session diagnostics log.
+    clearTileLoadLog();
+    vi.mocked(deserializeBinary).mockImplementationOnce(() => {
+      throw new Error("bad magic bytes");
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+      }),
+    );
+
+    await expect(
+      loadTile("/base/", "en", entry, undefined, makeDeps()),
+    ).rejects.toThrow("bad magic bytes");
+
+    const failures = getTileLoadLog().filter((r) => !r.ok);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      lang: "en",
+      id: entry.id,
+      source: "network",
+      ok: false,
+    });
+    expect(failures[0].error).toContain("deserialize failed");
   });
 
   it("works without IDB", async () => {

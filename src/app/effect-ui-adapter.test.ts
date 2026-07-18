@@ -44,8 +44,8 @@ function stubRenderer(): Renderer {
     renderPhase: vi.fn(),
     renderBrowsingList: vi.fn(),
     renderBrowsingHeader: vi.fn(),
-    renderAppUpdateBanner: vi.fn(),
     resetDrawerForMapPicker: vi.fn(),
+    syncTileFailureNotice: vi.fn(),
   };
 }
 
@@ -76,9 +76,11 @@ function makeState(overrides: Partial<AppState> = {}): AppState {
     loadGeneration: 0,
     loadingTiles: new Set(),
     downloadProgress: -1,
-    updateBanner: null,
+    pendingReload: false,
     hasGeolocation: true,
     gpsSignalLost: false,
+    primaryTileFailed: false,
+    tileFailureDismissed: false,
     viewportFillCount: 15,
     aboutOpen: false,
     ...overrides,

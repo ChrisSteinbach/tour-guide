@@ -699,26 +699,27 @@ body:has(.app-scroll) {
   margin-top: 0;
 }
 
-/* Update banner */
+/* Tile-load failure notice */
 
-.update-banner {
+.tile-failure-notice {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
   z-index: 100;
-  background: #323232;
-  color: #fff;
-  padding: 12px 16px;
-  padding-bottom: max(12px, env(safe-area-inset-bottom));
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 12px;
-  animation: update-banner-slide-up 0.25s ease-out;
+  padding: 12px 16px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  background: #3a2a1a;
+  color: #fff;
+  border-top: 2px solid #e0913a;
+  animation: tile-failure-slide-up 0.25s ease-out;
 }
 
-@keyframes update-banner-slide-up {
+@keyframes tile-failure-slide-up {
   from {
     transform: translateY(100%);
   }
@@ -728,33 +729,53 @@ body:has(.app-scroll) {
   }
 }
 
-.update-banner-text {
-  font-size: 0.9rem;
+.tile-failure-text {
   flex: 1 1 auto;
   min-width: 0;
+  font-size: 0.9rem;
 }
 
-.update-banner-actions {
+.tile-failure-actions {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 4px;
   flex-shrink: 0;
 }
 
-.update-banner-btn {
+.tile-failure-btn {
   background: none;
   border: none;
-  color: #8ab4f8;
-  font-size: 0.9rem;
+  color: #ffd7a8;
+  font: inherit;
   font-weight: 500;
   cursor: pointer;
   padding: 6px 12px;
   border-radius: 4px;
+}
+
+.tile-failure-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.tile-failure-retry {
   text-transform: uppercase;
   letter-spacing: 0.02em;
 }
 
-.update-banner-btn:active {
+.tile-failure-retry:active {
   background: rgb(255 255 255 / 10%);
+}
+
+.tile-failure-dismiss {
+  font-size: 1.3rem;
+  line-height: 1;
+  padding: 2px 8px;
+  color: rgb(255 255 255 / 70%);
+}
+
+.tile-failure-dismiss:hover {
+  color: #fff;
 }
 
 /* Map picker */
@@ -950,7 +971,7 @@ body:has(.app-scroll) {
     margin: 0 auto;
   }
 
-  .update-banner {
+  .tile-failure-notice {
     padding-left: max(16px, calc((100% - 720px) / 2));
     padding-right: max(16px, calc((100% - 720px) / 2));
   }
@@ -1232,6 +1253,27 @@ dialog.about-dialog::backdrop {
 .about-section a:focus-visible {
   outline: 2px solid #1a73e8;
   outline-offset: 2px;
+}
+
+.about-diag-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.about-diag-list dt {
+  color: #999;
+  white-space: nowrap;
+}
+
+.about-diag-list dd {
+  margin: 0;
+  color: #333;
+  overflow-wrap: break-word;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── X-ray overlay panel ───────────────────────────────────── */

@@ -24,6 +24,8 @@ export interface SpatialPanelLifecycle {
     position: UserPosition,
     articles: NearbyArticle[],
     source: PositionSource,
+    /** The nearest tile failed to load — passed through to the active view. */
+    degraded?: boolean,
   ): void;
   highlight(title: string | null): void;
   resize(): void;
@@ -64,6 +66,7 @@ export function createSpatialPanelLifecycle(
   let lastPosition: UserPosition | null = null;
   let lastArticles: NearbyArticle[] = [];
   let lastSource: PositionSource = "gps";
+  let lastDegraded = false;
   let lastHighlight: string | null = null;
 
   let panelEl: HTMLElement | null = null;
@@ -94,7 +97,7 @@ export function createSpatialPanelLifecycle(
     applyActiveKind();
     const view = activeView();
     if (view && lastPosition) {
-      view.update(lastPosition, lastArticles, lastSource);
+      view.update(lastPosition, lastArticles, lastSource, lastDegraded);
       view.highlight(lastHighlight);
       view.resize();
     }
@@ -165,12 +168,13 @@ export function createSpatialPanelLifecycle(
   }
 
   return {
-    update(position, articles, source) {
+    update(position, articles, source, degraded = false) {
       lastPosition = position;
       lastArticles = articles;
       lastSource = source;
+      lastDegraded = degraded;
       ensureBuilt();
-      activeView()?.update(position, articles, source);
+      activeView()?.update(position, articles, source, degraded);
     },
     highlight(title) {
       lastHighlight = title;
@@ -191,6 +195,7 @@ export function createSpatialPanelLifecycle(
       lastPosition = null;
       lastArticles = [];
       lastSource = "gps";
+      lastDegraded = false;
       lastHighlight = null;
     },
   };

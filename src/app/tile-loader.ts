@@ -504,8 +504,31 @@ export async function loadTile(
 
   // Fetch from network, with retry-with-backoff for transient failures
   const buf = await fetchTileBuffer(baseUrl, lang, entry.id, signal);
-  const { fd, payload } = deserializeBinary(buf);
-  const { articles, weights } = decodeArticlePayload(payload);
+
+  // The bytes arrived (fetchTileBuffer already recorded a successful network
+  // load), but a corrupt or old-format tile makes deserialize/decode throw.
+  // Record the failure so the session tile-log and console reflect why this
+  // tile is missing — otherwise the fetch shows as ok and the tile silently
+  // vanishes. Re-throw so the effect executor turns it into tileLoadFailed.
+  let deserialized: ReturnType<typeof deserializeBinary>;
+  let decoded: ReturnType<typeof decodeArticlePayload>;
+  try {
+    deserialized = deserializeBinary(buf);
+    decoded = decodeArticlePayload(deserialized.payload);
+  } catch (err) {
+    recordTileLoad({
+      at: Date.now(),
+      lang,
+      id: entry.id,
+      source: "network",
+      ok: false,
+      ms: performance.now() - loadStart,
+      error: `deserialize failed: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    throw err;
+  }
+  const { fd } = deserialized;
+  const { articles, weights } = decoded;
 
   // Cache in IDB
   if (db) {

@@ -33,7 +33,7 @@ export interface RenderDeps {
     onRetry: () => void,
     lang: Lang,
   ) => void;
-  renderAppUpdateBanner: () => void;
+  reloadApp: () => void;
   showMapPicker: () => void;
   scrollToTop: () => void;
   restoreScrollTop: (firstVisibleIndex: number) => void;
@@ -189,12 +189,23 @@ export function createEffectExecutor(
         .loadTile(lang, entry, signal)
         .then((tileQuery) => {
           if (gen !== deps.getState().loadGeneration) return;
-          deps.dispatch({ type: "tileLoaded", id, tileQuery, gen });
+          deps.dispatch({
+            type: "tileLoaded",
+            id,
+            tileQuery,
+            gen,
+            primary: isPrimary,
+          });
         })
         .catch(() => {
           if (signal.aborted) return;
           if (gen !== deps.getState().loadGeneration) return;
-          deps.dispatch({ type: "tileLoadFailed", id, gen });
+          deps.dispatch({
+            type: "tileLoadFailed",
+            id,
+            gen,
+            primary: isPrimary,
+          });
         });
 
       if (isPrimary) {
@@ -307,8 +318,8 @@ export function createEffectExecutor(
       case "showMapPicker":
         deps.ui.showMapPicker();
         break;
-      case "showAppUpdateBanner":
-        deps.ui.renderAppUpdateBanner();
+      case "reloadApp":
+        deps.ui.reloadApp();
         break;
       case "requery": {
         const state = deps.getState();

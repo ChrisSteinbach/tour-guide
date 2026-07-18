@@ -37,9 +37,11 @@ function makeState(overrides: Partial<AppState> = {}): AppState {
     loadGeneration: 0,
     loadingTiles: new Set(),
     downloadProgress: -1,
-    updateBanner: null,
+    pendingReload: false,
     hasGeolocation: true,
     gpsSignalLost: false,
+    primaryTileFailed: false,
+    tileFailureDismissed: false,
     viewportFillCount: DEFAULT_VIEWPORT_FILL,
     aboutOpen: false,
     ...overrides,
@@ -510,6 +512,7 @@ describe("pickPosition event", () => {
       id: "t1",
       tileQuery: stubNearestQuery,
       gen: 3,
+      primary: false,
     });
 
     // Should be ignored — no tile added, no phase change
@@ -1252,32 +1255,71 @@ describe("forwardToDetail event", () => {
 // ── swUpdateAvailable event (tour-guide-2lw) ─────────────
 
 describe("swUpdateAvailable event", () => {
-  it("sets updateBanner and emits showAppUpdateBanner", () => {
-    const state = makeState();
-    const { next, effects } = transition(state, {
-      type: "swUpdateAvailable",
-    });
-    expect(next.updateBanner).toBe("app");
-    expect(effectTypes(effects)).toContain("showAppUpdateBanner");
-  });
-
-  it("no-ops when app update banner already showing", () => {
-    const state = makeState({ updateBanner: "app" });
-    const { next, effects } = transition(state, {
-      type: "swUpdateAvailable",
-    });
-    expect(next).toBe(state);
-    expect(effects).toEqual([]);
-  });
-
-  it("works in any phase", () => {
+  it("reloads immediately when not mid-article or mid-pick", () => {
     const state = browsingState();
     const { next, effects } = transition(state, {
       type: "swUpdateAvailable",
     });
-    expect(next.updateBanner).toBe("app");
+    expect(effectTypes(effects)).toContain("reloadApp");
+    expect(next.pendingReload).toBe(false);
+  });
+
+  it("defers the reload while viewing an article", () => {
+    const state = browsingState();
+    const browsing = expectBrowsing(state);
+    const { next: detail } = transition(state, {
+      type: "selectArticle",
+      article: browsing.articles[0],
+      firstVisibleIndex: 0,
+    });
+    const { next, effects } = transition(detail, {
+      type: "swUpdateAvailable",
+    });
+    expect(effectTypes(effects)).not.toContain("reloadApp");
+    expect(next.pendingReload).toBe(true);
+  });
+
+  it("defers the reload while picking on the map", () => {
+    const state = browsingState();
+    const { next: picker } = transition(state, { type: "showMapPicker" });
+    expect(picker.phase.phase).toBe("mapPicker");
+    const { next, effects } = transition(picker, {
+      type: "swUpdateAvailable",
+    });
+    expect(effectTypes(effects)).not.toContain("reloadApp");
+    expect(next.pendingReload).toBe(true);
+  });
+
+  it("is a no-op when a reload is already pending", () => {
+    const state = browsingState();
+    const browsing = expectBrowsing(state);
+    const { next: detail } = transition(state, {
+      type: "selectArticle",
+      article: browsing.articles[0],
+      firstVisibleIndex: 0,
+    });
+    const pending = { ...detail, pendingReload: true };
+    const { next, effects } = transition(pending, {
+      type: "swUpdateAvailable",
+    });
+    expect(next).toBe(pending);
+    expect(effects).toEqual([]);
+    expect(next.pendingReload).toBe(true);
+  });
+
+  it("fires the deferred reload when returning from detail to browsing", () => {
+    const state = browsingState({ nearbyCount: 20, paused: true });
+    const browsing = expectBrowsing(state);
+    const { next: detail } = transition(state, {
+      type: "selectArticle",
+      article: browsing.articles[0],
+      firstVisibleIndex: 0,
+    });
+    const pending = { ...detail, pendingReload: true };
+    const { next, effects } = transition(pending, { type: "back" });
+    expect(effectTypes(effects)).toContain("reloadApp");
+    expect(next.pendingReload).toBe(false);
     expect(next.phase.phase).toBe("browsing");
-    expect(effectTypes(effects)).toContain("showAppUpdateBanner");
   });
 });
 
@@ -1498,6 +1540,7 @@ describe("tileLoaded event", () => {
       id: "27-36",
       tileQuery,
       gen: 0,
+      primary: true,
     });
     expect(next.phase.phase).toBe("browsing");
     expect(next.loadingTiles.has("27-36")).toBe(false);
@@ -1515,6 +1558,7 @@ describe("tileLoaded event", () => {
       id: "28-37",
       tileQuery,
       gen: 0,
+      primary: false,
     });
     expect(next.phase.phase).toBe("browsing");
     expect(next.loadingTiles.has("28-37")).toBe(false);
@@ -1536,6 +1580,7 @@ describe("tileLoaded event", () => {
       id: "28-37",
       tileQuery,
       gen: 0,
+      primary: false,
     });
     expect(next.phase.phase).toBe("detail");
     expect(next.loadingTiles.has("28-37")).toBe(false);
@@ -1556,6 +1601,7 @@ describe("tileLoaded event", () => {
       id: "27-36",
       tileQuery,
       gen: 1,
+      primary: false,
     });
     expect(next).toBe(state);
     expect(effects).toEqual([]);
@@ -1571,6 +1617,7 @@ describe("tileLoadFailed event", () => {
       type: "tileLoadFailed",
       id: "27-36",
       gen: 0,
+      primary: false,
     });
     expect(next.loadingTiles.has("27-36")).toBe(false);
     expect(next.loadingTiles.has("28-37")).toBe(true);
@@ -1590,6 +1637,7 @@ describe("tileLoadFailed event", () => {
       type: "tileLoadFailed",
       id: "27-36",
       gen: 0,
+      primary: true,
     });
     const browsing = expectBrowsing(next);
     expect(browsing.articles).toEqual([]);
@@ -1616,6 +1664,7 @@ describe("tileLoadFailed event", () => {
       type: "tileLoadFailed",
       id: "28-37",
       gen: 0,
+      primary: false,
     });
     expect(next.phase.phase).toBe("browsing");
     expect(next.loadingTiles.has("28-37")).toBe(false);
@@ -1634,6 +1683,7 @@ describe("tileLoadFailed event", () => {
       type: "tileLoadFailed",
       id: "27-36",
       gen: 0,
+      primary: true,
     });
     expect(next.phase.phase).toBe("loadingTiles");
     expect(next.loadingTiles.has("27-36")).toBe(false);
@@ -1646,6 +1696,7 @@ describe("tileLoadFailed event", () => {
       type: "tileLoadFailed",
       id: "28-37",
       gen: 0,
+      primary: false,
     });
     expectBrowsing(next);
     expect(next.loadingTiles.has("28-37")).toBe(false);
@@ -1663,6 +1714,7 @@ describe("tileLoadFailed event", () => {
       type: "tileLoadFailed",
       id: "28-37",
       gen: 0,
+      primary: false,
     });
     expectDetail(next);
     expect(next.loadingTiles.has("28-37")).toBe(false);
@@ -1678,6 +1730,7 @@ describe("tileLoadFailed event", () => {
       type: "tileLoadFailed",
       id: "27-36",
       gen: 1,
+      primary: false,
     });
     expect(next).toBe(state);
     expect(effects).toEqual([]);
@@ -1979,6 +2032,7 @@ describe("scroll mode transitions", () => {
       id: "27-36",
       tileQuery: stubNearestQuery,
       gen: pick.next.loadGeneration,
+      primary: true,
     });
     const browsing = expectBrowsing(loaded.next);
     expect(browsing.scrollMode).toBe("infinite");
@@ -1995,6 +2049,7 @@ describe("scroll mode transitions", () => {
       id: "27-36",
       tileQuery: stubNearestQuery,
       gen: pick.next.loadGeneration,
+      primary: true,
     });
     const requery = loaded.effects.find((e) => e.type === "requery");
     expect(requery).toMatchObject({ count: INFINITE_SCROLL_INITIAL });
@@ -2245,5 +2300,160 @@ describe("showAbout event", () => {
     const { next, effects } = transition(state, { type: "showAbout" });
     expect(next.aboutOpen).toBe(true);
     expect(effects).toHaveLength(0);
+  });
+});
+
+// ── Tile-load failure notice ─────────────────────────────────
+
+describe("tile-load failure notice", () => {
+  describe("tileLoadFailed", () => {
+    it("sets primaryTileFailed and clears tileFailureDismissed when the primary tile fails during loadingTiles", () => {
+      const tiledQuery = makeTiledQuery();
+      const state = makeState({
+        phase: { phase: "loadingTiles" },
+        query: tiledQuery,
+        position: paris,
+        loadingTiles: new Set(["27-36"]),
+      });
+      const { next } = transition(state, {
+        type: "tileLoadFailed",
+        id: "27-36",
+        gen: 0,
+        primary: true,
+      });
+      expect(next.primaryTileFailed).toBe(true);
+      expect(next.tileFailureDismissed).toBe(false);
+    });
+
+    it("leaves primaryTileFailed unchanged when a non-primary tile fails", () => {
+      const state = browsingState({ loadingTiles: new Set(["28-37"]) });
+      const { next } = transition(state, {
+        type: "tileLoadFailed",
+        id: "28-37",
+        gen: 0,
+        primary: false,
+      });
+      expect(next.primaryTileFailed).toBe(false);
+    });
+
+    it("surfaces the notice when the primary tile fails while already browsing", () => {
+      const state = browsingState({ loadingTiles: new Set(["27-36"]) });
+      const { next, effects } = transition(state, {
+        type: "tileLoadFailed",
+        id: "27-36",
+        gen: 0,
+        primary: true,
+      });
+      expect(next.primaryTileFailed).toBe(true);
+      expect(effectTypes(effects)).toContain("renderBrowsingHeader");
+    });
+  });
+
+  describe("tileLoaded", () => {
+    it("clears primaryTileFailed and tileFailureDismissed when the primary tile recovers", () => {
+      const state = browsingState({
+        primaryTileFailed: true,
+        tileFailureDismissed: true,
+        loadingTiles: new Set(["27-36"]),
+      });
+      const { next } = transition(state, {
+        type: "tileLoaded",
+        id: "27-36",
+        tileQuery: stubNearestQuery,
+        gen: 0,
+        primary: true,
+      });
+      expect(next.primaryTileFailed).toBe(false);
+      expect(next.tileFailureDismissed).toBe(false);
+    });
+  });
+
+  describe("retryTiles event", () => {
+    it("emits loadTiles for the current language with a tiled query and a position", () => {
+      const state = browsingState({ currentLang: "de" });
+      const { next, effects } = transition(state, { type: "retryTiles" });
+      expect(next).toBe(state);
+      expect(effectTypes(effects)).toContain("loadTiles");
+      const loadTiles = effects.find((e) => e.type === "loadTiles");
+      expect(loadTiles).toMatchObject({ lang: state.currentLang });
+    });
+
+    it("is a no-op when the query mode is none", () => {
+      const state = makeState({ query: { mode: "none" }, position: paris });
+      const { next, effects } = transition(state, { type: "retryTiles" });
+      expect(next).toBe(state);
+      expect(effects).toEqual([]);
+    });
+
+    it("is a no-op when there is no position", () => {
+      const state = makeState({ query: sampleQuery, position: null });
+      const { next, effects } = transition(state, { type: "retryTiles" });
+      expect(next).toBe(state);
+      expect(effects).toEqual([]);
+    });
+  });
+
+  describe("dismissTileFailure event", () => {
+    it("dismisses the notice and re-renders the header", () => {
+      const state = browsingState({
+        primaryTileFailed: true,
+        tileFailureDismissed: false,
+      });
+      const { next, effects } = transition(state, {
+        type: "dismissTileFailure",
+      });
+      expect(next.tileFailureDismissed).toBe(true);
+      expect(effectTypes(effects)).toContain("renderBrowsingHeader");
+    });
+
+    it("is a no-op when the primary tile has not failed", () => {
+      const state = browsingState({ primaryTileFailed: false });
+      const { next, effects } = transition(state, {
+        type: "dismissTileFailure",
+      });
+      expect(next).toBe(state);
+      expect(effects).toEqual([]);
+    });
+  });
+
+  describe("reset on load-context change", () => {
+    it("resets on langChanged to a different language", () => {
+      const state = browsingState({
+        currentLang: "en",
+        primaryTileFailed: true,
+        tileFailureDismissed: true,
+      });
+      const { next } = transition(state, {
+        type: "langChanged",
+        lang: "de",
+      });
+      expect(next.primaryTileFailed).toBe(false);
+      expect(next.tileFailureDismissed).toBe(false);
+    });
+
+    it("resets on pickPosition with a tiled query", () => {
+      const state = makeState({
+        query: makeTiledQuery(),
+        primaryTileFailed: true,
+        tileFailureDismissed: true,
+      });
+      const { next } = transition(state, {
+        type: "pickPosition",
+        position: paris,
+      });
+      expect(next.primaryTileFailed).toBe(false);
+      expect(next.tileFailureDismissed).toBe(false);
+    });
+
+    it("resets on useGps from browsing with a picked position", () => {
+      const state = browsingState({
+        positionSource: "picked",
+        primaryTileFailed: true,
+        tileFailureDismissed: true,
+      });
+      const { next } = transition(state, { type: "useGps" });
+      expect(next.primaryTileFailed).toBe(false);
+      expect(next.tileFailureDismissed).toBe(false);
+    });
   });
 });

@@ -442,6 +442,7 @@ export function createRadarView(
   function applyData(
     newPosition: UserPosition,
     newArticles: NearbyArticle[],
+    degraded = false,
   ): void {
     pos = newPosition;
     const capped = newArticles.slice(0, MAX_BLIPS);
@@ -451,11 +452,18 @@ export function createRadarView(
     }));
     range = radarRange(capped.length ? capped[capped.length - 1].distanceM : 0);
     empty.hidden = contacts.length > 0;
+    // A failed nearest tile makes an empty (or far-flung) radar read as a
+    // malfunction; name the cause instead.
+    empty.textContent = degraded
+      ? "Couldn’t load nearby articles"
+      : "No articles in range";
     canvas.setAttribute(
       "aria-label",
       contacts.length
         ? `Radar showing ${contacts.length} nearby articles within ${formatDistance(range.maxM)}`
-        : "Radar with no articles in range",
+        : degraded
+          ? "Radar — couldn’t load nearby articles"
+          : "Radar with no articles in range",
     );
     markDirty();
   }
@@ -466,9 +474,9 @@ export function createRadarView(
   schedule();
 
   return {
-    update(newPosition, newArticles, newSource) {
+    update(newPosition, newArticles, newSource, degraded = false) {
       if (newSource !== source) applySource(newSource);
-      applyData(newPosition, newArticles);
+      applyData(newPosition, newArticles, degraded);
     },
     highlight(title) {
       if (title !== highlightTitle) {

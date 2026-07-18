@@ -110,11 +110,24 @@ export interface AppState {
   loadGeneration: number;
   loadingTiles: Set<string>;
   downloadProgress: number;
-  /** Which update banner (if any) is showing. App updates take priority. */
-  updateBanner: null | "app";
+  /** A service-worker update arrived while the user was mid-article (detail)
+   *  or mid-pick (mapPicker) — phases whose view state is not encoded in the
+   *  URL hash. The reload is deferred until they return to a hash-restorable
+   *  phase. See the swUpdateAvailable handler and the transition() wrapper. */
+  pendingReload: boolean;
   hasGeolocation: boolean;
   /** True when GPS signal is lost mid-session (cleared on next position). */
   gpsSignalLost: boolean;
+  /** The nearest ("primary") tile for the current position failed to load and
+   *  has not since succeeded. When the list still fills from adjacent tiles the
+   *  results are real but distant; when nothing loaded the list is empty. Drives
+   *  the tile-load failure notice and the empty-state retry affordance. Set and
+   *  cleared as the primary tile settles (see tileLoaded/tileLoadFailed); reset
+   *  when the load context changes (language switch, re-pick, GPS switch). */
+  primaryTileFailed: boolean;
+  /** The user dismissed the degraded-results notice. Reset whenever the
+   *  primary-tile failure state changes so a fresh failure re-shows it. */
+  tileFailureDismissed: boolean;
   /** How many articles to show in the initial viewport-filling view. */
   viewportFillCount: number;
   /** Whether the About dialog is currently open. */
@@ -135,8 +148,15 @@ export type Event =
       lang: Lang;
       gen: number;
     }
-  | { type: "tileLoaded"; id: string; tileQuery: NearestQuery; gen: number }
-  | { type: "tileLoadFailed"; id: string; gen: number }
+  | {
+      type: "tileLoaded";
+      id: string;
+      tileQuery: NearestQuery;
+      gen: number;
+      /** Whether this was the nearest tile attempted for the position. */
+      primary: boolean;
+    }
+  | { type: "tileLoadFailed"; id: string; gen: number; primary: boolean }
   | { type: "downloadProgress"; fraction: number; gen: number }
   | { type: "langChanged"; lang: Lang; persist?: boolean }
   | {
@@ -159,6 +179,8 @@ export type Event =
       count: number;
     }
   | { type: "noTilesNearby" }
+  | { type: "retryTiles" }
+  | { type: "dismissTileFailure" }
   | { type: "swUpdateAvailable" }
   | { type: "articlesSync"; articles: NearbyArticle[] }
   | { type: "showAbout" }
@@ -183,7 +205,7 @@ export type Effect =
   | { type: "pushHistory"; state: unknown }
   | { type: "fetchSummary"; article: NearbyArticle }
   | { type: "showMapPicker" }
-  | { type: "showAppUpdateBanner" }
+  | { type: "reloadApp" }
   | { type: "requery"; pos: UserPosition; count: number }
   | { type: "fetchListSummaries" }
   | { type: "scrollToTop" }
@@ -259,21 +281,34 @@ function forceRequery(state: AppState): TransitionResult {
 // If the About button is added to other phases, update this set.
 const ABOUT_PHASES = new Set<Phase["phase"]>(["welcome", "browsing"]);
 
+// Phases whose view state is NOT encoded in the URL hash, so a service-worker
+// reload would discard it. A pending reload waits until the app leaves these.
+const RELOAD_DEFER_PHASES = new Set<Phase["phase"]>(["detail", "mapPicker"]);
+
 export function transition(state: AppState, event: Event): TransitionResult {
   const result = transitionCore(state, event);
+  let next = result.next;
+  let effects = result.effects;
+
   // Auto-dismiss the about dialog when leaving a phase where it can be open.
   if (
     state.aboutOpen &&
-    result.next.phase.phase !== state.phase.phase &&
+    next.phase.phase !== state.phase.phase &&
     ABOUT_PHASES.has(state.phase.phase)
   ) {
-    return {
-      ...result,
-      next: { ...result.next, aboutOpen: false },
-      effects: [{ type: "hideAbout" }, ...result.effects],
-    };
+    next = { ...next, aboutOpen: false };
+    effects = [{ type: "hideAbout" }, ...effects];
   }
-  return result;
+
+  // Fire a deferred service-worker reload once the app lands on a phase whose
+  // state survives a reload (anything but detail/mapPicker). swUpdateAvailable
+  // only sets pendingReload while in a deferred phase, so this never loops.
+  if (next.pendingReload && !RELOAD_DEFER_PHASES.has(next.phase.phase)) {
+    next = { ...next, pendingReload: false };
+    effects = [...effects, { type: "reloadApp" }];
+  }
+
+  return { next, effects };
 }
 
 function transitionCore(state: AppState, event: Event): TransitionResult {
@@ -554,6 +589,8 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
         positionSource: "gps",
         position: hasGpsPosition ? state.position : null,
         phase: updatedPhase,
+        primaryTileFailed: false,
+        tileFailureDismissed: false,
       };
       const effects: Effect[] = [{ type: "startGps" }];
 
@@ -760,13 +797,19 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
     // ── Update banner (tour-guide-2lw) ─────────────────────
 
     case "swUpdateAvailable": {
-      if (state.updateBanner === "app") {
-        return { next: state, effects: [] };
+      // registerType 'autoUpdate' means the incoming service worker has already
+      // skipWaited and claimed clients by the time controllerchange fires — the
+      // caches and SW are new, and only the JS running in this tab is stale (and
+      // outright broken after a tile-format flip: old code + new tiles = silent
+      // empty list). Reload to match. App state survives via the URL hash, so
+      // the reload is cheap. Defer only while mid-article or mid-pick, whose
+      // view state is not hash-encoded; the transition() wrapper fires the
+      // reload when the user returns to a hash-restorable phase.
+      if (RELOAD_DEFER_PHASES.has(state.phase.phase)) {
+        if (state.pendingReload) return { next: state, effects: [] };
+        return { next: { ...state, pendingReload: true }, effects: [] };
       }
-      return {
-        next: { ...state, updateBanner: "app" },
-        effects: [{ type: "showAppUpdateBanner" }],
-      };
+      return { next: state, effects: [{ type: "reloadApp" }] };
     }
 
     case "showAbout": {
@@ -804,6 +847,8 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
         loadGeneration: state.loadGeneration + 1,
         loadingTiles: new Set(),
         downloadProgress: -1,
+        primaryTileFailed: false,
+        tileFailureDismissed: false,
         phase: hasStarted
           ? { phase: "downloading", progress: -1 }
           : state.phase,
@@ -899,13 +944,31 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
         ...state,
         query: { ...state.query, tiles: newTiles },
         loadingTiles: newLoadingTiles,
+        // The nearest tile recovered — clear any failure notice.
+        ...(event.primary
+          ? { primaryTileFailed: false, tileFailureDismissed: false }
+          : {}),
       };
 
       if (state.phase.phase === "loadingTiles" && state.position) {
         return enterBrowsing(next);
       }
       if (state.phase.phase === "browsing" || state.phase.phase === "detail") {
-        return forceRequery(next);
+        const rq = forceRequery(next);
+        // On primary recovery while browsing, re-sync the notice even if the
+        // article list is unchanged (requery would otherwise emit only
+        // updateDistances, which doesn't touch the notice).
+        if (
+          event.primary &&
+          state.primaryTileFailed &&
+          rq.next.phase.phase === "browsing"
+        ) {
+          return {
+            next: rq.next,
+            effects: [...rq.effects, { type: "renderBrowsingHeader" }],
+          };
+        }
+        return rq;
       }
       return { next, effects: [] };
     }
@@ -916,7 +979,14 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
       }
       const failedLoadingTiles = new Set(state.loadingTiles);
       failedLoadingTiles.delete(event.id);
-      const next: AppState = { ...state, loadingTiles: failedLoadingTiles };
+      const next: AppState = {
+        ...state,
+        loadingTiles: failedLoadingTiles,
+        // The nearest tile failed — surface the notice / empty-state retry.
+        ...(event.primary
+          ? { primaryTileFailed: true, tileFailureDismissed: false }
+          : {}),
+      };
       if (
         state.phase.phase === "loadingTiles" &&
         state.position &&
@@ -946,6 +1016,11 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
           effects: [{ type: "renderBrowsingList" }],
         };
       }
+      // Primary failed while already browsing (e.g. a GPS move into a region
+      // whose nearest tile won't load): surface the notice over the list.
+      if (event.primary && state.phase.phase === "browsing") {
+        return { next, effects: [{ type: "renderBrowsingHeader" }] };
+      }
       return { next, effects: [] };
     }
 
@@ -970,6 +1045,30 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
           },
         },
         effects: [{ type: "renderBrowsingList" }],
+      };
+    }
+
+    case "retryTiles": {
+      // Re-attempt tiles for the current position. A failed tile sits in
+      // neither `tiles` nor `loadingTiles`, so loadTiles picks it up again.
+      // This is the only retry path in picked-position mode, where there are
+      // no GPS ticks to re-drive tile loading.
+      if (state.query.mode !== "tiled" || !state.position) {
+        return { next: state, effects: [] };
+      }
+      return {
+        next: state,
+        effects: [{ type: "loadTiles", lang: state.currentLang }],
+      };
+    }
+
+    case "dismissTileFailure": {
+      if (!state.primaryTileFailed || state.tileFailureDismissed) {
+        return { next: state, effects: [] };
+      }
+      return {
+        next: { ...state, tileFailureDismissed: true },
+        effects: [{ type: "renderBrowsingHeader" }],
       };
     }
 
@@ -1016,6 +1115,8 @@ function handlePickPosition(
     query: { ...state.query, tiles: new Map() },
     loadingTiles: new Set(),
     loadGeneration: state.loadGeneration + 1,
+    primaryTileFailed: false,
+    tileFailureDismissed: false,
   };
   const result = enterBrowsing(cleared);
   return {
