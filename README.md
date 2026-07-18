@@ -151,8 +151,6 @@ Mismatched paths will cause tile loading to silently fail.
 ## Architecture
 
 ```
-lib/
-└── spherical-delaunay/  Geometry workspace package (convex hull, Delaunay, queries, serialization)
 src/
 ├── pipeline/            Offline extraction and build (runs via tsx, not Vite)
 ├── app/                 PWA frontend (Vite root)
@@ -161,10 +159,11 @@ src/
 └── article-payload.ts   Article metadata payload codec (titles + weight classes)
 ```
 
-- **`lib/spherical-delaunay/`** — Standalone workspace package: coordinate
-  conversion, great-circle distance, incremental 3D convex hull, spherical
-  Delaunay triangulation, triangle walks, and metadata-agnostic binary
-  serialization. Shared by both the pipeline and the app.
+- **[`spherical-delaunay`](https://github.com/ChrisSteinbach/spherical-delaunay)**
+  — External npm package: coordinate conversion, great-circle distance,
+  incremental 3D convex hull, spherical Delaunay triangulation, triangle
+  walks, and metadata-agnostic binary serialization. Shared by both the
+  pipeline and the app.
 - **`pipeline/`** — Downloads and parses Wikipedia SQL dumps, joins coordinates
   with article titles, and builds tiled binary triangulation files.
 - **`app/`** — Installable PWA that requests the user's location, loads tiles on
@@ -224,9 +223,10 @@ The user-facing app is called **WikiRadar** (PWA manifest, UI, docs). The reposi
 
 [ISC](LICENSE)
 
-This project includes vendored code from
+This project's [`spherical-delaunay`](https://github.com/ChrisSteinbach/spherical-delaunay)
+dependency includes vendored code from
 [robust-predicates](https://github.com/mourner/robust-predicates) by Vladimir
 Agafonkin (based on Jonathan Shewchuk's exact arithmetic predicates), released
 into the public domain under the [Unlicense](https://unlicense.org). See
-[`lib/spherical-delaunay/src/vendor/robust-predicates/LICENSE`](lib/spherical-delaunay/src/vendor/robust-predicates/LICENSE)
+[`spherical-delaunay`'s vendored copy](https://github.com/ChrisSteinbach/spherical-delaunay/blob/HEAD/src/vendor/robust-predicates/LICENSE)
 for details.

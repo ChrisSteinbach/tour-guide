@@ -4,7 +4,6 @@ import { VitePWA } from "vite-plugin-pwa";
 import { APP_NAME } from "./src/app/config";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
 /** Serve tile data from the data/ directory during development. */
 function serveData(): Plugin {
@@ -52,15 +51,6 @@ function serveData(): Plugin {
 export default defineConfig({
   root: "src/app",
   base: "/",
-  resolve: {
-    alias: {
-      // Live-source mapping for the workspace package; the published entry
-      // points at dist/ (lib/spherical-delaunay/package.json "exports").
-      "spherical-delaunay": fileURLToPath(
-        new URL("./lib/spherical-delaunay/src/index.ts", import.meta.url),
-      ),
-    },
-  },
   server: {
     host: "0.0.0.0",
   },

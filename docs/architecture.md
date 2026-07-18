@@ -80,7 +80,7 @@ IDB uses a single object store (created via `onupgradeneeded`) with versioned ke
 
 ### Nearest-Neighbor Query (`query.ts`)
 
-The `NearestQuery` class wraps the flat Delaunay data for a single tile and provides `findNearest(lat, lon, k)`. The query algorithms live in the geometry library (`lib/spherical-delaunay/src/flat-query.ts`, entered through `createQueryContext` and `findNearestVertices`); `NearestQuery` is the adapter that maps vertex indices to article titles, weight classes (its `minWeight` option becomes a vertex predicate), and distances in meters. Cross-tile merging is handled by `findNearestTiled()` in `tile-loader.ts`, which queries each loaded tile independently, de-duplicates by title, sorts by distance, and returns the top k.
+The `NearestQuery` class wraps the flat Delaunay data for a single tile and provides `findNearest(lat, lon, k)`. The query algorithms live in the external [`spherical-delaunay`](https://github.com/ChrisSteinbach/spherical-delaunay) package (its flat-query module, entered through `createQueryContext` and `findNearestVertices`); `NearestQuery` is the adapter that maps vertex indices to article titles, weight classes (its `minWeight` option becomes a vertex predicate), and distances in meters. Cross-tile merging is handled by `findNearestTiled()` in `tile-loader.ts`, which queries each loaded tile independently, de-duplicates by title, sorts by distance, and returns the top k.
 
 Per-tile query steps:
 
@@ -182,9 +182,9 @@ Triggered manually via `workflow_dispatch`:
 
 Data and app code are decoupled — data updates don't require app rebuilds, and app deploys pull the latest data from the release.
 
-## Geometry Library
+## Geometry Library (`spherical-delaunay`)
 
-All modules live under `lib/spherical-delaunay/src/` and are shared by the pipeline and app.
+Spherical math and triangulation come from the external [`spherical-delaunay`](https://github.com/ChrisSteinbach/spherical-delaunay) npm package, imported by both the pipeline and the app. It is no longer part of this repo — the subsections below summarize what it provides; see its own repository for source and full documentation.
 
 ### Coordinate System
 
@@ -256,13 +256,9 @@ src/pipeline/
   canary.ts            Post-extraction landmark validation
   dump-test-fixtures.ts Test fixture generator for dump parser
 
-lib/spherical-delaunay/src/
-  index.ts             Coord conversion, distance, bearing, circumcenter
-  convex-hull.ts       Incremental 3D convex hull
-  delaunay.ts          Spherical Delaunay from convex hull
-  flat-query.ts        Triangle walk, greedy nearest-neighbor, BFS k-NN
-  serialization.ts     Typed arrays ↔ binary format
-  predicates.ts        Robust orient3D (Shewchuk)
+spherical-delaunay (external npm package, not in this repo)
+  Coord conversion, convex hull, Delaunay triangulation, triangle-walk
+  queries, binary (de)serialization. https://github.com/ChrisSteinbach/spherical-delaunay
 
 src/app/
   main.ts              Entry point: creates state, dispatch loop, and invokes composeApp
@@ -331,7 +327,7 @@ src/pipeline/CLAUDE.md Module-specific dev instructions (extraction and pipeline
 
 - [Infinite Scroll](infinite-scroll.md) — Virtual scroll, article window, progressive tile loading, scroll-pause detection
 - [State Machine](state-machine.md) — App state machine: phases, events, effects, transition table
-- [Nearest-Neighbor Theory](nearest-neighbor.md) — Voronoi/Delaunay theory, spherical adaptation, 3D convex hull approach, triangle walks
+- [Nearest-Neighbor Theory](nearest-neighbor.md) — How WikiRadar applies `spherical-delaunay`'s triangle-walk queries to tiled data, with a pointer to the package's own theory docs
 - [Binary Format](binary-format.md) — Byte-level layout of `.bin` tile files
 - [Tiling Strategy](tiling.md) — Geographic tiling scheme, buffer zones, boundary handling
 - [Data Extraction](data-extraction.md) — Wikipedia dump extraction pipeline

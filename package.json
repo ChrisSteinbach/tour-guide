@@ -3,9 +3,6 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Wikipedia-powered tour guide using spherical nearest-neighbor search",
-  "workspaces": [
-    "lib/spherical-delaunay"
-  ],
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -16,11 +13,11 @@
     "pipeline": "tsx src/pipeline/build.ts",
     "extract": "tsx --max-old-space-size=6144 src/pipeline/extract-dump.ts",
     "pageviews": "tsx src/pipeline/pageviews.ts",
-    "lint": "tsc --noEmit && eslint src/ lib/ && stylelint \"src/**/*.css\" && prettier --check .",
-    "lint:fix": "eslint src/ lib/ --fix && stylelint \"src/**/*.css\" --fix && prettier --write .",
+    "lint": "tsc --noEmit && eslint src/ && stylelint \"src/**/*.css\" && prettier --check .",
+    "lint:fix": "eslint src/ --fix && stylelint \"src/**/*.css\" --fix && prettier --write .",
     "lint:stylelint": "stylelint \"src/**/*.css\"",
-    "lint:eslint": "eslint src/ lib/",
-    "lint:eslint:fix": "eslint src/ lib/ --fix",
+    "lint:eslint": "eslint src/",
+    "lint:eslint:fix": "eslint src/ --fix",
     "format": "prettier --check .",
     "format:fix": "prettier --write .",
     "prepare": "husky"
@@ -55,6 +52,6 @@
   "dependencies": {
     "@types/leaflet": "^1.9.21",
     "leaflet": "^1.9.4",
-    "spherical-delaunay": "*"
+    "spherical-delaunay": "^0.1.0"
   }
 }
