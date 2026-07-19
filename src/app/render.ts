@@ -1,5 +1,6 @@
 import type { ArticleFilter, NearbyArticle } from "./types";
 import type { ArticleSummary } from "./wiki-api";
+import { collapseCoincident, type CoincidentGroup } from "./coincident";
 import { formatDistance } from "./format";
 import type { Lang } from "../lang";
 import { createAppHeader } from "./header";
@@ -23,7 +24,8 @@ type FocusInfo =
   | { type: "pickLocation" }
   | { type: "useGps" }
   | { type: "aboutBtn" }
-  | { type: "article"; title: string };
+  | { type: "article"; title: string }
+  | { type: "moreToggle"; repTitle: string };
 
 function captureFocus(container: HTMLElement): FocusInfo | null {
   const active = document.activeElement;
@@ -37,6 +39,13 @@ function captureFocus(container: HTMLElement): FocusInfo | null {
     return { type: "pickLocation" };
   if (active.classList.contains("use-gps-btn")) return { type: "useGps" };
   if (active.classList.contains("about-btn")) return { type: "aboutBtn" };
+
+  if (active.classList.contains("nearby-more")) {
+    const group = (active as HTMLElement).closest<HTMLElement>(".nearby-group");
+    if (group?.dataset.repTitle)
+      return { type: "moreToggle", repTitle: group.dataset.repTitle };
+    return null;
+  }
 
   const item = (active as HTMLElement).closest<HTMLElement>(".nearby-item");
   if (item?.dataset.title)
@@ -74,6 +83,12 @@ function restoreFocus(container: HTMLElement, info: FocusInfo | null): void {
           container.querySelectorAll<HTMLElement>(".nearby-item"),
         ).find((el) => el.dataset.title === info.title) ?? null;
       break;
+    case "moreToggle":
+      target =
+        Array.from(container.querySelectorAll<HTMLElement>(".nearby-group"))
+          .find((el) => el.dataset.repTitle === info.repTitle)
+          ?.querySelector<HTMLElement>(".nearby-more") ?? null;
+      break;
   }
   target?.focus();
 }
@@ -85,14 +100,28 @@ export function createScrollWrapper(): HTMLDivElement {
   return el;
 }
 
-/** Update only the distance badges in an already-rendered list. */
+/**
+ * Update only the distance badges in an already-rendered list.
+ *
+ * Keyed by article title rather than by index: coincident groups collapse
+ * several articles into one expandable row, so the DOM row order no longer
+ * matches the flat `articles` order. Every rendered row (representative or a
+ * revealed member) is a `.nearby-item[data-title]`, so a title→distance map
+ * patches all of them regardless of how they are grouped.
+ */
 export function updateNearbyDistances(
   container: HTMLElement,
   articles: NearbyArticle[],
 ): void {
-  const badges = container.querySelectorAll(".nearby-distance");
-  for (let i = 0; i < articles.length && i < badges.length; i++) {
-    badges[i].textContent = formatDistance(articles[i].distanceM);
+  const distanceByTitle = new Map(articles.map((a) => [a.title, a.distanceM]));
+  const items = container.querySelectorAll<HTMLElement>(".nearby-item");
+  for (const item of items) {
+    const title = item.dataset.title;
+    if (title === undefined) continue;
+    const distanceM = distanceByTitle.get(title);
+    if (distanceM === undefined) continue;
+    const badge = item.querySelector(".nearby-distance");
+    if (badge) badge.textContent = formatDistance(distanceM);
   }
 }
 
@@ -296,19 +325,6 @@ export function createArticleItemContent(
   return item;
 }
 
-/** Create a single article list item element. */
-function createArticleItem(
-  article: NearbyArticle,
-  onSelectArticle: (article: NearbyArticle) => void,
-  onHoverArticle?: (title: string | null) => void,
-): HTMLLIElement {
-  const li = document.createElement("li");
-  li.appendChild(
-    createArticleItemContent(article, onSelectArticle, onHoverArticle),
-  );
-  return li;
-}
-
 /** Apply summary data (thumbnail + description) to a single .nearby-item element. */
 export function applyEnrichment(
   item: HTMLElement,
@@ -368,41 +384,89 @@ export function enrichArticleItem(
 }
 
 /**
- * Reconcile list items by article title key.
- * Reuses existing DOM nodes for articles still present, only creating nodes
- * for new articles. Removed articles are discarded by replaceChildren.
+ * A coincident group collapses into one expandable row once it reaches this
+ * many members; smaller groups (i.e. lone articles) render as a single plain
+ * row. Two matches the radar/map, which draw a count badge for every
+ * coincident group of two or more.
  */
-function reconcileListItems(
+const COINCIDENT_COLLAPSE_MIN = 2;
+
+/**
+ * Render `groups` into `ul`, reusing existing `.nearby-item` nodes by title so
+ * thumbnails/descriptions survive a re-render even when an article moves
+ * between the representative and member slots. A lone article renders as one
+ * plain row (unchanged behavior). A coincident group renders its
+ * representative plus a "+N more here" toggle that reveals the other members;
+ * every member stays individually tappable. Expansion state is preserved
+ * across re-renders, keyed by representative title.
+ *
+ * This replaces the old flat title-keyed reconciliation: distances are still
+ * patched on reused nodes, but rows are now assembled into collapsed groups
+ * rather than a flat one-li-per-article list.
+ */
+function renderCollapsedGroups(
   ul: HTMLUListElement,
-  articles: NearbyArticle[],
+  groups: CoincidentGroup[],
   onSelectArticle: (article: NearbyArticle) => void,
   onHoverArticle?: (title: string | null) => void,
 ): void {
-  const existingByTitle = new Map<string, HTMLLIElement>();
-  for (const child of Array.from(ul.children)) {
-    const li = child as HTMLLIElement;
-    const item = li.querySelector<HTMLElement>(".nearby-item");
-    if (item?.dataset.title) {
-      existingByTitle.set(item.dataset.title, li);
+  const existingItems = new Map<string, HTMLElement>();
+  for (const item of ul.querySelectorAll<HTMLElement>(".nearby-item")) {
+    const title = item.dataset.title;
+    if (title !== undefined) existingItems.set(title, item);
+  }
+
+  // Preserve which groups the user has expanded, keyed by representative title.
+  const expandedReps = new Set<string>();
+  for (const li of ul.querySelectorAll<HTMLElement>(".nearby-group")) {
+    if (li.dataset.expanded === "true" && li.dataset.repTitle !== undefined) {
+      expandedReps.add(li.dataset.repTitle);
     }
   }
 
-  const newChildren: HTMLLIElement[] = [];
-  for (const article of articles) {
-    const existing = existingByTitle.get(article.title);
-    if (existing) {
-      const badge = existing.querySelector(".nearby-distance");
-      if (badge) badge.textContent = formatDistance(article.distanceM);
-      existingByTitle.delete(article.title);
-      newChildren.push(existing);
-    } else {
-      newChildren.push(
-        createArticleItem(article, onSelectArticle, onHoverArticle),
+  const takeRow = (article: NearbyArticle): HTMLElement => {
+    const row =
+      existingItems.get(article.title) ??
+      createArticleItemContent(article, onSelectArticle, onHoverArticle);
+    const badge = row.querySelector(".nearby-distance");
+    if (badge) badge.textContent = formatDistance(article.distanceM);
+    return row;
+  };
+
+  const children: HTMLLIElement[] = [];
+  for (const group of groups) {
+    const li = document.createElement("li");
+    li.className = "nearby-group";
+    li.dataset.repTitle = group.representative.title;
+    li.appendChild(takeRow(group.representative));
+
+    const others = group.members.filter((m) => m !== group.representative);
+    if (group.members.length >= COINCIDENT_COLLAPSE_MIN && others.length > 0) {
+      const membersWrap = document.createElement("div");
+      membersWrap.className = "nearby-members";
+      for (const member of others) membersWrap.appendChild(takeRow(member));
+
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "nearby-more";
+      const applyExpanded = (open: boolean): void => {
+        li.dataset.expanded = String(open);
+        membersWrap.hidden = !open;
+        toggle.setAttribute("aria-expanded", String(open));
+        toggle.textContent = open ? "Show less" : `+${others.length} more here`;
+      };
+      toggle.addEventListener("click", () =>
+        applyExpanded(li.dataset.expanded !== "true"),
       );
+      applyExpanded(expandedReps.has(group.representative.title));
+
+      li.append(toggle, membersWrap);
     }
+
+    children.push(li);
   }
 
-  ul.replaceChildren(...newChildren);
+  ul.replaceChildren(...children);
 }
 
 export interface RenderNearbyListOptions {
@@ -470,6 +534,10 @@ export function renderNearbyList(
     onShowAbout,
   };
 
+  // Collapse coincident articles (same exact coordinate) into groups so a big
+  // cluster shows one expandable row instead of N identical-distance rows.
+  const groups = collapseCoincident(articles);
+
   const existingList =
     container.querySelector<HTMLUListElement>(".nearby-list");
 
@@ -482,11 +550,7 @@ export function renderNearbyList(
     const scrollWrapper = createScrollWrapper();
     const list = document.createElement("ul");
     list.className = "nearby-list";
-    for (const article of articles) {
-      list.appendChild(
-        createArticleItem(article, onSelectArticle, onHoverArticle),
-      );
-    }
+    renderCollapsedGroups(list, groups, onSelectArticle, onHoverArticle);
     scrollWrapper.appendChild(list);
     const hint = buildEmptyHint(articles, options);
     if (hint) scrollWrapper.appendChild(hint);
@@ -509,8 +573,8 @@ export function renderNearbyList(
     oldHeader.replaceWith(renderNearbyHeader(headerOpts));
   }
 
-  // Reconcile article list items by title key
-  reconcileListItems(existingList, articles, onSelectArticle, onHoverArticle);
+  // Reassemble the collapsed group list, reusing rows by title
+  renderCollapsedGroups(existingList, groups, onSelectArticle, onHoverArticle);
 
   // Rebuild the empty-highlights hint so it tracks both the article count
   // and the current filter.
