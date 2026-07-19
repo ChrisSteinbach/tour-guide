@@ -3,6 +3,7 @@ import "leaflet/dist/leaflet.css";
 import { worldZoomBounds } from "./map-bounds";
 import { collapseCoincident } from "./coincident";
 import type { CoincidentGroup } from "./coincident";
+import { createMemberRows } from "./cluster-popover";
 import type { NearbyArticle, UserPosition } from "./types";
 import {
   wikiPinIcon,
@@ -91,38 +92,22 @@ export function createBrowseMap(
   }
 
   /**
-   * Popup listing every co-located article, opened on a cluster marker
-   * click. No CSS file is in scope for this change, so layout is done with
-   * inline styles rather than a stylesheet class.
+   * Popup listing every co-located article, opened on a cluster marker click.
+   * Shares `createMemberRows` (and the `.cluster-member-row` styling) with the
+   * infinite list's "+N more here" popover so clusters look the same wherever
+   * they're opened.
    */
   function openGroupPopup(group: CoincidentGroup): void {
     const content = document.createElement("div");
-    content.className = "wiki-cluster-popup";
-    content.style.display = "flex";
-    content.style.flexDirection = "column";
-    content.style.gap = "2px";
-    content.style.maxHeight = "220px";
-    content.style.overflowY = "auto";
-    for (const member of group.members) {
-      const row = document.createElement("button");
-      row.type = "button";
-      row.className = "wiki-cluster-popup-row";
-      row.textContent = member.title;
-      row.style.all = "unset";
-      row.style.cursor = "pointer";
-      row.style.padding = "6px 10px";
-      row.style.borderRadius = "4px";
-      row.style.font = "13px system-ui, sans-serif";
-      row.style.whiteSpace = "nowrap";
-      // `popup` is referenced here before its own declaration below, but the
-      // click listener only runs later (on a real click), by which time the
-      // assignment has long completed.
-      row.addEventListener("click", () => {
-        onSelectArticle(member);
-        popup.close();
-      });
-      content.appendChild(row);
-    }
+    content.className = "cluster-popup-content";
+    // `popup` is referenced by the row handlers below before its own
+    // declaration, but they only run later (on a real click), by which time
+    // the assignment has long completed.
+    const rows = createMemberRows(group.members, (member) => {
+      onSelectArticle(member);
+      popup.close();
+    });
+    for (const row of rows) content.appendChild(row);
     const popup = L.popup()
       .setLatLng([group.lat, group.lon])
       .setContent(content)

@@ -8,6 +8,39 @@ import type { MapDrawer } from "./map-drawer";
 import type { SpatialPanelLifecycle } from "./spatial-panel-lifecycle";
 import type { MapPickerLifecycle } from "./map-picker-lifecycle";
 import { createRenderer, type RendererDeps } from "./renderer";
+import type { GroupView } from "./grouped-articles";
+
+function stubGroupView(
+  byIndex: (i: number) => NearbyArticle | undefined,
+): GroupView {
+  const groupAt = (i: number) => {
+    const a = byIndex(i);
+    return a
+      ? {
+          representative: a,
+          members: [a],
+          lat: a.lat,
+          lon: a.lon,
+          distanceM: a.distanceM,
+        }
+      : undefined;
+  };
+  return {
+    getGroup: groupAt,
+    loadedGroupCount: () => 0,
+    titleAt: (i) => byIndex(i)?.title ?? null,
+    membersInRange: (s, e) => {
+      const out: NearbyArticle[] = [];
+      for (let i = s; i < e; i++) {
+        const a = byIndex(i);
+        if (a) out.push(a);
+      }
+      return out;
+    },
+    articleBoundsForGroupRange: (s, e) => ({ start: s, end: e }),
+    groupCountForArticleCount: (n) => n,
+  };
+}
 
 const pos: UserPosition = { lat: 59.33, lon: 18.07 };
 const article: NearbyArticle = {
@@ -162,7 +195,7 @@ function makeDeps(overrides: Partial<RendererDeps> = {}): RendererDeps {
     mapPicker: stubMapPicker(),
     resetArticleWindow: vi.fn(),
     getCurrentWindow: vi.fn(() => null),
-    getArticleByIndex: vi.fn(() => undefined),
+    groupView: stubGroupView(() => undefined),
     getScrollContainer: vi.fn(() => scrollContainer),
     onHoverArticle: vi.fn(),
     updateScrollCount: vi.fn(),
@@ -712,7 +745,7 @@ describe("renderer renderInfiniteScrollDOM active branch", () => {
       getState: vi.fn(() => tiledBrowsingState({}, { articles })),
       spatialPanel,
       infiniteScroll,
-      getArticleByIndex: vi.fn((i: number) => articles[i]),
+      groupView: stubGroupView((i: number) => articles[i]),
     });
     deps.app.appendChild(container);
 

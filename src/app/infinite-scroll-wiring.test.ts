@@ -12,6 +12,39 @@ import type { SummaryLoader } from "./summary-loader";
 import type { NearbyArticle, UserPosition } from "./types";
 import type { ArticleSummary } from "./wiki-api";
 import type { VirtualList } from "./virtual-scroll";
+import type { GroupView } from "./grouped-articles";
+
+function stubGroupView(
+  byIndex: (i: number) => NearbyArticle | undefined,
+): GroupView {
+  const groupAt = (i: number) => {
+    const a = byIndex(i);
+    return a
+      ? {
+          representative: a,
+          members: [a],
+          lat: a.lat,
+          lon: a.lon,
+          distanceM: a.distanceM,
+        }
+      : undefined;
+  };
+  return {
+    getGroup: groupAt,
+    loadedGroupCount: () => 0,
+    titleAt: (i) => byIndex(i)?.title ?? null,
+    membersInRange: (s, e) => {
+      const out: NearbyArticle[] = [];
+      for (let i = s; i < e; i++) {
+        const a = byIndex(i);
+        if (a) out.push(a);
+      }
+      return out;
+    },
+    articleBoundsForGroupRange: (s, e) => ({ start: s, end: e }),
+    groupCountForArticleCount: (n) => n,
+  };
+}
 
 // Mock createInfiniteScrollLifecycle so we can capture the deps (the closure
 // callbacks under test) and invoke them directly. The wiring factory is all
@@ -176,7 +209,7 @@ function makeDeps(
     spatialPanel: stubSpatialPanel(),
     summaryLoader: stubSummaryLoader(),
     onHoverArticle: vi.fn(),
-    getArticleByIndex: vi.fn(() => undefined),
+    groupView: stubGroupView(() => undefined),
     getScrollContainer: vi.fn(() => scrollContainer),
     getCurrentWindow: vi.fn(() => null),
     applyOptimisticCount: vi.fn(),
@@ -211,14 +244,14 @@ describe("createInfiniteScrollWiring", () => {
   describe("getTitle", () => {
     it("returns the article title at the given index", () => {
       const deps = makeDeps({
-        getArticleByIndex: vi.fn((i) => (i === 3 ? stockholm : undefined)),
+        groupView: stubGroupView((i) => (i === 3 ? stockholm : undefined)),
       });
       createInfiniteScrollWiring(deps);
       expect(capturedDeps!.getTitle(3)).toBe("Stockholm");
     });
 
     it("returns null when the index has no article", () => {
-      const deps = makeDeps({ getArticleByIndex: () => undefined });
+      const deps = makeDeps({ groupView: stubGroupView(() => undefined) });
       createInfiniteScrollWiring(deps);
       expect(capturedDeps!.getTitle(99)).toBeNull();
     });
@@ -262,11 +295,11 @@ describe("createInfiniteScrollWiring", () => {
 
     it("returns the articles within the requested range during browsing", () => {
       const deps = makeDeps({
-        getArticleByIndex: (i) => {
+        groupView: stubGroupView((i) => {
           if (i === 0) return stockholm;
           if (i === 1) return uppsala;
           return undefined;
-        },
+        }),
       });
       createInfiniteScrollWiring(deps);
 
@@ -318,7 +351,7 @@ describe("createInfiniteScrollWiring", () => {
     });
 
     it("returns null when the index has no article", () => {
-      const deps = makeDeps({ getArticleByIndex: () => undefined });
+      const deps = makeDeps({ groupView: stubGroupView(() => undefined) });
       createInfiniteScrollWiring(deps);
 
       const el = capturedDeps!.renderItem(999);
@@ -327,7 +360,7 @@ describe("createInfiniteScrollWiring", () => {
     });
 
     it("renders the article item with the article's title", () => {
-      const deps = makeDeps({ getArticleByIndex: () => stockholm });
+      const deps = makeDeps({ groupView: stubGroupView(() => stockholm) });
       createInfiniteScrollWiring(deps);
 
       const el = capturedDeps!.renderItem(0);
@@ -350,7 +383,7 @@ describe("createInfiniteScrollWiring", () => {
         get: vi.fn((title) => (title === "Stockholm" ? summary : undefined)),
       });
       const deps = makeDeps({
-        getArticleByIndex: () => stockholm,
+        groupView: stubGroupView(() => stockholm),
         summaryLoader: loader,
       });
       createInfiniteScrollWiring(deps);
@@ -363,7 +396,7 @@ describe("createInfiniteScrollWiring", () => {
     });
 
     it("does not apply enrichment when loader has no cached summary", () => {
-      const deps = makeDeps({ getArticleByIndex: () => stockholm });
+      const deps = makeDeps({ groupView: stubGroupView(() => stockholm) });
       createInfiniteScrollWiring(deps);
 
       const el = capturedDeps!.renderItem(0);
@@ -382,7 +415,7 @@ describe("createInfiniteScrollWiring", () => {
       const dispatch = vi.fn();
       const deps = makeDeps({
         dispatch,
-        getArticleByIndex: () => stockholm,
+        groupView: stubGroupView(() => stockholm),
         getScrollContainer: () => scrollContainer,
         itemHeight: 68,
       });
@@ -396,6 +429,115 @@ describe("createInfiniteScrollWiring", () => {
         article: stockholm,
         firstVisibleIndex: 3,
       });
+    });
+  });
+
+  describe("renderItem coincident cluster", () => {
+    const rep: NearbyArticle = {
+      title: "Court Building",
+      lat: 1,
+      lon: 1,
+      distanceM: 50,
+      weight: 9,
+    };
+    const memberA: NearbyArticle = {
+      title: "Court A",
+      lat: 1,
+      lon: 1,
+      distanceM: 50,
+      weight: 2,
+    };
+    const memberB: NearbyArticle = {
+      title: "Court B",
+      lat: 1,
+      lon: 1,
+      distanceM: 50,
+      weight: 1,
+    };
+    const clusterGroup = {
+      representative: rep,
+      members: [rep, memberA, memberB],
+      lat: 1,
+      lon: 1,
+      distanceM: 50,
+    };
+
+    // A GroupView with one three-member cluster at group index 0.
+    function clusterGroupView(): GroupView {
+      return {
+        getGroup: (i) => (i === 0 ? clusterGroup : undefined),
+        loadedGroupCount: () => 1,
+        titleAt: (i) => (i === 0 ? rep.title : null),
+        membersInRange: (s, e) =>
+          s <= 0 && e > 0 ? [rep, memberA, memberB] : [],
+        articleBoundsForGroupRange: (s, e) => ({ start: s, end: e }),
+        groupCountForArticleCount: (n) => n,
+      };
+    }
+
+    // Close any popover a test left open before body is cleared.
+    afterEach(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+
+    it("renders the representative row with a +N chip for the other members", () => {
+      const deps = makeDeps({ groupView: clusterGroupView() });
+      createInfiniteScrollWiring(deps);
+
+      const el = capturedDeps!.renderItem(0)!;
+
+      expect(el.querySelector(".nearby-name")?.textContent).toBe(
+        "Court Building",
+      );
+      expect(el.classList.contains("has-cluster")).toBe(true);
+      // The chip counts the OTHER members (members − representative).
+      expect(el.querySelector(".nearby-cluster-more")?.textContent).toBe("+2");
+    });
+
+    it("opens a popover listing the other co-located members when the chip is clicked", () => {
+      const deps = makeDeps({ groupView: clusterGroupView() });
+      createInfiniteScrollWiring(deps);
+      const el = capturedDeps!.renderItem(0)!;
+      document.body.appendChild(el);
+
+      el.querySelector<HTMLButtonElement>(".nearby-cluster-more")!.click();
+
+      const rows = document.querySelectorAll(
+        ".cluster-popover .cluster-member-row",
+      );
+      expect(Array.from(rows).map((r) => r.textContent)).toEqual([
+        "Court A",
+        "Court B",
+      ]);
+    });
+
+    it("dispatches selectArticle for a member chosen from the popover", () => {
+      const dispatch = vi.fn();
+      const deps = makeDeps({ dispatch, groupView: clusterGroupView() });
+      createInfiniteScrollWiring(deps);
+      const el = capturedDeps!.renderItem(0)!;
+      document.body.appendChild(el);
+      el.querySelector<HTMLButtonElement>(".nearby-cluster-more")!.click();
+
+      document
+        .querySelectorAll<HTMLButtonElement>(
+          ".cluster-popover .cluster-member-row",
+        )[0]
+        .click();
+
+      expect(dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "selectArticle", article: memberA }),
+      );
+    });
+
+    it("does not add a cluster chip to a lone article", () => {
+      const deps = makeDeps({ groupView: stubGroupView(() => stockholm) });
+      createInfiniteScrollWiring(deps);
+
+      const el = capturedDeps!.renderItem(0)!;
+
+      expect(el.classList.contains("has-cluster")).toBe(false);
+      expect(el.querySelector(".nearby-cluster-more")).toBeNull();
     });
   });
 

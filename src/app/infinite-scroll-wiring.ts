@@ -6,9 +6,11 @@
 import {
   renderNearbyHeader,
   createArticleItemContent,
+  createClusterMoreButton,
   applyEnrichment,
   createEmptyHighlightsHint,
 } from "./render";
+import { openClusterPopover } from "./cluster-popover";
 import { computeOptimisticCount } from "./article-window-lifecycle";
 import {
   createInfiniteScrollLifecycle,
@@ -19,6 +21,7 @@ import type { AppState, Event } from "./state-machine";
 import type { SpatialPanelLifecycle } from "./spatial-panel-lifecycle";
 import type { SummaryLoader } from "./summary-loader";
 import type { ArticleWindow } from "./article-window";
+import type { GroupView } from "./grouped-articles";
 import type { Lang } from "../lang";
 
 export interface InfiniteScrollWiringDeps {
@@ -29,7 +32,12 @@ export interface InfiniteScrollWiringDeps {
   spatialPanel: SpatialPanelLifecycle;
   summaryLoader: SummaryLoader;
   onHoverArticle: (title: string | null) => void;
-  getArticleByIndex: (i: number) => NearbyArticle | undefined;
+  /**
+   * Group-index view over the flat loaded list. The virtual scroll renders one
+   * row per coincident group; this translates group indices (rows) to the
+   * representative/members and back to article indices for fetching.
+   */
+  groupView: GroupView;
   getScrollContainer: () => HTMLElement;
   getCurrentWindow: () => ArticleWindow | null;
   applyOptimisticCount: (count: number) => void;
@@ -71,19 +79,16 @@ export function createInfiniteScrollWiring(
       enrichSettleMs: ENRICH_SETTLE_MS,
       mapSyncSettleMs: MAP_SYNC_SETTLE_MS,
       getTitle: (i) => {
-        return deps.getArticleByIndex(i)?.title ?? null;
+        return deps.groupView.titleAt(i);
       },
       enrich: (title) =>
         deps.summaryLoader.request(title, deps.getState().currentLang),
       getVisibleArticles: (range) => {
         const state = deps.getState();
         if (state.phase.phase !== "browsing" || !state.position) return null;
-        const result: NearbyArticle[] = [];
-        for (let i = range.start; i < range.end; i++) {
-          const a = deps.getArticleByIndex(i);
-          if (a) result.push(a);
-        }
-        return result;
+        // Expand the visible groups back to their flat members so the map/radar
+        // (which re-collapse independently) draw the correct cluster counts.
+        return deps.groupView.membersInRange(range.start, range.end);
       },
       syncMapMarkers: (articles) => {
         const state = deps.getState();
@@ -99,8 +104,9 @@ export function createInfiniteScrollWiring(
       renderItem: (i) => {
         const state = deps.getState();
         if (state.phase.phase !== "browsing") return null;
-        const article = deps.getArticleByIndex(i);
-        if (!article) return null;
+        const group = deps.groupView.getGroup(i);
+        if (!group) return null;
+        const rep = group.representative;
         const onSelect = (a: NearbyArticle) =>
           deps.dispatch({
             type: "selectArticle",
@@ -109,13 +115,27 @@ export function createInfiniteScrollWiring(
               deps.getScrollContainer().scrollTop / deps.itemHeight,
             ),
           });
-        const el = createArticleItemContent(
-          article,
-          onSelect,
-          deps.onHoverArticle,
-        );
-        const cached = deps.summaryLoader.get(article.title);
+        const el = createArticleItemContent(rep, onSelect, deps.onHoverArticle);
+        const cached = deps.summaryLoader.get(rep.title);
         if (cached) applyEnrichment(el, cached);
+
+        // Coincident cluster: append a "+N" chip that opens the member popover.
+        // Fixed-height virtual rows can't grow inline (as the viewport list
+        // does), so members are revealed in a popover instead.
+        const others = group.members.filter((m) => m !== rep);
+        if (others.length > 0) {
+          el.classList.add("has-cluster");
+          el.appendChild(
+            createClusterMoreButton(others.length, (anchor) => {
+              openClusterPopover({
+                anchor,
+                members: others,
+                onSelect,
+                scrollContainer: deps.getScrollContainer(),
+              });
+            }),
+          );
+        }
         return el;
       },
       renderHeader: () => {
@@ -193,8 +213,15 @@ export function createInfiniteScrollWiring(
           // onWindowChange fires when the fetch completes, updating the
           // height to the real value — no .then() callback needed for the
           // success path. We attach handlers only to manage the backoff gate.
+          //
+          // `range` is in group-index space; translate to the article indices
+          // the ArticleWindow fetches by, then over-fetch by the buffer.
+          const bounds = deps.groupView.articleBoundsForGroupRange(
+            range.start,
+            range.end,
+          );
           nearEndPending = true;
-          aw.ensureRange(range.start, range.end + PREFETCH_BUFFER).then(
+          aw.ensureRange(bounds.start, bounds.end + PREFETCH_BUFFER).then(
             () => {
               nearEndPending = false;
               nearEndCooldownUntil = 0;

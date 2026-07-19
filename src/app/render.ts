@@ -325,6 +325,40 @@ export function createArticleItemContent(
   return item;
 }
 
+/**
+ * A compact "+N" chip appended to a coincident cluster's representative row in
+ * the fixed-height infinite list. Tapping it opens the member popover (the
+ * inline expandable row used in viewport mode can't grow a fixed-height virtual
+ * row). `count` is the number of OTHER co-located articles (members − 1), so it
+ * reads the same as viewport mode's "+N more here".
+ */
+export function createClusterMoreButton(
+  count: number,
+  onOpen: (anchor: HTMLElement) => void,
+): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "nearby-cluster-more";
+  btn.textContent = `+${count}`;
+  btn.setAttribute("aria-haspopup", "menu");
+  btn.setAttribute("aria-expanded", "false");
+  btn.setAttribute(
+    "aria-label",
+    `Show ${count} more article${count === 1 ? "" : "s"} at this location`,
+  );
+  btn.title = `${count} more here`;
+  // Stop propagation so opening the cluster doesn't also fire the row's
+  // navigate-to-representative handler (click and keyboard activation).
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    onOpen(btn);
+  });
+  btn.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+  });
+  return btn;
+}
+
 /** Apply summary data (thumbnail + description) to a single .nearby-item element. */
 export function applyEnrichment(
   item: HTMLElement,

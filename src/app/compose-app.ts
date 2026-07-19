@@ -18,6 +18,7 @@ import {
 import { createArticleWindowFactory } from "./article-window-factory";
 import { createTileSource } from "./tile-source";
 import { createArticleWindowLifecycle } from "./article-window-lifecycle";
+import { createGroupView } from "./grouped-articles";
 import {
   getNearby,
   type AppState,
@@ -66,14 +67,28 @@ export function resolveScrollContainer(
  * Create a scroll-count observer that only forwards updates
  * while the infinite scroll is active — updating a destroyed
  * virtual list is a no-op at best.
+ *
+ * The observer's counts are article-space (the ArticleWindow's loaded/known
+ * totals); the virtual list is sized in group-index space, so both the list
+ * height and the near-end anchor are converted through the GroupView here.
  */
-export function createScrollCountForwarder(infiniteScroll: {
-  isActive(): boolean;
-  update(listHeight: number, nearEndAnchor: number | undefined): void;
-}): (listHeight: number, nearEndAnchor: number | undefined) => void {
+export function createScrollCountForwarder(
+  infiniteScroll: {
+    isActive(): boolean;
+    update(listHeight: number, nearEndAnchor: number | undefined): void;
+  },
+  groupView: {
+    groupCountForArticleCount(articleCount: number): number;
+  },
+): (listHeight: number, nearEndAnchor: number | undefined) => void {
   return (listHeight, nearEndAnchor) => {
-    if (infiniteScroll.isActive())
-      infiniteScroll.update(listHeight, nearEndAnchor);
+    if (!infiniteScroll.isActive()) return;
+    infiniteScroll.update(
+      groupView.groupCountForArticleCount(listHeight),
+      nearEndAnchor === undefined
+        ? undefined
+        : groupView.groupCountForArticleCount(nearEndAnchor),
+    );
   };
 }
 
@@ -85,6 +100,15 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
   const summaryLoader = createSummaryLoader({
     fetch: wikiApi.fetchArticleSummary,
     onSummary: (title, summary) => enrichArticleItem(app, title, summary),
+  });
+
+  // Group-index view over the flat loaded list. Backed by state.phase.articles
+  // (reference-stable between window syncs), so grouping is memoized without
+  // explicit invalidation. Shared by the infinite-scroll wiring, the renderer,
+  // and the scroll-count forwarder — the single article↔group translator.
+  const groupView = createGroupView(() => {
+    const state = getState();
+    return state.phase.phase === "browsing" ? state.phase.articles : [];
   });
 
   // ── Scroll container resolution ──
@@ -170,7 +194,7 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
     spatialPanel,
     summaryLoader,
     onHoverArticle,
-    getArticleByIndex: (i) => lifecycle.getArticleByIndex(i),
+    groupView,
     getScrollContainer,
     getCurrentWindow: () => lifecycle.currentWindow(),
     applyOptimisticCount: (count) => lifecycle.applyOptimisticCount(count),
@@ -186,7 +210,7 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
   // infinite-scroll-wiring's onNearEnd, which by construction only
   // fires while the infinite scroll lifecycle is active.
   lifecycle.attachScrollCountObserver(
-    createScrollCountForwarder(infiniteScroll),
+    createScrollCountForwarder(infiniteScroll, groupView),
   );
 
   // Sync ArticleWindow's loaded articles to the state machine so
@@ -208,7 +232,7 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
     mapPicker,
     resetArticleWindow: () => lifecycle.resetArticleWindow(),
     getCurrentWindow: () => lifecycle.currentWindow(),
-    getArticleByIndex: (i) => lifecycle.getArticleByIndex(i),
+    groupView,
     updateScrollCount: (count) => lifecycle.applyOptimisticCount(count),
     getScrollContainer,
     onHoverArticle,
