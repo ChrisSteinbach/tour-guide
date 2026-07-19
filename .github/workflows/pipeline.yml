@@ -90,11 +90,15 @@ jobs:
 
       - run: npm ci
 
+      - name: Compute dump cache key
+        id: dumpcache
+        run: echo "key=dumps-v2-${{ matrix.lang }}-$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
+
       - name: Restore dump cache
         uses: actions/cache@v6
         with:
           path: data/dumps
-          key: dumps-v1-${{ matrix.lang }}
+          key: ${{ steps.dumpcache.outputs.key }}
 
       - name: Download pageviews artifact
         uses: actions/download-artifact@v8
@@ -106,7 +110,7 @@ jobs:
         run: |
           month_file=$(ls data/pageviews/pageviews-*.tsv.gz | head -1)
           ym=$(basename "$month_file" | sed -E 's/^pageviews-([0-9]{4})([0-9]{2})-.*/\1-\2/')
-          npm run extract -- --lang=${{ matrix.lang }} --pageviews-month="$ym"
+          npm run extract -- --lang=${{ matrix.lang }} --pageviews-month="$ym" --skip-existing-dumps
 
       - name: Build tiled triangulation data
         run: npm run pipeline -- --lang=${{ matrix.lang }}

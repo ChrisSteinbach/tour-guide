@@ -8,6 +8,8 @@ import type { FlatDelaunay, WalkTrace } from "spherical-delaunay";
 import { createWalkTrace, vertexLatLon } from "spherical-delaunay";
 import type { TileEntry } from "../tiles";
 import type { NearestQuery, QueryResult } from "./query";
+import { queryTilesPruned } from "./tile-loader";
+import type { TileVisit } from "./tile-loader";
 import type { GeoBounds, WalkTimeline } from "./xray-geometry";
 import {
   meshSegments,
@@ -207,6 +209,9 @@ interface TileAnim {
   descentDots: L.CircleMarker[];
   bfsDots: L.CircleMarker[];
   pulse: L.CircleMarker | null;
+  // Committed locate-trail rings, accumulated across frames so each visited
+  // triangle is projected exactly once (not rebuilt from scratch every frame).
+  trailRings: L.LatLngTuple[][][];
   // Last-rendered counts, so per-frame work skips unchanged geometry.
   lastLoc: number;
   lastDes: number;
@@ -440,6 +445,30 @@ export function createXRayOverlay(map: L.Map, deps: XRayDeps): XRayHandle {
     return ring;
   }
 
+  /** A pruned tile: its grid cell, dashed and faint, with the lower bound that
+   *  ruled it out — so the overlay shows what the query actually asked, not a
+   *  misleading walk through a tile the merge skipped. */
+  function renderSkippedTile(visit: TileVisit): void {
+    const { row, col } = parseTileId(visit.id);
+    const outline = L.rectangle(geoToLatLngBounds(tileCoreBounds(row, col)), {
+      renderer,
+      color: GRID_COLOR,
+      weight: 1,
+      opacity: 0.6,
+      dashArray: "2 5",
+      fill: true,
+      fillColor: GRID_COLOR,
+      fillOpacity: 0.05,
+      interactive: true,
+    });
+    outline.bindTooltip(
+      `${visit.id} · skipped · box ≥ ${(visit.lowerBoundM / 1000).toFixed(
+        1,
+      )} km away, past the k-th nearest`,
+    );
+    outline.addTo(walkGroup);
+  }
+
   function startWalk(): void {
     cancelWalkAnimation();
     walkGroup.clearLayers();
@@ -455,24 +484,55 @@ export function createXRayOverlay(map: L.Map, deps: XRayDeps): XRayHandle {
       return;
     }
 
+    // Mirror findNearestTiled's exact prune: search tiles nearest-box-first and
+    // skip those whose buffered box cannot beat the k-th best distance. Skipped
+    // tiles get a dashed outline instead of a walk trace, so the overlay is an
+    // honest picture of the tiles the query actually searched.
+    const traces = new Map<string, WalkTrace>();
+    const visits = queryTilesPruned(
+      loaded,
+      ctx.position.lat,
+      ctx.position.lon,
+      ctx.k,
+      (id, query) => {
+        const trace = createWalkTrace();
+        const { results } = query.findNearest(
+          ctx.position.lat,
+          ctx.position.lon,
+          ctx.k,
+          undefined,
+          { minWeight: ctx.minWeight, trace },
+        );
+        traces.set(id, trace);
+        return results;
+      },
+    );
+
     const walks: TileWalk[] = [];
-    for (const [id, query] of loaded) {
-      const trace = createWalkTrace();
-      const { results } = query.findNearest(
-        ctx.position.lat,
-        ctx.position.lon,
-        ctx.k,
-        undefined,
-        { minWeight: ctx.minWeight, trace },
-      );
-      walks.push({ id, query, trace, best: results[0] });
+    let skippedCount = 0;
+    for (const visit of visits) {
+      if (visit.searched) {
+        walks.push({
+          id: visit.id,
+          query: visit.query,
+          trace: traces.get(visit.id) as WalkTrace,
+          best: visit.results[0],
+        });
+      } else {
+        skippedCount++;
+        renderSkippedTile(visit);
+      }
     }
 
     const scored = walks.filter(
       (w): w is TileWalk & { best: QueryResult } => w.best !== undefined,
     );
     if (scored.length === 0) {
-      setStatus("no results");
+      setStatus(
+        skippedCount > 0
+          ? `no results · ${plural(skippedCount, "tile")} skipped`
+          : "no results",
+      );
       return;
     }
     let winner = scored[0];
@@ -486,7 +546,8 @@ export function createXRayOverlay(map: L.Map, deps: XRayDeps): XRayHandle {
     let status = `found in ${plural(locateHops, "hop")} + ${plural(
       descentSteps,
       "step",
-    )} · ${plural(scored.length, "tile")} searched`;
+    )} · ${plural(walks.length, "tile")} searched`;
+    if (skippedCount > 0) status += ` · ${skippedCount} skipped`;
     if (winner.trace.usedBruteForce) status += " · cycle → brute force";
     setStatus(status);
 
@@ -553,6 +614,7 @@ export function createXRayOverlay(map: L.Map, deps: XRayDeps): XRayHandle {
         descentDots: [],
         bfsDots: [],
         pulse,
+        trailRings: [],
         lastLoc: -1,
         lastDes: -1,
         lastBfs: -1,
@@ -599,25 +661,23 @@ export function createXRayOverlay(map: L.Map, deps: XRayDeps): XRayHandle {
     if (locCount <= 0) {
       t.currentPoly.setLatLngs([]);
       t.trailPoly.setLatLngs([]);
+      t.trailRings.length = 0;
       return;
     }
-    const trail: L.LatLngTuple[][][] = [];
-    if (locCount < t.locN) {
-      const curIdx = locCount - 1;
-      t.currentPoly.setLatLngs(
-        triangleRing(fd, t.trace.locateTriangles[curIdx]),
-      );
-      for (let i = 0; i < curIdx; i++) {
-        trail.push([triangleRing(fd, t.trace.locateTriangles[i])]);
-      }
-    } else {
-      // Phase complete: current triangle clears, full faint trail remains.
-      t.currentPoly.setLatLngs([]);
-      for (let i = 0; i < t.locN; i++) {
-        trail.push([triangleRing(fd, t.trace.locateTriangles[i])]);
-      }
+    // Trail holds every visited triangle except the current one while the phase
+    // animates; on completion the last current triangle joins it too. locCount
+    // only grows within a replay, so append just the newly-committed rings
+    // rather than rebuilding the whole trail — each triangle is projected once.
+    const committed = locCount < t.locN ? locCount - 1 : t.locN;
+    for (let i = t.trailRings.length; i < committed; i++) {
+      t.trailRings.push([triangleRing(fd, t.trace.locateTriangles[i])]);
     }
-    t.trailPoly.setLatLngs(trail);
+    t.currentPoly.setLatLngs(
+      locCount < t.locN
+        ? triangleRing(fd, t.trace.locateTriangles[locCount - 1])
+        : [],
+    );
+    t.trailPoly.setLatLngs(t.trailRings);
   }
 
   // --- Descent phase: growing polyline + a dot per visited vertex.

@@ -8,6 +8,7 @@ coverage/
 *.png
 !src/app/public/icon-*.png
 !src/app/public/apple-touch-icon.png
+!src/app/public/og-banner.png
 
 # Dolt database files (added by bd init)
 .dolt/

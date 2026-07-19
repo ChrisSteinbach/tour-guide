@@ -19,19 +19,25 @@ function encodeSvg(svg: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
+function pinSvg(contents: string): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${PIN_VIEWBOX}"><defs>${SHADOW_FILTER}</defs>${contents}</svg>`;
+}
+
 function makePinIcon(contents: string, w: number, h: number): L.Icon {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${PIN_VIEWBOX}"><defs>${SHADOW_FILTER}</defs>${contents}</svg>`;
   return L.icon({
-    iconUrl: encodeSvg(svg),
+    iconUrl: encodeSvg(pinSvg(contents)),
     iconSize: [w, h],
     iconAnchor: [w / 2, h],
     tooltipAnchor: [0, -h],
   });
 }
 
+function wikiPinContents(fill: string): string {
+  return `<path d="${PIN_SHELL_PATH}" fill="${fill}" filter="url(#s)"/><g transform="translate(120, 80) scale(2.1)" fill="#1a73e8"><path d="${WIKI_W_PATH}"/></g>`;
+}
+
 function wikiPin(fill: string, w: number, h: number): L.Icon {
-  const contents = `<path d="${PIN_SHELL_PATH}" fill="${fill}" filter="url(#s)"/><g transform="translate(120, 80) scale(2.1)" fill="#1a73e8"><path d="${WIKI_W_PATH}"/></g>`;
-  return makePinIcon(contents, w, h);
+  return makePinIcon(wikiPinContents(fill), w, h);
 }
 
 function locationPin(fill: string, w: number, h: number): L.Icon {
@@ -49,3 +55,73 @@ export const wikiPinHighlightIcon = wikiPin(
   ...WIKI_PIN_HIGHLIGHT_SIZE,
 );
 export const locationPinIcon = locationPin("#e84033", ...LOCATION_PIN_SIZE);
+
+// ── Coincident-article cluster pin ──
+//
+// Several distinct articles can share one coordinate (see src/app/coincident.ts);
+// rather than stacking one pin per article, the map draws the ordinary Wiki pin
+// once with a small count badge in the corner. Built as a divIcon (HTML) rather
+// than an L.icon (single <img>) so the badge can be layered on top of the same
+// pin artwork used elsewhere.
+
+/** Badge background for the normal (unselected) cluster pin. */
+const CLUSTER_BADGE_BG = "#1a73e8"; // same accent as the Wiki "W" glyph
+/** Badge background for the highlighted cluster pin — reads against the gold fill. */
+const CLUSTER_BADGE_BG_HIGHLIGHT = "#8a4b00";
+
+function badgeLabel(count: number): string {
+  return count > 99 ? "99+" : String(count);
+}
+
+function clusterHtml(
+  fill: string,
+  badgeBg: string,
+  w: number,
+  h: number,
+  count: number,
+): string {
+  const iconUrl = encodeSvg(pinSvg(wikiPinContents(fill)));
+  const badgeStyle =
+    "position:absolute;top:-2px;right:-6px;min-width:16px;height:16px;" +
+    `padding:0 3px;border-radius:8px;background:${badgeBg};color:#fff;` +
+    "font:700 10px/16px system-ui,sans-serif;text-align:center;" +
+    "box-shadow:0 1px 2px rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.9);";
+  return (
+    `<div style="position:relative;width:${w}px;height:${h}px;">` +
+    `<img src="${iconUrl}" width="${w}" height="${h}" alt="" ` +
+    `style="display:block;width:100%;height:100%;" />` +
+    `<span style="${badgeStyle}">${badgeLabel(count)}</span>` +
+    `</div>`
+  );
+}
+
+function makeClusterIcon(
+  fill: string,
+  badgeBg: string,
+  w: number,
+  h: number,
+  count: number,
+): L.DivIcon {
+  return L.divIcon({
+    html: clusterHtml(fill, badgeBg, w, h, count),
+    className: "wiki-pin-cluster-icon",
+    iconSize: [w, h],
+    iconAnchor: [w / 2, h],
+    tooltipAnchor: [0, -h],
+  });
+}
+
+/** The normal Wiki pin plus a count badge, for a coincident-article group. */
+export function wikiPinClusterIcon(count: number): L.DivIcon {
+  return makeClusterIcon("#fff", CLUSTER_BADGE_BG, ...WIKI_PIN_SIZE, count);
+}
+
+/** Highlighted variant of {@link wikiPinClusterIcon}, keeping the count badge. */
+export function wikiPinClusterHighlightIcon(count: number): L.DivIcon {
+  return makeClusterIcon(
+    "#FFC107",
+    CLUSTER_BADGE_BG_HIGHLIGHT,
+    ...WIKI_PIN_HIGHLIGHT_SIZE,
+    count,
+  );
+}

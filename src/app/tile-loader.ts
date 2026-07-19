@@ -6,13 +6,15 @@ import {
   tileFor,
   tileId,
   GRID_DEG,
+  BUFFER_DEG,
+  TILE_FORMAT_VERSION,
   ROWS,
   EDGE_PROXIMITY_DEG,
   wrapCol,
 } from "../tiles";
 import type { TileEntry, TileIndex } from "../tiles";
 import { tilesAtRing, MAX_RING } from "./tile-radius";
-import { NearestQuery } from "./query";
+import { NearestQuery, EARTH_RADIUS_M } from "./query";
 import type { FindNearestOptions, QueryResult } from "./query";
 import { idbOpen, idbGetAny, idbPutAny, idbDelete } from "./idb";
 import type { Lang } from "../lang";
@@ -88,7 +90,197 @@ function touchLru(
 
 // ---------- Tile query functions ----------
 
-/** Query all loaded tiles, de-duplicate by title, sort by distance, take top-k. */
+const DEG2RAD = Math.PI / 180;
+
+/**
+ * Safety margin (metres) shaved off every tile lower bound before it is used to
+ * prune. The boxes bound each article's TRUE coordinate, but tile vertices are
+ * stored Float32-quantized (see binary-format.md), so an article's stored
+ * position can sit ~1 m outside its box. Subtracting a small margin keeps the
+ * prune exact against that quantization and is negligible against the
+ * kilometre-scale gaps that actually trigger pruning.
+ */
+const LOWER_BOUND_MARGIN_M = 10;
+
+/**
+ * Minimal angular longitude gap (degrees, 0..180) from `lon` to the interval
+ * [west, east]. west/east may fall outside ±180 for antimeridian tiles, so we
+ * test `lon` shifted by ±360 as well; returns 0 when `lon` lies within the span.
+ */
+function lonGapDeg(lon: number, west: number, east: number): number {
+  let gap = Infinity;
+  for (const shifted of [lon, lon + 360, lon - 360]) {
+    if (shifted >= west && shifted <= east) return 0;
+    gap = Math.min(gap, Math.abs(shifted - west), Math.abs(shifted - east));
+  }
+  return gap;
+}
+
+/**
+ * A lower bound (metres) on the great-circle distance from (lat, lon) to the
+ * nearest possible article in the tile with the given id — i.e. to the tile's
+ * buffered coverage box (grid cell expanded by BUFFER_DEG, the exact region the
+ * pipeline assigns a tile's articles from; see build.ts). It never overestimates,
+ * so skipping a tile whose bound exceeds the current k-th best distance is exact.
+ *
+ * Two independent, individually-valid bounds, larger wins:
+ *  - latitude gap: a geodesic's latitude changes no faster than its arc length,
+ *    so the distance is at least R·Δlat;
+ *  - longitude gap: when the query is east/west of the box, the geodesic to any
+ *    box point crosses the near meridian, so the distance is at least the
+ *    distance to that meridian great circle, R·asin(|cosφ·sinΔlon|).
+ */
+export function tileBoxLowerBoundMeters(
+  id: string,
+  lat: number,
+  lon: number,
+): number {
+  const dash = id.indexOf("-");
+  const row = Number(id.slice(0, dash));
+  const col = Number(id.slice(dash + 1));
+
+  const cellSouth = row * GRID_DEG - 90;
+  const cellWest = col * GRID_DEG - 180;
+  const south = Math.max(-90, cellSouth - BUFFER_DEG);
+  const north = Math.min(90, cellSouth + GRID_DEG + BUFFER_DEG);
+  const west = cellWest - BUFFER_DEG;
+  const east = cellWest + GRID_DEG + BUFFER_DEG;
+
+  const dLatDeg = lat < south ? south - lat : lat > north ? lat - north : 0;
+  const dLonDeg = lonGapDeg(lon, west, east);
+  if (dLatDeg === 0 && dLonDeg === 0) return 0; // query is inside the box
+
+  const latAngle = dLatDeg * DEG2RAD;
+  const lonAngle = Math.asin(
+    Math.abs(Math.cos(lat * DEG2RAD) * Math.sin(dLonDeg * DEG2RAD)),
+  );
+  const angle = Math.max(latAngle, lonAngle);
+  return Math.max(0, angle * EARTH_RADIUS_M - LOWER_BOUND_MARGIN_M);
+}
+
+/**
+ * Tracks the k-th smallest number offered, as a bounded max-heap holding the k
+ * smallest values seen. `kth()` (the heap's max) is the current k-th best and is
+ * only meaningful once `full()`. O(log k) per offer.
+ */
+class KthBestTracker {
+  private readonly heap: number[] = [];
+  constructor(private readonly k: number) {}
+
+  full(): boolean {
+    return this.heap.length >= this.k;
+  }
+
+  /** The k-th smallest value offered so far. Only valid once full(). */
+  kth(): number {
+    return this.heap[0];
+  }
+
+  offer(value: number): void {
+    if (this.k <= 0) return;
+    const heap = this.heap;
+    if (heap.length < this.k) {
+      heap.push(value);
+      this.siftUp(heap.length - 1);
+    } else if (value < heap[0]) {
+      heap[0] = value;
+      this.siftDown(0);
+    }
+  }
+
+  private siftUp(start: number): void {
+    const heap = this.heap;
+    let i = start;
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (heap[parent] >= heap[i]) break;
+      [heap[parent], heap[i]] = [heap[i], heap[parent]];
+      i = parent;
+    }
+  }
+
+  private siftDown(start: number): void {
+    const heap = this.heap;
+    const n = heap.length;
+    let i = start;
+    for (;;) {
+      let largest = i;
+      const l = 2 * i + 1;
+      const r = 2 * i + 2;
+      if (l < n && heap[l] > heap[largest]) largest = l;
+      if (r < n && heap[r] > heap[largest]) largest = r;
+      if (largest === i) break;
+      [heap[largest], heap[i]] = [heap[i], heap[largest]];
+      i = largest;
+    }
+  }
+}
+
+/** One tile's outcome from a pruned multi-tile query. */
+export interface TileVisit {
+  id: string;
+  query: NearestQuery;
+  /** Lower bound (metres) on the distance from the query to this tile's box. */
+  lowerBoundM: number;
+  /** False when the tile was pruned (provably unable to beat the k-th best). */
+  searched: boolean;
+  /** This tile's own results, or [] when skipped. */
+  results: QueryResult[];
+}
+
+/**
+ * Visit loaded tiles nearest-box-first and decide, per tile, whether a
+ * k-nearest query needs to search it. A tile is skipped once we already hold k
+ * (deduped) results and its lower bound exceeds the current k-th best distance;
+ * because tiles are visited in non-decreasing lower-bound order and the k-th
+ * best only tightens, every later tile is skipped too. The caller supplies
+ * `search` — the real per-tile query — so findNearestTiled and the X-ray overlay
+ * prune in lockstep. Exact: the searched tiles' merged results contain the true
+ * global top-k, so a skipped tile never changes the answer.
+ */
+export function queryTilesPruned(
+  tiles: ReadonlyMap<string, NearestQuery>,
+  lat: number,
+  lon: number,
+  k: number,
+  search: (id: string, query: NearestQuery) => QueryResult[],
+): TileVisit[] {
+  const ordered = Array.from(tiles, ([id, query]) => ({
+    id,
+    query,
+    lowerBoundM: tileBoxLowerBoundMeters(id, lat, lon),
+  })).sort((a, b) => a.lowerBoundM - b.lowerBoundM);
+
+  const visits: TileVisit[] = [];
+  const kth = new KthBestTracker(k);
+  const seen = new Set<string>();
+  let pruning = false;
+
+  for (const { id, query, lowerBoundM } of ordered) {
+    if (!pruning && kth.full() && lowerBoundM > kth.kth()) {
+      pruning = true;
+    }
+    if (pruning) {
+      visits.push({ id, query, lowerBoundM, searched: false, results: [] });
+      continue;
+    }
+    const results = search(id, query);
+    for (const r of results) {
+      if (seen.has(r.title)) continue;
+      seen.add(r.title);
+      kth.offer(r.distanceM);
+    }
+    visits.push({ id, query, lowerBoundM, searched: true, results });
+  }
+  return visits;
+}
+
+/**
+ * Query loaded tiles for the k nearest articles, de-duplicated by title. Tiles
+ * whose buffered coverage box cannot beat the current k-th best distance are
+ * pruned (see queryTilesPruned) — an exact optimization, results are identical
+ * to querying every tile.
+ */
 export function findNearestTiled(
   tiles: ReadonlyMap<string, NearestQuery>,
   lat: number,
@@ -98,22 +290,21 @@ export function findNearestTiled(
 ): QueryResult[] {
   if (tiles.size === 0) return [];
 
+  const visits = queryTilesPruned(
+    tiles,
+    lat,
+    lon,
+    k,
+    (_id, query) => query.findNearest(lat, lon, k, undefined, opts).results,
+  );
+
   const seen = new Set<string>();
   const results: QueryResult[] = [];
-
-  for (const tileQuery of tiles.values()) {
-    const { results: tileResults } = tileQuery.findNearest(
-      lat,
-      lon,
-      k,
-      undefined,
-      opts,
-    );
-    for (const r of tileResults) {
-      if (!seen.has(r.title)) {
-        seen.add(r.title);
-        results.push(r);
-      }
+  for (const visit of visits) {
+    for (const r of visit.results) {
+      if (seen.has(r.title)) continue;
+      seen.add(r.title);
+      results.push(r);
     }
   }
 
@@ -252,7 +443,25 @@ export const defaultDeps: TileLoaderDeps = {
 };
 
 /**
- * Fetch tile index. Returns null on 404.
+ * Whether a tile index was built with the grid parameters and format version
+ * this build computes tile IDs for. tile-loader recomputes tile IDs from its
+ * own imported GRID_DEG (see tilesForPosition / loadTile), so an index built
+ * with a different grid would make those IDs 404 or — worse — silently map to
+ * tile files covering a different region, returning confident but wrong
+ * nearest-neighbor results. Rejecting a mismatched index turns that latent
+ * corruption into a clean data-unavailable state.
+ */
+export function isCompatibleIndex(index: TileIndex): boolean {
+  return (
+    index.version === TILE_FORMAT_VERSION &&
+    index.gridDeg === GRID_DEG &&
+    index.bufferDeg === BUFFER_DEG
+  );
+}
+
+/**
+ * Fetch tile index. Returns null on 404 or when the index is incompatible
+ * with this build's grid/format (see isCompatibleIndex).
  * Caches in IDB, falls back to cached index on network error.
  */
 export async function loadTileIndex(
@@ -281,6 +490,15 @@ export async function loadTileIndex(
       return null;
     }
 
+    if (!isCompatibleIndex(index)) {
+      console.warn(
+        `Tile index for "${lang}" is incompatible ` +
+          `(version ${index.version}, grid ${index.gridDeg}°, buffer ${index.bufferDeg}° ` +
+          `vs expected ${TILE_FORMAT_VERSION}/${GRID_DEG}/${BUFFER_DEG}); treating as unavailable.`,
+      );
+      return null;
+    }
+
     // Cache for offline use
     if (db) {
       deps
@@ -299,7 +517,8 @@ export async function loadTileIndex(
         if (
           cached &&
           typeof cached === "object" &&
-          Array.isArray(cached.tiles)
+          Array.isArray(cached.tiles) &&
+          isCompatibleIndex(cached)
         ) {
           return cached;
         }

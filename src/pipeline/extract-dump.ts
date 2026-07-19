@@ -52,6 +52,12 @@ export interface ExtractDumpOptions {
   lang: Lang;
   bounds?: Bounds;
   skipDownload?: boolean;
+  /**
+   * Phase 0: skip downloading dump files that already exist on disk
+   * (default: false). Distinct from `skipDownload`, which skips the entire
+   * download phase; this only avoids re-fetching files already present.
+   */
+  skipExistingDumps?: boolean;
   dumpsDir?: string;
   outputPath?: string;
   fetchFn?: typeof fetch;
@@ -250,6 +256,7 @@ export async function extractDump(opts: ExtractDumpOptions): Promise<{
     lang,
     bounds,
     skipDownload = false,
+    skipExistingDumps = false,
     dumpsDir = "data/dumps",
     outputPath = `data/articles-${lang}.json`,
     fetchFn,
@@ -267,7 +274,7 @@ export async function extractDump(opts: ExtractDumpOptions): Promise<{
       lang,
       dir: dumpsDir,
       fetchFn,
-      skipExisting: false,
+      skipExisting: skipExistingDumps,
       onProgress: (table, downloaded, total) => {
         const pct = total
           ? ` (${((downloaded / total) * 100).toFixed(0)}%)`
@@ -405,6 +412,7 @@ async function main() {
 
   const bounds = flags.bounds ? parseBounds(flags.bounds) : undefined;
   const skipDownload = flags["skip-download"] === "true";
+  const skipExistingDumps = flags["skip-existing-dumps"] === "true";
   const pageviews = flags["no-pageviews"] !== "true";
 
   const pageviewsMonth = flags["pageviews-month"];
@@ -423,6 +431,7 @@ async function main() {
     lang,
     bounds,
     skipDownload,
+    skipExistingDumps,
     pageviews,
     pageviewsMonth,
     onPhase: (phase) => console.error(`\n→ ${phase}`),
