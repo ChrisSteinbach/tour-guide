@@ -388,6 +388,49 @@ body:has(.app-scroll) {
   white-space: nowrap;
 }
 
+/* Coincident-article group: a representative row, an optional "+N more here"
+   toggle, and the revealed member rows. A lone article is just the row. */
+.nearby-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Toggle that expands a coincident group to show its other co-located
+   articles. Sits just under the representative row. */
+.nearby-more {
+  align-self: flex-start;
+  margin-left: 12px;
+  padding: 4px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: #1a73e8;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.nearby-more:active {
+  background: #e8e8e8;
+}
+
+/* Revealed member rows, indented under the representative with an accent rail
+   so the grouping reads at a glance. */
+.nearby-members {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 2px solid #d8dee8;
+}
+
+.nearby-members[hidden] {
+  display: none;
+}
+
 .status-screen {
   display: flex;
   flex-direction: column;
@@ -985,6 +1028,10 @@ body:has(.app-scroll) {
 
 @media (width >= 1024px) {
   .nearby-item:hover {
+    background: #f0f0f0;
+  }
+
+  .nearby-more:hover {
     background: #f0f0f0;
   }
 }

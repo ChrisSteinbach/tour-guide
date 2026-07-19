@@ -1077,3 +1077,305 @@ describe("enrichArticleItem", () => {
     expect(img).not.toBeNull();
   });
 });
+
+// ── renderNearbyList coincident collapse ──────────────────────
+
+describe("renderNearbyList coincident collapse", () => {
+  it("collapses a coincident group behind a toggle", () => {
+    const container = document.createElement("div");
+    const articles = [
+      { title: "Museum", lat: 40, lon: -70, distanceM: 100, weight: 200 },
+      { title: "Cafe", lat: 40, lon: -70, distanceM: 100, weight: 30 },
+      { title: "Gift Shop", lat: 40, lon: -70, distanceM: 100, weight: 10 },
+      { title: "Park", lat: 41, lon: -71, distanceM: 800, weight: 5 },
+    ];
+    renderNearbyList(container, articles, {
+      onShowAbout,
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+
+    const groups = container.querySelectorAll<HTMLElement>(".nearby-group");
+    expect(groups).toHaveLength(2);
+
+    const firstGroup = groups[0];
+    const rep = firstGroup.querySelector<HTMLElement>(".nearby-item");
+    expect(rep?.dataset.title).toBe("Museum");
+
+    const toggle = firstGroup.querySelector<HTMLButtonElement>(".nearby-more");
+    expect(toggle?.textContent).toBe("+2 more here");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+
+    const members = firstGroup.querySelector<HTMLElement>(".nearby-members");
+    expect(members?.hidden).toBe(true);
+  });
+
+  it("picks the highest-weight member as representative even when it's not first", () => {
+    const container = document.createElement("div");
+    const articles = [
+      { title: "Small", lat: 10, lon: 10, distanceM: 50, weight: 5 },
+      { title: "Landmark", lat: 10, lon: 10, distanceM: 50, weight: 90 },
+    ];
+    renderNearbyList(container, articles, {
+      onShowAbout,
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+
+    const group = container.querySelector<HTMLElement>(".nearby-group");
+    const rep = group?.querySelector<HTMLElement>(".nearby-item");
+    expect(rep?.dataset.title).toBe("Landmark");
+
+    const toggle = group?.querySelector<HTMLButtonElement>(".nearby-more");
+    expect(toggle?.textContent).toBe("+1 more here");
+  });
+
+  it("renders lone articles without a toggle", () => {
+    const container = document.createElement("div");
+    renderNearbyList(container, makeArticles(2), {
+      onShowAbout,
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+
+    expect(container.querySelectorAll(".nearby-group")).toHaveLength(2);
+    expect(container.querySelectorAll(".nearby-more")).toHaveLength(0);
+  });
+
+  it("keeps member rows in the DOM but hidden until expanded", () => {
+    const container = document.createElement("div");
+    const articles = [
+      { title: "Museum", lat: 40, lon: -70, distanceM: 100, weight: 200 },
+      { title: "Cafe", lat: 40, lon: -70, distanceM: 100, weight: 30 },
+      { title: "Gift Shop", lat: 40, lon: -70, distanceM: 100, weight: 10 },
+      { title: "Park", lat: 41, lon: -71, distanceM: 800, weight: 5 },
+    ];
+    renderNearbyList(container, articles, {
+      onShowAbout,
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+
+    const memberItems = container.querySelectorAll<HTMLElement>(
+      ".nearby-members .nearby-item",
+    );
+    expect(memberItems).toHaveLength(2);
+    expect(Array.from(memberItems).map((el) => el.dataset.title)).toEqual([
+      "Cafe",
+      "Gift Shop",
+    ]);
+
+    const membersWrap = container.querySelector<HTMLElement>(".nearby-members");
+    expect(membersWrap?.hidden).toBe(true);
+  });
+
+  it("reveals members when the toggle is clicked", () => {
+    const container = document.createElement("div");
+    const articles = [
+      { title: "Museum", lat: 40, lon: -70, distanceM: 100, weight: 200 },
+      { title: "Cafe", lat: 40, lon: -70, distanceM: 100, weight: 30 },
+      { title: "Gift Shop", lat: 40, lon: -70, distanceM: 100, weight: 10 },
+      { title: "Park", lat: 41, lon: -71, distanceM: 800, weight: 5 },
+    ];
+    renderNearbyList(container, articles, {
+      onShowAbout,
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+
+    const toggle = container.querySelector<HTMLButtonElement>(".nearby-more")!;
+    toggle.click();
+
+    const membersWrap = container.querySelector<HTMLElement>(".nearby-members");
+    expect(membersWrap?.hidden).toBe(false);
+    expect(toggle.textContent).toBe("Show less");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+
+    const group = container.querySelector<HTMLElement>(".nearby-group");
+    expect(group?.dataset.expanded).toBe("true");
+  });
+
+  it("re-collapses when the toggle is clicked twice", () => {
+    const container = document.createElement("div");
+    const articles = [
+      { title: "Museum", lat: 40, lon: -70, distanceM: 100, weight: 200 },
+      { title: "Cafe", lat: 40, lon: -70, distanceM: 100, weight: 30 },
+      { title: "Gift Shop", lat: 40, lon: -70, distanceM: 100, weight: 10 },
+      { title: "Park", lat: 41, lon: -71, distanceM: 800, weight: 5 },
+    ];
+    renderNearbyList(container, articles, {
+      onShowAbout,
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+
+    const toggle = container.querySelector<HTMLButtonElement>(".nearby-more")!;
+    toggle.click();
+    toggle.click();
+
+    const membersWrap = container.querySelector<HTMLElement>(".nearby-members");
+    expect(membersWrap?.hidden).toBe(true);
+    expect(toggle.textContent).toBe("+2 more here");
+  });
+
+  it("opens a member's own detail when it is clicked", () => {
+    const articles = [
+      { title: "Museum", lat: 40, lon: -70, distanceM: 100, weight: 200 },
+      { title: "Cafe", lat: 40, lon: -70, distanceM: 100, weight: 30 },
+      { title: "Gift Shop", lat: 40, lon: -70, distanceM: 100, weight: 10 },
+      { title: "Park", lat: 41, lon: -71, distanceM: 800, weight: 5 },
+    ];
+    const cafe = articles[1];
+    const onSelect = vi.fn();
+    const container = document.createElement("div");
+    renderNearbyList(container, articles, {
+      onShowAbout,
+      onSelectArticle: onSelect,
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+
+    const toggle = container.querySelector<HTMLButtonElement>(".nearby-more")!;
+    toggle.click();
+
+    const cafeItem = container.querySelector<HTMLElement>(
+      '.nearby-item[data-title="Cafe"]',
+    )!;
+    cafeItem.click();
+    expect(onSelect).toHaveBeenCalledWith(cafe);
+  });
+
+  it("patches member badges by title via updateNearbyDistances", () => {
+    const container = document.createElement("div");
+    const articles = [
+      { title: "Museum", lat: 40, lon: -70, distanceM: 100, weight: 200 },
+      { title: "Cafe", lat: 40, lon: -70, distanceM: 100, weight: 30 },
+      { title: "Gift Shop", lat: 40, lon: -70, distanceM: 100, weight: 10 },
+      { title: "Park", lat: 41, lon: -71, distanceM: 800, weight: 5 },
+    ];
+    renderNearbyList(container, articles, {
+      onShowAbout,
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+
+    updateNearbyDistances(container, [
+      { title: "Museum", lat: 40, lon: -70, distanceM: 250, weight: 200 },
+      { title: "Cafe", lat: 40, lon: -70, distanceM: 250, weight: 30 },
+      { title: "Gift Shop", lat: 40, lon: -70, distanceM: 250, weight: 10 },
+      { title: "Park", lat: 41, lon: -71, distanceM: 900, weight: 5 },
+    ]);
+
+    expect(
+      container.querySelector(
+        '.nearby-item[data-title="Museum"] .nearby-distance',
+      )?.textContent,
+    ).toBe("250 m");
+    expect(
+      container.querySelector(
+        '.nearby-item[data-title="Cafe"] .nearby-distance',
+      )?.textContent,
+    ).toBe("250 m");
+    expect(
+      container.querySelector(
+        '.nearby-item[data-title="Park"] .nearby-distance',
+      )?.textContent,
+    ).toBe("900 m");
+  });
+
+  it("enriches a member hidden inside a collapsed group", () => {
+    const container = document.createElement("div");
+    const articles = [
+      { title: "Museum", lat: 40, lon: -70, distanceM: 100, weight: 200 },
+      { title: "Cafe", lat: 40, lon: -70, distanceM: 100, weight: 30 },
+      { title: "Gift Shop", lat: 40, lon: -70, distanceM: 100, weight: 10 },
+      { title: "Park", lat: 41, lon: -71, distanceM: 800, weight: 5 },
+    ];
+    renderNearbyList(container, articles, {
+      onShowAbout,
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+
+    enrichArticleItem(
+      container,
+      "Cafe",
+      makeSummary({ title: "Cafe", description: "A cozy cafe" }),
+    );
+
+    const desc = container.querySelector(
+      '.nearby-item[data-title="Cafe"] .nearby-desc',
+    );
+    expect(desc?.textContent).toBe("A cozy cafe");
+  });
+
+  it("keeps a group expanded across a re-render", () => {
+    const container = document.createElement("div");
+    const articles = [
+      { title: "Museum", lat: 40, lon: -70, distanceM: 100, weight: 200 },
+      { title: "Cafe", lat: 40, lon: -70, distanceM: 100, weight: 30 },
+      { title: "Gift Shop", lat: 40, lon: -70, distanceM: 100, weight: 10 },
+      { title: "Park", lat: 41, lon: -71, distanceM: 800, weight: 5 },
+    ];
+    const opts = {
+      onShowAbout,
+      onSelectArticle: () => {},
+      currentLang: "en" as const,
+      onLangChange: () => {},
+    };
+    renderNearbyList(container, articles, opts);
+
+    const toggle = container.querySelector<HTMLButtonElement>(".nearby-more")!;
+    toggle.click();
+
+    renderNearbyList(container, articles, opts);
+
+    const membersWrap = container.querySelector<HTMLElement>(".nearby-members");
+    const newToggle =
+      container.querySelector<HTMLButtonElement>(".nearby-more");
+    expect(membersWrap?.hidden).toBe(false);
+    expect(newToggle?.textContent).toBe("Show less");
+    expect(newToggle?.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("keeps a member's enrichment across a re-render", () => {
+    const container = document.createElement("div");
+    const articles = [
+      { title: "Museum", lat: 40, lon: -70, distanceM: 100, weight: 200 },
+      { title: "Cafe", lat: 40, lon: -70, distanceM: 100, weight: 30 },
+      { title: "Gift Shop", lat: 40, lon: -70, distanceM: 100, weight: 10 },
+      { title: "Park", lat: 41, lon: -71, distanceM: 800, weight: 5 },
+    ];
+    const opts = {
+      onShowAbout,
+      onSelectArticle: () => {},
+      currentLang: "en" as const,
+      onLangChange: () => {},
+    };
+    renderNearbyList(container, articles, opts);
+
+    const toggle = container.querySelector<HTMLButtonElement>(".nearby-more")!;
+    toggle.click();
+
+    enrichArticleItem(
+      container,
+      "Cafe",
+      makeSummary({ title: "Cafe", description: "A cozy cafe" }),
+    );
+
+    renderNearbyList(container, articles, opts);
+
+    const desc = container.querySelector(
+      '.nearby-item[data-title="Cafe"] .nearby-desc',
+    );
+    expect(desc?.textContent).toBe("A cozy cafe");
+  });
+});
