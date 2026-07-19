@@ -209,6 +209,9 @@ interface TileAnim {
   descentDots: L.CircleMarker[];
   bfsDots: L.CircleMarker[];
   pulse: L.CircleMarker | null;
+  // Committed locate-trail rings, accumulated across frames so each visited
+  // triangle is projected exactly once (not rebuilt from scratch every frame).
+  trailRings: L.LatLngTuple[][][];
   // Last-rendered counts, so per-frame work skips unchanged geometry.
   lastLoc: number;
   lastDes: number;
@@ -611,6 +614,7 @@ export function createXRayOverlay(map: L.Map, deps: XRayDeps): XRayHandle {
         descentDots: [],
         bfsDots: [],
         pulse,
+        trailRings: [],
         lastLoc: -1,
         lastDes: -1,
         lastBfs: -1,
@@ -657,25 +661,23 @@ export function createXRayOverlay(map: L.Map, deps: XRayDeps): XRayHandle {
     if (locCount <= 0) {
       t.currentPoly.setLatLngs([]);
       t.trailPoly.setLatLngs([]);
+      t.trailRings.length = 0;
       return;
     }
-    const trail: L.LatLngTuple[][][] = [];
-    if (locCount < t.locN) {
-      const curIdx = locCount - 1;
-      t.currentPoly.setLatLngs(
-        triangleRing(fd, t.trace.locateTriangles[curIdx]),
-      );
-      for (let i = 0; i < curIdx; i++) {
-        trail.push([triangleRing(fd, t.trace.locateTriangles[i])]);
-      }
-    } else {
-      // Phase complete: current triangle clears, full faint trail remains.
-      t.currentPoly.setLatLngs([]);
-      for (let i = 0; i < t.locN; i++) {
-        trail.push([triangleRing(fd, t.trace.locateTriangles[i])]);
-      }
+    // Trail holds every visited triangle except the current one while the phase
+    // animates; on completion the last current triangle joins it too. locCount
+    // only grows within a replay, so append just the newly-committed rings
+    // rather than rebuilding the whole trail — each triangle is projected once.
+    const committed = locCount < t.locN ? locCount - 1 : t.locN;
+    for (let i = t.trailRings.length; i < committed; i++) {
+      t.trailRings.push([triangleRing(fd, t.trace.locateTriangles[i])]);
     }
-    t.trailPoly.setLatLngs(trail);
+    t.currentPoly.setLatLngs(
+      locCount < t.locN
+        ? triangleRing(fd, t.trace.locateTriangles[locCount - 1])
+        : [],
+    );
+    t.trailPoly.setLatLngs(t.trailRings);
   }
 
   // --- Descent phase: growing polyline + a dot per visited vertex.
