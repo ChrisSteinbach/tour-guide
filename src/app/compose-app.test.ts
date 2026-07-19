@@ -38,12 +38,15 @@ describe("resolveScrollContainer", () => {
 });
 
 describe("createScrollCountForwarder", () => {
+  // Pass-through group view: article count === group count (no clusters).
+  const identityGroupView = { groupCountForArticleCount: (n: number) => n };
+
   it("forwards count when infinite scroll is active", () => {
     const update = vi.fn();
-    const forwarder = createScrollCountForwarder({
-      isActive: () => true,
-      update,
-    });
+    const forwarder = createScrollCountForwarder(
+      { isActive: () => true, update },
+      identityGroupView,
+    );
 
     forwarder(42, 30);
 
@@ -52,13 +55,38 @@ describe("createScrollCountForwarder", () => {
 
   it("skips update when infinite scroll is inactive", () => {
     const update = vi.fn();
-    const forwarder = createScrollCountForwarder({
-      isActive: () => false,
-      update,
-    });
+    const forwarder = createScrollCountForwarder(
+      { isActive: () => false, update },
+      identityGroupView,
+    );
 
     forwarder(42, 30);
 
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it("converts article-space counts to group space via the group view", () => {
+    const update = vi.fn();
+    // Simulate a cluster collapsing: knock 5 off every article count.
+    const forwarder = createScrollCountForwarder(
+      { isActive: () => true, update },
+      { groupCountForArticleCount: (n) => n - 5 },
+    );
+
+    forwarder(42, 30);
+
+    expect(update).toHaveBeenCalledWith(37, 25);
+  });
+
+  it("passes an undefined anchor through without converting", () => {
+    const update = vi.fn();
+    const forwarder = createScrollCountForwarder(
+      { isActive: () => true, update },
+      { groupCountForArticleCount: (n) => n - 5 },
+    );
+
+    forwarder(42, undefined);
+
+    expect(update).toHaveBeenCalledWith(37, undefined);
   });
 });

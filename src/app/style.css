@@ -431,6 +431,85 @@ body:has(.app-scroll) {
   display: none;
 }
 
+/* Infinite-list coincident cluster: the representative row grows a fourth
+   column for the "+N" chip. Fixed-height virtual rows can't expand inline, so
+   the chip opens a popover (.cluster-popover) rather than revealing members
+   in place the way viewport mode (.nearby-members) does. */
+.nearby-item.has-cluster {
+  grid-template-columns: auto 1fr auto auto;
+}
+
+.nearby-cluster-more {
+  align-self: center;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 999px;
+  background: #e8f0fe;
+  color: #1a73e8;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.nearby-cluster-more:active {
+  background: #d2e3fc;
+}
+
+/* Shared co-located member list: the map's cluster popup (.cluster-popup-content)
+   and the infinite list's popover (.cluster-popover). */
+.cluster-member-row {
+  all: unset;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 4px;
+  color: inherit;
+  font-size: 0.85rem;
+
+  /* Wrap long titles instead of forcing a horizontal scrollbar — the
+     distinguishing part of co-located article titles is often the suffix
+     (e.g. "…volume 113"), so truncation would hide it. */
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+.cluster-member-row:active {
+  background: #e8e8e8;
+}
+
+.cluster-popup-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.cluster-popover {
+  position: fixed;
+  z-index: 1200;
+  min-width: 200px;
+  max-width: min(280px, calc(100vw - 16px));
+  max-height: min(60vh, 320px);
+  overflow-y: auto;
+
+  /* Keep wheel/trackpad scroll inside the popover — chaining to the page would
+     scroll the list and dismiss the popover. */
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 18%);
+}
+
 .status-screen {
   display: flex;
   flex-direction: column;
@@ -1032,6 +1111,14 @@ body:has(.app-scroll) {
   }
 
   .nearby-more:hover {
+    background: #f0f0f0;
+  }
+
+  .nearby-cluster-more:hover {
+    background: #d2e3fc;
+  }
+
+  .cluster-member-row:hover {
     background: #f0f0f0;
   }
 }

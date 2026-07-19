@@ -73,7 +73,6 @@ export interface ArticleWindowLifecycle {
   ensureArticleRange: (pos: UserPosition, count: number) => void;
   resetArticleWindow: () => void;
   getOrCreateArticleWindow: () => ArticleWindow;
-  getArticleByIndex: (i: number) => NearbyArticle | undefined;
   currentWindow: () => ArticleWindow | null;
   applyOptimisticCount: (count: number) => void;
   /**
@@ -174,21 +173,6 @@ export function createArticleWindowLifecycle(
     scrollCountObserver?.(lastScrollCount, articleWindow?.loadedCount());
   }
 
-  function getArticleByIndex(i: number): NearbyArticle | undefined {
-    if (articleWindow) {
-      const article = articleWindow.getArticle(i);
-      if (article) return article;
-    }
-    // Fallback: use viewport articles before the ArticleWindow's first
-    // onWindowChange fires (i.e. during the brief window between
-    // ensureRange and the first tile load completing). Once
-    // onWindowChange fires, articlesObserver syncs the state machine's
-    // articles from the ArticleWindow, so the two stay in sync.
-    const state = deps.getState();
-    if (state.phase.phase === "browsing") return state.phase.articles[i];
-    return undefined;
-  }
-
   function ensureArticleRange(pos: UserPosition, count: number): void {
     const posChanged =
       !windowPosition ||
@@ -229,7 +213,6 @@ export function createArticleWindowLifecycle(
     ensureArticleRange,
     resetArticleWindow,
     getOrCreateArticleWindow,
-    getArticleByIndex,
     currentWindow: () => articleWindow,
     applyOptimisticCount,
     attachScrollCountObserver,

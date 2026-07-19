@@ -18,6 +18,7 @@ import {
 import type { NearbyArticle } from "./types";
 import type { AppState, Event } from "./state-machine";
 import type { ArticleWindow } from "./article-window";
+import type { GroupView } from "./grouped-articles";
 import type { InfiniteScrollLifecycle } from "./infinite-scroll-lifecycle";
 import type { MapDrawer } from "./map-drawer";
 import type { SpatialPanelLifecycle } from "./spatial-panel-lifecycle";
@@ -36,7 +37,8 @@ export interface RendererDeps {
   mapPicker: MapPickerLifecycle;
   resetArticleWindow: () => void;
   getCurrentWindow: () => ArticleWindow | null;
-  getArticleByIndex: (i: number) => NearbyArticle | undefined;
+  /** Group-index view over the flat loaded list (see grouped-articles.ts). */
+  groupView: GroupView;
   getScrollContainer: () => HTMLElement;
   onHoverArticle: (title: string | null) => void;
   /** Push a scroll count through the lifecycle's monotonicity floor. */
@@ -245,7 +247,7 @@ export function createRenderer(deps: RendererDeps): Renderer {
     const aw = deps.getCurrentWindow();
     const loadedCount = aw?.loadedCount() ?? 0;
     const knownTotal = aw?.totalKnown() ?? 0;
-    const totalCount =
+    const articleTotal =
       knownTotal > 0
         ? Math.max(loadedCount, knownTotal)
         : Math.max(
@@ -255,19 +257,22 @@ export function createRenderer(deps: RendererDeps): Renderer {
           );
 
     if (!deps.infiniteScroll.isActive()) {
-      deps.infiniteScroll.init(totalCount);
+      // The virtual list is sized in group-index space (one row per coincident
+      // group). updateScrollCount routes through the group-aware forwarder, but
+      // init bypasses it, so convert here.
+      deps.infiniteScroll.init(
+        deps.groupView.groupCountForArticleCount(articleTotal),
+      );
     } else {
-      deps.updateScrollCount(totalCount);
+      deps.updateScrollCount(articleTotal);
 
       if (state.position) {
         const vl = deps.infiniteScroll.virtualList();
         if (vl) {
+          // visibleRange() is group-index space; expand to flat members so the
+          // map/radar re-collapse to the correct cluster counts.
           const range = vl.visibleRange();
-          const visible: NearbyArticle[] = [];
-          for (let i = range.start; i < range.end; i++) {
-            const a = deps.getArticleByIndex(i);
-            if (a) visible.push(a);
-          }
+          const visible = deps.groupView.membersInRange(range.start, range.end);
           deps.spatialPanel.update(
             state.position,
             visible,
