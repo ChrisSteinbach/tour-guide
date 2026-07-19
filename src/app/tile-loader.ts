@@ -6,6 +6,8 @@ import {
   tileFor,
   tileId,
   GRID_DEG,
+  BUFFER_DEG,
+  TILE_FORMAT_VERSION,
   ROWS,
   EDGE_PROXIMITY_DEG,
   wrapCol,
@@ -252,7 +254,25 @@ export const defaultDeps: TileLoaderDeps = {
 };
 
 /**
- * Fetch tile index. Returns null on 404.
+ * Whether a tile index was built with the grid parameters and format version
+ * this build computes tile IDs for. tile-loader recomputes tile IDs from its
+ * own imported GRID_DEG (see tilesForPosition / loadTile), so an index built
+ * with a different grid would make those IDs 404 or — worse — silently map to
+ * tile files covering a different region, returning confident but wrong
+ * nearest-neighbor results. Rejecting a mismatched index turns that latent
+ * corruption into a clean data-unavailable state.
+ */
+export function isCompatibleIndex(index: TileIndex): boolean {
+  return (
+    index.version === TILE_FORMAT_VERSION &&
+    index.gridDeg === GRID_DEG &&
+    index.bufferDeg === BUFFER_DEG
+  );
+}
+
+/**
+ * Fetch tile index. Returns null on 404 or when the index is incompatible
+ * with this build's grid/format (see isCompatibleIndex).
  * Caches in IDB, falls back to cached index on network error.
  */
 export async function loadTileIndex(
@@ -281,6 +301,15 @@ export async function loadTileIndex(
       return null;
     }
 
+    if (!isCompatibleIndex(index)) {
+      console.warn(
+        `Tile index for "${lang}" is incompatible ` +
+          `(version ${index.version}, grid ${index.gridDeg}°, buffer ${index.bufferDeg}° ` +
+          `vs expected ${TILE_FORMAT_VERSION}/${GRID_DEG}/${BUFFER_DEG}); treating as unavailable.`,
+      );
+      return null;
+    }
+
     // Cache for offline use
     if (db) {
       deps
@@ -299,7 +328,8 @@ export async function loadTileIndex(
         if (
           cached &&
           typeof cached === "object" &&
-          Array.isArray(cached.tiles)
+          Array.isArray(cached.tiles) &&
+          isCompatibleIndex(cached)
         ) {
           return cached;
         }

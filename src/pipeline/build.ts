@@ -24,6 +24,7 @@ import type { Article, Bounds } from "./extract-dump.js";
 import {
   GRID_DEG,
   BUFFER_DEG,
+  TILE_FORMAT_VERSION,
   ROWS,
   tileFor,
   tileId,
@@ -356,7 +357,7 @@ async function buildTiled(articles: Article[], lang: Lang): Promise<void> {
     .slice(0, 8);
 
   const index: TileIndex = {
-    version: 1,
+    version: TILE_FORMAT_VERSION,
     gridDeg: GRID_DEG,
     bufferDeg: BUFFER_DEG,
     generated: new Date().toISOString(),

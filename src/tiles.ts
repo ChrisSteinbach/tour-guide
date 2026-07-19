@@ -4,6 +4,15 @@ export const GRID_DEG = 5;
 export const BUFFER_DEG = 0.5;
 export const EDGE_PROXIMITY_DEG = 1;
 
+/**
+ * On-disk tile format version. Bump when a change to the serialized tile
+ * format or grid layout makes previously published tiles incompatible with
+ * this code. Written into every TileIndex by the pipeline and validated by the
+ * app's loadTileIndex, so stale/mismatched data surfaces as data-unavailable
+ * instead of silently producing wrong nearest-neighbor results.
+ */
+export const TILE_FORMAT_VERSION = 1;
+
 export interface TileEntry {
   id: string;
   row: number;

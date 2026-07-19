@@ -12,7 +12,7 @@ import type { TileLoaderDeps } from "./tile-loader";
 import { NearestQuery } from "./query";
 import { getTileLoadLog, clearTileLoadLog } from "./tile-log";
 import type { TileIndex, TileEntry } from "../tiles";
-import { GRID_DEG } from "../tiles";
+import { GRID_DEG, BUFFER_DEG, TILE_FORMAT_VERSION } from "../tiles";
 import {
   toCartesian,
   convexHull,
@@ -549,6 +549,81 @@ describe("loadTileIndex", () => {
     const deps = makeDeps();
     deps.getAny = () => Promise.reject(new Error("IDB read failed"));
     const result = await loadTileIndex("/base/", "en", undefined, deps);
+    expect(result).toBeNull();
+  });
+
+  it("rejects a fetched index built with an incompatible format version", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const incompatible = { ...SAMPLE_INDEX, version: TILE_FORMAT_VERSION + 1 };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(incompatible),
+      }),
+    );
+
+    const store = new Map<string, unknown>();
+    const result = await loadTileIndex(
+      "/base/",
+      "en",
+      undefined,
+      makeDeps(store),
+    );
+
+    // Data built for a different format must surface as unavailable, never be
+    // used to compute IDs against — and it must not poison the offline cache.
+    expect(result).toBeNull();
+    expect(store.has("tile-index-v1-en")).toBe(false);
+  });
+
+  it("rejects a fetched index built with a different grid size", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const incompatible = { ...SAMPLE_INDEX, gridDeg: GRID_DEG + 1 };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(incompatible),
+      }),
+    );
+
+    const result = await loadTileIndex("/base/", "en", undefined, makeDeps());
+    expect(result).toBeNull();
+  });
+
+  it("rejects a fetched index built with a different buffer width", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const incompatible = { ...SAMPLE_INDEX, bufferDeg: BUFFER_DEG * 2 };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(incompatible),
+      }),
+    );
+
+    const result = await loadTileIndex("/base/", "en", undefined, makeDeps());
+    expect(result).toBeNull();
+  });
+
+  it("rejects an incompatible cached index instead of using it offline", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new TypeError("fetch failed")),
+    );
+
+    const stale = { ...SAMPLE_INDEX, version: TILE_FORMAT_VERSION + 1 };
+    const store = new Map<string, unknown>([["tile-index-v1-en", stale]]);
+    const result = await loadTileIndex(
+      "/base/",
+      "en",
+      undefined,
+      makeDeps(store),
+    );
     expect(result).toBeNull();
   });
 });
