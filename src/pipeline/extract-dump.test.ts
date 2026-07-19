@@ -381,6 +381,39 @@ describe("extractDump", () => {
     expect(result.articleCount).toBe(2);
   });
 
+  it("does not re-fetch dump files already on disk when skipExistingDumps is set", async () => {
+    const dumpsDir = writeDumps(
+      "dumps-skip-existing",
+      [{ id: 100, title: "Eiffeltornet" }],
+      [{ pageId: 100, lat: 48.8584, lon: 2.2945 }],
+    );
+
+    const outputPath = join(testDir, "articles-skip-existing.json");
+    const fetchFn = (async () => {
+      throw new Error(
+        "fetchFn should not be called when skipExistingDumps skips an already-present file",
+      );
+    }) as unknown as typeof fetch;
+
+    // skipDownload defaults to false, so phase 0 still runs downloadAllDumps —
+    // skipExistingDumps must make it skip the files writeDumps already put on disk.
+    const result = await extractDump({
+      lang: "sv",
+      dumpsDir,
+      outputPath,
+      pageviews: false,
+      skipExistingDumps: true,
+      fetchFn,
+    });
+
+    expect(result.articleCount).toBe(1);
+    const [article] = readFileSync(outputPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as Article);
+    expect(article.title).toBe("Eiffeltornet");
+  });
+
   describe("pageviews join", () => {
     it("joins views onto matching articles by page_id and leaves the rest unset", async () => {
       const dumpsDir = writeDumps(
