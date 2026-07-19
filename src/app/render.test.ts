@@ -945,7 +945,46 @@ describe("enrichArticleItem", () => {
     const thumb = container.querySelector(".nearby-thumb");
     const img = thumb?.querySelector("img");
     expect(img?.src).toBe("https://example.com/thumb.jpg");
+    // The column stays collapsed until the image actually loads, so an
+    // in-flight thumbnail never leaves a blank indented gap on the card.
+    expect(thumb?.classList.contains("nearby-thumb-loaded")).toBe(false);
+  });
+
+  it("reveals the thumbnail column only once the image loads", () => {
+    const container = document.createElement("div");
+    renderNearbyList(container, makeArticles(1), {
+      onShowAbout,
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+
+    enrichArticleItem(container, "Article 0", makeSummary());
+    const thumb = container.querySelector(".nearby-thumb");
+    const img = thumb?.querySelector("img");
+    expect(thumb?.classList.contains("nearby-thumb-loaded")).toBe(false);
+
+    img?.dispatchEvent(new Event("load"));
     expect(thumb?.classList.contains("nearby-thumb-loaded")).toBe(true);
+  });
+
+  it("collapses the thumbnail when the image fails to load", () => {
+    const container = document.createElement("div");
+    renderNearbyList(container, makeArticles(1), {
+      onShowAbout,
+      onSelectArticle: () => {},
+      currentLang: "en",
+      onLangChange: () => {},
+    });
+
+    enrichArticleItem(container, "Article 0", makeSummary());
+    const thumb = container.querySelector(".nearby-thumb");
+    const img = thumb?.querySelector("img");
+    expect(img).not.toBeNull();
+
+    img?.dispatchEvent(new Event("error"));
+    expect(thumb?.querySelector("img")).toBeNull();
+    expect(thumb?.classList.contains("nearby-thumb-loaded")).toBe(false);
   });
 
   it("does not add duplicate images on repeated calls", () => {

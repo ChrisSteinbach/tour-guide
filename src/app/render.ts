@@ -323,11 +323,32 @@ export function applyEnrichment(
   if (thumbContainer && summary.thumbnailUrl) {
     if (!thumbContainer.querySelector("img")) {
       const img = document.createElement("img");
-      img.src = summary.thumbnailUrl;
       img.alt = "";
       img.loading = "lazy";
+
+      // Reveal the 40px thumbnail column only once the image has actually
+      // painted. `nearby-thumb-loaded` reserves the column and shifts the
+      // card's text to the right; adding it the instant the summary arrives —
+      // before the image has loaded — leaves a blank indented gap that reads
+      // as a per-card layout glitch while deep-scroll enrichment is in flight.
+      // Gating the reveal on the load event keeps the card a clean full-width
+      // text row until there is a real thumbnail to show.
+      img.src = summary.thumbnailUrl;
+      if (img.complete && img.naturalWidth > 0) {
+        // Already decoded (e.g. a cached image on a recycled virtual-scroll
+        // row) — reveal synchronously so scrolling never flickers it in.
+        thumbContainer.classList.add("nearby-thumb-loaded");
+      } else {
+        img.addEventListener(
+          "load",
+          () => thumbContainer.classList.add("nearby-thumb-loaded"),
+          { once: true },
+        );
+        // A thumbnail that fails to load collapses back to a text-only row
+        // instead of leaving a permanent blank indent.
+        img.addEventListener("error", () => img.remove(), { once: true });
+      }
       thumbContainer.appendChild(img);
-      thumbContainer.classList.add("nearby-thumb-loaded");
     }
   }
 }
