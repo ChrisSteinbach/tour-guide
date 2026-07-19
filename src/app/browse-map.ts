@@ -1,10 +1,14 @@
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { worldZoomBounds } from "./map-bounds";
+import { collapseCoincident } from "./coincident";
+import type { CoincidentGroup } from "./coincident";
 import type { NearbyArticle, UserPosition } from "./types";
 import {
   wikiPinIcon,
   wikiPinHighlightIcon,
+  wikiPinClusterIcon,
+  wikiPinClusterHighlightIcon,
   locationPinIcon,
 } from "./map-icons";
 
@@ -62,21 +66,100 @@ export function createBrowseMap(
     map.on("contextmenu", () => xray.toggle());
   }
 
-  let articleMarkers = new Map<string, L.Marker>();
+  // Distinct articles can share bit-identical coordinates (see
+  // src/app/coincident.ts); each coordinate gets exactly one marker, so every
+  // member's title maps to that shared entry — a co-located non-representative
+  // member still resolves to (and highlights) its group's marker.
+  interface MarkerEntry {
+    marker: L.Marker;
+    group: CoincidentGroup;
+  }
+
+  let articleMarkers = new Map<string, MarkerEntry>();
   let highlightedTitle: string | null = null;
 
+  function groupIcon(
+    group: CoincidentGroup,
+    isHighlighted: boolean,
+  ): L.Icon | L.DivIcon {
+    if (group.members.length === 1) {
+      return isHighlighted ? wikiPinHighlightIcon : wikiPinIcon;
+    }
+    return isHighlighted
+      ? wikiPinClusterHighlightIcon(group.members.length)
+      : wikiPinClusterIcon(group.members.length);
+  }
+
+  /**
+   * Popup listing every co-located article, opened on a cluster marker
+   * click. No CSS file is in scope for this change, so layout is done with
+   * inline styles rather than a stylesheet class.
+   */
+  function openGroupPopup(group: CoincidentGroup): void {
+    const content = document.createElement("div");
+    content.className = "wiki-cluster-popup";
+    content.style.display = "flex";
+    content.style.flexDirection = "column";
+    content.style.gap = "2px";
+    content.style.maxHeight = "220px";
+    content.style.overflowY = "auto";
+    for (const member of group.members) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "wiki-cluster-popup-row";
+      row.textContent = member.title;
+      row.style.all = "unset";
+      row.style.cursor = "pointer";
+      row.style.padding = "6px 10px";
+      row.style.borderRadius = "4px";
+      row.style.font = "13px system-ui, sans-serif";
+      row.style.whiteSpace = "nowrap";
+      // `popup` is referenced here before its own declaration below, but the
+      // click listener only runs later (on a real click), by which time the
+      // assignment has long completed.
+      row.addEventListener("click", () => {
+        onSelectArticle(member);
+        popup.close();
+      });
+      content.appendChild(row);
+    }
+    const popup = L.popup()
+      .setLatLng([group.lat, group.lon])
+      .setContent(content)
+      .openOn(map);
+  }
+
+  function buildMarkerEntry(
+    group: CoincidentGroup,
+    isHighlighted: boolean,
+  ): MarkerEntry {
+    const marker = L.marker([group.lat, group.lon], {
+      icon: groupIcon(group, isHighlighted),
+      zIndexOffset: isHighlighted ? 1000 : 0,
+    }).addTo(map);
+
+    if (group.members.length === 1) {
+      const only = group.representative;
+      marker.bindTooltip(only.title);
+      marker.on("click", () => onSelectArticle(only));
+    } else {
+      marker.bindTooltip(`${group.members.length} articles here`);
+      marker.on("click", () => openGroupPopup(group));
+    }
+    return { marker, group };
+  }
+
   function updateMarkers(newArticles: NearbyArticle[]): void {
-    for (const m of articleMarkers.values()) m.remove();
+    for (const entry of new Set(articleMarkers.values())) entry.marker.remove();
     articleMarkers = new Map();
-    for (const article of newArticles) {
-      const isHighlighted = article.title === highlightedTitle;
-      const m = L.marker([article.lat, article.lon], {
-        icon: isHighlighted ? wikiPinHighlightIcon : wikiPinIcon,
-        zIndexOffset: isHighlighted ? 1000 : 0,
-      }).addTo(map);
-      m.bindTooltip(article.title);
-      m.on("click", () => onSelectArticle(article));
-      articleMarkers.set(article.title, m);
+    for (const group of collapseCoincident(newArticles)) {
+      const isHighlighted = group.members.some(
+        (member) => member.title === highlightedTitle,
+      );
+      const entry = buildMarkerEntry(group, isHighlighted);
+      for (const member of group.members) {
+        articleMarkers.set(member.title, entry);
+      }
     }
   }
 
@@ -113,17 +196,17 @@ export function createBrowseMap(
       if (highlightedTitle) {
         const prev = articleMarkers.get(highlightedTitle);
         if (prev) {
-          prev.setIcon(wikiPinIcon);
-          prev.setZIndexOffset(0);
+          prev.marker.setIcon(groupIcon(prev.group, false));
+          prev.marker.setZIndexOffset(0);
         }
       }
       highlightedTitle = title;
       // Apply new highlight
       if (title) {
-        const marker = articleMarkers.get(title);
-        if (marker) {
-          marker.setIcon(wikiPinHighlightIcon);
-          marker.setZIndexOffset(1000);
+        const entry = articleMarkers.get(title);
+        if (entry) {
+          entry.marker.setIcon(groupIcon(entry.group, true));
+          entry.marker.setZIndexOffset(1000);
         }
       }
     },

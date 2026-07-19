@@ -16,18 +16,71 @@ function makeContainer(): HTMLElement {
 const POSITION: UserPosition = { lat: 0, lon: 0 };
 
 /** ~111 km per degree at the equator; distances chosen to match. */
-function articleNorth(km: number, title = "North"): NearbyArticle {
-  return { title, lat: km / 111.32, lon: 0, distanceM: km * 1000 };
+function articleNorth(
+  km: number,
+  title = "North",
+  weight?: number,
+): NearbyArticle {
+  return { title, lat: km / 111.32, lon: 0, distanceM: km * 1000, weight };
 }
 
-function articleEast(km: number, title = "East"): NearbyArticle {
-  return { title, lat: 0, lon: km / 111.32, distanceM: km * 1000 };
+function articleEast(
+  km: number,
+  title = "East",
+  weight?: number,
+): NearbyArticle {
+  return { title, lat: 0, lon: km / 111.32, distanceM: km * 1000, weight };
 }
 
 function click(canvas: HTMLCanvasElement, x: number, y: number): void {
   canvas.dispatchEvent(
     new MouseEvent("click", { clientX: x, clientY: y, bubbles: true }),
   );
+}
+
+/**
+ * A minimal fake 2D context so draw() — normally skipped under jsdom, which
+ * has no real canvas — can run to completion. Every drawing call is a no-op
+ * except fill()/fillText(), which record what was drawn so coincident-group
+ * rendering (the count badge, the highlight color) can be asserted on.
+ */
+function fakeCanvasContext(): {
+  ctx: CanvasRenderingContext2D;
+  fillStyles: unknown[];
+  texts: string[];
+} {
+  const fillStyles: unknown[] = [];
+  const texts: string[] = [];
+  const noop = () => {};
+  const ctx: Record<string, unknown> = {
+    createRadialGradient: () => ({ addColorStop: noop }),
+    measureText: (text: string) => ({ width: text.length * 6 }) as TextMetrics,
+    fillRect: noop,
+    beginPath: noop,
+    closePath: noop,
+    arc: noop,
+    moveTo: noop,
+    lineTo: noop,
+    stroke: noop,
+    fill: () => fillStyles.push(ctx.fillStyle),
+    fillText: (text: string) => texts.push(text),
+    roundRect: noop,
+    save: noop,
+    restore: noop,
+    setTransform: noop,
+  };
+  return {
+    ctx: ctx as unknown as CanvasRenderingContext2D,
+    fillStyles,
+    texts,
+  };
+}
+
+/** Waits for the radar's animation loop to paint at least one frame. */
+async function nextFrame(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
 }
 
 describe("createRadarView", () => {
@@ -257,5 +310,137 @@ describe("createRadarView", () => {
 
     expect(canvas.getAttribute("aria-label")).toContain("3 nearby articles");
     view.destroy();
+  });
+
+  describe("coincident groups (co-located articles)", () => {
+    it("collapses co-located articles into a single contact, naming both location and article counts", () => {
+      const el = makeContainer();
+      const view = createRadarView(
+        el,
+        POSITION,
+        [
+          articleNorth(2, "A"),
+          articleNorth(2, "B"), // same coordinate as A
+          articleNorth(2, "C"), // same coordinate as A
+        ],
+        vi.fn(),
+      );
+      const canvas = el.querySelector("canvas")!;
+
+      const label = canvas.getAttribute("aria-label");
+      expect(label).toContain("1 nearby locations");
+      expect(label).toContain("3 articles");
+      view.destroy();
+    });
+
+    it("does not mention locations separately when there is no coincidence", () => {
+      const el = makeContainer();
+      const view = createRadarView(
+        el,
+        POSITION,
+        [articleNorth(1), articleEast(2)],
+        vi.fn(),
+      );
+      const canvas = el.querySelector("canvas")!;
+
+      // Unchanged wording for the common case: no "locations" split needed.
+      expect(canvas.getAttribute("aria-label")).toContain("2 nearby articles");
+      expect(canvas.getAttribute("aria-label")).not.toContain("locations");
+      view.destroy();
+    });
+
+    it("selects the group's highest-weight representative when its shared blip is clicked", () => {
+      const el = makeContainer();
+      const onSelect = vi.fn();
+      const minor = articleNorth(2, "Minor", 10);
+      const major = articleNorth(2, "Major", 50); // same coordinate, outweighs Minor
+      const view = createRadarView(el, POSITION, [minor, major], onSelect);
+      const canvas = el.querySelector("canvas")!;
+
+      // Same screen position as a lone 2 km-north article (see "selects the
+      // article whose blip is clicked" above) — both members share one blip.
+      click(canvas, 150, 32);
+
+      expect(onSelect).toHaveBeenCalledWith(major);
+      expect(onSelect).not.toHaveBeenCalledWith(minor);
+      view.destroy();
+    });
+
+    it("still selects a lone non-coincident article normally alongside a cluster", () => {
+      const el = makeContainer();
+      const onSelect = vi.fn();
+      const solo = articleEast(2, "Solo");
+      const minor = articleNorth(2, "Minor", 10);
+      const major = articleNorth(2, "Major", 50);
+      const view = createRadarView(
+        el,
+        POSITION,
+        [solo, minor, major],
+        onSelect,
+      );
+      const canvas = el.querySelector("canvas")!;
+
+      click(canvas, 268, 150); // east blip, per the existing hit-test geometry
+      expect(onSelect).toHaveBeenLastCalledWith(solo);
+
+      click(canvas, 150, 32); // north blip, shared by the Minor/Major group
+      expect(onSelect).toHaveBeenLastCalledWith(major);
+      view.destroy();
+    });
+
+    // These three use a fake 2D context (draw() is normally skipped under
+    // jsdom) so the coincident-group rendering itself — not just the
+    // interaction layer above — gets real coverage.
+    describe("rendering", () => {
+      it("draws a count badge for a coincident group's blip", async () => {
+        const { ctx, texts } = fakeCanvasContext();
+        vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+          ctx,
+        );
+
+        const el = makeContainer();
+        const minor = articleNorth(2, "Minor", 10);
+        const major = articleNorth(2, "Major", 50);
+        const view = createRadarView(el, POSITION, [minor, major], vi.fn());
+        await nextFrame();
+
+        expect(texts).toContain("2");
+        view.destroy();
+      });
+
+      it("draws no count badge for a lone (non-coincident) article", async () => {
+        const { ctx, texts } = fakeCanvasContext();
+        vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+          ctx,
+        );
+
+        const el = makeContainer();
+        const view = createRadarView(el, POSITION, [articleNorth(2)], vi.fn());
+        await nextFrame();
+
+        expect(texts).not.toContain("2");
+        view.destroy();
+      });
+
+      it("highlight(memberTitle) lights the shared blip even for a non-representative member", async () => {
+        const { ctx, fillStyles } = fakeCanvasContext();
+        vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+          ctx,
+        );
+
+        const el = makeContainer();
+        const minor = articleNorth(2, "Minor", 10);
+        const major = articleNorth(2, "Major", 50); // representative
+        const view = createRadarView(el, POSITION, [minor, major], vi.fn());
+        await nextFrame();
+        fillStyles.length = 0; // discard the initial, unhighlighted paint
+
+        view.highlight("Minor"); // non-representative member
+        await nextFrame();
+
+        expect(fillStyles).toContain("#ffffff");
+        view.destroy();
+      });
+    });
   });
 });

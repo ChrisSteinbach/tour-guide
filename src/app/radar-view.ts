@@ -18,10 +18,16 @@ import {
   type RadarBlip,
 } from "./radar-math";
 import { createCompassWatcher } from "./compass";
+import { collapseCoincident } from "./coincident";
+import type { CoincidentGroup } from "./coincident";
 import type { NearbyArticle, PositionSource, UserPosition } from "./types";
 import type { SpatialViewHandle } from "./lazy-view-lifecycle";
 
-/** Most blips drawn at once; articles arrive nearest-first. */
+/**
+ * Most blips (coincident-article groups, see coincident.ts) drawn at once;
+ * articles — and therefore groups, first-seen order tracking proximity —
+ * arrive nearest-first.
+ */
 const MAX_BLIPS = 80;
 /** Full sweep rotation period in ms. */
 const SWEEP_PERIOD_MS = 4000;
@@ -48,7 +54,7 @@ const COLOR_LABEL_TEXT = "#dce8ff";
 const COLOR_LABEL_BG = "rgba(8, 16, 32, 0.85)";
 
 interface Contact {
-  article: NearbyArticle;
+  group: CoincidentGroup;
   bearingDeg: number;
 }
 
@@ -148,18 +154,18 @@ export function createRadarView(
     return { w, h, radius: Math.max(0, Math.min(w, h) / 2 - EDGE_MARGIN) };
   }
 
-  function computeBlips(): RadarBlip<NearbyArticle>[] {
+  function computeBlips(): RadarBlip<CoincidentGroup>[] {
     const { radius } = viewSize();
     const heading = displayedHeading ?? 0;
     return contacts.map((c) => {
       const { x, y } = blipOffset(
         c.bearingDeg,
-        c.article.distanceM,
+        c.group.distanceM,
         heading,
         range.maxM,
         radius,
       );
-      return { x, y, item: c.article };
+      return { x, y, item: c.group };
     });
   }
 
@@ -333,15 +339,20 @@ export function createRadarView(
 
     // Blips
     const blips = computeBlips();
-    let labelBlip: RadarBlip<NearbyArticle> | null = null;
+    let labelBlip: RadarBlip<CoincidentGroup> | null = null;
     for (let i = 0; i < blips.length; i++) {
       const b = blips[i];
       const screenAngle = (Math.atan2(b.x, -b.y) * 180) / Math.PI; // bearing-like, 0 = up
       const boost = sweepEnabled()
         ? sweepTrailBoost(screenAngle, sweepDeg, TRAIL_DEG)
         : 1;
-      const isHighlighted = b.item.title === highlightTitle;
-      const isHovered = b.item.title === hoverTitle;
+      // A group is "highlighted" when highlightTitle names ANY co-located
+      // member (not just the representative); hover is set from our own
+      // hit-test, so an exact match against the representative suffices.
+      const isHighlighted = b.item.members.some(
+        (member) => member.title === highlightTitle,
+      );
+      const isHovered = b.item.representative.title === hoverTitle;
       const alpha = isHighlighted ? 1 : 0.45 + 0.55 * boost;
       const r = (isHighlighted || isHovered ? 5.5 : 3.5) + 1.5 * boost;
 
@@ -354,14 +365,35 @@ export function createRadarView(
       ctx.beginPath();
       ctx.arc(cx + b.x, cy + b.y, r, 0, 2 * Math.PI);
       ctx.fill();
+
+      // Coincident-group count badge: a small legible tag next to the blip
+      // naming how many co-located articles it represents.
+      if (b.item.members.length > 1) {
+        const count = String(b.item.members.length);
+        ctx.shadowBlur = 0;
+        ctx.font = "bold 9px system-ui, sans-serif";
+        const tw = ctx.measureText(count).width;
+        const bx = cx + b.x + r * 0.6;
+        const by = cy + b.y - r * 0.6;
+        ctx.fillStyle = COLOR_LABEL_BG;
+        ctx.beginPath();
+        ctx.roundRect(bx, by - 9, tw + 6, 11, 5);
+        ctx.fill();
+        ctx.fillStyle = COLOR_LABEL_TEXT;
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        ctx.fillText(count, bx + 3, by - 3.5);
+      }
+
       ctx.restore();
 
       if (isHighlighted || (isHovered && !highlightTitle)) labelBlip = b;
     }
 
-    // Title label for the highlighted/hovered blip
+    // Title label for the highlighted/hovered blip — always the group's
+    // representative, even when highlightTitle names another member.
     if (labelBlip) {
-      const title = labelBlip.item.title;
+      const title = labelBlip.item.representative.title;
       ctx.font = "12px system-ui, sans-serif";
       const metrics = ctx.measureText(title);
       const tw = Math.min(metrics.width, w - 16);
@@ -393,7 +425,7 @@ export function createRadarView(
 
   // ── Interaction ──
 
-  function blipAt(e: MouseEvent): NearbyArticle | null {
+  function blipAt(e: MouseEvent): CoincidentGroup | null {
     const rect = canvas.getBoundingClientRect();
     const { w, h } = viewSize();
     const x = e.clientX - rect.left - w / 2;
@@ -403,12 +435,14 @@ export function createRadarView(
 
   const onClick = (e: MouseEvent): void => {
     const hit = blipAt(e);
-    if (hit) onSelect(hit);
+    // In-radar expansion of a cluster's full member list is out of scope —
+    // a click always goes straight to the group's representative article.
+    if (hit) onSelect(hit.representative);
   };
 
   const onPointerMove = (e: PointerEvent): void => {
     const hit = blipAt(e);
-    const title = hit?.title ?? null;
+    const title = hit?.representative.title ?? null;
     if (title !== hoverTitle) {
       hoverTitle = title;
       canvas.style.cursor = hit ? "pointer" : "";
@@ -439,18 +473,45 @@ export function createRadarView(
 
   // ── Data ──
 
+  /**
+   * Groups collapse most coincident clusters to one blip, so the plain
+   * article count from before would undercount what's actually nearby;
+   * name both numbers once they diverge, otherwise keep the older, simpler
+   * wording (the common case — no coincident articles at all).
+   */
+  function radarAriaLabel(
+    groupCount: number,
+    totalArticles: number,
+    maxM: number,
+    degraded: boolean,
+  ): string {
+    if (groupCount === 0) {
+      return degraded
+        ? "Radar — couldn’t load nearby articles"
+        : "Radar with no articles in range";
+    }
+    const dist = formatDistance(maxM);
+    return groupCount === totalArticles
+      ? `Radar showing ${groupCount} nearby articles within ${dist}`
+      : `Radar showing ${groupCount} nearby locations (${totalArticles} articles) within ${dist}`;
+  }
+
   function applyData(
     newPosition: UserPosition,
     newArticles: NearbyArticle[],
     degraded = false,
   ): void {
     pos = newPosition;
-    const capped = newArticles.slice(0, MAX_BLIPS);
-    contacts = capped.map((article) => ({
-      article,
-      bearingDeg: initialBearing(pos, article),
+    const groups = collapseCoincident(newArticles).slice(0, MAX_BLIPS);
+    contacts = groups.map((group) => ({
+      group,
+      bearingDeg: initialBearing(pos, group.representative),
     }));
-    range = radarRange(capped.length ? capped[capped.length - 1].distanceM : 0);
+    range = radarRange(groups.length ? groups[groups.length - 1].distanceM : 0);
+    const totalArticles = groups.reduce(
+      (sum, group) => sum + group.members.length,
+      0,
+    );
     empty.hidden = contacts.length > 0;
     // A failed nearest tile makes an empty (or far-flung) radar read as a
     // malfunction; name the cause instead.
@@ -459,11 +520,7 @@ export function createRadarView(
       : "No articles in range";
     canvas.setAttribute(
       "aria-label",
-      contacts.length
-        ? `Radar showing ${contacts.length} nearby articles within ${formatDistance(range.maxM)}`
-        : degraded
-          ? "Radar — couldn’t load nearby articles"
-          : "Radar with no articles in range",
+      radarAriaLabel(contacts.length, totalArticles, range.maxM, degraded),
     );
     markDirty();
   }

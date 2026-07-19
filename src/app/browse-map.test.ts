@@ -32,12 +32,21 @@ vi.mock("leaflet", () => {
     setLatLng: vi.fn().mockReturnThis(),
   });
 
+  const createPopup = () => ({
+    setLatLng: vi.fn().mockReturnThis(),
+    setContent: vi.fn().mockReturnThis(),
+    openOn: vi.fn().mockReturnThis(),
+    close: vi.fn(),
+  });
+
   return {
     default: {
       map: vi.fn(() => mockMap),
       tileLayer: vi.fn(() => mockTileLayer),
       marker: vi.fn(() => createMarker()),
       icon: vi.fn(() => ({ _isMockIcon: true })),
+      divIcon: vi.fn(() => ({ _isMockDivIcon: true })),
+      popup: vi.fn(() => createPopup()),
       control: { zoom: vi.fn(() => mockZoomControl) },
       latLngBounds: vi.fn(() => mockLatLngBounds),
       _mocks: { mockMap },
@@ -67,8 +76,13 @@ function pos(lat: number, lon: number): UserPosition {
   return { lat, lon };
 }
 
-function article(title: string, lat: number, lon: number): NearbyArticle {
-  return { title, lat, lon, distanceM: 100 };
+function article(
+  title: string,
+  lat: number,
+  lon: number,
+  weight?: number,
+): NearbyArticle {
+  return { title, lat, lon, distanceM: 100, weight };
 }
 
 // ── Tests ───────────────────────────────────────────────────
@@ -367,6 +381,137 @@ describe("createBrowseMap", () => {
       );
 
       handle.highlight("Nonexistent"); // should not throw
+      handle.destroy();
+    });
+  });
+
+  describe("coincident groups (cluster markers)", () => {
+    it("creates one marker for a group of co-located articles instead of one per article", () => {
+      const articles = [
+        article("A", 40, -74, 10),
+        article("B", 40, -74, 50),
+        article("C", 40, -74, 5),
+      ];
+      const handle = createBrowseMap(container, pos(48, 2), articles, vi.fn());
+
+      const markerMock = L.marker as ReturnType<typeof vi.fn>;
+      // 1 user pin + 1 cluster marker (not 3)
+      expect(markerMock).toHaveBeenCalledTimes(2);
+      handle.destroy();
+    });
+
+    it("keeps a plain marker for a non-coincident article alongside a cluster group", () => {
+      const onSelect = vi.fn();
+      const solo = article("Solo", 10, 10, 5);
+      const clusterA = article("ClusterA", 40, -74, 50);
+      const clusterB = article("ClusterB", 40, -74, 10);
+      const handle = createBrowseMap(
+        container,
+        pos(48, 2),
+        [solo, clusterA, clusterB],
+        onSelect,
+      );
+
+      const markerMock = L.marker as ReturnType<typeof vi.fn>;
+      // 1 user pin + 1 solo marker + 1 cluster marker
+      expect(markerMock).toHaveBeenCalledTimes(3);
+      const soloMarker = markerMock.mock.results[1].value;
+      expect(soloMarker.bindTooltip).toHaveBeenCalledWith("Solo");
+
+      const clickHandler = soloMarker.on.mock.calls.find(
+        ([event]: [string]) => event === "click",
+      )![1];
+      clickHandler();
+      expect(onSelect).toHaveBeenCalledWith(solo);
+      handle.destroy();
+    });
+
+    it("gives a coincident group a cluster icon and a count tooltip", () => {
+      const articles = [article("A", 40, -74, 10), article("B", 40, -74, 50)];
+      const handle = createBrowseMap(container, pos(48, 2), articles, vi.fn());
+
+      const markerMock = L.marker as ReturnType<typeof vi.fn>;
+      // [0] is the user pin; [1] is the cluster marker
+      const clusterMarker = markerMock.mock.results[1].value;
+      expect(L.divIcon).toHaveBeenCalled();
+      expect(clusterMarker.bindTooltip).toHaveBeenCalledWith("2 articles here");
+      handle.destroy();
+    });
+
+    it("opens a popup listing every member, most-notable first, on a cluster marker click", () => {
+      const mostNotable = article("Most Notable", 40, -74, 50);
+      const leastNotable = article("Least Notable", 40, -74, 10);
+      const handle = createBrowseMap(
+        container,
+        pos(48, 2),
+        [mostNotable, leastNotable],
+        vi.fn(),
+      );
+
+      const markerMock = L.marker as ReturnType<typeof vi.fn>;
+      const clusterMarker = markerMock.mock.results[1].value;
+      const clickHandler = clusterMarker.on.mock.calls.find(
+        ([event]: [string]) => event === "click",
+      )![1];
+      clickHandler();
+
+      const popupMock = L.popup as ReturnType<typeof vi.fn>;
+      const popupInstance = popupMock.mock.results[0].value;
+      const content = popupInstance.setContent.mock.calls[0][0] as HTMLElement;
+      const rows = Array.from(content.querySelectorAll("button"));
+      expect(rows.map((r) => r.textContent)).toEqual([
+        "Most Notable",
+        "Least Notable",
+      ]);
+      handle.destroy();
+    });
+
+    it("selects the clicked row's article and closes the popup", () => {
+      const onSelect = vi.fn();
+      const mostNotable = article("Most Notable", 40, -74, 50);
+      const leastNotable = article("Least Notable", 40, -74, 10);
+      const handle = createBrowseMap(
+        container,
+        pos(48, 2),
+        [mostNotable, leastNotable],
+        onSelect,
+      );
+
+      const markerMock = L.marker as ReturnType<typeof vi.fn>;
+      const clusterMarker = markerMock.mock.results[1].value;
+      const clickHandler = clusterMarker.on.mock.calls.find(
+        ([event]: [string]) => event === "click",
+      )![1];
+      clickHandler();
+
+      const popupMock = L.popup as ReturnType<typeof vi.fn>;
+      const popupInstance = popupMock.mock.results[0].value;
+      const content = popupInstance.setContent.mock.calls[0][0] as HTMLElement;
+      const rows = Array.from(content.querySelectorAll("button"));
+      rows[1].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+      expect(onSelect).toHaveBeenCalledWith(leastNotable);
+      expect(popupInstance.close).toHaveBeenCalled();
+      handle.destroy();
+    });
+
+    it("highlight(memberTitle) highlights the group's marker even for a non-representative member", () => {
+      const mostNotable = article("Most Notable", 40, -74, 50);
+      const leastNotable = article("Least Notable", 40, -74, 10);
+      const handle = createBrowseMap(
+        container,
+        pos(48, 2),
+        [mostNotable, leastNotable],
+        vi.fn(),
+      );
+
+      const markerMock = L.marker as ReturnType<typeof vi.fn>;
+      const clusterMarker = markerMock.mock.results[1].value;
+
+      handle.highlight("Least Notable");
+
+      expect(clusterMarker.setIcon).toHaveBeenCalled();
+      expect(clusterMarker.setZIndexOffset).toHaveBeenCalledWith(1000);
       handle.destroy();
     });
   });
