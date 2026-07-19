@@ -81,8 +81,8 @@ export function openClusterPopover(
     document.removeEventListener("pointerdown", onOutsidePointer, true);
     document.removeEventListener("keydown", onKeydown, true);
     window.removeEventListener("resize", close);
-    window.removeEventListener("scroll", close, true);
-    scrollContainer?.removeEventListener("scroll", close);
+    window.removeEventListener("scroll", onScrollClose, true);
+    scrollContainer?.removeEventListener("scroll", onScrollClose);
     panel.remove();
     if (active === handle) active = null;
     if (anchor.isConnected) anchor.setAttribute("aria-expanded", "false");
@@ -91,6 +91,15 @@ export function openClusterPopover(
   function onOutsidePointer(e: PointerEvent): void {
     const target = e.target as Node;
     if (panel.contains(target) || anchor.contains(target)) return;
+    close();
+  }
+
+  // Dismiss when the page/list scrolls out from under the anchor, but NOT when
+  // the popover's own overflow scrolls — the window listener is capture-phase,
+  // so it also sees the panel's internal scroll unless we exclude it.
+  function onScrollClose(e: Event): void {
+    const target = e.target as Node | null;
+    if (target && panel.contains(target)) return;
     close();
   }
 
@@ -111,8 +120,8 @@ export function openClusterPopover(
   window.addEventListener("resize", close);
   // Capture window scroll (rows recycle out from under an anchored popover);
   // also watch the specific scroll container for desktop split-view.
-  window.addEventListener("scroll", close, true);
-  scrollContainer?.addEventListener("scroll", close);
+  window.addEventListener("scroll", onScrollClose, true);
+  scrollContainer?.addEventListener("scroll", onScrollClose);
 
   anchor.setAttribute("aria-expanded", "true");
   rows[0]?.focus();

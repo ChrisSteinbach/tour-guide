@@ -93,6 +93,22 @@ describe("openClusterPopover", () => {
     expect(document.querySelector(".cluster-popover")).toBeNull();
   });
 
+  it("stays open when its own content scrolls", () => {
+    const anchor = document.createElement("button");
+    document.body.appendChild(anchor);
+
+    openClusterPopover({ anchor, members: [m1, m2], onSelect: vi.fn() });
+    const panel = document.querySelector<HTMLElement>(".cluster-popover")!;
+    // The window scroll listener is capture-phase, so it also sees the panel's
+    // internal scroll — it must ignore scrolls originating inside the popover.
+    panel.dispatchEvent(new Event("scroll"));
+    panel
+      .querySelector<HTMLElement>(".cluster-member-row")!
+      .dispatchEvent(new Event("scroll"));
+
+    expect(document.querySelector(".cluster-popover")).not.toBeNull();
+  });
+
   it("closes the previous popover when a new one opens", () => {
     const anchor = document.createElement("button");
     document.body.appendChild(anchor);
