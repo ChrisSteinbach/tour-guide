@@ -7,9 +7,12 @@ import {
   MAX_CACHED_TILES,
   loadTileIndex,
   loadTile,
+  tileBoxLowerBoundMeters,
+  queryTilesPruned,
 } from "./tile-loader";
-import type { TileLoaderDeps } from "./tile-loader";
-import { NearestQuery } from "./query";
+import type { TileLoaderDeps, TileVisit } from "./tile-loader";
+import { NearestQuery, EARTH_RADIUS_M } from "./query";
+import type { QueryResult } from "./query";
 import { getTileLoadLog, clearTileLoadLog } from "./tile-log";
 import type { TileIndex, TileEntry } from "../tiles";
 import { GRID_DEG, BUFFER_DEG, TILE_FORMAT_VERSION } from "../tiles";
@@ -19,6 +22,7 @@ import {
   buildTriangulation,
   deserializeBinary,
   flattenTriangulation,
+  haversineDistance,
 } from "spherical-delaunay";
 import type { FlatDelaunay } from "spherical-delaunay";
 import { encodeArticlePayload } from "../article-payload";
@@ -81,6 +85,95 @@ function makeTileMap(tileIds: string[]): Map<string, TileEntry> {
   return buildTileMap(makeIndex(tileIds));
 }
 
+/**
+ * Deterministic lat/lon scatter (3 rows x 4 cols = 12 points, stepping both
+ * axes so the set isn't collinear) for building a valid, box-respecting
+ * triangulation confined to one tile's cell.
+ */
+function scatterArticles(
+  prefix: string,
+  latRange: [number, number],
+  lonRange: [number, number],
+): { title: string; lat: number; lon: number; weight?: number }[] {
+  const [latMin, latMax] = latRange;
+  const [lonMin, lonMax] = lonRange;
+  const rows = 3;
+  const cols = 4;
+  const articles: { title: string; lat: number; lon: number }[] = [];
+  for (let i = 0; i < rows; i++) {
+    for (let j = 0; j < cols; j++) {
+      articles.push({
+        title: `${prefix}-${i}-${j}`,
+        lat: latMin + ((latMax - latMin) * i) / (rows - 1),
+        lon: lonMin + ((lonMax - lonMin) * j) / (cols - 1),
+      });
+    }
+  }
+  return articles;
+}
+
+/**
+ * Ground truth for findNearestTiled: query every tile's full findNearest,
+ * merge, dedupe by title, and re-sort. findNearestTiled's tile-pruning must
+ * never change the answer this produces.
+ */
+function bruteForceNearest(
+  tiles: ReadonlyMap<string, NearestQuery>,
+  lat: number,
+  lon: number,
+  k: number,
+  opts?: Parameters<typeof findNearestTiled>[4],
+): QueryResult[] {
+  const seen = new Set<string>();
+  const all: QueryResult[] = [];
+  for (const q of tiles.values()) {
+    for (const r of q.findNearest(lat, lon, k, undefined, opts).results) {
+      if (!seen.has(r.title)) {
+        seen.add(r.title);
+        all.push(r);
+      }
+    }
+  }
+  all.sort((a, b) => a.distanceM - b.distanceM);
+  return all.slice(0, k);
+}
+
+/**
+ * Minimum haversine distance (metres) from (lat, lon) to any of a dense
+ * (steps x steps) grid of points spanning tile `id`'s buffered box. An
+ * independent, brute-force cross-check for tileBoxLowerBoundMeters: the
+ * analytic bound must never exceed this sampled minimum.
+ */
+function minSampledDistanceM(
+  id: string,
+  lat: number,
+  lon: number,
+  steps = 11,
+): number {
+  const dash = id.indexOf("-");
+  const row = Number(id.slice(0, dash));
+  const col = Number(id.slice(dash + 1));
+  const cellSouth = row * GRID_DEG - 90;
+  const cellWest = col * GRID_DEG - 180;
+  const south = Math.max(-90, cellSouth - BUFFER_DEG);
+  const north = Math.min(90, cellSouth + GRID_DEG + BUFFER_DEG);
+  const west = cellWest - BUFFER_DEG;
+  const east = cellWest + GRID_DEG + BUFFER_DEG;
+
+  let min = Infinity;
+  for (let i = 0; i < steps; i++) {
+    const sampleLat = south + ((north - south) * i) / (steps - 1);
+    for (let j = 0; j < steps; j++) {
+      const sampleLon = west + ((east - west) * j) / (steps - 1);
+      const distM =
+        haversineDistance({ lat, lon }, { lat: sampleLat, lon: sampleLon }) *
+        EARTH_RADIUS_M;
+      if (distM < min) min = distM;
+    }
+  }
+  return min;
+}
+
 // Well-spread articles for building valid convex hulls.
 // Need enough points so BFS in NearestQuery can expand to k results.
 const GLOBAL_ARTICLES = [
@@ -97,6 +190,180 @@ const GLOBAL_ARTICLES = [
   { title: "Japan", lat: 35, lon: 140 },
   { title: "Norway", lat: 62, lon: 10 },
 ];
+
+// ---------- tileBoxLowerBoundMeters ----------
+
+describe("tileBoxLowerBoundMeters", () => {
+  it("returns 0 when the query sits inside the buffered box", () => {
+    expect(tileBoxLowerBoundMeters("18-36", 2.5, 2.5)).toBe(0);
+  });
+
+  it("returns 0 for a point just inside the buffer edge", () => {
+    // "18-36" covers grid cell lat/lon [0,5]; buffered by 0.5° on every
+    // side that's [-0.5, 5.5]. (5.4, 5.4) sits just inside that buffer.
+    expect(tileBoxLowerBoundMeters("18-36", 5.4, 5.4)).toBe(0);
+  });
+
+  it("bounds a due-north gap by the latitude arc to the buffered edge", () => {
+    // Buffered north edge is 5.5°; the query at lat 10 is 4.5° beyond it,
+    // and due north of the box so the longitude gap is 0 — only the
+    // latitude arc, less the ~10 m safety margin, should bound the distance.
+    const expected = 4.5 * (Math.PI / 180) * EARTH_RADIUS_M - 10;
+    const actual = tileBoxLowerBoundMeters("18-36", 10, 2.5);
+    expect(Math.abs(actual - expected)).toBeLessThanOrEqual(5);
+  });
+
+  it("bounds a due-south gap symmetrically", () => {
+    // Buffered south edge is -0.5°; the query at lat -5 is 4.5° beyond it.
+    const expected = 4.5 * (Math.PI / 180) * EARTH_RADIUS_M - 10;
+    const actual = tileBoxLowerBoundMeters("18-36", -5, 2.5);
+    expect(Math.abs(actual - expected)).toBeLessThanOrEqual(5);
+  });
+
+  it("returns 0 across the antimeridian when the wrapped longitude falls inside the buffer", () => {
+    // Tile "18-71" covers lon cell [175, 180]; buffered that's [174.5, 180.5].
+    // -179.6 is equivalent to 180.4, which falls inside that span.
+    expect(tileBoxLowerBoundMeters("18-71", 2.5, -179.6)).toBe(0);
+  });
+
+  it.each([
+    { label: "inside the box", id: "18-36", lat: 2.5, lon: 2.5 },
+    { label: "due north", id: "18-36", lat: 10, lon: 2.5 },
+    { label: "due east", id: "18-36", lat: 2.5, lon: 10 },
+    { label: "diagonal, NE corner", id: "18-36", lat: 10, lon: 10 },
+    { label: "diagonal, SW corner", id: "18-36", lat: -10, lon: -10 },
+    {
+      label: "mid-high-latitude tile, diagonal",
+      id: "30-36",
+      lat: 70,
+      lon: 30,
+    },
+    {
+      label: "antimeridian tile, wrapped longitude, inside",
+      id: "18-71",
+      lat: 2.5,
+      lon: -179.6,
+    },
+    {
+      label: "antimeridian tile, wrapped longitude, diagonal",
+      id: "18-71",
+      lat: 8,
+      lon: -179.0,
+    },
+  ])(
+    "never overestimates the distance to any point of the buffered box: $label",
+    ({ id, lat, lon }) => {
+      const bound = tileBoxLowerBoundMeters(id, lat, lon);
+      const sampledMin = minSampledDistanceM(id, lat, lon);
+      expect(bound).toBeLessThanOrEqual(sampledMin + 1);
+    },
+  );
+});
+
+// ---------- queryTilesPruned ----------
+
+describe("queryTilesPruned", () => {
+  it("skips a far tile once k deduped results are already found", () => {
+    const nearId = "18-36"; // lower bound 0 at (2.5, 2.5)
+    const farId = "18-40"; // lon cell [20,25] — lower bound ~1.89 Mm at (2.5, 2.5)
+    const search = vi.fn((id: string): QueryResult[] => {
+      if (id === nearId)
+        return [
+          { title: "N1", lat: 2.5, lon: 2.5, distanceM: 100, weight: 0 },
+          { title: "N2", lat: 2.5, lon: 2.5, distanceM: 200, weight: 0 },
+          { title: "N3", lat: 2.5, lon: 2.5, distanceM: 300, weight: 0 },
+        ];
+      return [];
+    });
+    const tiles = new Map([
+      [nearId, {} as unknown as NearestQuery],
+      [farId, {} as unknown as NearestQuery],
+    ]);
+
+    const visits: TileVisit[] = queryTilesPruned(tiles, 2.5, 2.5, 3, search);
+
+    expect(visits.find((v) => v.id === nearId)?.searched).toBe(true);
+    const far = visits.find((v) => v.id === farId);
+    expect(far?.searched).toBe(false);
+    expect(far?.results).toEqual([]);
+    expect(search.mock.calls.map((c) => c[0])).toEqual([nearId]);
+  });
+
+  it("searches every tile when fewer than k deduped results have been found", () => {
+    const nearId = "18-36";
+    const farId = "18-40";
+    const search = vi.fn((id: string): QueryResult[] => {
+      if (id === nearId)
+        return [{ title: "N1", lat: 2.5, lon: 2.5, distanceM: 100, weight: 0 }];
+      return [
+        { title: "F1", lat: 2.5, lon: 22.5, distanceM: 2_000_000, weight: 0 },
+      ];
+    });
+    const tiles = new Map([
+      [nearId, {} as unknown as NearestQuery],
+      [farId, {} as unknown as NearestQuery],
+    ]);
+
+    const visits = queryTilesPruned(tiles, 2.5, 2.5, 3, search);
+
+    expect(visits.find((v) => v.id === nearId)?.searched).toBe(true);
+    expect(visits.find((v) => v.id === farId)?.searched).toBe(true);
+    expect(search.mock.calls.map((c) => c[0])).toEqual([nearId, farId]);
+  });
+
+  it("visits tiles nearest-box-first regardless of Map insertion order", () => {
+    // Lower bounds at (2.5, 2.5): "18-36"=0, "18-37"≈222 km, "18-40"≈1.89 Mm.
+    // Inserted far-to-near here to prove the function sorts by lower bound
+    // rather than relying on Map iteration order.
+    const tiles = new Map([
+      ["18-40", {} as unknown as NearestQuery],
+      ["18-37", {} as unknown as NearestQuery],
+      ["18-36", {} as unknown as NearestQuery],
+    ]);
+    const order: string[] = [];
+    const search = vi.fn((id: string): QueryResult[] => {
+      order.push(id);
+      return []; // no results, so k never fills and nothing gets pruned
+    });
+
+    queryTilesPruned(tiles, 2.5, 2.5, 1, search);
+
+    expect(order).toEqual(["18-36", "18-37", "18-40"]);
+  });
+
+  it("counts a title shared across tiles once toward k, not once per tile", () => {
+    // Tile "18-36" (lb=0) yields A@100_000 and B@150_000 — 2 distinct so far.
+    // Tile "18-37" (lb≈222 km) repeats A at a much smaller distance (50_000)
+    // and adds C@900_000. If the repeat of "A" were wrongly counted as a
+    // fresh offer, the k=3 tracker would fill on {100_000, 150_000, 50_000}
+    // and report a k-th best of 150_000 — which "18-38" (lb≈778 km) would
+    // then exceed, pruning it. Deduped correctly, the tracker only fills once
+    // C is offered ({100_000, 150_000, 900_000}), giving a k-th best of
+    // 900_000 — which "18-38" does NOT exceed, so it must still be searched.
+    const search = vi.fn((id: string): QueryResult[] => {
+      if (id === "18-36")
+        return [
+          { title: "A", lat: 2.5, lon: 2.5, distanceM: 100_000, weight: 0 },
+          { title: "B", lat: 2.5, lon: 2.5, distanceM: 150_000, weight: 0 },
+        ];
+      if (id === "18-37")
+        return [
+          { title: "A", lat: 2.5, lon: 2.5, distanceM: 50_000, weight: 0 },
+          { title: "C", lat: 2.5, lon: 2.5, distanceM: 900_000, weight: 0 },
+        ];
+      return [];
+    });
+    const tiles = new Map([
+      ["18-36", {} as unknown as NearestQuery],
+      ["18-37", {} as unknown as NearestQuery],
+      ["18-38", {} as unknown as NearestQuery],
+    ]);
+
+    const visits = queryTilesPruned(tiles, 2.5, 2.5, 3, search);
+
+    expect(visits.find((v) => v.id === "18-38")?.searched).toBe(true);
+  });
+});
 
 // ---------- findNearestTiled ----------
 
@@ -147,6 +414,72 @@ describe("findNearestTiled", () => {
     expect(filtered).toHaveLength(1);
     expect(filtered[0].title).not.toBe("Atlantic");
     expect(filtered[0].weight).toBeGreaterThanOrEqual(50);
+  });
+
+  // ---------- parity with brute force (the exactness guarantee) ----------
+  //
+  // tileA ("18-36") and tileB ("18-40") are BOX-RESPECTING: their articles
+  // sit genuinely inside their tile's grid cell (not just its buffer), and
+  // the two tiles are far enough apart that tileB never contends for a
+  // small-k nearest result to a query centered in tileA.
+
+  it("matches brute force at small k — the prune is active and exact", () => {
+    const tiles = new Map([
+      ["18-36", buildQuery(scatterArticles("TileA", [0.5, 4.5], [0.5, 4.5]))],
+      ["18-40", buildQuery(scatterArticles("TileB", [0.5, 4.5], [20.5, 24.5]))],
+    ]);
+
+    const pruned = findNearestTiled(tiles, 2.5, 2.5, 3);
+    expect(pruned).toEqual(bruteForceNearest(tiles, 2.5, 2.5, 3));
+    expect(pruned.every((r) => r.title.startsWith("TileA"))).toBe(true);
+  });
+
+  it("matches brute force at large k — the prune stays inactive and both tiles contribute", () => {
+    const tiles = new Map([
+      ["18-36", buildQuery(scatterArticles("TileA", [0.5, 4.5], [0.5, 4.5]))],
+      ["18-40", buildQuery(scatterArticles("TileB", [0.5, 4.5], [20.5, 24.5]))],
+    ]);
+
+    const pruned = findNearestTiled(tiles, 2.5, 2.5, 50);
+    expect(pruned).toEqual(bruteForceNearest(tiles, 2.5, 2.5, 50));
+    expect(pruned.some((r) => r.title.startsWith("TileB"))).toBe(true);
+  });
+
+  it("matches brute force with a minWeight filter applied", () => {
+    const weighted = (arts: ReturnType<typeof scatterArticles>) =>
+      arts.map((a, i) => ({ ...a, weight: i % 2 === 0 ? 80 : 20 }));
+    const tiles = new Map([
+      [
+        "18-36",
+        buildQuery(weighted(scatterArticles("TileA", [0.5, 4.5], [0.5, 4.5]))),
+      ],
+      [
+        "18-40",
+        buildQuery(
+          weighted(scatterArticles("TileB", [0.5, 4.5], [20.5, 24.5])),
+        ),
+      ],
+    ]);
+    const opts = { minWeight: 50 };
+
+    const pruned = findNearestTiled(tiles, 2.5, 2.5, 3, opts);
+    expect(pruned).toEqual(bruteForceNearest(tiles, 2.5, 2.5, 3, opts));
+  });
+
+  it("actually prunes the far tile, rather than merely happening to match brute force", () => {
+    const tiles = new Map([
+      ["18-36", buildQuery(scatterArticles("TileA", [0.5, 4.5], [0.5, 4.5]))],
+      ["18-40", buildQuery(scatterArticles("TileB", [0.5, 4.5], [20.5, 24.5]))],
+    ]);
+
+    const visits: TileVisit[] = queryTilesPruned(
+      tiles,
+      2.5,
+      2.5,
+      3,
+      (_id, q) => q.findNearest(2.5, 2.5, 3).results,
+    );
+    expect(visits.find((v) => v.id === "18-40")?.searched).toBe(false);
   });
 });
 

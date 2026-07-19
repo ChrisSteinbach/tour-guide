@@ -16,7 +16,7 @@ import {
 } from "spherical-delaunay";
 import type { VertexArticles } from "../article-payload";
 
-const EARTH_RADIUS_M = 6_371_000;
+export const EARTH_RADIUS_M = 6_371_000;
 
 // ---------- Types ----------
 
