@@ -227,8 +227,27 @@ describe("tileBoxLowerBoundMeters", () => {
     expect(tileBoxLowerBoundMeters("18-71", 2.5, -179.6)).toBe(0);
   });
 
+  it("stays large for a tile most of a world away in longitude", () => {
+    // "25-57" covers lon cell [105, 110] — from New York that is 175° of
+    // longitude away, so a bound taken from the distance to the meridian
+    // *great circle* would measure the near side of that circle, land on its
+    // antimeridian half and collapse to a few hundred km. For a query 40.758°
+    // from the equator no point 90° or more away in longitude can be nearer
+    // than 90° - 40.758° of arc.
+    const floorM = (90 - 40.758) * (Math.PI / 180) * EARTH_RADIUS_M - 10;
+    expect(tileBoxLowerBoundMeters("25-57", 40.758, -73.985)).toBeGreaterThan(
+      floorM - 1,
+    );
+  });
+
   it.each([
     { label: "inside the box", id: "18-36", lat: 2.5, lon: 2.5 },
+    {
+      label: "near-antipodal longitude",
+      id: "25-57",
+      lat: 40.758,
+      lon: -73.985,
+    },
     { label: "due north", id: "18-36", lat: 10, lon: 2.5 },
     { label: "due east", id: "18-36", lat: 2.5, lon: 10 },
     { label: "diagonal, NE corner", id: "18-36", lat: 10, lon: 10 },

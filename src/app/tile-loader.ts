@@ -129,6 +129,14 @@ function lonGapDeg(lon: number, west: number, east: number): number {
  *  - longitude gap: when the query is east/west of the box, the geodesic to any
  *    box point crosses the near meridian, so the distance is at least the
  *    distance to that meridian great circle, R·asin(|cosφ·sinΔlon|).
+ *
+ * Δlon is capped at 90° before the sine. A meridian great circle is a whole
+ * circle, so that expression measures the distance to its far half as readily
+ * as its near one, and it falls back to zero as Δlon approaches 180° — the
+ * bound stays valid but goes slack exactly where the tile is furthest away.
+ * Capping is sound because for Δlon ≥ 90° the cosine term in the spherical law
+ * of cosines cannot be positive, so cos d ≤ |sinφ| and the distance is at least
+ * asin(|cosφ|), which is what the capped expression returns.
  */
 export function tileBoxLowerBoundMeters(
   id: string,
@@ -152,7 +160,9 @@ export function tileBoxLowerBoundMeters(
 
   const latAngle = dLatDeg * DEG2RAD;
   const lonAngle = Math.asin(
-    Math.abs(Math.cos(lat * DEG2RAD) * Math.sin(dLonDeg * DEG2RAD)),
+    Math.abs(
+      Math.cos(lat * DEG2RAD) * Math.sin(Math.min(dLonDeg, 90) * DEG2RAD),
+    ),
   );
   const angle = Math.max(latAngle, lonAngle);
   return Math.max(0, angle * EARTH_RADIUS_M - LOWER_BOUND_MARGIN_M);
