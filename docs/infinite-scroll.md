@@ -26,7 +26,7 @@ So the list has level of detail, the way a map thins labels as it zooms out:
 1. **Full detail**, out to `FULL_DETAIL_RADIUS_M` (1 km) — everything, unsampled. "Everything within walking distance" is the promise the app exists to keep, so this innermost band is never thinned.
 2. **Distance-banded sampling**, beyond that out to the tile coverage radius — the `DISTANCE_BAND_QUOTA` (250) most notable articles per doubling of distance.
 3. **The mid-field tier**, beyond the coverage radius out to `MID_FIELD_RADIUS_M` (1,200 km) — up to `MIDFIELD_TOP_K` (250) articles from each cell in range, refilling the band the coverage radius leaves too thin for the far field to carry on its own.
-4. **The far-field tier**, everywhere — `FARFIELD_TOP_K` (25) articles from every populated 5° cell on Earth.
+4. **The far-field tier**, everywhere — `FARFIELD_TOP_K` (12) articles from every populated 5° cell on Earth.
 
 ### Why bands, not a flat cap
 
@@ -37,11 +37,11 @@ A flat cap on article count fails at global scale: a limit generous enough to ma
 | central London | 4.6 km                         | 112 km               |
 | Manhattan      | 7.1 km                         | 43 km                |
 
-A cap like that spends its whole local budget on one neighbourhood and then falls straight to the far-field tier's 25-articles-per-populated-cell, leaving tens of thousands of already-downloaded articles in between unused. Distance banding spends the same number of rows on each doubling of distance instead. Bands are geometric rather than linear because a band's area — and so its article count — grows with its radius; equal-width bands would put almost every row in the outermost one. The quota is also self-calibrating: a band holding fewer articles than `DISTANCE_BAND_QUOTA` keeps all of them, so sparse regions like rural Wyoming stay fully exhaustive and only dense cities are thinned.
+A cap like that spends its whole local budget on one neighbourhood and then falls straight to the far-field tier's 12-articles-per-populated-cell, leaving tens of thousands of already-downloaded articles in between unused. Distance banding spends the same number of rows on each doubling of distance instead. Bands are geometric rather than linear because a band's area — and so its article count — grows with its radius; equal-width bands would put almost every row in the outermost one. The quota is also self-calibrating: a band holding fewer articles than `DISTANCE_BAND_QUOTA` keeps all of them, so sparse regions like rural Wyoming stay fully exhaustive and only dense cities are thinned.
 
 ### The mid-field tier
 
-The far field's per-cell sample is deliberately thin, because every cell on Earth is in it. That thinness is invisible past roughly 1,000 km, where the number of populated cells within reach grows with the square of the distance, so 25 articles apiece already adds up to a dense list — but it bites just outside the loaded tiles, where only a handful of cells are in range: from Times Square, the whole 100-300 km band held just 39 articles, even though the loaded tiles already cover out to 43 km. No merge policy can fix that gap; the articles were never downloaded.
+The far field's per-cell sample is deliberately thin, because every cell on Earth is in it. That thinness is invisible past roughly 1,000 km, where the number of populated cells within reach grows with the square of the distance, so a dozen apiece already adds up to a dense list — but it bites just outside the loaded tiles, where only a handful of cells are in range: from Times Square, the whole 100-300 km band held just 20 articles, even though the loaded tiles already cover out to 43 km. No merge policy can fix that gap; the articles were never downloaded.
 
 So the pipeline also writes a per-cell digest, `data/tiles/{lang}/{id}.digest.bin`, for every cell with more candidates than `FARFIELD_TOP_K` — cells at or below that are already fully represented in the far field, so a digest would just duplicate it under a second URL and a second fetch. A digest holds up to `MIDFIELD_TOP_K` (250) of the cell's most notable articles, in the exact binary codec the far-field tier uses (see [binary-format.md](binary-format.md#sampled-tier-format)): a digest is the far-field idea at a smaller scale, so it gets the far field's format rather than a bespoke one.
 
@@ -53,7 +53,7 @@ The tier is optional in the same way the far field is. An index built before dig
 
 ### The far-field tier
 
-The pipeline writes `data/tiles/{lang}/farfield.bin` alongside the tiles — the top `FARFIELD_TOP_K` (25) articles by weight class from each populated cell. For English that is 26,781 entries, ~756 KB raw and ~335 KB brotli: roughly four average tiles, fetched once per language and cached in IDB under the content hash recorded in `index.json`.
+The pipeline writes `data/tiles/{lang}/farfield.bin` alongside the tiles — the top `FARFIELD_TOP_K` (12) articles by weight class from each populated cell. For English that is 14,571 entries, ~408 KB raw and ~180 KB brotli, fetched once per language and cached in IDB under the content hash recorded in `index.json`.
 
 Two choices worth noting:
 

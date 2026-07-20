@@ -141,8 +141,8 @@ A JSON manifest that the app fetches first. It lists every tile with enough meta
     }
   ],
   "farField": {
-    "count": 26781,
-    "bytes": 774144,
+    "count": 14571,
+    "bytes": 417608,
     "hash": "e2f3a4b5"
   }
 }
