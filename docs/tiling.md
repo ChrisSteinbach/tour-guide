@@ -134,7 +134,7 @@ A JSON manifest that the app fetches first. It lists every tile with enough meta
       "bytes": 145920,
       "hash": "a1b2c3d4",
       "digest": {
-        "count": 187,
+        "count": 250,
         "bytes": 5310,
         "hash": "b7c8d9e0"
       }
