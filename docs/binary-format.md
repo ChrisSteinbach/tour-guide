@@ -116,3 +116,27 @@ payloadLength = 4                       // article count (A)
 **Reader:** `loadTile()` in `src/app/tile-loader.ts` fetches `.bin` tile files over HTTP, calls `deserializeBinary()` to get `{ fd, payload }` (Uint32 sections are zero-copy views into the buffer; Float32 vertex data is copied into a Float64Array for runtime precision), then `decodeArticlePayload(payload)` to recover `{ groups }`, and caches the typed arrays plus a `titles: string[][]` / vertex-major `weights: Uint8Array` pair in IndexedDB. On a cache hit, `zipTitlesWeights()` re-zips the cached titles and weights back into `{ groups }` without touching the binary payload.
 
 **App:** `src/app/query.ts` wraps the deserialized `FlatDelaunay` and per-vertex `VertexArticles[]` groups in a `NearestQuery` instance for geographic lookups.
+
+## Sampled-Tier Format
+
+A separate, simpler format from the tile format above: this is the wire format for `farfield.bin` and `{id}.digest.bin`, the far-field and mid-field tiers that carry the browse list past the loaded tiles (see [infinite-scroll.md](infinite-scroll.md#levels-of-detail)). It is a flat array of coordinates, weights and titles — no triangulation, no opaque-payload wrapping — because these tiers exist to place notable articles for browsing, not triangulation vertices for nearest-neighbor queries.
+
+Both artifacts share this exact layout and the same codec, `encodeFarField()`/`decodeFarField()` in `src/farfield.ts`: the far-field artifact holds `FARFIELD_TOP_K` (25) articles from every cell on Earth, one artifact per language; a digest holds up to `MIDFIELD_TOP_K` (250) articles from a single cell, one artifact per cell that needs one (see [tiling.md](tiling.md)).
+
+Notation: **C** = entry count.
+
+| Offset | Size | Type       | Field   | Description                                                       |
+| ------ | ---- | ---------- | ------- | ----------------------------------------------------------------- |
+| 0      | 4    | Uint32     | count   | Entry count (C)                                                   |
+| 4      | 4C   | Float32[C] | lats    | Latitude per entry                                                |
+| 4 + 4C | 4C   | Float32[C] | lons    | Longitude per entry                                               |
+| 4 + 8C | C    | Uint8[C]   | weights | Weight class 0-255 per entry, same scale as tile article payloads |
+| 4 + 9C | rest | UTF-8 JSON | titles  | `string[]`, length C                                              |
+
+Coordinate planes are stored separately rather than interleaved, and entries are written in a deterministic order — sorted cell ID for the far field, one cell for a digest — so neighbouring values share magnitude and the transport compressor has runs to work with. Float32 matches the precision tiles already store, so an entry's distance is bit-identical whether it comes from here or from a loaded tile.
+
+Unlike the tile format's header, there is no magic bytes or version field on either artifact. Staleness is instead caught by content hash: `SampledTierMeta.hash` in `index.json` (`TileIndex.farField` for the far-field artifact, `TileEntry.digest` for a cell's digest — see [tiling.md](tiling.md)) is compared against the cached copy's hash on load, and a mismatch triggers a refetch. `decodeFarField()` throws rather than returning a partial result on truncated or inconsistent data — a short read here would silently amputate the far end of every browse list, which is far harder to notice than a failed load.
+
+**Writer:** `cellCandidates()` (`src/pipeline/build.ts`) flattens a cell's merged articles into candidates, and `selectFarFieldEntries()` (`src/farfield.ts`) picks the top-weighted `topK` of them, breaking ties on title ascending so a rebuild of unchanged input is byte-identical and the content hash doesn't churn on every pipeline run. `buildFarField()` calls it once per cell for the far-field artifact; `buildMidFieldDigest()` calls it once for a single cell's digest, skipping cells with `FARFIELD_TOP_K` or fewer candidates since the far field already carries all of them. `encodeFarField()` packs the chosen entries.
+
+**Reader:** `loadFarField()` (`src/app/farfield-loader.ts`) and `loadDigest()` (`src/app/digest-loader.ts`) fetch the artifact, decode it with `decodeFarField()`, and cache it in IndexedDB under the content hash — one entry per language for the far field, one per language and cell for digests.

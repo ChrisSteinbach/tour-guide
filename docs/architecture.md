@@ -8,7 +8,7 @@ WikiRadar is a Wikipedia-powered tour guide PWA. It uses spherical Delaunay tria
 flowchart TD
     dumps["Wikipedia SQL Dumps (geo_tags, page)"]
     ndjson["data/articles-#123;lang#125;.json (NDJSON: title, lat, lon)"]
-    tiles["data/tiles/#123;lang#125;/ index.json + #123;row#125;-#123;col#125;.bin"]
+    tiles["data/tiles/#123;lang#125;/ index.json + #123;row#125;-#123;col#125;.bin + farfield.bin + #123;id#125;.digest.bin"]
     release["GitHub Release 'data-latest'"]
     cdn["GitHub Pages CDN"]
     flat["FlatDelaunay (typed arrays in memory, per tile)"]
@@ -46,13 +46,17 @@ Reads extracted NDJSON and produces per-tile binary files for the app:
 1. **Read articles** — Parses NDJSON, applies optional `--limit` and `--bounds` filters.
 2. **Assign to tiles** — Each article maps to a 5° lat/lon grid cell. See `docs/tiling.md` for the tiling strategy.
 3. **Build per-tile triangulations** — For each populated tile, collect native articles plus a 0.5° buffer zone, then: `toCartesian` → `convexHull` → `buildTriangulation` → `serializeBinary`. Tiles with fewer than 4 articles are skipped.
-4. **Write tile index** — `data/tiles/{lang}/index.json` manifest listing all tiles with bounding boxes, article counts, byte sizes, and content hashes.
+4. **Build mid-field digests** — For each tile's cell that holds more candidates than the far-field tier keeps, sample its most notable articles into `{id}.digest.bin`. See [The Browse List](infinite-scroll.md#the-mid-field-tier).
+5. **Build the far-field tier** — Sample the most notable articles from every populated cell, including cells too sparse for a tile, into `farfield.bin`. See [The Browse List](infinite-scroll.md#the-far-field-tier).
+6. **Write tile index** — `data/tiles/{lang}/index.json` manifest listing all tiles with bounding boxes, article counts, byte sizes, and content hashes, plus far-field and per-tile digest metadata.
 
-**Output:** `data/tiles/{lang}/` (index.json + per-tile .bin files)
+**Output:** `data/tiles/{lang}/` (index.json, per-tile .bin files, farfield.bin, and per-tile {id}.digest.bin files)
 
 ### Binary Format
 
 Each tile is a compact binary blob containing a 24-byte header, four typed-array sections (vertex coordinates, vertex-to-triangle mapping, triangle vertices, triangle neighbors), and an opaque payload carrying WikiRadar's article metadata — per-vertex groups of titles + weight classes, since distinct articles that share coordinates collapse to one vertex and travel together. See [binary-format.md](binary-format.md) for the full byte-level specification.
+
+The far-field tier and mid-field digests share a separate, simpler binary format — a flat array of coordinates, weights and titles, with no triangulation involved — documented alongside the tile format in the same file (see [Sampled-Tier Format](binary-format.md#sampled-tier-format)).
 
 Float32 vertices give sub-meter precision on Earth. On deserialization, Uint32 index sections are zero-copy views into the original ArrayBuffer; Float32 vertices are copied into Float64Arrays for numerical stability.
 
@@ -98,7 +102,7 @@ Distance uses chord length (`2 * asin(||v - q|| / 2)`, clamped for numerical saf
 - Article cards with distance badges
 - Language selector dropdown, GPS/Pin position source toggle, pause/resume button, and About button in header
 - Slide-in drawer (right edge) hosts a spatial panel with two tabs — Radar (default) and Map. The radar renders nearby articles as canvas blips placed by great-circle bearing and distance, with labeled range rings, a rotating sweep, and heading-up rotation when a compass heading is available; the map is the Leaflet browse map. Each view loads lazily on first activation, and the tab choice persists in localStorage
-- A globe-spanning, distance-ordered browse list at three levels of detail (see [infinite-scroll.md](infinite-scroll.md))
+- A globe-spanning, distance-ordered browse list at four levels of detail (see [infinite-scroll.md](infinite-scroll.md))
 - Smart re-render with two paths: if the article list is unchanged, `updateDistances` patches only the distance badges in-place. If articles change, `reconcileListItems` matches existing DOM nodes by article title — reused nodes keep their enrichment (thumbnails, descriptions fetched from Wikipedia) and only get a badge update, while new articles get fresh nodes. This title-keyed reconciliation is why enrichment survives GPS-triggered re-renders even as the article list shifts.
 - Re-query threshold: 15m minimum movement before recalculating
 
@@ -288,9 +292,10 @@ src/app/
   index.html           PWA root
 
   # Browse list subsystem
-  browse-list.ts              Grades the local tier by distance band and merges it with far-field
-  browse-list-lifecycle.ts    Owns the materialized list and the far-field tier; rebuilds on position/filter/tile change
+  browse-list.ts              Grades the local tier by distance band and merges it with the sampled tiers
+  browse-list-lifecycle.ts    Owns the materialized list and both sampled tiers; rebuilds on position/filter/tile change
   farfield-loader.ts          Fetches and IDB-caches the far-field tier, keyed by content hash
+  digest-loader.ts            Fetches and IDB-caches one cell's mid-field digest, keyed by cell and content hash
   tile-radius.ts              Pure Chebyshev ring geometry over the tile grid
   virtual-scroll.ts           Pure viewport math (computeVisibleRange) + thin DOM adapter (VirtualList)
   enrich-scheduler.ts         Debounced enrichment trigger — fires after articles settle in viewport
