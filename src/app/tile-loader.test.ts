@@ -1,5 +1,6 @@
 import {
   findNearestTiled,
+  findWithinRadiusTiled,
   tilesForPosition,
   nearestExistingTiles,
   buildTileMap,
@@ -480,6 +481,80 @@ describe("findNearestTiled", () => {
       (_id, q) => q.findNearest(2.5, 2.5, 3).results,
     );
     expect(visits.find((v) => v.id === "18-40")?.searched).toBe(false);
+  });
+});
+
+// ---------- findWithinRadiusTiled ----------
+
+describe("findWithinRadiusTiled", () => {
+  it("unions articles from every loaded tile that overlaps the radius", () => {
+    const tileA = scatterArticles("TileA", [0.5, 4.5], [0.5, 4.5]);
+    const tileB = scatterArticles("TileB", [0.5, 4.5], [5.5, 9.5]);
+    const tiles = new Map([
+      ["18-36", buildQuery(tileA)],
+      ["18-37", buildQuery(tileB)],
+    ]);
+
+    const results = findWithinRadiusTiled(tiles, 2.5, 2.5, 1_000_000);
+
+    expect(results.map((r) => r.title).sort()).toEqual(
+      [...tileA, ...tileB].map((a) => a.title).sort(),
+    );
+  });
+
+  it("lists an article once when overlapping tile buffers both carry it", () => {
+    // A real border article sits inside both neighboring tiles' buffered
+    // boxes; simulate that by giving both tiles' data the same-titled article.
+    const shared = { title: "Border landmark", lat: 2.5, lon: 2.5 };
+    const tileAArticles = [
+      shared,
+      ...scatterArticles("TileA", [0.5, 4.5], [0.5, 4.5]),
+    ];
+    const tileBArticles = [
+      shared,
+      ...scatterArticles("TileB", [0.5, 4.5], [0.5, 4.5]),
+    ];
+    const tiles = new Map([
+      ["18-36", buildQuery(tileAArticles)],
+      ["18-37", buildQuery(tileBArticles)],
+    ]);
+
+    const results = findWithinRadiusTiled(tiles, 2.5, 2.5, 500_000);
+
+    expect(results.filter((r) => r.title === "Border landmark")).toHaveLength(
+      1,
+    );
+    expect(results).toHaveLength(
+      tileAArticles.length + tileBArticles.length - 1,
+    );
+  });
+
+  it("does not query a tile whose box already lies beyond the radius", () => {
+    const nearQuery = buildQuery(
+      scatterArticles("Near", [0.5, 4.5], [0.5, 4.5]),
+    );
+    const farQuery = buildQuery(
+      scatterArticles("Far", [0.5, 4.5], [20.5, 24.5]),
+    );
+    const farSpy = vi.spyOn(farQuery, "withinRadius");
+    const tiles = new Map([
+      ["18-36", nearQuery],
+      ["18-40", farQuery], // lower bound ~1.89 Mm at (2.5, 2.5) — see queryTilesPruned tests above
+    ]);
+
+    const results = findWithinRadiusTiled(tiles, 2.5, 2.5, 200_000); // well under the ~1.89 Mm gap
+
+    expect(farSpy).not.toHaveBeenCalled();
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.every((r) => r.title.startsWith("Near"))).toBe(true);
+  });
+
+  it("returns nothing when no tiles are loaded", () => {
+    const tiles = new Map<string, NearestQuery>();
+
+    const results = findWithinRadiusTiled(tiles, 0, 0, 1000);
+
+    expect(results).toEqual([]);
   });
 });
 

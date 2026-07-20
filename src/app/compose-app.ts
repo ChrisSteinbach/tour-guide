@@ -14,7 +14,7 @@ import {
   nearestExistingTiles,
   loadTileIndex,
   loadTile,
-  findNearestTiled,
+  findWithinRadiusTiled,
 } from "./tile-loader";
 import { createBrowseListLifecycle } from "./browse-list-lifecycle";
 import { loadFarField } from "./farfield-loader";
@@ -158,15 +158,15 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
   // attached after infiniteScroll is constructed.
   const lifecycle = createBrowseListLifecycle({
     getState,
-    queryLocal: (position, minWeight, limit) => {
+    queryLocal: (position, minWeight, radiusM) => {
       const state = getState();
       if (state.query.mode !== "tiled") return [];
-      return findNearestTiled(
+      return findWithinRadiusTiled(
         state.query.tiles,
         position.lat,
         position.lon,
-        limit,
-        minWeight === undefined ? undefined : { minWeight },
+        radiusM,
+        minWeight,
       );
     },
     loadFarField: (lang, signal) => {

@@ -96,6 +96,58 @@ export class NearestQuery {
   }
 
   /**
+   * Every article within `radiusM`, in vertex order.
+   *
+   * A range query rather than a k-nearest one, because the browse list wants
+   * everything a tile holds inside its coverage radius — tens of thousands of
+   * articles in a dense city. `findNearest` pays a heap operation and a BFS
+   * expansion per candidate to return results *ordered*, which is wasted work
+   * when the answer is most of the tile and the caller re-sorts anyway. A flat
+   * scan over the vertex coordinates costs one subtraction and one comparison
+   * per vertex instead, and its cost is a property of the tile rather than of
+   * how many articles happen to be nearby.
+   *
+   * `radiusM` may be `Infinity`, which returns the whole tile.
+   */
+  withinRadius(
+    lat: number,
+    lon: number,
+    radiusM: number,
+    minWeight?: number,
+  ): QueryResult[] {
+    const [qx, qy, qz] = toCartesian({ lat, lon });
+    const points = this.ctx.fd.vertexPoints;
+    const results: QueryResult[] = [];
+
+    // Compare squared chord lengths so the scan costs no trig; only vertices
+    // that survive pay for the arc.
+    const angle = radiusM / EARTH_RADIUS_M;
+    const maxChord2 =
+      angle >= Math.PI ? Infinity : (2 * Math.sin(angle / 2)) ** 2;
+
+    for (let vertex = 0; vertex < this.size; vertex++) {
+      // Groups are weight-ordered, so the representative is the group's max:
+      // when it fails the floor no article at this vertex can pass.
+      if (
+        minWeight !== undefined &&
+        (this.groups[vertex][0]?.weight ?? 0) < minWeight
+      ) {
+        continue;
+      }
+      const dx = points[vertex * 3] - qx;
+      const dy = points[vertex * 3 + 1] - qy;
+      const dz = points[vertex * 3 + 2] - qz;
+      const chord2 = dx * dx + dy * dy + dz * dz;
+      if (chord2 > maxChord2) continue;
+
+      const distance = 2 * Math.asin(Math.min(1, Math.sqrt(chord2) / 2));
+      results.push(...this.buildResults({ vertex, distance }, minWeight));
+    }
+
+    return results;
+  }
+
+  /**
    * Expand one vertex hit into a result per co-located article (all sharing the
    * vertex's coordinate and distance), skipping articles below `minWeight` when
    * a floor is set. Order follows the group's weight-desc ordering.

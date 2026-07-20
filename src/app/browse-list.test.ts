@@ -1,7 +1,9 @@
 import {
-  LOCAL_EXHAUSTIVE_MAX,
+  DISTANCE_BAND_QUOTA,
+  FULL_DETAIL_RADIUS_M,
   buildBrowseList,
   coverageRadiusMeters,
+  sampleByDistanceBand,
 } from "./browse-list";
 import { tileBoxLowerBoundMeters } from "./tile-loader";
 import type { FarFieldEntry } from "../farfield";
@@ -69,6 +71,94 @@ describe("coverageRadiusMeters", () => {
   });
 });
 
+describe("sampleByDistanceBand", () => {
+  it("keeps every article within the full-detail radius, however dense", () => {
+    const crowd: NearbyArticle[] = Array.from(
+      { length: DISTANCE_BAND_QUOTA * 10 },
+      (_, i) => ({
+        title: `Doorstep ${i}`,
+        lat: 0,
+        lon: 0,
+        distanceM: FULL_DETAIL_RADIUS_M - i,
+        weight: 1,
+      }),
+    );
+
+    expect(sampleByDistanceBand(crowd)).toHaveLength(crowd.length);
+  });
+
+  it("thins a crowded band to its quota, keeping the most notable", () => {
+    const band: NearbyArticle[] = Array.from({ length: 1000 }, (_, i) => ({
+      title: `Bus stop ${i}`,
+      lat: 0,
+      lon: 0,
+      distanceM: FULL_DETAIL_RADIUS_M * 1.5,
+      weight: i,
+    }));
+
+    const kept = sampleByDistanceBand(band);
+
+    expect(kept).toHaveLength(DISTANCE_BAND_QUOTA);
+    const lightest = Math.min(...kept.map((a) => a.weight ?? 0));
+    expect(lightest).toBe(1000 - DISTANCE_BAND_QUOTA);
+  });
+
+  it("keeps a sparse band whole, so quiet regions stay exhaustive", () => {
+    const countryside: NearbyArticle[] = [
+      { title: "Barn", lat: 0, lon: 0, distanceM: 4_000, weight: 0 },
+      { title: "Chapel", lat: 0, lon: 0, distanceM: 40_000, weight: 0 },
+      { title: "Quarry", lat: 0, lon: 0, distanceM: 400_000, weight: 0 },
+    ];
+
+    expect(sampleByDistanceBand(countryside).map((a) => a.title)).toEqual(
+      expect.arrayContaining(["Barn", "Chapel", "Quarry"]),
+    );
+  });
+
+  it("spends the same number of rows on every doubling of distance", () => {
+    // 2,000 articles per band across five bands, all equally crowded.
+    const city: NearbyArticle[] = [];
+    for (let band = 0; band < 5; band++) {
+      for (let i = 0; i < 2000; i++) {
+        city.push({
+          title: `Band ${band} article ${i}`,
+          lat: 0,
+          lon: 0,
+          distanceM: FULL_DETAIL_RADIUS_M * 2 ** band * 1.5,
+          weight: i,
+        });
+      }
+    }
+
+    const kept = sampleByDistanceBand(city);
+
+    const perBand = new Map<number, number>();
+    for (const article of kept) {
+      const band = Math.floor(
+        Math.log2(article.distanceM / FULL_DETAIL_RADIUS_M),
+      );
+      perBand.set(band, (perBand.get(band) ?? 0) + 1);
+    }
+    expect([...perBand.values()]).toEqual(Array(5).fill(DISTANCE_BAND_QUOTA));
+  });
+
+  it("prefers the nearer of two equally notable articles", () => {
+    const pair: NearbyArticle[] = Array.from({ length: 300 }, (_, i) => ({
+      title: `Tie ${i}`,
+      lat: 0,
+      lon: 0,
+      distanceM: FULL_DETAIL_RADIUS_M * 1.1 + i,
+      weight: 100,
+    }));
+
+    const kept = sampleByDistanceBand(pair);
+
+    expect(kept).toHaveLength(DISTANCE_BAND_QUOTA);
+    expect(kept.map((a) => a.title)).toContain("Tie 0");
+    expect(kept.map((a) => a.title)).not.toContain("Tie 299");
+  });
+});
+
 describe("buildBrowseList", () => {
   const position = { lat: 0, lon: 0 };
 
@@ -80,12 +170,7 @@ describe("buildBrowseList", () => {
       { title: "Another continent", lat: 50, lon: 0, weight: 200 },
     ];
 
-    const list = buildBrowseList({
-      position,
-      local,
-      farField,
-      coverageRadiusM: 100_000,
-    });
+    const list = buildBrowseList({ position, local, farField });
 
     expect(list.map((a) => a.title)).toEqual([
       "Next door",
@@ -102,32 +187,9 @@ describe("buildBrowseList", () => {
       { title: "Middle", lat: 5, lon: 0, weight: 200 },
     ];
 
-    const list = buildBrowseList({
-      position,
-      local,
-      farField,
-      coverageRadiusM: 100_000,
-    });
+    const list = buildBrowseList({ position, local, farField });
 
     expect(list.map((a) => a.title)).toEqual(["Very close", "Middle", "Far"]);
-  });
-
-  it("drops exhaustive articles past the coverage radius", () => {
-    // Beyond the covered radius the tiles have holes, so keeping these would
-    // make list density depend on which direction happens to be loaded.
-    const local: NearbyArticle[] = [
-      { title: "Covered", lat: 0.1, lon: 0, distanceM: 11_000 },
-      { title: "Past the edge", lat: 2, lon: 0, distanceM: 222_000 },
-    ];
-
-    const list = buildBrowseList({
-      position,
-      local,
-      farField: [],
-      coverageRadiusM: 100_000,
-    });
-
-    expect(list.map((a) => a.title)).toEqual(["Covered"]);
   });
 
   it("lists an article once when both tiers carry it", () => {
@@ -138,12 +200,7 @@ describe("buildBrowseList", () => {
       { title: "Notable Landmark", lat: 0.01, lon: 0, weight: 250 },
     ];
 
-    const list = buildBrowseList({
-      position,
-      local,
-      farField,
-      coverageRadiusM: 100_000,
-    });
+    const list = buildBrowseList({ position, local, farField });
 
     expect(list).toHaveLength(1);
   });
@@ -158,12 +215,7 @@ describe("buildBrowseList", () => {
       { title: "Lone Island", lat: 0.5, lon: 0, weight: 30 },
     ];
 
-    const list = buildBrowseList({
-      position,
-      local,
-      farField,
-      coverageRadiusM: 1_000_000,
-    });
+    const list = buildBrowseList({ position, local, farField });
 
     expect(list.map((a) => a.title)).toEqual(["Covered", "Lone Island"]);
   });
@@ -178,46 +230,52 @@ describe("buildBrowseList", () => {
       position,
       local: [],
       farField,
-      coverageRadiusM: 0,
       minWeight: 204,
     });
 
     expect(list.map((a) => a.title)).toEqual(["Famous"]);
   });
 
-  it("caps the exhaustive tier so one dense city cannot bury the planet", () => {
-    const local: NearbyArticle[] = Array.from(
-      { length: LOCAL_EXHAUSTIVE_MAX + 500 },
-      (_, i) => ({
-        title: `City article ${i}`,
-        lat: 0.01,
-        lon: 0,
-        distanceM: 1_000 + i,
-      }),
-    );
+  it("keeps a dense city from burying the rest of the planet", () => {
+    // 20,000 articles spread over 1-100 km: seven doublings of distance, so
+    // the graded tier costs at most seven quotas however crowded the city is.
+    const city: NearbyArticle[] = Array.from({ length: 20_000 }, (_, i) => ({
+      title: `City article ${i}`,
+      lat: 0.01,
+      lon: 0,
+      distanceM: 1_001 + (i % 99_000),
+      weight: i % 256,
+    }));
     const farField: FarFieldEntry[] = [
       { title: "Another continent", lat: 50, lon: 0, weight: 200 },
     ];
 
-    const list = buildBrowseList({
-      position,
-      local,
-      farField,
-      coverageRadiusM: 100_000,
-    });
+    const list = buildBrowseList({ position, local: city, farField });
 
-    expect(list).toHaveLength(LOCAL_EXHAUSTIVE_MAX + 1);
+    expect(list.length).toBeLessThanOrEqual(7 * DISTANCE_BAND_QUOTA + 1);
     expect(list[list.length - 1].title).toBe("Another continent");
   });
 
+  it("restores a notable article the band sampling dropped", () => {
+    // The far-field tier is itself a notability ranking, so anything it
+    // carries has earned a row even when the local quota had no space left.
+    const crowd: NearbyArticle[] = Array.from({ length: 1000 }, (_, i) => ({
+      title: `Bus stop ${i}`,
+      lat: 0.02,
+      lon: 0,
+      distanceM: 2_000,
+      weight: 0,
+    }));
+    const farField: FarFieldEntry[] = [
+      { title: "Bus stop 999", lat: 0.02, lon: 0, weight: 250 },
+    ];
+
+    const list = buildBrowseList({ position, local: crowd, farField });
+
+    expect(list.map((a) => a.title)).toContain("Bus stop 999");
+  });
+
   it("is empty when neither tier has anything", () => {
-    expect(
-      buildBrowseList({
-        position,
-        local: [],
-        farField: [],
-        coverageRadiusM: 100_000,
-      }),
-    ).toEqual([]);
+    expect(buildBrowseList({ position, local: [], farField: [] })).toEqual([]);
   });
 });

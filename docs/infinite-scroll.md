@@ -5,7 +5,7 @@ The app shows Wikipedia articles in one distance-ordered list that spans the who
 | Module                         | Concern                                                            |
 | ------------------------------ | ------------------------------------------------------------------ |
 | `virtual-scroll.ts`            | Viewport math, overscan buffer, RAF-throttled rendering            |
-| `browse-list.ts`               | Merging the exhaustive and far-field tiers into one ordered list   |
+| `browse-list.ts`               | Grading the local tier by distance band, merging with far-field    |
 | `browse-list-lifecycle.ts`     | Owns the list and the far-field tier; rebuilds when inputs change  |
 | `farfield.ts`                  | Far-field binary codec, shared by pipeline and app                 |
 | `farfield-loader.ts`           | Fetches and IDB-caches the tier, keyed by content hash             |
@@ -13,14 +13,29 @@ The app shows Wikipedia articles in one distance-ordered list that spans the who
 | `summary-loader.ts`            | Concurrency-limited, cancellable batch fetcher for summaries       |
 | `scroll-pause-detector.ts`     | Detects user scroll to trigger live-location → infinite transition |
 
-## Why two tiers
+## Levels of detail
 
-Tiles give exhaustive coverage, but only near the user. Two hard limits rule out simply loading more of them:
+Tiles give exhaustive coverage, but only near the user. Two hard limits rule out simply loading more of them to cover the whole globe:
 
 - **Reaching the far end costs the entire dataset.** English is 1,234,576 articles across 1,374 tiles — 154 MB. The furthest article from any position is near its antipode, so a tile-by-tile walk outward has to load essentially everything.
 - **The browser cannot render the list.** 1,234,576 rows × 68 px is ~84 Mpx. Chrome caps element height around 33.5 Mpx and Firefox around 17.9 Mpx, so a truthful 1:1 virtual list is not merely slow — it is unrepresentable.
 
-So the list has level of detail, the way a map does. Near the user it is exhaustive; past that it switches to the **far-field tier**: the most notable articles from every populated 5° cell on Earth.
+So the list has level of detail, the way a map thins labels as it zooms out:
+
+1. **Full detail**, out to `FULL_DETAIL_RADIUS_M` (1 km) — everything, unsampled. "Everything within walking distance" is the promise the app exists to keep, so this innermost band is never thinned.
+2. **Distance-banded sampling**, beyond that out to the tile coverage radius — the `DISTANCE_BAND_QUOTA` (250) most notable articles per doubling of distance.
+3. **The far-field tier**, beyond the coverage radius — the most notable articles from every populated 5° cell on Earth.
+
+### Why bands, not a flat cap
+
+A flat cap on article count fails at global scale: a limit generous enough to matter in a sparse region is exhausted within a few blocks of a dense one. In the real English build, the nearest 5,000 articles to a position run out long before the loaded tiles do:
+
+| From           | Nearest 5,000 articles reached | Tile coverage radius |
+| -------------- | ------------------------------ | -------------------- |
+| central London | 4.6 km                         | 112 km               |
+| Manhattan      | 7.1 km                         | 43 km                |
+
+A cap like that spends its whole local budget on one neighbourhood and then falls straight to the far-field tier's 25-articles-per-populated-cell, leaving tens of thousands of already-downloaded articles in between unused. Distance banding spends the same number of rows on each doubling of distance instead. Bands are geometric rather than linear because a band's area — and so its article count — grows with its radius; equal-width bands would put almost every row in the outermost one. The quota is also self-calibrating: a band holding fewer articles than `DISTANCE_BAND_QUOTA` keeps all of them, so sparse regions like rural Wyoming stay fully exhaustive and only dense cities are thinned.
 
 ### The far-field tier
 
@@ -35,23 +50,31 @@ The tier is optional. An index without a `farField` entry, a 404, a network fail
 
 ## Building the list
 
-`buildBrowseList()` in `browse-list.ts` merges the tiers:
+`buildBrowseList()` in `browse-list.ts` merges the levels:
 
 ```
-exhaustive tier   articles from the loaded tiles, nearest first,
-                  cut at the coverage radius and capped at
-                  LOCAL_EXHAUSTIVE_MAX (5,000)
+full detail       every article within FULL_DETAIL_RADIUS_M (1 km)
+distance bands    DISTANCE_BAND_QUOTA most notable per doubling of
+                  distance beyond that, out to the coverage radius
 far-field tier    every entry not already listed, deduped by title
                   → concat, sort by distance
 ```
 
-**Coverage radius** (`coverageRadiusMeters`) is the distance to the nearest tile that exists but is not loaded — computed with `tileBoxLowerBoundMeters`, which is deliberately conservative, so the radius under-claims rather than over-claims. Beyond it the exhaustive tier has holes.
+**Coverage radius** (`coverageRadiusMeters`) is the distance to the nearest tile that exists but is not loaded — computed with `tileBoxLowerBoundMeters`, which is deliberately conservative, so the radius under-claims rather than over-claims. Beyond it the loaded tiles have holes.
 
-Local articles past that radius are **dropped**, not kept. Keeping them would make list density depend on which direction the user happens to face — hundreds of articles at 600 km where a tile is loaded, three where one is not — which reads as a broken list. The cost is only the long tail in partly-covered cells, since the far-field tier still carries their notable articles.
+The radius bounds the query itself, not just the list. `queryLocal` calls `findWithinRadiusTiled()` (`tile-loader.ts`), a range query that prunes any tile whose box already lies beyond the radius, rather than running a k-nearest search and cutting the result down afterward. Local articles past the radius are never fetched, let alone dropped: keeping them would make list density depend on which direction the user happens to face — hundreds of articles at 600 km where a tile is loaded, three where one is not — which reads as a broken list. The cost is only the long tail in partly-covered cells, since the far-field tier still carries their notable articles.
 
-**Deduplication is by title alone.** A far-field entry inside the covered radius is either already in the exhaustive tier (and dropped here) or comes from a cell with no tile, in which case it must be kept.
+The range query also outruns a k-nearest one at this size. `NearestQuery.withinRadius` is a flat scan comparing squared chord lengths against the radius — a subtraction and a comparison per vertex, the arc computed only for vertices that survive — so its cost is a property of the tile rather than of how crowded the neighbourhood is. Asking a k-nearest walk the same question means guessing a `k` large enough to reach the radius and paying a heap operation and a BFS visit for every candidate on the way. Measured in the browser against Manhattan's two loaded tiles (43 km coverage radius):
 
-`LOCAL_EXHAUSTIVE_MAX` bounds two things: the `k` passed to `findNearestTiled` (an unbounded `k` defeats the pruning in `queryTilesPruned`) and how much of the list one dense city can occupy.
+| Query                      | Reached | Articles | Median |
+| -------------------------- | ------- | -------- | ------ |
+| `withinRadius` to 43 km    | 43 km   | 11,720   | 2.8 ms |
+| `findNearestTiled`, k=20k  | 43 km   | 20,000   | 35 ms  |
+| `findNearestTiled`, k=5000 | 7.1 km  | 5,000    | 6.4 ms |
+
+So the range scan returns twice the articles, six times further out, in under half the time the old capped query took.
+
+**Deduplication is by title alone.** A far-field entry inside the covered radius is either already listed — caught here — or it is one the distance-band sampling dropped, or it comes from a cell too sparse to have produced a tile at all. In the last two cases it belongs: the far-field tier is itself a notability ranking, so an entry it carries has already earned a row.
 
 ## Lifecycle
 
