@@ -33,23 +33,38 @@ export interface FarFieldEntry {
 }
 
 /**
- * Articles sampled from each populated tile. 25 keeps the artifact around
- * 335 KB brotli for English (~27k entries) — roughly four average tiles, once
- * per language — while leaving the merged browse list well under the browser's
+ * Articles sampled from each populated cell into the global far-field tier —
+ * the coarse base of the browse list's level-of-detail pyramid: one artifact,
+ * every cell on Earth, fetched once and held in memory.
+ *
+ * It only has to be thin. Past ~1,200 km the number of cells within reach grows
+ * with the square of the distance, so even a dozen apiece adds up to a dense
+ * list; nearer than that the mid-field tier (`MIDFIELD_TOP_K`, fetched per cell)
+ * now carries the density, so the far field no longer has to. 25 was the sample
+ * before that tier existed, when the far field alone had to fill the near band;
+ * with the mid-field in place, everything within 1,200 km is identical whether
+ * the far field keeps 12 or 25, because the denser digest subsumes it there —
+ * the thinner sample only ever shows beyond the mid-field's reach, which is
+ * exactly where a dozen per cell is already plenty.
+ *
+ * 12 keeps the artifact around 180 KB brotli for English (~15k entries) — a
+ * little over half the 25-per-cell sample it replaces — while every cell too
+ * sparse to earn a digest (at or below this many candidates) is still carried
+ * here in full, and the merged browse list stays well under the browser's
  * element-height ceiling from any position.
  */
-export const FARFIELD_TOP_K = 25;
+export const FARFIELD_TOP_K = 12;
 
 /**
  * Articles sampled into one cell's mid-field digest.
  *
  * The far field is deliberately thin, because every cell on Earth is in it.
  * That thinness is invisible far away — past ~1,000 km the number of populated
- * cells within reach grows with the square of the distance, so 25 apiece is
- * plenty — but it bites just outside the loaded tiles, where only a handful of
- * cells are in range: from Times Square the whole 100-300 km band held 39
- * articles. Digests refill that band by raising the per-cell sample tenfold,
- * for the cells near enough to matter.
+ * cells within reach grows with the square of the distance, so a dozen apiece
+ * is plenty — but it bites just outside the loaded tiles, where only a handful
+ * of cells are in range: from Times Square the whole 100-300 km band held just
+ * 20 articles. Digests refill that band by raising the per-cell sample more
+ * than twentyfold, for the cells near enough to matter.
  *
  * 250 is where the two tiers meet without a visible seam in either direction,
  * and it keeps a digest around 3 KB brotli: 30 KB of fetches at the median

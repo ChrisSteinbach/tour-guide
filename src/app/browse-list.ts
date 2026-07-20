@@ -18,7 +18,7 @@
 // merely long. Ungraded, the nearest 5,000 articles to central London all sit
 // within 4.6 km — while the tiles already in memory cover 112 km — so the list
 // spent its whole near field on one neighbourhood and then fell off a cliff
-// onto 25-articles-per-5°-cell. Sampling per distance band spends the same
+// onto 12-articles-per-5°-cell. Sampling per distance band spends the same
 // number of rows on each doubling of distance instead, which is what a map
 // does with labels, and it costs nothing to download.
 //
@@ -26,7 +26,7 @@
 // the list out to where the tiles stop, and that is not far: the coverage
 // radius is 43 km from Times Square, 21 km from Tromsø. Past it the list fell
 // straight onto the far field, which is thin at short range because only a
-// handful of cells are within a few hundred kilometres — 39 articles across
+// handful of cells are within a few hundred kilometres — 20 articles across
 // the whole 100-300 km band from Times Square. No merge policy can fix that;
 // the articles were never downloaded. So the app fetches more of them, but
 // only the notable ones, and only for the cells near enough to have a gap.
@@ -79,9 +79,9 @@ export const DISTANCE_BAND_QUOTA = 250;
  * How far out the mid-field tier fetches digests.
  *
  * Past roughly 1,000 km the far-field tier carries itself: the number of
- * populated cells within reach grows with the square of the distance, so 25
- * articles apiece already adds up to a dense list. Nearer than that only a
- * handful of cells are in range and the same 25 apiece leaves a trench. 1,200
+ * populated cells within reach grows with the square of the distance, so a
+ * dozen apiece already adds up to a dense list. Nearer than that only a handful
+ * of cells are in range and the same dozen apiece leaves a trench. 1,200
  * km covers the trench with margin and stops where the tier stops paying —
  * measured over the globe it costs 10 digests at the median position and 45 at
  * the worst, against 8.5 MB to load the same neighbourhood as tiles.

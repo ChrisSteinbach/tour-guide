@@ -482,9 +482,9 @@ describe("cellCandidates", () => {
 
 describe("buildMidFieldDigest", () => {
   it("returns null when a cell has FARFIELD_TOP_K candidates or fewer", () => {
-    // Exactly 25 (== FARFIELD_TOP_K): the boundary the far field already
+    // Exactly FARFIELD_TOP_K candidates: the boundary the far field already
     // covers in full, so this cell should get no digest at all.
-    const articles = Array.from({ length: 25 }, (_, i) => ({
+    const articles = Array.from({ length: FARFIELD_TOP_K }, (_, i) => ({
       title: `Article ${i}`,
       lat: 12 + i * 0.01,
       lon: 2,
@@ -497,7 +497,7 @@ describe("buildMidFieldDigest", () => {
 
   it("keeps the top-K most notable articles once a cell exceeds FARFIELD_TOP_K candidates", () => {
     // 30 distinct articles in one cell — comfortably more than
-    // FARFIELD_TOP_K (25) — each at a slightly different coordinate so they
+    // FARFIELD_TOP_K (12) — each at a slightly different coordinate so they
     // don't merge into one unit.
     const articles = Array.from({ length: 30 }, (_, i) => ({
       title: `Article ${i}`,
@@ -794,7 +794,7 @@ describe("tiled pipeline (e2e)", () => {
 
       const lines: string[] = [];
       // 30 articles in one tile (tile 28-36, same grid cell as the "London"
-      // cluster above) — comfortably over FARFIELD_TOP_K (25) — each with a
+      // cluster above) — comfortably over FARFIELD_TOP_K (12) — each with a
       // distinct view count so ranking is unambiguous.
       for (let i = 0; i < 30; i++) {
         lines.push(
