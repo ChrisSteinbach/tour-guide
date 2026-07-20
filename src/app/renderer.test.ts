@@ -2,7 +2,6 @@
 
 import type { NearbyArticle, UserPosition } from "./types";
 import type { AppState, QueryState } from "./state-machine";
-import type { ArticleWindow } from "./article-window";
 import type { InfiniteScrollLifecycle } from "./infinite-scroll-lifecycle";
 import type { MapDrawer } from "./map-drawer";
 import type { SpatialPanelLifecycle } from "./spatial-panel-lifecycle";
@@ -77,7 +76,6 @@ function tiledBrowsingState(
       pauseReason: null,
       lastQueryPos: pos,
       scrollMode: "infinite",
-      infiniteScrollLimit: 200,
       ...phaseOverrides,
     },
     query,
@@ -95,20 +93,6 @@ function tiledBrowsingState(
     tileFailureDismissed: false,
     viewportFillCount: 15,
     aboutOpen: false,
-    ...overrides,
-  };
-}
-
-function stubArticleWindow(
-  overrides: Partial<ArticleWindow> = {},
-): ArticleWindow {
-  return {
-    getArticle: vi.fn(),
-    ensureRange: vi.fn(async () => {}),
-    totalKnown: vi.fn(() => 0),
-    loadedCount: vi.fn(() => 0),
-    getLoadedArticles: vi.fn(() => []),
-    reset: vi.fn(),
     ...overrides,
   };
 }
@@ -193,8 +177,7 @@ function makeDeps(overrides: Partial<RendererDeps> = {}): RendererDeps {
     desktopQuery: stubDesktopQuery(false),
     spatialPanel: stubSpatialPanel(),
     mapPicker: stubMapPicker(),
-    resetArticleWindow: vi.fn(),
-    getCurrentWindow: vi.fn(() => null),
+    resetBrowseList: vi.fn(),
     groupView: stubGroupView(() => undefined),
     getScrollContainer: vi.fn(() => scrollContainer),
     onHoverArticle: vi.fn(),
@@ -210,12 +193,10 @@ describe("renderer renderBrowsingList scrollMode switch", () => {
   it("tears down ArticleWindow and infinite scroll BEFORE rendering the viewport list when leaving infinite mode", () => {
     // The teardown ordering matters: a stale ArticleWindow leaking into the
     // viewport render would be a regression. Track call order and assert
-    // resetArticleWindow + infiniteScroll.destroy precede spatialPanel.update
+    // resetBrowseList + infiniteScroll.destroy precede spatialPanel.update
     // (which is called from inside renderViewportListDOM).
     const callOrder: string[] = [];
-    const resetArticleWindow = vi.fn(() =>
-      callOrder.push("resetArticleWindow"),
-    );
+    const resetBrowseList = vi.fn(() => callOrder.push("resetBrowseList"));
     const infiniteScroll = stubInfiniteScroll({
       destroy: vi.fn(() => callOrder.push("infiniteScroll.destroy")),
     });
@@ -224,7 +205,7 @@ describe("renderer renderBrowsingList scrollMode switch", () => {
     });
     const deps = makeDeps({
       getState: vi.fn(() => tiledBrowsingState({}, { scrollMode: "viewport" })),
-      resetArticleWindow,
+      resetBrowseList,
       infiniteScroll,
       spatialPanel,
     });
@@ -233,25 +214,25 @@ describe("renderer renderBrowsingList scrollMode switch", () => {
     renderer.renderBrowsingList();
 
     expect(callOrder).toEqual([
-      "resetArticleWindow",
+      "resetBrowseList",
       "infiniteScroll.destroy",
       "spatialPanel.update",
     ]);
   });
 
-  it("does not call resetArticleWindow when scrollMode stays in infinite mode", () => {
+  it("does not call resetBrowseList when scrollMode stays in infinite mode", () => {
     // The infinite-mode branch should NOT touch the ArticleWindow — the
     // lifecycle owns it and renders re-use the existing window.
-    const resetArticleWindow = vi.fn();
+    const resetBrowseList = vi.fn();
     const deps = makeDeps({
       getState: vi.fn(() => tiledBrowsingState({}, { scrollMode: "infinite" })),
-      resetArticleWindow,
+      resetBrowseList,
     });
 
     const renderer = createRenderer(deps);
     renderer.renderBrowsingList();
 
-    expect(resetArticleWindow).not.toHaveBeenCalled();
+    expect(resetBrowseList).not.toHaveBeenCalled();
   });
 });
 
@@ -310,15 +291,9 @@ describe("renderer renderInfiniteScrollDOM self-heal", () => {
 });
 
 describe("renderer renderInfiniteScrollDOM totalCount", () => {
-  it("uses totalKnown as the ceiling when the ArticleWindow has seen any tile", () => {
-    // Once any tile has loaded, totalKnown reflects the real article count
-    // across loaded tiles. infiniteScrollLimit must NOT inflate the list
-    // past that real ceiling — otherwise the virtual list would extend
-    // past the last real article.
-    const aw = stubArticleWindow({
-      loadedCount: vi.fn(() => 50),
-      totalKnown: vi.fn(() => 150),
-    });
+  it("sizes the virtual list to the whole browse list", () => {
+    // The browse list is materialized, so its length is the real, final
+    // count — there is no optimistic headroom to reserve.
     const init = vi.fn();
     const infiniteScroll = stubInfiniteScroll({
       isActive: vi.fn(() => false),
@@ -329,15 +304,13 @@ describe("renderer renderInfiniteScrollDOM totalCount", () => {
         tiledBrowsingState(
           {},
           {
-            articles: Array.from({ length: 5 }, (_, i) => ({
+            articles: Array.from({ length: 150 }, (_, i) => ({
               ...article,
               title: `A${i}`,
             })),
-            infiniteScrollLimit: 200,
           },
         ),
       ),
-      getCurrentWindow: vi.fn(() => aw),
       infiniteScroll,
     });
 
@@ -347,80 +320,32 @@ describe("renderer renderInfiniteScrollDOM totalCount", () => {
     expect(init).toHaveBeenCalledWith(150);
   });
 
-  it("uses infiniteScrollLimit as optimistic headroom before the first tile loads", () => {
-    // Before totalKnown is populated, the renderer inflates the list to
-    // infiniteScrollLimit so the user never hits bottom during the
-    // scroll-pause transition. See docs/infinite-scroll.md "Scroll Headroom".
-    const aw = stubArticleWindow({
-      loadedCount: vi.fn(() => 0),
-      totalKnown: vi.fn(() => 0),
-    });
+  it("sizes an empty list to zero rather than reserving headroom", () => {
     const init = vi.fn();
     const infiniteScroll = stubInfiniteScroll({
       isActive: vi.fn(() => false),
       init,
     });
     const deps = makeDeps({
-      getState: vi.fn(() =>
-        tiledBrowsingState(
-          {},
-          {
-            articles: Array.from({ length: 12 }, (_, i) => ({
-              ...article,
-              title: `A${i}`,
-            })),
-            infiniteScrollLimit: 200,
-          },
-        ),
-      ),
-      getCurrentWindow: vi.fn(() => aw),
+      getState: vi.fn(() => tiledBrowsingState({}, { articles: [] })),
       infiniteScroll,
     });
 
     const renderer = createRenderer(deps);
     renderer.renderBrowsingList();
 
-    expect(init).toHaveBeenCalledWith(200);
-  });
-
-  it("handles a null ArticleWindow by using the optimistic fallback", () => {
-    // No ArticleWindow at all — the renderer must not crash on
-    // aw.loadedCount() and must still produce a non-zero headroom count
-    // driven by infiniteScrollLimit.
-    const init = vi.fn();
-    const infiniteScroll = stubInfiniteScroll({
-      isActive: vi.fn(() => false),
-      init,
-    });
-    const deps = makeDeps({
-      getState: vi.fn(() =>
-        tiledBrowsingState(
-          {},
-          {
-            articles: [article, { ...article, title: "B" }],
-            infiniteScrollLimit: 200,
-          },
-        ),
-      ),
-      getCurrentWindow: vi.fn(() => null),
-      infiniteScroll,
-    });
-
-    const renderer = createRenderer(deps);
-    renderer.renderBrowsingList();
-
-    expect(init).toHaveBeenCalledWith(200);
+    expect(init).toHaveBeenCalledWith(0);
   });
 });
 
 describe("renderer renderPhase teardown prefix", () => {
   it("runs all teardowns before switching to a non-browsing phase", () => {
     // When renderPhase is called for a phase like welcome, ALL pre-switch
-    // teardowns must run: resetArticleWindow, infiniteScroll.destroy,
+    // teardowns must run: resetBrowseList, infiniteScroll.destroy,
     // mapPicker.destroy, spatialPanel.destroy, drawerPanel.hidden=true,
     // drawer.close, drawerInitialized=false. Missing any leaks state into
     // the next phase.
-    const resetArticleWindow = vi.fn();
+    const resetBrowseList = vi.fn();
     const infiniteScrollDestroy = vi.fn();
     const mapPickerDestroy = vi.fn();
     const spatialPanelDestroy = vi.fn();
@@ -446,7 +371,7 @@ describe("renderer renderPhase teardown prefix", () => {
         ...tiledBrowsingState(),
         phase: { phase: "welcome" as const },
       })),
-      resetArticleWindow,
+      resetBrowseList,
       infiniteScroll,
       mapPicker,
       spatialPanel,
@@ -457,7 +382,7 @@ describe("renderer renderPhase teardown prefix", () => {
     const renderer = createRenderer(deps);
     renderer.renderPhase();
 
-    expect(resetArticleWindow).toHaveBeenCalled();
+    expect(resetBrowseList).toHaveBeenCalled();
     expect(infiniteScrollDestroy).toHaveBeenCalled();
     expect(mapPickerDestroy).toHaveBeenCalled();
     expect(spatialPanelDestroy).toHaveBeenCalled();
@@ -488,7 +413,6 @@ describe("renderer renderPhase teardown prefix", () => {
           pauseReason: null,
           lastQueryPos: pos,
           scrollMode: "infinite" as const,
-          infiniteScrollLimit: 200,
         },
       })),
       spatialPanel,

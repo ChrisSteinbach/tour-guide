@@ -1,8 +1,5 @@
 // @vitest-environment jsdom
-import {
-  resolveScrollContainer,
-  createScrollCountForwarder,
-} from "./compose-app";
+import { resolveScrollContainer, forwardScrollCount } from "./compose-app";
 
 describe("resolveScrollContainer", () => {
   it("returns infinite-scroll element when available", () => {
@@ -37,30 +34,26 @@ describe("resolveScrollContainer", () => {
   });
 });
 
-describe("createScrollCountForwarder", () => {
+describe("forwardScrollCount", () => {
   // Pass-through group view: article count === group count (no clusters).
   const identityGroupView = { groupCountForArticleCount: (n: number) => n };
 
   it("forwards count when infinite scroll is active", () => {
     const update = vi.fn();
-    const forwarder = createScrollCountForwarder(
-      { isActive: () => true, update },
-      identityGroupView,
-    );
 
-    forwarder(42, 30);
+    forwardScrollCount({ isActive: () => true, update }, identityGroupView, 42);
 
-    expect(update).toHaveBeenCalledWith(42, 30);
+    expect(update).toHaveBeenCalledWith(42);
   });
 
   it("skips update when infinite scroll is inactive", () => {
     const update = vi.fn();
-    const forwarder = createScrollCountForwarder(
+
+    forwardScrollCount(
       { isActive: () => false, update },
       identityGroupView,
+      42,
     );
-
-    forwarder(42, 30);
 
     expect(update).not.toHaveBeenCalled();
   });
@@ -68,25 +61,12 @@ describe("createScrollCountForwarder", () => {
   it("converts article-space counts to group space via the group view", () => {
     const update = vi.fn();
     // Simulate a cluster collapsing: knock 5 off every article count.
-    const forwarder = createScrollCountForwarder(
+    forwardScrollCount(
       { isActive: () => true, update },
-      { groupCountForArticleCount: (n) => n - 5 },
+      { groupCountForArticleCount: (n: number) => n - 5 },
+      42,
     );
 
-    forwarder(42, 30);
-
-    expect(update).toHaveBeenCalledWith(37, 25);
-  });
-
-  it("passes an undefined anchor through without converting", () => {
-    const update = vi.fn();
-    const forwarder = createScrollCountForwarder(
-      { isActive: () => true, update },
-      { groupCountForArticleCount: (n) => n - 5 },
-    );
-
-    forwarder(42, undefined);
-
-    expect(update).toHaveBeenCalledWith(37, undefined);
+    expect(update).toHaveBeenCalledWith(37);
   });
 });

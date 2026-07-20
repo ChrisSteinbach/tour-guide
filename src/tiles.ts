@@ -26,6 +26,24 @@ export interface TileEntry {
   hash: string;
 }
 
+/**
+ * Metadata for the far-field tier (`farfield.bin`) — the notable-article
+ * sample that carries the browse list beyond the loaded tiles. See
+ * `src/farfield.ts`.
+ *
+ * Optional: an index written before the tier existed simply has no far field,
+ * and the app falls back to a list that ends at the tile coverage radius.
+ * That keeps a stale-data deploy degraded rather than broken.
+ */
+export interface FarFieldEntryMeta {
+  /** Number of articles in the tier. */
+  count: number;
+  /** Uncompressed size, for progress estimation. */
+  bytes: number;
+  /** Content hash (first 8 hex chars of SHA-256) for cache invalidation. */
+  hash: string;
+}
+
 export interface TileIndex {
   version: number;
   gridDeg: number;
@@ -33,6 +51,7 @@ export interface TileIndex {
   generated: string;
   hash?: string;
   tiles: TileEntry[];
+  farField?: FarFieldEntryMeta;
 }
 
 export const ROWS = 180 / GRID_DEG; // 36

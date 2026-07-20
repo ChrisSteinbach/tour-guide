@@ -14,10 +14,10 @@ import {
   nearestExistingTiles,
   loadTileIndex,
   loadTile,
+  findNearestTiled,
 } from "./tile-loader";
-import { createArticleWindowFactory } from "./article-window-factory";
-import { createTileSource } from "./tile-source";
-import { createArticleWindowLifecycle } from "./article-window-lifecycle";
+import { createBrowseListLifecycle } from "./browse-list-lifecycle";
+import { loadFarField } from "./farfield-loader";
 import { createGroupView } from "./grouped-articles";
 import {
   getNearby,
@@ -64,32 +64,25 @@ export function resolveScrollContainer(
 }
 
 /**
- * Create a scroll-count observer that only forwards updates
- * while the infinite scroll is active — updating a destroyed
- * virtual list is a no-op at best.
+ * Resize the virtual list to hold `articleCount` articles, skipping the
+ * update while the infinite scroll is inactive — updating a destroyed virtual
+ * list is a no-op at best.
  *
- * The observer's counts are article-space (the ArticleWindow's loaded/known
- * totals); the virtual list is sized in group-index space, so both the list
- * height and the near-end anchor are converted through the GroupView here.
+ * The count is article-space; the virtual list is sized in group-index space
+ * (one row per coincident group), so it is converted through the GroupView.
  */
-export function createScrollCountForwarder(
+export function forwardScrollCount(
   infiniteScroll: {
     isActive(): boolean;
-    update(listHeight: number, nearEndAnchor: number | undefined): void;
+    update(listHeight: number): void;
   },
   groupView: {
     groupCountForArticleCount(articleCount: number): number;
   },
-): (listHeight: number, nearEndAnchor: number | undefined) => void {
-  return (listHeight, nearEndAnchor) => {
-    if (!infiniteScroll.isActive()) return;
-    infiniteScroll.update(
-      groupView.groupCountForArticleCount(listHeight),
-      nearEndAnchor === undefined
-        ? undefined
-        : groupView.groupCountForArticleCount(nearEndAnchor),
-    );
-  };
+  articleCount: number,
+): void {
+  if (!infiniteScroll.isActive()) return;
+  infiniteScroll.update(groupView.groupCountForArticleCount(articleCount));
 }
 
 export function composeApp(deps: ComposeAppDeps): ComposedApp {
@@ -159,28 +152,31 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
     onHoverArticle,
   } = mapPanel;
 
-  // ── Article window lifecycle ──
-  // Built before infiniteScroll (without observer) so
-  // infinite-scroll-wiring can reference its methods.  The observer
-  // that drives scroll-count updates is attached after infiniteScroll
-  // is constructed.
-  const lifecycle = createArticleWindowLifecycle({
+  // ── Browse list lifecycle ──
+  // Built before infiniteScroll (without observer) so infinite-scroll-wiring
+  // can reference its methods. The observer that pushes the rebuilt list is
+  // attached after infiniteScroll is constructed.
+  const lifecycle = createBrowseListLifecycle({
     getState,
-    createArticleWindow: (opts) => {
-      const source = createTileSource({
-        position: opts.position,
-        tileMap: opts.tileMap,
-        getStateMachineTiles: opts.getStateMachineTiles,
-        loadTile: (entry, signal) =>
-          loadTile(import.meta.env.BASE_URL, opts.lang, entry, signal),
-      });
-      return createArticleWindowFactory({
-        position: opts.position,
-        signal: opts.signal,
-        source,
-        minWeight: opts.minWeight,
-        onWindowChange: opts.onWindowChange,
-      });
+    queryLocal: (position, minWeight, limit) => {
+      const state = getState();
+      if (state.query.mode !== "tiled") return [];
+      return findNearestTiled(
+        state.query.tiles,
+        position.lat,
+        position.lon,
+        limit,
+        minWeight === undefined ? undefined : { minWeight },
+      );
+    },
+    loadFarField: (lang, signal) => {
+      const query = getState().query;
+      return loadFarField(
+        import.meta.env.BASE_URL,
+        lang,
+        query.mode === "tiled" ? query.index.farField : undefined,
+        signal,
+      );
     },
     renderBrowsingList: () => rendererRef.current?.renderBrowsingList(),
   });
@@ -196,27 +192,14 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
     onHoverArticle,
     groupView,
     getScrollContainer,
-    getCurrentWindow: () => lifecycle.currentWindow(),
-    applyOptimisticCount: (count) => lifecycle.applyOptimisticCount(count),
   });
 
-  // Now that infiniteScroll exists, wire the lifecycle's scroll-count
-  // observer.  createScrollCountForwarder guards against forwarding
-  // to a destroyed virtual list (see its doc comment).
-  //
-  // The isActive() gate applies to ALL paths that fire through
-  // this observer — both onWindowChange and applyOptimisticCount.
-  // This is safe because applyOptimisticCount is only called from
-  // infinite-scroll-wiring's onNearEnd, which by construction only
-  // fires while the infinite scroll lifecycle is active.
-  lifecycle.attachScrollCountObserver(
-    createScrollCountForwarder(infiniteScroll, groupView),
-  );
-
-  // Sync ArticleWindow's loaded articles to the state machine so
-  // state.phase.articles stays in sync after tile loads re-sort.
-  lifecycle.attachArticlesObserver((articles) => {
+  // Push each rebuilt list to the state machine, then resize the virtual list
+  // to match. Order matters: groupView reads state.phase.articles, so the
+  // dispatch must land before the group count is computed.
+  lifecycle.attachObserver((articles) => {
     dispatch({ type: "articlesSync", articles });
+    forwardScrollCount(infiniteScroll, groupView, articles.length);
   });
 
   // ── DOM renderer ──
@@ -230,10 +213,10 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
     desktopQuery,
     spatialPanel,
     mapPicker,
-    resetArticleWindow: () => lifecycle.resetArticleWindow(),
-    getCurrentWindow: () => lifecycle.currentWindow(),
+    resetBrowseList: () => lifecycle.reset(),
     groupView,
-    updateScrollCount: (count) => lifecycle.applyOptimisticCount(count),
+    updateScrollCount: (count) =>
+      forwardScrollCount(infiniteScroll, groupView, count),
     getScrollContainer,
     onHoverArticle,
     itemHeight,
@@ -250,8 +233,7 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
     pushState: (data, title) => history.pushState(data, title),
     fetchArticleSummary: wikiApi.fetchArticleSummary,
     getNearby,
-    ensureArticleRange: (pos, count) =>
-      lifecycle.ensureArticleRange(pos, count),
+    rebuildBrowseList: (pos) => lifecycle.rebuild(pos),
     summaryLoader,
     ui: createEffectUIAdapter({
       app,

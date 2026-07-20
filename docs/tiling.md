@@ -101,8 +101,11 @@ Pseudocode for the tiled pipeline:
    b. If fewer than 4 articles (convex hull minimum), skip the tile
    c. Build convex hull → Delaunay triangulation → serialize to binary
    d. Write tile file: data/tiles/{lang}/{row}-{col}.bin
-3. Write tile index: data/tiles/{lang}/index.json
+3. Write the far-field tier: data/tiles/{lang}/farfield.bin
+4. Write tile index: data/tiles/{lang}/index.json
 ```
+
+Step 3 samples the top articles by weight class from every populated cell — including cells too sparse to produce a tile — so the app's browse list can extend past the loaded tiles. See [The Browse List](infinite-scroll.md#the-far-field-tier).
 
 The existing `--bounds` flag already supports geographic subsetting of the article input. The tiled pipeline extends this to iterate over all cells.
 
@@ -256,6 +259,7 @@ Tiled cache keys use three prefixes:
 - `tile-index-v1-{lang}` — tile index JSON (one per language)
 - `tile-v2-{lang}-{id}` — individual tile data (one entry per tile per language)
 - `tile-lru-v1-{lang}` — tile LRU eviction list (tracks access order for cache eviction)
+- `farfield-v1-{lang}` — far-field tier, invalidated by the `farField.hash` in the index
 
 ## Summary
 

@@ -63,7 +63,6 @@ function browsingState(overrides: Partial<AppState> = {}): AppState {
       pauseReason: null,
       lastQueryPos: pos,
       scrollMode: "viewport",
-      infiniteScrollLimit: 200,
     },
     query: { mode: "none" },
     position: pos,
@@ -95,7 +94,6 @@ function detailState(overrides: Partial<AppState> = {}): AppState {
       pauseReason: null,
       lastQueryPos: pos,
       scrollMode: "viewport",
-      infiniteScrollLimit: 200,
       savedFirstVisibleIndex: 0,
     },
     query: { mode: "none" },
@@ -1193,11 +1191,9 @@ describe("createEffectExecutor", () => {
     );
   });
 
-  it("requery in infinite scroll mode calls ensureArticleRange then dispatches queryResult", () => {
+  it("requery in infinite scroll mode calls rebuildBrowseList then dispatches queryResult", () => {
     const callOrder: string[] = [];
-    const ensureArticleRange = vi.fn(() =>
-      callOrder.push("ensureArticleRange"),
-    );
+    const rebuildBrowseList = vi.fn(() => callOrder.push("rebuildBrowseList"));
     const deps = makeDeps({
       getState: vi.fn(() =>
         browsingState({
@@ -1209,12 +1205,11 @@ describe("createEffectExecutor", () => {
             pauseReason: null,
             lastQueryPos: pos,
             scrollMode: "infinite",
-            infiniteScrollLimit: 200,
           },
         }),
       ),
       getNearby: vi.fn(() => [article]),
-      ensureArticleRange,
+      rebuildBrowseList,
       dispatch: vi.fn(() => callOrder.push("dispatch")),
     });
     const exec = createEffectExecutor(deps);
@@ -1222,7 +1217,7 @@ describe("createEffectExecutor", () => {
     exec({ type: "requery", pos, count: 20 });
 
     expect(deps.getNearby).toHaveBeenCalled();
-    expect(ensureArticleRange).toHaveBeenCalledWith(pos, 20);
+    expect(rebuildBrowseList).toHaveBeenCalledWith(pos);
     expect(deps.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "queryResult",
@@ -1231,23 +1226,24 @@ describe("createEffectExecutor", () => {
         count: 20,
       }),
     );
-    // ensureArticleRange must run BEFORE queryResult dispatch so the
-    // ArticleWindow exists when onNearEnd fires during rendering.
-    expect(callOrder).toEqual(["ensureArticleRange", "dispatch"]);
+    // rebuildBrowseList must run AFTER the queryResult dispatch — getNearby
+    // returns only a seed, and rebuilding first would let it overwrite the
+    // full browse list.
+    expect(callOrder).toEqual(["dispatch", "rebuildBrowseList"]);
   });
 
-  it("requery in viewport scroll mode uses getNearby even when ensureArticleRange is provided", () => {
-    const ensureArticleRange = vi.fn();
+  it("requery in viewport scroll mode uses getNearby even when rebuildBrowseList is provided", () => {
+    const rebuildBrowseList = vi.fn();
     const deps = makeDeps({
       getState: vi.fn(() => browsingState()), // scrollMode defaults to "viewport"
       getNearby: vi.fn(() => [article]),
-      ensureArticleRange,
+      rebuildBrowseList,
     });
     const exec = createEffectExecutor(deps);
 
     exec({ type: "requery", pos, count: 10 });
 
-    expect(ensureArticleRange).not.toHaveBeenCalled();
+    expect(rebuildBrowseList).not.toHaveBeenCalled();
     expect(deps.getNearby).toHaveBeenCalledWith(
       { mode: "none" },
       pos,
