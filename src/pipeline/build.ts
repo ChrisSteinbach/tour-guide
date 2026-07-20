@@ -18,6 +18,7 @@ import { encodeArticlePayload } from "../article-payload.js";
 import type { ArticleMeta } from "../article-payload.js";
 import {
   FARFIELD_TOP_K,
+  MIDFIELD_TOP_K,
   encodeFarField,
   selectFarFieldEntries,
 } from "../farfield.js";
@@ -267,7 +268,35 @@ export function buildTile(tileArticles: MergedArticle[]): ArrayBuffer | null {
   return serializeBinary(tri, encodeArticlePayload(groups));
 }
 
-// ---------- Far-field tier ----------
+// ---------- Sampled tiers: far field + mid-field digests ----------
+
+/**
+ * Flatten one cell's articles into far-field candidates: every co-located
+ * article, individually, at its unit's shared coordinates. Both sampled
+ * tiers start from this same list and differ only in how many candidates
+ * survive `selectFarFieldEntries` — the far field keeps `FARFIELD_TOP_K` from
+ * every cell on Earth, a digest keeps up to `MIDFIELD_TOP_K` from one cell
+ * near the user.
+ */
+export function cellCandidates(
+  articleIndex: ArticleIndex<MergedArticle>,
+  id: string,
+): FarFieldEntry[] {
+  const candidates: FarFieldEntry[] = [];
+  // Co-located articles collapse to one unit but stay individually
+  // notable, so the whole group competes for the cell's slots.
+  for (const unit of articleIndex.get(id)!) {
+    for (const article of unit.group) {
+      candidates.push({
+        title: article.title,
+        lat: unit.lat,
+        lon: unit.lon,
+        weight: article.weight ?? 0,
+      });
+    }
+  }
+  return candidates;
+}
 
 /**
  * Sample the most notable articles from every populated cell.
@@ -289,22 +318,29 @@ export function buildFarField(
 ): FarFieldEntry[] {
   const out: FarFieldEntry[] = [];
   for (const id of [...articleIndex.keys()].sort()) {
-    const candidates: FarFieldEntry[] = [];
-    // Co-located articles collapse to one unit but stay individually
-    // notable, so the whole group competes for the cell's slots.
-    for (const unit of articleIndex.get(id)!) {
-      for (const article of unit.group) {
-        candidates.push({
-          title: article.title,
-          lat: unit.lat,
-          lon: unit.lon,
-          weight: article.weight ?? 0,
-        });
-      }
-    }
-    out.push(...selectFarFieldEntries(candidates, topK));
+    out.push(...selectFarFieldEntries(cellCandidates(articleIndex, id), topK));
   }
   return out;
+}
+
+/**
+ * Select one cell's mid-field digest, or null if the cell doesn't warrant
+ * one.
+ *
+ * A cell with FARFIELD_TOP_K candidates or fewer is already fully covered by
+ * the far-field tier — every one of its articles is in there — so writing a
+ * digest too would just duplicate that content under a second URL and a
+ * second fetch for nothing. Only cells with more candidates than that get a
+ * digest, sized up to MIDFIELD_TOP_K.
+ */
+export function buildMidFieldDigest(
+  articleIndex: ArticleIndex<MergedArticle>,
+  id: string,
+  topK: number = MIDFIELD_TOP_K,
+): FarFieldEntry[] | null {
+  const candidates = cellCandidates(articleIndex, id);
+  if (candidates.length <= FARFIELD_TOP_K) return null;
+  return selectFarFieldEntries(candidates, topK);
 }
 
 /** SHA-256 hash of a buffer, truncated to 8 hex characters. */
@@ -392,8 +428,35 @@ async function buildTiled(articles: Article[], lang: Lang): Promise<void> {
     `  → ${built} tiles built, ${skipped} skipped (<${MIN_ARTICLES} articles) in ${((t1 - t0) / 1000).toFixed(1)}s`,
   );
 
-  // Step 4: Build the far-field tier
-  console.log("\nStep 4: Building far-field tier...");
+  // Step 4: Build mid-field digests
+  //
+  // A digest is the far-field artifact at a smaller scale — one cell's most
+  // notable articles instead of the whole globe's — so it's written with the
+  // same codec rather than a bespoke format: the app gets one decoder for
+  // both tiers, and "how much to sample" is just a topK, not a new structure.
+  console.log("\nStep 4: Building mid-field digests...");
+  let digestsWritten = 0;
+  let digestBytes = 0;
+  for (const entry of tileEntries) {
+    const digestEntries = buildMidFieldDigest(articleIndex, entry.id);
+    if (!digestEntries) continue;
+
+    const buf = encodeFarField(digestEntries);
+    writeFileSync(resolve(tilesDir, `${entry.id}.digest.bin`), buf);
+    entry.digest = {
+      count: digestEntries.length,
+      bytes: buf.byteLength,
+      hash: hashBuffer(buf),
+    };
+    digestsWritten++;
+    digestBytes += buf.byteLength;
+  }
+  console.log(
+    `  → ${digestsWritten} of ${tileEntries.length} tiles got a digest, ${(digestBytes / 1024).toFixed(0)} KB total`,
+  );
+
+  // Step 5: Build the far-field tier
+  console.log("\nStep 5: Building far-field tier...");
   const farFieldEntries = buildFarField(articleIndex);
   const farFieldBuf = encodeFarField(farFieldEntries);
   const farFieldPath = resolve(tilesDir, "farfield.bin");
@@ -402,8 +465,8 @@ async function buildTiled(articles: Article[], lang: Lang): Promise<void> {
     `  → ${farFieldEntries.length} articles from ${articleIndex.size} cells, ${(farFieldBuf.byteLength / 1024).toFixed(0)} KB`,
   );
 
-  // Step 5: Write tile index
-  console.log("\nStep 5: Writing tile index...");
+  // Step 6: Write tile index
+  console.log("\nStep 6: Writing tile index...");
   tileEntries.sort((a, b) => a.id.localeCompare(b.id));
 
   const combinedHashes = tileEntries.map((t) => t.hash).join("");

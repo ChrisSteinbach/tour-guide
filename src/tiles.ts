@@ -24,19 +24,28 @@ export interface TileEntry {
   articles: number;
   bytes: number;
   hash: string;
+  /**
+   * This cell's mid-field digest, when it has one: its most notable articles,
+   * fetchable without the tile's triangulation. Absent when the cell holds no
+   * more than `FARFIELD_TOP_K` articles — the far-field tier already carries
+   * every one of them, so a digest would be pure duplication.
+   */
+  digest?: SampledTierMeta;
 }
 
 /**
- * Metadata for the far-field tier (`farfield.bin`) — the notable-article
- * sample that carries the browse list beyond the loaded tiles. See
- * `src/farfield.ts`.
+ * Metadata for one sampled-tier artifact: either the far-field tier
+ * (`farfield.bin`) or a single cell's mid-field digest (`{id}.digest.bin`).
+ * They are the same thing at two scales — the most notable articles of a
+ * region, encoded with the codec in `src/farfield.ts` — so they carry the
+ * same metadata.
  *
- * Optional: an index written before the tier existed simply has no far field,
- * and the app falls back to a list that ends at the tile coverage radius.
- * That keeps a stale-data deploy degraded rather than broken.
+ * Optional wherever it appears: an index written before a tier existed simply
+ * has no entry for it, and the app falls back to the reach it had before that
+ * tier shipped. That keeps a stale-data deploy degraded rather than broken.
  */
-export interface FarFieldEntryMeta {
-  /** Number of articles in the tier. */
+export interface SampledTierMeta {
+  /** Number of articles in the artifact. */
   count: number;
   /** Uncompressed size, for progress estimation. */
   bytes: number;
@@ -51,7 +60,7 @@ export interface TileIndex {
   generated: string;
   hash?: string;
   tiles: TileEntry[];
-  farField?: FarFieldEntryMeta;
+  farField?: SampledTierMeta;
 }
 
 export const ROWS = 180 / GRID_DEG; // 36

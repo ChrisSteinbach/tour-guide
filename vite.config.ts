@@ -10,7 +10,11 @@ const BINARY = "application/octet-stream";
 /**
  * Request paths the dev server maps straight onto files under `data/`, so the
  * app sees the same URLs it will see on Pages without a build step. `path`
- * receives the pattern's capture groups. More specific patterns come first.
+ * receives the pattern's capture groups.
+ *
+ * The digest route is listed before the plain tile route only for readability
+ * — `\d{2}-\d{2}\.bin$` cannot match a `.digest.bin` filename — but keeping
+ * the more specific pattern first means that stays true if either is loosened.
  */
 const DATA_ROUTES: {
   pattern: RegExp;
@@ -25,6 +29,11 @@ const DATA_ROUTES: {
   {
     pattern: /\/tiles\/(\w+)\/farfield\.bin$/,
     path: (m) => `data/tiles/${m[1]}/farfield.bin`,
+    type: BINARY,
+  },
+  {
+    pattern: /\/tiles\/(\w+)\/(\d{2}-\d{2})\.digest\.bin$/,
+    path: (m) => `data/tiles/${m[1]}/${m[2]}.digest.bin`,
     type: BINARY,
   },
   {

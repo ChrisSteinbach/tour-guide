@@ -1,15 +1,25 @@
-// Far-field tier: the globe's most notable articles, sampled per tile.
+// Per-cell notability sampling: the globe's most notable articles, taken a
+// fixed number per 5° cell.
 //
 // The browse list is a radial projection of the globe, and like a map it needs
 // level of detail. Tiles give exhaustive coverage near the user, but reaching
 // the furthest article that way means downloading every tile (154 MB for en) —
 // and a 1:1 virtual list of every article would be ~84 Mpx tall, past the
 // ~33.5 Mpx element-height ceiling browsers enforce. So beyond the loaded
-// tiles the list switches to this tier: the top `FARFIELD_TOP_K` articles by
-// weight class from each populated 5° cell, which keeps global coverage
-// geographically even (a uniform notability floor would leave long empty
-// stretches over Africa and the Pacific and crowd Europe) while fitting in one
-// small artifact the app can hold entirely in memory.
+// tiles the list switches to sampled tiers built from this codec.
+//
+// Sampling per cell rather than by a global notability floor is what keeps
+// coverage geographically even: a uniform floor would crowd Europe and leave
+// long empty stretches over Africa and the Pacific, which in a
+// distance-ordered list reads as a dead zone.
+//
+// Two tiers use it, differing only in how many articles each cell contributes
+// and how the result is packaged:
+//
+//   far field   `FARFIELD_TOP_K` per cell, every cell on Earth, one artifact
+//               per language, fetched once and held in memory.
+//   mid field   `MIDFIELD_TOP_K` per cell, one artifact per cell, fetched
+//               only for the cells near the user.
 //
 // Shared by the pipeline (writer) and the app (reader).
 
@@ -29,6 +39,24 @@ export interface FarFieldEntry {
  * element-height ceiling from any position.
  */
 export const FARFIELD_TOP_K = 25;
+
+/**
+ * Articles sampled into one cell's mid-field digest.
+ *
+ * The far field is deliberately thin, because every cell on Earth is in it.
+ * That thinness is invisible far away — past ~1,000 km the number of populated
+ * cells within reach grows with the square of the distance, so 25 apiece is
+ * plenty — but it bites just outside the loaded tiles, where only a handful of
+ * cells are in range: from Times Square the whole 100-300 km band held 39
+ * articles. Digests refill that band by raising the per-cell sample tenfold,
+ * for the cells near enough to matter.
+ *
+ * 250 is where the two tiers meet without a visible seam in either direction,
+ * and it keeps a digest around 3 KB brotli: 30 KB of fetches at the median
+ * position and 185 KB at the worst, against 8.5 MB to load the surrounding
+ * tiles outright.
+ */
+export const MIDFIELD_TOP_K = 250;
 
 // Binary layout (all little-endian):
 //   [0..3]             count C    uint32

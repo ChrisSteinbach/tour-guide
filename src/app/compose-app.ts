@@ -17,6 +17,7 @@ import {
   findWithinRadiusTiled,
 } from "./tile-loader";
 import { createBrowseListLifecycle } from "./browse-list-lifecycle";
+import { loadDigest } from "./digest-loader";
 import { loadFarField } from "./farfield-loader";
 import { createGroupView } from "./grouped-articles";
 import {
@@ -178,6 +179,8 @@ export function composeApp(deps: ComposeAppDeps): ComposedApp {
         signal,
       );
     },
+    loadDigest: (lang, tileId, meta, signal) =>
+      loadDigest(import.meta.env.BASE_URL, lang, tileId, meta, signal),
     renderBrowsingList: () => rendererRef.current?.renderBrowsingList(),
   });
 
