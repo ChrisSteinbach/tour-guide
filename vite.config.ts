@@ -5,57 +5,62 @@ import { APP_NAME } from "./src/app/config";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
-/** Serve tile data from the data/ directory during development. */
+const BINARY = "application/octet-stream";
+
+/**
+ * Request paths the dev server maps straight onto files under `data/`, so the
+ * app sees the same URLs it will see on Pages without a build step. `path`
+ * receives the pattern's capture groups. More specific patterns come first.
+ */
+const DATA_ROUTES: {
+  pattern: RegExp;
+  path: (m: RegExpMatchArray) => string;
+  type: string;
+}[] = [
+  {
+    pattern: /\/tiles\/(\w+)\/index\.json$/,
+    path: (m) => `data/tiles/${m[1]}/index.json`,
+    type: "application/json",
+  },
+  {
+    pattern: /\/tiles\/(\w+)\/farfield\.bin$/,
+    path: (m) => `data/tiles/${m[1]}/farfield.bin`,
+    type: BINARY,
+  },
+  {
+    pattern: /\/tiles\/(\w+)\/(\d{2}-\d{2})\.bin$/,
+    path: (m) => `data/tiles/${m[1]}/${m[2]}.bin`,
+    type: BINARY,
+  },
+];
+
+/**
+ * Serve tile data from the data/ directory during development.
+ *
+ * A missing file answers 404 rather than falling through to Vite's SPA
+ * fallback. The fallback would return index.html with a 200, which every one
+ * of these callers would accept as a successful fetch and then fail to decode;
+ * the loaders all treat 404 as a permanent, non-retryable miss, which is what
+ * a tile that was never generated actually is.
+ */
 function serveData(): Plugin {
   return {
     name: "serve-data",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        // Serve tile index: /tiles/{lang}/index.json
-        const indexMatch = req.url?.match(/\/tiles\/(\w+)\/index\.json$/);
-        if (indexMatch) {
-          const filePath = resolve(`data/tiles/${indexMatch[1]}/index.json`);
-          if (existsSync(filePath)) {
-            const stat = statSync(filePath);
-            res.setHeader("Content-Type", "application/json");
-            res.setHeader("Content-Length", stat.size);
-            createReadStream(filePath).pipe(res);
-          } else {
+        for (const route of DATA_ROUTES) {
+          const match = req.url?.match(route.pattern);
+          if (!match) continue;
+
+          const filePath = resolve(route.path(match));
+          if (!existsSync(filePath)) {
             res.writeHead(404);
             res.end();
+            return;
           }
-          return;
-        }
-        // Serve the far-field tier: /tiles/{lang}/farfield.bin
-        const farFieldMatch = req.url?.match(/\/tiles\/(\w+)\/farfield\.bin$/);
-        if (farFieldMatch) {
-          try {
-            const filePath = resolve(
-              `data/tiles/${farFieldMatch[1]}/farfield.bin`,
-            );
-            const stat = statSync(filePath);
-            res.setHeader("Content-Type", "application/octet-stream");
-            res.setHeader("Content-Length", stat.size);
-            createReadStream(filePath).pipe(res);
-          } catch {
-            next();
-          }
-          return;
-        }
-        // Serve individual tile: /tiles/{lang}/{id}.bin
-        const tileMatch = req.url?.match(/\/tiles\/(\w+)\/(\d{2}-\d{2})\.bin$/);
-        if (tileMatch) {
-          try {
-            const filePath = resolve(
-              `data/tiles/${tileMatch[1]}/${tileMatch[2]}.bin`,
-            );
-            const stat = statSync(filePath);
-            res.setHeader("Content-Type", "application/octet-stream");
-            res.setHeader("Content-Length", stat.size);
-            createReadStream(filePath).pipe(res);
-          } catch {
-            next();
-          }
+          res.setHeader("Content-Type", route.type);
+          res.setHeader("Content-Length", statSync(filePath).size);
+          createReadStream(filePath).pipe(res);
           return;
         }
         next();
