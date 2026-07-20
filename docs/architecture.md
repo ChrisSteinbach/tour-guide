@@ -98,7 +98,7 @@ Distance uses chord length (`2 * asin(||v - q|| / 2)`, clamped for numerical saf
 - Article cards with distance badges
 - Language selector dropdown, GPS/Pin position source toggle, pause/resume button, and About button in header
 - Slide-in drawer (right edge) hosts a spatial panel with two tabs — Radar (default) and Map. The radar renders nearby articles as canvas blips placed by great-circle bearing and distance, with labeled range rings, a rotating sweep, and heading-up rotation when a compass heading is available; the map is the Leaflet browse map. Each view loads lazily on first activation, and the tab choice persists in localStorage
-- A globe-spanning, distance-ordered browse list at two levels of detail (see [infinite-scroll.md](infinite-scroll.md))
+- A globe-spanning, distance-ordered browse list at three levels of detail (see [infinite-scroll.md](infinite-scroll.md))
 - Smart re-render with two paths: if the article list is unchanged, `updateDistances` patches only the distance badges in-place. If articles change, `reconcileListItems` matches existing DOM nodes by article title — reused nodes keep their enrichment (thumbnails, descriptions fetched from Wikipedia) and only get a badge update, while new articles get fresh nodes. This title-keyed reconciliation is why enrichment survives GPS-triggered re-renders even as the article list shifts.
 - Re-query threshold: 15m minimum movement before recalculating
 
@@ -288,7 +288,7 @@ src/app/
   index.html           PWA root
 
   # Browse list subsystem
-  browse-list.ts              Merges the exhaustive and far-field tiers into one distance-ordered list
+  browse-list.ts              Grades the local tier by distance band and merges it with far-field
   browse-list-lifecycle.ts    Owns the materialized list and the far-field tier; rebuilds on position/filter/tile change
   farfield-loader.ts          Fetches and IDB-caches the far-field tier, keyed by content hash
   tile-radius.ts              Pure Chebyshev ring geometry over the tile grid
@@ -325,7 +325,7 @@ src/pipeline/CLAUDE.md Module-specific dev instructions (extraction and pipeline
 
 ## See Also
 
-- [The Browse List](infinite-scroll.md) — Virtual scroll, the exhaustive and far-field tiers, scroll-pause detection
+- [The Browse List](infinite-scroll.md) — Virtual scroll, the browse list's levels of detail, scroll-pause detection
 - [State Machine](state-machine.md) — App state machine: phases, events, effects, transition table
 - [Nearest-Neighbor Theory](nearest-neighbor.md) — How WikiRadar applies `spherical-delaunay`'s triangle-walk queries to tiled data, with a pointer to the package's own theory docs
 - [Binary Format](binary-format.md) — Byte-level layout of `.bin` tile files

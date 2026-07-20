@@ -262,7 +262,7 @@ Position updates only trigger a requery if the user has moved at least 15 meters
 
 ### Infinite scroll
 
-When position is stable (picked or GPS-paused), the list switches to infinite scroll mode. The `requery` fetches `INFINITE_SCROLL_INITIAL` (200) articles as a viewport seed, and the effect executor then rebuilds the browse list, which replaces `articles` wholesale with the full distance-ordered globe — so nothing grows a limit as the user scrolls. Unpausing switches back to viewport mode with a smaller count. See [The Browse List](infinite-scroll.md) for how the two tiers are merged.
+When position is stable (picked or GPS-paused), the list switches to infinite scroll mode. The `requery` fetches `INFINITE_SCROLL_INITIAL` (200) articles as a viewport seed, and the effect executor then rebuilds the browse list, which replaces `articles` wholesale with the full distance-ordered globe — so nothing grows a limit as the user scrolls. Unpausing switches back to viewport mode with a smaller count. See [The Browse List](infinite-scroll.md) for how the levels of detail are merged.
 
 ### Pure machine, impure executor
 

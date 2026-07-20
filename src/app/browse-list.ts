@@ -1,12 +1,24 @@
-// The browse list: one distance-ordered list of the whole globe, at two levels
-// of detail.
+// The browse list: one distance-ordered list of the whole globe, with detail
+// that falls off as distance grows.
 //
 // Tiles give exhaustive coverage, but only near the user — reaching the
 // furthest article by loading tiles means downloading every one of them, and a
 // 1:1 virtual list of every article would be taller than the element-height
-// ceiling browsers enforce. So the list is exhaustive out to the radius the
-// loaded tiles actually cover, and beyond that switches to the far-field tier
-// (see src/farfield.ts): the most notable articles from every cell on Earth.
+// ceiling browsers enforce. So the list is built at three levels of detail:
+//
+//   everything            out to FULL_DETAIL_RADIUS_M
+//   DISTANCE_BAND_QUOTA   per doubling of distance, out to the radius the
+//     most notable         loaded tiles actually cover
+//   the far-field tier    beyond that: the most notable articles from every
+//                          cell on Earth (see src/farfield.ts)
+//
+// Grading the middle level is what makes the list scrollable rather than
+// merely long. Ungraded, the nearest 5,000 articles to central London all sit
+// within 4.6 km — while the tiles already in memory cover 112 km — so the list
+// spent its whole near field on one neighbourhood and then fell off a cliff
+// onto 25-articles-per-5°-cell. Sampling per distance band spends the same
+// number of rows on each doubling of distance instead, which is what a map
+// does with labels, and it costs nothing to download.
 //
 // The whole list is materialized. That is the point: its length is exact from
 // the moment it is built, any index can be read without fetching anything, and
@@ -21,14 +33,24 @@ import type { TileEntry } from "../tiles";
 import type { NearbyArticle, UserPosition } from "./types";
 
 /**
- * Cap on the exhaustive tier. Bounds both the nearest-neighbor query (`k`
- * feeds the pruning in `queryTilesPruned`, so an unbounded k defeats it) and
- * how much of the list one dense city can occupy: without a cap, London's
- * 67,000 articles within 250 km would bury the rest of the planet below a
- * scroll position no one reaches. Articles past the cap are still represented
- * by the far-field tier.
+ * Radius within which the exhaustive tier is kept whole, with no notability
+ * sampling at all. "Everything within walking distance" is the promise the app
+ * exists to keep, so this band is never thinned — in the densest cities it is
+ * around a thousand articles, and everywhere else it is however many there are.
  */
-export const LOCAL_EXHAUSTIVE_MAX = 5000;
+export const FULL_DETAIL_RADIUS_M = 1_000;
+
+/**
+ * Articles kept per doubling of distance beyond `FULL_DETAIL_RADIUS_M`, most
+ * notable first.
+ *
+ * A constant per-band quota makes every doubling of distance cost the same
+ * number of rows, so scrolling a fixed distance zooms out by a fixed factor.
+ * It is also self-calibrating: a band with fewer articles than the quota keeps
+ * all of them, so sparse regions are still exhaustive and only dense ones are
+ * sampled.
+ */
+export const DISTANCE_BAND_QUOTA = 250;
 
 /**
  * The radius within which the loaded tiles are complete: the distance to the
@@ -58,48 +80,89 @@ export function coverageRadiusMeters(
   return nearest;
 }
 
+/**
+ * Thin the exhaustive tier so detail falls off with distance: everything
+ * within `FULL_DETAIL_RADIUS_M`, then the `DISTANCE_BAND_QUOTA` most notable
+ * articles from each subsequent doubling of distance.
+ *
+ * Bands are geometric rather than linear because that is how the list is read.
+ * Equal-width bands would put almost every row in the outermost one — the area
+ * of a band grows with its radius — which is the density cliff this exists to
+ * remove.
+ *
+ * Input order is irrelevant and output order is unspecified; callers sort the
+ * merged list by distance anyway.
+ */
+export function sampleByDistanceBand(
+  local: readonly NearbyArticle[],
+): NearbyArticle[] {
+  const kept: NearbyArticle[] = [];
+  const bands = new Map<number, NearbyArticle[]>();
+
+  for (const article of local) {
+    if (article.distanceM <= FULL_DETAIL_RADIUS_M) {
+      kept.push(article);
+      continue;
+    }
+    const band = Math.floor(
+      Math.log2(article.distanceM / FULL_DETAIL_RADIUS_M),
+    );
+    const bucket = bands.get(band);
+    if (bucket) bucket.push(article);
+    else bands.set(band, [article]);
+  }
+
+  for (const bucket of bands.values()) {
+    if (bucket.length > DISTANCE_BAND_QUOTA) {
+      bucket.sort(byNotability);
+      bucket.length = DISTANCE_BAND_QUOTA;
+    }
+    kept.push(...bucket);
+  }
+
+  return kept;
+}
+
+/** Most notable first; among equally notable articles, nearest first. */
+function byNotability(a: NearbyArticle, b: NearbyArticle): number {
+  const weightGap = (b.weight ?? 0) - (a.weight ?? 0);
+  return weightGap !== 0 ? weightGap : a.distanceM - b.distanceM;
+}
+
 export interface BrowseListInput {
   position: UserPosition;
-  /** Exhaustive articles from the loaded tiles, nearest first. */
+  /**
+   * Every article the loaded tiles hold inside the coverage radius (see
+   * `coverageRadiusMeters`), in any order. Bounding this at the query is what
+   * keeps the tier free of holes: articles past that radius are present only
+   * in whichever direction a tile happens to be loaded, so including them
+   * would make density depend on which way the user faces — hundreds of
+   * articles at 600 km one way, three the other — which reads as a broken
+   * list.
+   */
   local: readonly NearbyArticle[];
   /** The far-field tier for the current language. */
   farField: readonly FarFieldEntry[];
-  /** Radius within which `local` is complete (see coverageRadiusMeters). */
-  coverageRadiusM: number;
   /** Weight floor from the Highlights filter, or undefined for no filter. */
   minWeight?: number;
 }
 
 /**
  * Merge the exhaustive and far-field tiers into the distance-ordered list the
- * user scrolls.
- *
- * Local articles beyond the coverage radius are dropped rather than kept.
- * Keeping them would make density depend on which direction the user faces —
- * hundreds of articles at 600 km where a tile happens to be loaded, three
- * where one is not — which reads as a broken list. Dropping them costs only
- * the long tail in partly-covered cells, because the far-field tier still
- * carries those cells' notable articles.
+ * user scrolls, sampling the exhaustive tier by distance band on the way in.
  */
 export function buildBrowseList(input: BrowseListInput): NearbyArticle[] {
-  const { position, local, farField, coverageRadiusM, minWeight } = input;
+  const { position, local, farField, minWeight } = input;
 
-  const merged: NearbyArticle[] = [];
-  const seen = new Set<string>();
-
-  // `local` is nearest-first, so the first article past the coverage radius
-  // ends the exhaustive tier.
-  for (const article of local) {
-    if (article.distanceM > coverageRadiusM) break;
-    if (merged.length >= LOCAL_EXHAUSTIVE_MAX) break;
-    merged.push(article);
-    seen.add(article.title);
-  }
+  const merged = sampleByDistanceBand(local);
+  const seen = new Set(merged.map((article) => article.title));
 
   // Title dedupe is the only guard needed. A far-field entry inside the
-  // covered radius is either already in the exhaustive tier — caught here —
-  // or comes from a cell too sparse to have produced a tile at all, in which
-  // case it is the sole way that article can ever be reached.
+  // covered radius is either already listed — caught here — or it is one the
+  // band sampling dropped, or it comes from a cell too sparse to have produced
+  // a tile at all. In the last two cases it belongs: the far-field tier is
+  // itself a notability ranking, so an entry it carries has already earned a
+  // row.
   for (const entry of farField) {
     if (minWeight !== undefined && entry.weight < minWeight) continue;
     if (seen.has(entry.title)) continue;

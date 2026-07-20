@@ -7,11 +7,7 @@
 // knowing how long the list was. The far-field tier removes the premise — the
 // list is built whole, so its length is exact and every index is already there.
 
-import {
-  LOCAL_EXHAUSTIVE_MAX,
-  buildBrowseList,
-  coverageRadiusMeters,
-} from "./browse-list";
+import { buildBrowseList, coverageRadiusMeters } from "./browse-list";
 import { filterMinWeight } from "./config";
 import type { FarFieldEntry } from "../farfield";
 import type { Lang } from "../lang";
@@ -24,13 +20,16 @@ export type BrowseListObserver = (articles: NearbyArticle[]) => void;
 export interface BrowseListLifecycleDeps {
   getState: () => AppState;
   /**
-   * Exhaustive articles from the currently loaded tiles, nearest first,
-   * capped at `limit`.
+   * Every article the currently loaded tiles hold within `radiusM`, in any
+   * order — the raw local level, before `buildBrowseList` grades it by
+   * distance band. A radius rather than a count: the local level reaches
+   * exactly as far as the tiles are complete, not as far as some number of
+   * rows happens to stretch.
    */
   queryLocal: (
     position: UserPosition,
     minWeight: number | undefined,
-    limit: number,
+    radiusM: number,
   ) => NearbyArticle[];
   /** Fetch a language's far-field tier (cached by the loader). */
   loadFarField: (lang: Lang, signal: AbortSignal) => Promise<FarFieldEntry[]>;
@@ -72,16 +71,16 @@ export function createBrowseListLifecycle(
     if (state.query.mode !== "tiled") return;
 
     const minWeight = filterMinWeight(state.filter);
+    const coverageRadiusM = coverageRadiusMeters(
+      state.query.tileMap,
+      new Set(state.query.tiles.keys()),
+      position.lat,
+      position.lon,
+    );
     currentList = buildBrowseList({
       position,
-      local: deps.queryLocal(position, minWeight, LOCAL_EXHAUSTIVE_MAX),
+      local: deps.queryLocal(position, minWeight, coverageRadiusM),
       farField,
-      coverageRadiusM: coverageRadiusMeters(
-        state.query.tileMap,
-        new Set(state.query.tiles.keys()),
-        position.lat,
-        position.lon,
-      ),
       minWeight,
     });
     lastPosition = position;
