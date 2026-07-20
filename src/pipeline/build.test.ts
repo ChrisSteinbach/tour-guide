@@ -18,7 +18,9 @@ import {
   buildTile,
   attachWeights,
   mergeCoincident,
+  buildFarField,
 } from "./build.js";
+import { decodeFarField } from "../farfield.js";
 import type { TileIndex } from "../tiles.js";
 import type { Article } from "./extract-dump.js";
 
@@ -380,6 +382,80 @@ describe("mergeCoincident", () => {
   });
 });
 
+describe("buildFarField", () => {
+  it("keeps the most notable articles from each cell", () => {
+    const index = buildArticleIndex(
+      mergeCoincident(
+        attachWeights([
+          { title: "popular", lat: 12, lon: 2, views: 10_000 },
+          { title: "middling", lat: 12.1, lon: 2, views: 500 },
+          { title: "obscure", lat: 12.2, lon: 2, views: 1 },
+        ]),
+      ),
+    );
+
+    const farField = buildFarField(index, 2);
+
+    expect(farField.map((e) => e.title)).toEqual(["popular", "middling"]);
+  });
+
+  it("covers cells too sparse to become a tile", () => {
+    // Two articles is below MIN_ARTICLES, so this cell produces no .bin —
+    // without the far field its articles would be unreachable entirely.
+    const index = buildArticleIndex(
+      mergeCoincident(
+        attachWeights([
+          { title: "Remote Atoll", lat: -19.5, lon: -139.5, views: 30 },
+          { title: "Atoll Lagoon", lat: -19.4, lon: -139.4, views: 20 },
+        ]),
+      ),
+    );
+
+    expect(buildFarField(index, 25).map((e) => e.title)).toEqual([
+      "Remote Atoll",
+      "Atoll Lagoon",
+    ]);
+  });
+
+  it("lets co-located articles compete for slots individually", () => {
+    // Same coordinates — these collapse to one triangulation vertex, but each
+    // is a distinct article and should be ranked on its own notability.
+    const index = buildArticleIndex(
+      mergeCoincident(
+        attachWeights([
+          { title: "The Building", lat: 12, lon: 2, views: 900 },
+          { title: "The Institution", lat: 12, lon: 2, views: 8_000 },
+        ]),
+      ),
+    );
+
+    const farField = buildFarField(index, 25);
+
+    expect(farField.map((e) => e.title)).toEqual([
+      "The Institution",
+      "The Building",
+    ]);
+    expect(farField[0].lat).toBe(12);
+    expect(farField[1].lat).toBe(12);
+  });
+
+  it("emits cells in sorted tile order so rebuilds are byte-identical", () => {
+    const index = buildArticleIndex(
+      mergeCoincident(
+        attachWeights([
+          { title: "Tokyo area", lat: 37, lon: 141, views: 100 }, // tile 25-64
+          { title: "Africa area", lat: 12, lon: 2, views: 100 }, // tile 20-36
+        ]),
+      ),
+    );
+
+    expect(buildFarField(index, 25).map((e) => e.title)).toEqual([
+      "Africa area",
+      "Tokyo area",
+    ]);
+  });
+});
+
 describe("buildTile (coincident articles)", () => {
   it("keeps every co-located article in one vertex group instead of dropping it", () => {
     // Four distinct corners plus two articles sharing the center coordinate.
@@ -476,6 +552,23 @@ describe("tiled pipeline (e2e)", () => {
     expect(index.hash).toMatch(/^[0-9a-f]{8}$/);
     expect(index.tiles.length).toBe(3);
 
+    // The far-field tier: every cell contributes, and the index describes it
+    // so the app can cache-invalidate on content change.
+    expect(index.farField).toBeDefined();
+    expect(index.farField!.hash).toMatch(/^[0-9a-f]{8}$/);
+    expect(index.farField!.count).toBe(30);
+
+    const farFieldBuf = readFileSync(join(tilesDir, "farfield.bin"));
+    expect(farFieldBuf.byteLength).toBe(index.farField!.bytes);
+    const farField = decodeFarField(
+      farFieldBuf.buffer.slice(
+        farFieldBuf.byteOffset,
+        farFieldBuf.byteOffset + farFieldBuf.byteLength,
+      ),
+    );
+    expect(farField).toHaveLength(30);
+    expect(farField.map((e) => e.title).sort()).toContain("Stockholm_0");
+
     // Verify each tile entry has required fields
     for (const tile of index.tiles) {
       expect(tile.id).toMatch(/^\d{2}-\d{2}$/);
@@ -508,8 +601,11 @@ describe("tiled pipeline (e2e)", () => {
     const totalArticles = index.tiles.reduce((s, t) => s + t.articles, 0);
     expect(totalArticles).toBe(30); // 3 clusters * 10 articles
 
-    // Verify .bin files on disk match the index
-    const binFiles = readdirSync(tilesDir).filter((f) => f.endsWith(".bin"));
+    // Verify per-tile .bin files on disk match the index (farfield.bin is a
+    // single global artifact, not a tile)
+    const binFiles = readdirSync(tilesDir).filter(
+      (f) => f.endsWith(".bin") && f !== "farfield.bin",
+    );
     expect(binFiles.length).toBe(index.tiles.length);
   });
 

@@ -16,6 +16,12 @@ import {
 } from "spherical-delaunay";
 import { encodeArticlePayload } from "../article-payload.js";
 import type { ArticleMeta } from "../article-payload.js";
+import {
+  FARFIELD_TOP_K,
+  encodeFarField,
+  selectFarFieldEntries,
+} from "../farfield.js";
+import type { FarFieldEntry } from "../farfield.js";
 import { assignWeightClasses } from "./popularity.js";
 import { SUPPORTED_LANGS, DEFAULT_LANG } from "../lang.js";
 import type { Lang } from "../lang.js";
@@ -261,10 +267,50 @@ export function buildTile(tileArticles: MergedArticle[]): ArrayBuffer | null {
   return serializeBinary(tri, encodeArticlePayload(groups));
 }
 
+// ---------- Far-field tier ----------
+
+/**
+ * Sample the most notable articles from every populated cell.
+ *
+ * Every cell contributes, including cells too sparse to triangulate into a
+ * tile (`MIN_ARTICLES`): those are exactly the remote islands and outposts the
+ * far field exists to cover, and their articles are unreachable today. Cells
+ * are walked in sorted ID order — zero-padded `RR-CC` sorts row-major — so the
+ * artifact is deterministic and its coordinate planes stay spatially
+ * clustered for the transport compressor.
+ *
+ * Articles are taken per cell rather than by a global weight threshold: a
+ * uniform notability floor would crowd Europe and North America and leave the
+ * Pacific empty, which in a distance-ordered list reads as a dead zone.
+ */
+export function buildFarField(
+  articleIndex: ArticleIndex<MergedArticle>,
+  topK: number = FARFIELD_TOP_K,
+): FarFieldEntry[] {
+  const out: FarFieldEntry[] = [];
+  for (const id of [...articleIndex.keys()].sort()) {
+    const candidates: FarFieldEntry[] = [];
+    // Co-located articles collapse to one unit but stay individually
+    // notable, so the whole group competes for the cell's slots.
+    for (const unit of articleIndex.get(id)!) {
+      for (const article of unit.group) {
+        candidates.push({
+          title: article.title,
+          lat: unit.lat,
+          lon: unit.lon,
+          weight: article.weight ?? 0,
+        });
+      }
+    }
+    out.push(...selectFarFieldEntries(candidates, topK));
+  }
+  return out;
+}
+
 /** SHA-256 hash of a buffer, truncated to 8 hex characters. */
-function hashBuffer(buf: ArrayBuffer): string {
+function hashBuffer(buf: ArrayBuffer | Uint8Array): string {
   return createHash("sha256")
-    .update(Buffer.from(buf))
+    .update(Buffer.from(buf as ArrayBuffer))
     .digest("hex")
     .slice(0, 8);
 }
@@ -346,8 +392,18 @@ async function buildTiled(articles: Article[], lang: Lang): Promise<void> {
     `  → ${built} tiles built, ${skipped} skipped (<${MIN_ARTICLES} articles) in ${((t1 - t0) / 1000).toFixed(1)}s`,
   );
 
-  // Step 4: Write tile index
-  console.log("\nStep 4: Writing tile index...");
+  // Step 4: Build the far-field tier
+  console.log("\nStep 4: Building far-field tier...");
+  const farFieldEntries = buildFarField(articleIndex);
+  const farFieldBuf = encodeFarField(farFieldEntries);
+  const farFieldPath = resolve(tilesDir, "farfield.bin");
+  writeFileSync(farFieldPath, farFieldBuf);
+  console.log(
+    `  → ${farFieldEntries.length} articles from ${articleIndex.size} cells, ${(farFieldBuf.byteLength / 1024).toFixed(0)} KB`,
+  );
+
+  // Step 5: Write tile index
+  console.log("\nStep 5: Writing tile index...");
   tileEntries.sort((a, b) => a.id.localeCompare(b.id));
 
   const combinedHashes = tileEntries.map((t) => t.hash).join("");
@@ -363,6 +419,11 @@ async function buildTiled(articles: Article[], lang: Lang): Promise<void> {
     generated: new Date().toISOString(),
     hash: indexHash,
     tiles: tileEntries,
+    farField: {
+      count: farFieldEntries.length,
+      bytes: farFieldBuf.byteLength,
+      hash: hashBuffer(farFieldBuf),
+    },
   };
 
   const indexPath = resolve(tilesDir, "index.json");

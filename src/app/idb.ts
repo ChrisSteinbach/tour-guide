@@ -4,6 +4,7 @@
 //   tile-index-v1-{lang}                    tile index JSON
 //   tile-v2-{lang}-{id}                     individual tile data (v2 added per-vertex weights)
 //   tile-lru-v1-{lang}                      tile LRU eviction list
+//   farfield-v1-{lang}                      far-field tier (notable articles worldwide)
 //
 // Schema migration strategy: bump the version in the key prefix (e.g.
 // v1 → v2) and update CURRENT_KEY_PREFIXES below. Old keys are cleaned
@@ -17,6 +18,7 @@ export const CURRENT_KEY_PREFIXES = [
   "tile-index-v1-",
   "tile-v2-",
   "tile-lru-v1-",
+  "farfield-v1-",
 ];
 
 let dbPromise: Promise<IDBDatabase | null> | null = null;
