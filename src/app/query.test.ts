@@ -6,7 +6,7 @@ import {
   createWalkTrace,
 } from "spherical-delaunay";
 import type { Point3D } from "spherical-delaunay";
-import { NearestQuery } from "./query";
+import { NearestQuery, EARTH_RADIUS_M } from "./query";
 import type { ArticleMeta } from "../article-payload";
 
 // The query algorithms themselves (locate walk, plateau escape, filtered
@@ -319,5 +319,104 @@ describe("NearestQuery (accessors)", () => {
     expect(q.articleWeight(1)).toBe(0);
     expect(q.articleWeight(3)).toBe(0);
     expect(q.articleWeight(4)).toBe(255);
+  });
+});
+
+// ---------- withinRadius (range scan) ----------
+
+describe("NearestQuery (withinRadius)", () => {
+  let ringQ: NearestQuery;
+
+  beforeAll(() => {
+    ringQ = buildWeightedQuery(ringArticles());
+  });
+
+  it("returns every article inside the radius and nothing outside it", () => {
+    // Inner (~1°) and Mid (~2°) rings sit inside a 3° radius from the origin;
+    // the Highlight (~5°) ring and the antipodal stub sit outside it.
+    const radiusM = 3 * (Math.PI / 180) * EARTH_RADIUS_M;
+
+    const results = ringQ.withinRadius(0, 0, radiusM);
+
+    const expectedTitles = [0, 1, 2, 3, 4, 5].flatMap((i) => [
+      `Inner stub ${i}`,
+      `Mid stub ${i}`,
+    ]);
+    expect(results.map((r) => r.title).sort()).toEqual(expectedTitles.sort());
+  });
+
+  it("radiusM: Infinity returns the whole tile", () => {
+    const results = ringQ.withinRadius(0, 0, Infinity);
+
+    expect(results.map((r) => r.title).sort()).toEqual(
+      ringArticles()
+        .map((a) => a.title)
+        .sort(),
+    );
+  });
+
+  it("agrees with findNearest filtered to the same radius, on both titles and distances", () => {
+    // The strongest guarantee that the range scan is a drop-in for the walk:
+    // for the same triangulation and query point, the scan must return
+    // exactly the vertices the k-nearest walk would return within that same
+    // radius, with matching per-title distances.
+    const radiusM = 4 * (Math.PI / 180) * EARTH_RADIUS_M;
+    const lat = 1;
+    const lon = 1;
+
+    const scanned = ringQ.withinRadius(lat, lon, radiusM);
+    const { results: walked } = ringQ.findNearest(lat, lon, ringQ.size);
+    const walkedInRadius = walked.filter((r) => r.distanceM <= radiusM);
+
+    expect(scanned.map((r) => r.title).sort()).toEqual(
+      walkedInRadius.map((r) => r.title).sort(),
+    );
+
+    const scannedByTitle = new Map(scanned.map((r) => [r.title, r]));
+    for (const r of walkedInRadius) {
+      expect(
+        Math.abs(scannedByTitle.get(r.title)!.distanceM - r.distanceM),
+      ).toBeLessThan(1e-3); // sub-millimeter — floating-point tolerance, not a real discrepancy
+    }
+  });
+
+  // Octahedron whose +Z vertex carries three co-located articles of differing
+  // weight — mirrors the findNearest coincident-groups fixture above.
+  const pointGroups: { point: Point3D; group: ArticleMeta[] }[] = [
+    { point: [1, 0, 0], group: [{ title: "Axis +X", weight: 0 }] },
+    { point: [-1, 0, 0], group: [{ title: "Axis -X", weight: 0 }] },
+    { point: [0, 1, 0], group: [{ title: "Axis +Y", weight: 0 }] },
+    { point: [0, -1, 0], group: [{ title: "Axis -Y", weight: 0 }] },
+    {
+      point: [0, 0, 1],
+      group: [
+        { title: "Summit museum", weight: 200 },
+        { title: "Summit chapel", weight: 80 },
+        { title: "Summit marker", weight: 5 },
+      ],
+    },
+    { point: [0, 0, -1], group: [{ title: "Axis -Z", weight: 0 }] },
+  ];
+
+  it("returns all co-located articles sharing one vertex, not just the representative", () => {
+    const q = buildGroupedQuery(pointGroups);
+
+    // A 1 km radius around the north pole vertex reaches only that vertex —
+    // every axis point is thousands of kilometers away.
+    const results = q.withinRadius(90, 0, 1000);
+
+    expect(results.map((r) => r.title).sort()).toEqual(
+      ["Summit chapel", "Summit marker", "Summit museum"].sort(),
+    );
+  });
+
+  it("minWeight excludes individual articles below the floor", () => {
+    const q = buildGroupedQuery(pointGroups);
+
+    const results = q.withinRadius(90, 0, 1000, 50);
+
+    expect(results.map((r) => r.title).sort()).toEqual(
+      ["Summit chapel", "Summit museum"].sort(),
+    );
   });
 });

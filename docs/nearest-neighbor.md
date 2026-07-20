@@ -22,6 +22,14 @@ With hardening in place, a 9,240-query sweep over seven production tiles (in-pat
 
 A single tile only covers its own patch, so `findNearestTiled()` in `tile-loader.ts` queries every loaded tile's `NearestQuery` independently, de-duplicates candidates by title, sorts by distance, and returns the top `k`. See [tiling.md](tiling.md#cross-tile-query-merging) for the implementation and [architecture.md](architecture.md) for where this sits in the end-to-end query path.
 
+## Range queries
+
+Not every question is a k-nearest one. The browse list asks "everything inside the tile coverage radius" (see [infinite-scroll.md](infinite-scroll.md)), whose answer runs to tens of thousands of articles in a dense city — and at that size the walk is the wrong tool. Locating and expanding costs a heap operation and a BFS visit per candidate to deliver results _in order_, which is wasted work when the answer is most of the tile and the caller re-sorts anyway.
+
+So `NearestQuery.withinRadius()` skips the mesh entirely and scans the vertex coordinates flat, comparing squared chord lengths against the radius: a subtraction and a comparison per vertex, with the arc computed only for vertices that survive. Its cost is a property of the tile rather than of how crowded the neighbourhood is. `findWithinRadiusTiled()` is the cross-tile counterpart — same title de-duplication as `findNearestTiled`, but pruning on the tile box alone, since a tile whose box lies beyond the radius provably holds nothing inside it and no k-th-best distance needs tracking to prove it.
+
+The two paths agree exactly: for the same triangulation and query point, `withinRadius` returns the same titles and the same distances as a `findNearest` deep enough to reach the radius.
+
 ## Distance computation
 
 `NearestQuery` reports distances in meters using chord distance (`2 * asin(||v - q|| / 2)`), which `spherical-delaunay` computes instead of `acos(dot(a, b))` specifically because tile vertex coordinates come from Float32 storage in the binary tile format (see [binary-format.md](binary-format.md)) — `acos` collapses to 0 under Float32 rounding error for nearby points, while chord distance stays above the noise floor. Both are monotonically related to great-circle distance, so nearest-neighbor ordering is unaffected.

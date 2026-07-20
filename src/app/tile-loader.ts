@@ -313,6 +313,42 @@ export function findNearestTiled(
 }
 
 /**
+ * Every article the loaded tiles hold within `radiusM`, de-duplicated by title
+ * and unordered.
+ *
+ * The counterpart to findNearestTiled for the browse list, which wants a
+ * radius rather than a count: its exhaustive tier ends at the tile coverage
+ * radius, so "everything inside that radius" is the question, and the answer
+ * runs to tens of thousands of articles in a dense city (see
+ * NearestQuery.withinRadius for why a range scan beats a k-nearest walk at
+ * that size).
+ *
+ * Pruning is exact and needs no k-th-best tracking: a tile whose box already
+ * lies beyond the radius cannot hold anything inside it.
+ */
+export function findWithinRadiusTiled(
+  tiles: ReadonlyMap<string, NearestQuery>,
+  lat: number,
+  lon: number,
+  radiusM: number,
+  minWeight?: number,
+): QueryResult[] {
+  const seen = new Set<string>();
+  const results: QueryResult[] = [];
+
+  for (const [id, query] of tiles) {
+    if (tileBoxLowerBoundMeters(id, lat, lon) > radiusM) continue;
+    for (const r of query.withinRadius(lat, lon, radiusM, minWeight)) {
+      if (seen.has(r.title)) continue;
+      seen.add(r.title);
+      results.push(r);
+    }
+  }
+
+  return results;
+}
+
+/**
  * Returns primary and adjacent tile IDs for a position.
  * Adjacent tiles are those where the position is within EDGE_PROXIMITY_DEG of a boundary.
  */
