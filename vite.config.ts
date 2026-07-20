@@ -26,6 +26,22 @@ function serveData(): Plugin {
           }
           return;
         }
+        // Serve the far-field tier: /tiles/{lang}/farfield.bin
+        const farFieldMatch = req.url?.match(/\/tiles\/(\w+)\/farfield\.bin$/);
+        if (farFieldMatch) {
+          try {
+            const filePath = resolve(
+              `data/tiles/${farFieldMatch[1]}/farfield.bin`,
+            );
+            const stat = statSync(filePath);
+            res.setHeader("Content-Type", "application/octet-stream");
+            res.setHeader("Content-Length", stat.size);
+            createReadStream(filePath).pipe(res);
+          } catch {
+            next();
+          }
+          return;
+        }
         // Serve individual tile: /tiles/{lang}/{id}.bin
         const tileMatch = req.url?.match(/\/tiles\/(\w+)\/(\d{2}-\d{2})\.bin$/);
         if (tileMatch) {

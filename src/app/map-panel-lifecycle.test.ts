@@ -60,7 +60,6 @@ function makeBrowsingState(): AppState {
       pauseReason: null,
       lastQueryPos: pos,
       scrollMode: "infinite",
-      infiniteScrollLimit: 200,
     },
     query: makeQueryState(),
     position: pos,

@@ -52,36 +52,19 @@ export interface InfiniteScrollDeps {
   initSpatialView: () => void;
   /** Destroy the spatial view. */
   destroySpatialView: () => void;
-  /** Called when scroll nears the end of loaded articles. */
-  onNearEnd?: () => void;
-  /** How many items from the end to trigger onNearEnd (default 50). */
-  nearEndThreshold?: number;
 }
 
 export interface InfiniteScrollLifecycle {
   /**
    * First-time setup: build DOM, create sub-components.
    *
-   * @param listHeight Number of items to render in the virtual list —
-   *   may be an optimistic (ratcheted) value ahead of the real loaded
-   *   count to reserve scroll headroom for in-flight fetches.
-   * @param nearEndAnchor Real loaded-article count against which the
-   *   near-end gate fires `onNearEnd`. Defaults to `listHeight` when
-   *   omitted (no ratchet bypass). Separated from `listHeight` so the
-   *   gate tracks actual data, not optimistic headroom.
+   * @param listHeight Number of rows in the virtual list. The browse list is
+   *   materialized whole, so this is the real, final count — there is no
+   *   optimistic headroom to reserve and no fetch that could change it.
    */
-  init(listHeight: number, nearEndAnchor?: number): void;
-  /**
-   * Update with new data. Refreshes header and virtual list.
-   *
-   * @param listHeight See {@link init}. Can exceed `nearEndAnchor` when
-   *   `applyOptimisticCount` has ratcheted the scroll height above the
-   *   real loaded count.
-   * @param nearEndAnchor See {@link init}. When omitted the previous
-   *   anchor is preserved — callers that only know the list height
-   *   (e.g. header-restart paths) should omit it rather than guessing.
-   */
-  update(listHeight: number, nearEndAnchor?: number): void;
+  init(listHeight: number): void;
+  /** Update with new data. Refreshes header and virtual list. */
+  update(listHeight: number): void;
   /** Update only the header (e.g. to restart blink animation) without rebuilding the list. */
   updateHeader(): void;
   /** Tear down all sub-components and listeners. */
@@ -103,8 +86,6 @@ export function createInfiniteScrollLifecycle(
   let cancelMapSync: (() => void) | null = null;
   let scrollEl: HTMLElement | null = null;
   let emptyEl: HTMLElement | null = null;
-  let nearEndAnchor = 0;
-  const nearEndThreshold = deps.nearEndThreshold ?? 50;
 
   /** Show/refresh the empty-state element while the list has zero items. */
   function syncEmptyState(listHeight: number): void {
@@ -139,7 +120,7 @@ export function createInfiniteScrollLifecycle(
     scrollEl = null;
   }
 
-  function init(listHeight: number, anchor?: number): void {
+  function init(listHeight: number): void {
     destroy();
     deps.destroySpatialView();
     deps.container.textContent = "";
@@ -170,8 +151,6 @@ export function createInfiniteScrollLifecycle(
 
     const getScrollState = containerScrollState(scrollWrapper, listContainer);
 
-    nearEndAnchor = anchor ?? listHeight;
-
     virtualList = createVirtualList({
       container: listContainer,
       itemHeight: deps.itemHeight,
@@ -180,13 +159,6 @@ export function createInfiniteScrollLifecycle(
       onRangeChange: (range) => {
         enrichScheduler!.onRangeChange(range);
         mapSync.sync(range);
-        if (
-          deps.onNearEnd &&
-          nearEndAnchor > 0 &&
-          range.end >= nearEndAnchor - nearEndThreshold
-        ) {
-          deps.onNearEnd();
-        }
       },
     });
 
@@ -205,11 +177,8 @@ export function createInfiniteScrollLifecycle(
     }
   }
 
-  function update(listHeight: number, anchor?: number): void {
+  function update(listHeight: number): void {
     if (!virtualList) return;
-    if (anchor !== undefined) {
-      nearEndAnchor = anchor;
-    }
 
     updateHeader();
 

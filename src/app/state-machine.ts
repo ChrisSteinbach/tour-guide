@@ -12,10 +12,12 @@ import { distanceBetweenPositions } from "./format";
 // ── Constants ────────────────────────────────────────────────
 
 export const REQUERY_DISTANCE_M = 15;
-/** Initial article count when entering infinite scroll mode. */
+/**
+ * Article count for the query that seeds infinite-scroll mode. The browse
+ * list replaces this wholesale as soon as it is built (see
+ * browse-list-lifecycle.ts); it only has to fill the viewport until then.
+ */
 export const INFINITE_SCROLL_INITIAL = 200;
-/** How many more articles to load on each lazy expansion. */
-export const INFINITE_SCROLL_STEP = 200;
 /** Default viewport fill count when actual viewport size is unknown. */
 export const DEFAULT_VIEWPORT_FILL = 15;
 
@@ -77,8 +79,6 @@ export type BrowsingContext = {
   pauseReason: "manual" | "scroll" | null;
   lastQueryPos: UserPosition;
   scrollMode: "infinite" | "viewport";
-  /** Current lazy limit for infinite scroll queries; grows on demand. */
-  infiniteScrollLimit: number;
 };
 
 export type Phase =
@@ -170,7 +170,6 @@ export type Event =
   | { type: "togglePause" }
   | { type: "toggleFilter" }
   | { type: "useGps" }
-  | { type: "expandInfiniteScroll" }
   | { type: "showMapPicker" }
   | {
       type: "queryResult";
@@ -244,7 +243,6 @@ function enterBrowsing(state: AppState): TransitionResult {
         pauseReason: null,
         lastQueryPos: state.position,
         scrollMode,
-        infiniteScrollLimit: INFINITE_SCROLL_INITIAL,
       },
     },
     effects: [
@@ -261,7 +259,7 @@ function forceRequery(state: AppState): TransitionResult {
   }
   const count =
     state.phase.scrollMode === "infinite"
-      ? state.phase.infiniteScrollLimit
+      ? INFINITE_SCROLL_INITIAL
       : state.phase.nearbyCount;
   return {
     next: {
@@ -399,7 +397,6 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
             paused: true,
             pauseReason: "scroll",
             scrollMode: "infinite",
-            infiniteScrollLimit: INFINITE_SCROLL_INITIAL,
           },
         },
         effects: [
@@ -457,7 +454,6 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
               paused: true,
               pauseReason: "manual",
               scrollMode: newScrollMode,
-              infiniteScrollLimit: INFINITE_SCROLL_INITIAL,
             },
           },
           effects: [
@@ -526,31 +522,9 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
           phase: {
             ...state.phase,
             lastQueryPos: state.position,
-            infiniteScrollLimit: INFINITE_SCROLL_INITIAL,
           },
         },
         effects,
-      };
-    }
-
-    case "expandInfiniteScroll": {
-      if (
-        state.phase.phase !== "browsing" ||
-        !state.position ||
-        state.phase.scrollMode !== "infinite"
-      ) {
-        return { next: state, effects: [] };
-      }
-      const newLimit = state.phase.infiniteScrollLimit + INFINITE_SCROLL_STEP;
-      return {
-        next: {
-          ...state,
-          phase: {
-            ...state.phase,
-            infiniteScrollLimit: newLimit,
-          },
-        },
-        effects: [{ type: "requery", pos: state.position, count: newLimit }],
       };
     }
 
@@ -1010,7 +984,6 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
               pauseReason: null,
               lastQueryPos: state.position,
               scrollMode,
-              infiniteScrollLimit: INFINITE_SCROLL_INITIAL,
             },
           },
           effects: [{ type: "renderBrowsingList" }],
@@ -1041,7 +1014,6 @@ function transitionCore(state: AppState, event: Event): TransitionResult {
             pauseReason: null,
             lastQueryPos: state.position,
             scrollMode,
-            infiniteScrollLimit: INFINITE_SCROLL_INITIAL,
           },
         },
         effects: [{ type: "renderBrowsingList" }],

@@ -79,7 +79,7 @@ export interface EffectDeps {
     minWeight?: number,
   ) => NearbyArticle[];
   /** For infinite scroll: reset ArticleWindow and load articles via TileRadiusProvider. */
-  ensureArticleRange?: (pos: UserPosition, count: number) => void;
+  rebuildBrowseList?: (pos: UserPosition) => void;
   summaryLoader: SummaryLoader;
   ui: RenderDeps;
   data: DataDeps;
@@ -329,19 +329,23 @@ export function createEffectExecutor(
           effect.count,
           filterMinWeight(state.filter),
         );
-        if (
-          state.phase.phase === "browsing" &&
-          state.phase.scrollMode === "infinite" &&
-          deps.ensureArticleRange
-        ) {
-          deps.ensureArticleRange(effect.pos, effect.count);
-        }
         deps.dispatch({
           type: "queryResult",
           articles,
           queryPos: effect.pos,
           count: effect.count,
         });
+        // Must follow the queryResult dispatch, not precede it: getNearby
+        // returns only `count` articles as a seed, while the browse list is
+        // the whole distance-ordered globe. Rebuilding first would let the
+        // seed overwrite it.
+        if (
+          state.phase.phase === "browsing" &&
+          state.phase.scrollMode === "infinite" &&
+          deps.rebuildBrowseList
+        ) {
+          deps.rebuildBrowseList(effect.pos);
+        }
         break;
       }
       case "fetchListSummaries": {

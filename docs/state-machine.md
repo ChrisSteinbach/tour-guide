@@ -26,7 +26,7 @@ The primary UI state is the `Phase` discriminated union. Each phase corresponds 
 | `detail`          | Article detail page (Wikipedia summary)                            | `article`, `savedFirstVisibleIndex` + browsing context |
 | `mapPicker`       | Map view for picking a location                                    | `returnPhase` (phase to restore on back)               |
 
-**Browsing context** (shared by `browsing` and `detail`): `articles`, `nearbyCount`, `paused`, `pauseReason`, `lastQueryPos`, `scrollMode`, `infiniteScrollLimit`.
+**Browsing context** (shared by `browsing` and `detail`): `articles`, `nearbyCount`, `paused`, `pauseReason`, `lastQueryPos`, `scrollMode`.
 
 The full `AppState` bundles the phase with supporting fields:
 
@@ -59,31 +59,30 @@ interface AppState {
 
 All inputs to the machine are modeled as a single `Event` union:
 
-| Event                  | Payload                         | Source                                              |
-| ---------------------- | ------------------------------- | --------------------------------------------------- |
-| `start`                | `hasGeolocation`                | User clicks "Use my location" or session restore    |
-| `pickPosition`         | `position`                      | User picks a location on the map                    |
-| `position`             | `pos`                           | GPS `watchPosition` callback                        |
-| `gpsError`             | `error`                         | GPS error callback                                  |
-| `tileLoadStarted`      | `id`                            | Tile fetch initiated                                |
-| `tileIndexLoaded`      | `index`, `lang`, `gen`          | Tile index fetch completed                          |
-| `tileLoaded`           | `id`, `tileQuery`, `gen`        | Individual tile fetch completed                     |
-| `tileLoadFailed`       | `id`, `gen`                     | Individual tile fetch failed                        |
-| `downloadProgress`     | `fraction`, `gen`               | Tile index download progress                        |
-| `langChanged`          | `lang`                          | User selects a different language                   |
-| `selectArticle`        | `article`, `firstVisibleIndex`  | User taps an article in the list or a map pin       |
-| `back`                 | —                               | Browser popstate landing on a non-detail state      |
-| `forwardToDetail`      | `title`                         | Browser popstate landing on a `view:'detail'` state |
-| `scrollPause`          | —                               | User scrolls the article list                       |
-| `togglePause`          | —                               | User taps pause/resume button                       |
-| `useGps`               | —                               | User taps "Use GPS" button                          |
-| `expandInfiniteScroll` | —                               | Scroll sentinel enters viewport                     |
-| `showMapPicker`        | —                               | User taps "Pick location" button                    |
-| `queryResult`          | `articles`, `queryPos`, `count` | Nearest-neighbor query completed                    |
-| `noTilesNearby`        | —                               | Effect executor: no tiles exist near user position  |
-| `swUpdateAvailable`    | —                               | Service worker controller change                    |
-| `showAbout`            | —                               | User taps the About link                            |
-| `closeAbout`           | —                               | User dismisses the About dialog                     |
+| Event               | Payload                         | Source                                              |
+| ------------------- | ------------------------------- | --------------------------------------------------- |
+| `start`             | `hasGeolocation`                | User clicks "Use my location" or session restore    |
+| `pickPosition`      | `position`                      | User picks a location on the map                    |
+| `position`          | `pos`                           | GPS `watchPosition` callback                        |
+| `gpsError`          | `error`                         | GPS error callback                                  |
+| `tileLoadStarted`   | `id`                            | Tile fetch initiated                                |
+| `tileIndexLoaded`   | `index`, `lang`, `gen`          | Tile index fetch completed                          |
+| `tileLoaded`        | `id`, `tileQuery`, `gen`        | Individual tile fetch completed                     |
+| `tileLoadFailed`    | `id`, `gen`                     | Individual tile fetch failed                        |
+| `downloadProgress`  | `fraction`, `gen`               | Tile index download progress                        |
+| `langChanged`       | `lang`                          | User selects a different language                   |
+| `selectArticle`     | `article`, `firstVisibleIndex`  | User taps an article in the list or a map pin       |
+| `back`              | —                               | Browser popstate landing on a non-detail state      |
+| `forwardToDetail`   | `title`                         | Browser popstate landing on a `view:'detail'` state |
+| `scrollPause`       | —                               | User scrolls the article list                       |
+| `togglePause`       | —                               | User taps pause/resume button                       |
+| `useGps`            | —                               | User taps "Use GPS" button                          |
+| `showMapPicker`     | —                               | User taps "Pick location" button                    |
+| `queryResult`       | `articles`, `queryPos`, `count` | Nearest-neighbor query completed                    |
+| `noTilesNearby`     | —                               | Effect executor: no tiles exist near user position  |
+| `swUpdateAvailable` | —                               | Service worker controller change                    |
+| `showAbout`         | —                               | User taps the About link                            |
+| `closeAbout`        | —                               | User dismisses the About dialog                     |
 
 ### Generation tracking
 
@@ -156,7 +155,6 @@ stateDiagram-v2
         [*] --> viewport
         viewport --> infinite : scrollPause / togglePause (pause)
         infinite --> viewport : togglePause (resume)
-        infinite --> infinite : expandInfiniteScroll
     }
 
     note right of browsing
@@ -182,55 +180,54 @@ The `start` event branches based on two conditions — whether tile data is read
 
 ### Transition table
 
-| From                | Event                  | Condition                   | To                           | Key effects                                                         |
-| ------------------- | ---------------------- | --------------------------- | ---------------------------- | ------------------------------------------------------------------- |
-| `welcome`           | `start`                | query=none                  | `downloading`                | storeStarted, startGps, render                                      |
-| `welcome`           | `start`                | query ready, has position   | `browsing`                   | storeStarted, startGps, requery, scrollToTop                        |
-| `welcome`           | `start`                | query ready, no position    | `locating`                   | storeStarted, startGps, render                                      |
-| `downloading`       | `downloadProgress`     | —                           | `downloading`                | render (progress bar)                                               |
-| `downloading`       | `tileIndexLoaded`      | has index, has position     | `browsing` or `loadingTiles` | loadTiles, requery, scrollToTop or render                           |
-| `downloading`       | `tileIndexLoaded`      | has index, no position      | `locating`                   | render                                                              |
-| `downloading`       | `tileIndexLoaded`      | has index, no geolocation   | `error`                      | render                                                              |
-| `downloading`       | `tileIndexLoaded`      | null index                  | `dataUnavailable`            | render                                                              |
-| any                 | `pickPosition`         | query=none                  | `downloading`                | stopGps, render                                                     |
-| any                 | `pickPosition`         | query=tiled                 | `loadingTiles`               | stopGps, loadTiles, render                                          |
-| `locating`          | `position`             | tiled, no tiles loaded      | `loadingTiles`               | loadTiles, render                                                   |
-| `locating`          | `position`             | tiles available             | `browsing`                   | loadTiles, requery, scrollToTop                                     |
-| `locating`          | `gpsError`             | —                           | `error`                      | render                                                              |
-| `loadingTiles`      | `tileLoaded`           | has position                | `browsing`                   | requery, scrollToTop                                                |
-| `loadingTiles`      | `tileLoadFailed`       | last pending, some loaded   | `browsing`                   | requery, scrollToTop                                                |
-| `loadingTiles`      | `tileLoadFailed`       | last pending, none loaded   | `browsing`                   | renderBrowsingList                                                  |
-| `loadingTiles`      | `noTilesNearby`        | has position                | `browsing`                   | renderBrowsingList                                                  |
-| `browsing`          | `position`             | moved ≥15m, not paused      | `browsing`                   | loadTiles, requery                                                  |
-| `browsing`          | `position`             | paused by scroll            | `browsing`                   | loadTiles, renderBrowsingHeader                                     |
-| `browsing`          | `position`             | moved <15m or paused other  | `browsing`                   | (loadTiles only)                                                    |
-| `browsing`          | `scrollPause`          | not already paused/infinite | `browsing` (infinite scroll) | requery (INFINITE_SCROLL_INITIAL)                                   |
-| `browsing`          | `togglePause`          | paused→unpaused             | `browsing` (viewport scroll) | scrollToTop, requery, renderBrowsingList, fetchListSummaries        |
-| `browsing`          | `togglePause`          | unpaused→paused             | `browsing` (infinite scroll) | requery (INFINITE_SCROLL_INITIAL)                                   |
-| `browsing`          | `expandInfiniteScroll` | in infinite scroll mode     | `browsing`                   | requery (limit += INFINITE_SCROLL_STEP)                             |
-| `browsing`          | `useGps`               | has position                | `browsing` (viewport mode)   | startGps, requery, scrollToTop                                      |
-| `browsing`          | `useGps`               | no position                 | `browsing` (viewport mode)   | startGps, renderBrowsingList                                        |
-| `detail`            | `useGps`               | has position                | `detail` (viewport mode)     | startGps, scrollToTop                                               |
-| `detail`            | `useGps`               | no position                 | `detail` (viewport mode)     | startGps, renderBrowsingList                                        |
-| any                 | `showMapPicker`        | —                           | `mapPicker`                  | pushHistory, showMapPicker                                          |
-| `mapPicker`         | `back`                 | —                           | (returnPhase)                | renderBrowsingList or render                                        |
-| `browsing`          | `selectArticle`        | —                           | `detail`                     | pushHistory, fetchSummary                                           |
-| `detail`            | `selectArticle`        | pin tap swaps target        | `detail`                     | pushHistory, fetchSummary                                           |
-| `browsing`          | `forwardToDetail`      | title in article list       | `detail`                     | fetchSummary                                                        |
-| `detail`            | `forwardToDetail`      | title differs from current  | `detail`                     | fetchSummary                                                        |
-| `browsing`          | `queryResult`          | articles changed, infinite  | `browsing`                   | renderBrowsingList                                                  |
-| `browsing`          | `queryResult`          | articles changed, viewport  | `browsing`                   | renderBrowsingList, fetchListSummaries                              |
-| `browsing`          | `queryResult`          | same articles               | `browsing`                   | updateDistances                                                     |
-| `detail`            | `back`                 | not infinite scroll         | `browsing`                   | renderBrowsingList, fetchListSummaries, restoreScrollTop (if saved) |
-| `detail`            | `back`                 | infinite scroll             | `browsing`                   | renderBrowsingList, restoreScrollTop (if saved)                     |
-| `detail`            | `position`             | —                           | `detail`                     | loadTiles, render                                                   |
-| `browsing`          | `tileLoaded`           | —                           | `browsing`                   | requery                                                             |
-| `detail`            | `tileLoaded`           | —                           | `detail`                     | (tile data stored in query state)                                   |
-| any (post-welcome)  | `langChanged`          | —                           | `downloading`                | storeLang, loadData, render                                         |
-| any                 | `tileLoadStarted`      | —                           | (unchanged)                  | (tracks tile ID in loadingTiles)                                    |
-| any                 | `swUpdateAvailable`    | no banner yet               | (unchanged)                  | showAppUpdateBanner                                                 |
-| `browsing`/`detail` | `gpsError`             | GPS source active           | (unchanged, gpsSignalLost)   | render                                                              |
-| `locating`          | `gpsError`             | —                           | `error`                      | render                                                              |
+| From                | Event               | Condition                   | To                           | Key effects                                                         |
+| ------------------- | ------------------- | --------------------------- | ---------------------------- | ------------------------------------------------------------------- |
+| `welcome`           | `start`             | query=none                  | `downloading`                | storeStarted, startGps, render                                      |
+| `welcome`           | `start`             | query ready, has position   | `browsing`                   | storeStarted, startGps, requery, scrollToTop                        |
+| `welcome`           | `start`             | query ready, no position    | `locating`                   | storeStarted, startGps, render                                      |
+| `downloading`       | `downloadProgress`  | —                           | `downloading`                | render (progress bar)                                               |
+| `downloading`       | `tileIndexLoaded`   | has index, has position     | `browsing` or `loadingTiles` | loadTiles, requery, scrollToTop or render                           |
+| `downloading`       | `tileIndexLoaded`   | has index, no position      | `locating`                   | render                                                              |
+| `downloading`       | `tileIndexLoaded`   | has index, no geolocation   | `error`                      | render                                                              |
+| `downloading`       | `tileIndexLoaded`   | null index                  | `dataUnavailable`            | render                                                              |
+| any                 | `pickPosition`      | query=none                  | `downloading`                | stopGps, render                                                     |
+| any                 | `pickPosition`      | query=tiled                 | `loadingTiles`               | stopGps, loadTiles, render                                          |
+| `locating`          | `position`          | tiled, no tiles loaded      | `loadingTiles`               | loadTiles, render                                                   |
+| `locating`          | `position`          | tiles available             | `browsing`                   | loadTiles, requery, scrollToTop                                     |
+| `locating`          | `gpsError`          | —                           | `error`                      | render                                                              |
+| `loadingTiles`      | `tileLoaded`        | has position                | `browsing`                   | requery, scrollToTop                                                |
+| `loadingTiles`      | `tileLoadFailed`    | last pending, some loaded   | `browsing`                   | requery, scrollToTop                                                |
+| `loadingTiles`      | `tileLoadFailed`    | last pending, none loaded   | `browsing`                   | renderBrowsingList                                                  |
+| `loadingTiles`      | `noTilesNearby`     | has position                | `browsing`                   | renderBrowsingList                                                  |
+| `browsing`          | `position`          | moved ≥15m, not paused      | `browsing`                   | loadTiles, requery                                                  |
+| `browsing`          | `position`          | paused by scroll            | `browsing`                   | loadTiles, renderBrowsingHeader                                     |
+| `browsing`          | `position`          | moved <15m or paused other  | `browsing`                   | (loadTiles only)                                                    |
+| `browsing`          | `scrollPause`       | not already paused/infinite | `browsing` (infinite scroll) | requery (INFINITE_SCROLL_INITIAL)                                   |
+| `browsing`          | `togglePause`       | paused→unpaused             | `browsing` (viewport scroll) | scrollToTop, requery, renderBrowsingList, fetchListSummaries        |
+| `browsing`          | `togglePause`       | unpaused→paused             | `browsing` (infinite scroll) | requery (INFINITE_SCROLL_INITIAL)                                   |
+| `browsing`          | `useGps`            | has position                | `browsing` (viewport mode)   | startGps, requery, scrollToTop                                      |
+| `browsing`          | `useGps`            | no position                 | `browsing` (viewport mode)   | startGps, renderBrowsingList                                        |
+| `detail`            | `useGps`            | has position                | `detail` (viewport mode)     | startGps, scrollToTop                                               |
+| `detail`            | `useGps`            | no position                 | `detail` (viewport mode)     | startGps, renderBrowsingList                                        |
+| any                 | `showMapPicker`     | —                           | `mapPicker`                  | pushHistory, showMapPicker                                          |
+| `mapPicker`         | `back`              | —                           | (returnPhase)                | renderBrowsingList or render                                        |
+| `browsing`          | `selectArticle`     | —                           | `detail`                     | pushHistory, fetchSummary                                           |
+| `detail`            | `selectArticle`     | pin tap swaps target        | `detail`                     | pushHistory, fetchSummary                                           |
+| `browsing`          | `forwardToDetail`   | title in article list       | `detail`                     | fetchSummary                                                        |
+| `detail`            | `forwardToDetail`   | title differs from current  | `detail`                     | fetchSummary                                                        |
+| `browsing`          | `queryResult`       | articles changed, infinite  | `browsing`                   | renderBrowsingList                                                  |
+| `browsing`          | `queryResult`       | articles changed, viewport  | `browsing`                   | renderBrowsingList, fetchListSummaries                              |
+| `browsing`          | `queryResult`       | same articles               | `browsing`                   | updateDistances                                                     |
+| `detail`            | `back`              | not infinite scroll         | `browsing`                   | renderBrowsingList, fetchListSummaries, restoreScrollTop (if saved) |
+| `detail`            | `back`              | infinite scroll             | `browsing`                   | renderBrowsingList, restoreScrollTop (if saved)                     |
+| `detail`            | `position`          | —                           | `detail`                     | loadTiles, render                                                   |
+| `browsing`          | `tileLoaded`        | —                           | `browsing`                   | requery                                                             |
+| `detail`            | `tileLoaded`        | —                           | `detail`                     | (tile data stored in query state)                                   |
+| any (post-welcome)  | `langChanged`       | —                           | `downloading`                | storeLang, loadData, render                                         |
+| any                 | `tileLoadStarted`   | —                           | (unchanged)                  | (tracks tile ID in loadingTiles)                                    |
+| any                 | `swUpdateAvailable` | no banner yet               | (unchanged)                  | showAppUpdateBanner                                                 |
+| `browsing`/`detail` | `gpsError`          | GPS source active           | (unchanged, gpsSignalLost)   | render                                                              |
+| `locating`          | `gpsError`          | —                           | `error`                      | render                                                              |
 
 Events not listed for a given phase (e.g. `selectArticle` during `downloading`) are no-ops — the transition returns the current state with no effects.
 
@@ -265,7 +262,7 @@ Position updates only trigger a requery if the user has moved at least 15 meters
 
 ### Infinite scroll
 
-When position is stable (picked or GPS-paused), the list switches to infinite scroll mode. The initial query fetches `INFINITE_SCROLL_INITIAL` (200) articles, and each `expandInfiniteScroll` event (triggered by a scroll sentinel) grows the limit by `INFINITE_SCROLL_STEP` (200). Unpausing switches back to viewport mode with a smaller count. See [Infinite Scroll](infinite-scroll.md) for the full virtual-scroll and article-window lifecycle.
+When position is stable (picked or GPS-paused), the list switches to infinite scroll mode. The `requery` fetches `INFINITE_SCROLL_INITIAL` (200) articles as a viewport seed, and the effect executor then rebuilds the browse list, which replaces `articles` wholesale with the full distance-ordered globe — so nothing grows a limit as the user scrolls. Unpausing switches back to viewport mode with a smaller count. See [The Browse List](infinite-scroll.md) for how the two tiers are merged.
 
 ### Pure machine, impure executor
 
@@ -303,6 +300,6 @@ On page load, the bootstrap module (`src/app/bootstrap.ts`, via `createBootstrap
 ## See Also
 
 - [Architecture Overview](architecture.md) — End-to-end system design and data flow
-- [Infinite Scroll](infinite-scroll.md) — Virtual scroll, article window, scroll-pause transitions
+- [The Browse List](infinite-scroll.md) — Virtual scroll, the two list tiers, scroll-pause transitions
 - [Nearest-Neighbor Theory](nearest-neighbor.md) — Delaunay triangle walks and BFS expansion
 - [Tiling Strategy](tiling.md) — Geographic tiling, buffer zones, on-demand loading

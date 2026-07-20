@@ -1,6 +1,5 @@
 import {
   transition,
-  INFINITE_SCROLL_INITIAL,
   DEFAULT_VIEWPORT_FILL,
   type AppState,
   type Event,
@@ -210,7 +209,6 @@ describe("dispatch loop: pickPosition round-trip", () => {
 
     const browsing = expectBrowsing(getState());
     expect(browsing.scrollMode).toBe("infinite");
-    expect(browsing.infiniteScrollLimit).toBe(INFINITE_SCROLL_INITIAL);
     expect(ui.scrollToTop).toHaveBeenCalled();
   });
 

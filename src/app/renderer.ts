@@ -17,7 +17,6 @@ import {
 } from "./scroll-pause-detector";
 import type { NearbyArticle } from "./types";
 import type { AppState, Event } from "./state-machine";
-import type { ArticleWindow } from "./article-window";
 import type { GroupView } from "./grouped-articles";
 import type { InfiniteScrollLifecycle } from "./infinite-scroll-lifecycle";
 import type { MapDrawer } from "./map-drawer";
@@ -35,8 +34,7 @@ export interface RendererDeps {
   desktopQuery: MediaQueryList;
   spatialPanel: SpatialPanelLifecycle;
   mapPicker: MapPickerLifecycle;
-  resetArticleWindow: () => void;
-  getCurrentWindow: () => ArticleWindow | null;
+  resetBrowseList: () => void;
   /** Group-index view over the flat loaded list (see grouped-articles.ts). */
   groupView: GroupView;
   getScrollContainer: () => HTMLElement;
@@ -182,7 +180,7 @@ export function createRenderer(deps: RendererDeps): Renderer {
     if (state.phase.scrollMode === "infinite") {
       renderInfiniteScrollDOM();
     } else {
-      deps.resetArticleWindow();
+      deps.resetBrowseList();
       deps.infiniteScroll.destroy();
       renderViewportListDOM();
     }
@@ -240,21 +238,9 @@ export function createRenderer(deps: RendererDeps): Renderer {
       deps.infiniteScroll.destroy();
     }
 
-    // When the ArticleWindow knows the true article count, use it so the
-    // list never extends past the last real article.  Before the first
-    // fetch completes (knownTotal === 0) fall back to the state-machine
-    // limit as a placeholder that will be corrected by onWindowChange.
-    const aw = deps.getCurrentWindow();
-    const loadedCount = aw?.loadedCount() ?? 0;
-    const knownTotal = aw?.totalKnown() ?? 0;
-    const articleTotal =
-      knownTotal > 0
-        ? Math.max(loadedCount, knownTotal)
-        : Math.max(
-            loadedCount,
-            state.phase.articles.length,
-            state.phase.infiniteScrollLimit,
-          );
+    // The browse list is materialized whole, so its length is the real,
+    // final count — no optimistic headroom, no correction pass.
+    const articleTotal = state.phase.articles.length;
 
     if (!deps.infiniteScroll.isActive()) {
       // The virtual list is sized in group-index space (one row per coincident
@@ -285,7 +271,7 @@ export function createRenderer(deps: RendererDeps): Renderer {
   }
 
   function renderPhase(): void {
-    deps.resetArticleWindow();
+    deps.resetBrowseList();
     deps.infiniteScroll.destroy();
     teardownScrollPauseListener();
     deps.mapPicker.destroy();

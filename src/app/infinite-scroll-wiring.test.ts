@@ -6,12 +6,10 @@ import type {
   InfiniteScrollLifecycle,
 } from "./infinite-scroll-lifecycle";
 import type { AppState, Event, QueryState } from "./state-machine";
-import type { ArticleWindow } from "./article-window";
 import type { SpatialPanelLifecycle } from "./spatial-panel-lifecycle";
 import type { SummaryLoader } from "./summary-loader";
 import type { NearbyArticle, UserPosition } from "./types";
 import type { ArticleSummary } from "./wiki-api";
-import type { VirtualList } from "./virtual-scroll";
 import type { GroupView } from "./grouped-articles";
 
 function stubGroupView(
@@ -99,7 +97,6 @@ function makeBrowsingState(overrides: Partial<AppState> = {}): AppState {
       pauseReason: null,
       lastQueryPos: pos,
       scrollMode: "infinite",
-      infiniteScrollLimit: 200,
     },
     query: makeQueryState(),
     position: pos,
@@ -127,20 +124,6 @@ function makeNonBrowsingState(): AppState {
   };
 }
 
-function stubArticleWindow(
-  overrides: Partial<ArticleWindow> = {},
-): ArticleWindow {
-  return {
-    getArticle: vi.fn(),
-    ensureRange: vi.fn(async () => {}),
-    totalKnown: vi.fn(() => 0),
-    loadedCount: vi.fn(() => 0),
-    getLoadedArticles: vi.fn(() => []),
-    reset: vi.fn(),
-    ...overrides,
-  };
-}
-
 function stubSpatialPanel(
   overrides: Partial<SpatialPanelLifecycle> = {},
 ): SpatialPanelLifecycle {
@@ -162,20 +145,6 @@ function stubSummaryLoader(
     get: vi.fn(() => undefined),
     cancel: vi.fn(),
     ...overrides,
-  };
-}
-
-function stubVirtualList(range: { start: number; end: number }): VirtualList {
-  return {
-    update: vi.fn(),
-    refresh: vi.fn(),
-    visibleRange: () => ({
-      start: range.start,
-      end: range.end,
-      viewportHeight: 400,
-    }),
-    totalCount: vi.fn(() => 0),
-    destroy: vi.fn(),
   };
 }
 
@@ -211,8 +180,6 @@ function makeDeps(
     onHoverArticle: vi.fn(),
     groupView: stubGroupView(() => undefined),
     getScrollContainer: vi.fn(() => scrollContainer),
-    getCurrentWindow: vi.fn(() => null),
-    applyOptimisticCount: vi.fn(),
     ...overrides,
   };
 }
@@ -620,152 +587,6 @@ describe("createInfiniteScrollWiring", () => {
       capturedDeps!.destroySpatialView();
 
       expect(spatialPanel.destroy).toHaveBeenCalled();
-    });
-  });
-
-  describe("onNearEnd", () => {
-    it("dispatches expandInfiniteScroll when no ArticleWindow exists", () => {
-      const dispatch = vi.fn();
-      const deps = makeDeps({
-        dispatch,
-        getCurrentWindow: () => null,
-      });
-      createInfiniteScrollWiring(deps);
-
-      capturedDeps!.onNearEnd!();
-
-      expect(dispatch).toHaveBeenCalledWith({ type: "expandInfiniteScroll" });
-    });
-
-    it("applies optimistic count and grows the window when ArticleWindow exists", () => {
-      const aw = stubArticleWindow({
-        totalKnown: vi.fn(() => 300),
-        loadedCount: vi.fn(() => 120),
-        ensureRange: vi.fn(async () => {}),
-      });
-      const applyOptimisticCount = vi.fn();
-      const dispatch = vi.fn();
-      // Install a virtualList stub on the lifecycle stub before the wiring
-      // captures onNearEnd.
-      lifecycleStub = stubLifecycle({
-        virtualList: () => stubVirtualList({ start: 50, end: 100 }),
-      });
-      const deps = makeDeps({
-        dispatch,
-        getCurrentWindow: () => aw,
-        applyOptimisticCount,
-      });
-      createInfiniteScrollWiring(deps);
-
-      capturedDeps!.onNearEnd!();
-
-      // optimistic = max(300, 120) = 300 (loadedCount is 120, not zero)
-      expect(applyOptimisticCount).toHaveBeenCalledWith(300);
-      expect(aw.ensureRange).toHaveBeenCalledWith(50, 100 + 200);
-      expect(dispatch).not.toHaveBeenCalled();
-    });
-
-    it("backs off after ensureRange rejects so repeated near-end fires don't thrash the provider", async () => {
-      const ensureRange = vi.fn(async () => {
-        throw new Error("rate limited");
-      });
-      const aw = stubArticleWindow({
-        totalKnown: vi.fn(() => 300),
-        loadedCount: vi.fn(() => 120),
-        ensureRange,
-      });
-      lifecycleStub = stubLifecycle({
-        virtualList: () => stubVirtualList({ start: 50, end: 100 }),
-      });
-      const deps = makeDeps({
-        getCurrentWindow: () => aw,
-        applyOptimisticCount: vi.fn(),
-      });
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-      createInfiniteScrollWiring(deps);
-
-      // Simulate a scroll jiggle: many near-end fires in quick succession.
-      // First fire kicks off ensureRange; remaining fires must be gated:
-      // - while the rejection is pending: nearEndPending blocks them
-      // - after the rejection settles: cooldown blocks them
-      for (let i = 0; i < 20; i++) {
-        capturedDeps!.onNearEnd!();
-        // Drain microtasks so the rejection handler runs and sets cooldown.
-        await Promise.resolve();
-        await Promise.resolve();
-      }
-
-      expect(ensureRange).toHaveBeenCalledTimes(1);
-      warnSpy.mockRestore();
-    });
-
-    it("resumes near-end fetches after a successful resolution clears the gate", async () => {
-      let shouldFail = true;
-      const ensureRange = vi.fn(async () => {
-        if (shouldFail) throw new Error("transient");
-      });
-      const aw = stubArticleWindow({
-        totalKnown: vi.fn(() => 300),
-        loadedCount: vi.fn(() => 120),
-        ensureRange,
-      });
-      lifecycleStub = stubLifecycle({
-        virtualList: () => stubVirtualList({ start: 50, end: 100 }),
-      });
-      const deps = makeDeps({
-        getCurrentWindow: () => aw,
-        applyOptimisticCount: vi.fn(),
-      });
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-      createInfiniteScrollWiring(deps);
-
-      // First fire fails and trips the cooldown.
-      capturedDeps!.onNearEnd!();
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(ensureRange).toHaveBeenCalledTimes(1);
-
-      // While in cooldown, additional fires are skipped.
-      capturedDeps!.onNearEnd!();
-      expect(ensureRange).toHaveBeenCalledTimes(1);
-
-      // After cooldown elapses, a fresh successful fetch clears the gate
-      // and a subsequent fire is allowed.
-      vi.useFakeTimers();
-      try {
-        vi.setSystemTime(Date.now() + 10_000);
-        shouldFail = false;
-        capturedDeps!.onNearEnd!();
-        await Promise.resolve();
-        await Promise.resolve();
-        expect(ensureRange).toHaveBeenCalledTimes(2);
-
-        capturedDeps!.onNearEnd!();
-        await Promise.resolve();
-        expect(ensureRange).toHaveBeenCalledTimes(3);
-      } finally {
-        vi.useRealTimers();
-      }
-      warnSpy.mockRestore();
-    });
-
-    it("bails out when virtualList is not yet available", () => {
-      const aw = stubArticleWindow({
-        totalKnown: vi.fn(() => 300),
-        loadedCount: vi.fn(() => 120),
-      });
-      const applyOptimisticCount = vi.fn();
-      lifecycleStub = stubLifecycle({ virtualList: () => null });
-      const deps = makeDeps({
-        getCurrentWindow: () => aw,
-        applyOptimisticCount,
-      });
-      createInfiniteScrollWiring(deps);
-
-      capturedDeps!.onNearEnd!();
-
-      expect(applyOptimisticCount).not.toHaveBeenCalled();
-      expect(aw.ensureRange).not.toHaveBeenCalled();
     });
   });
 });
