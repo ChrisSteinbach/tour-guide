@@ -101,11 +101,12 @@ Pseudocode for the tiled pipeline:
    b. If fewer than 4 articles (convex hull minimum), skip the tile
    c. Build convex hull → Delaunay triangulation → serialize to binary
    d. Write tile file: data/tiles/{lang}/{row}-{col}.bin
-3. Write the far-field tier: data/tiles/{lang}/farfield.bin
-4. Write tile index: data/tiles/{lang}/index.json
+3. Write mid-field digests: data/tiles/{lang}/{id}.digest.bin
+4. Write the far-field tier: data/tiles/{lang}/farfield.bin
+5. Write tile index: data/tiles/{lang}/index.json
 ```
 
-Step 3 samples the top articles by weight class from every populated cell — including cells too sparse to produce a tile — so the app's browse list can extend past the loaded tiles. See [The Browse List](infinite-scroll.md#the-far-field-tier).
+Step 3 samples up to `MIDFIELD_TOP_K` articles by weight class from each cell with more candidates than the far-field tier already keeps, refilling the band just beyond the loaded tiles that the far field alone leaves thin (see [The Browse List](infinite-scroll.md#the-mid-field-tier)). Step 4 samples the top articles by weight class from every populated cell — including cells too sparse to produce a tile — so the app's browse list can extend past the loaded tiles (see [The Browse List](infinite-scroll.md#the-far-field-tier)).
 
 The existing `--bounds` flag already supports geographic subsetting of the article input. The tiled pipeline extends this to iterate over all cells.
 
@@ -119,6 +120,7 @@ A JSON manifest that the app fetches first. It lists every tile with enough meta
   "gridDeg": 5,
   "bufferDeg": 0.5,
   "generated": "2026-02-01T03:00:00Z",
+  "hash": "9e1c4f2a",
   "tiles": [
     {
       "id": "14-38",
@@ -130,27 +132,41 @@ A JSON manifest that the app fetches first. It lists every tile with enough meta
       "east": 15,
       "articles": 1234,
       "bytes": 145920,
-      "hash": "a1b2c3d4"
+      "hash": "a1b2c3d4",
+      "digest": {
+        "count": 250,
+        "bytes": 5310,
+        "hash": "b7c8d9e0"
+      }
     }
-  ]
+  ],
+  "farField": {
+    "count": 26781,
+    "bytes": 774144,
+    "hash": "e2f3a4b5"
+  }
 }
 ```
 
-| Field                           | Purpose                                                                |
-| ------------------------------- | ---------------------------------------------------------------------- |
-| `version`                       | Format version for future changes                                      |
-| `gridDeg`                       | Cell size in degrees (5)                                               |
-| `bufferDeg`                     | Buffer zone width (0.5)                                                |
-| `generated`                     | ISO 8601 timestamp of pipeline run                                     |
-| `hash`                          | Optional content hash of the full index (top-level cache invalidation) |
-| `tiles[].id`                    | Tile identifier, used in file path: `tiles/{lang}/{id}.bin`            |
-| `tiles[].row/col`               | Grid position for programmatic access                                  |
-| `tiles[].south/north/west/east` | Bounding box (excluding buffer) for display/debugging                  |
-| `tiles[].articles`              | Article count (excluding buffer duplicates) for UI hints               |
-| `tiles[].bytes`                 | Uncompressed file size for progress estimation                         |
-| `tiles[].hash`                  | Content hash (first 8 hex chars of SHA-256) for cache invalidation     |
+| Field                           | Purpose                                                                                                      |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `version`                       | Format version for future changes                                                                            |
+| `gridDeg`                       | Cell size in degrees (5)                                                                                     |
+| `bufferDeg`                     | Buffer zone width (0.5)                                                                                      |
+| `generated`                     | ISO 8601 timestamp of pipeline run                                                                           |
+| `hash`                          | Optional content hash of the full index (top-level cache invalidation)                                       |
+| `tiles[].id`                    | Tile identifier, used in file path: `tiles/{lang}/{id}.bin`                                                  |
+| `tiles[].row/col`               | Grid position for programmatic access                                                                        |
+| `tiles[].south/north/west/east` | Bounding box (excluding buffer) for display/debugging                                                        |
+| `tiles[].articles`              | Article count (excluding buffer duplicates) for UI hints                                                     |
+| `tiles[].bytes`                 | Uncompressed file size for progress estimation                                                               |
+| `tiles[].hash`                  | Content hash (first 8 hex chars of SHA-256) for cache invalidation                                           |
+| `tiles[].digest`                | Optional mid-field digest metadata, present only on cells with more candidates than the far-field tier keeps |
+| `farField`                      | Optional far-field tier metadata                                                                             |
 
-Content hashes drive cache invalidation. When the app already has a tile cached in IDB, it compares the cached hash against the index. Changed hash → refetch tile. Unchanged → skip.
+`tiles[].digest` and `farField` share one shape — `{ count, bytes, hash }`, `SampledTierMeta` in `src/tiles.ts` — since a digest and the far-field artifact are the same kind of thing at two scales (see [binary-format.md](binary-format.md#sampled-tier-format)). `count` is the artifact's entry count, `bytes` its uncompressed size, and `hash` the same first-8-hex-chars-of-SHA-256 scheme as a tile's own hash.
+
+Content hashes drive cache invalidation. When the app already has a tile cached in IDB, it compares the cached hash against the index. Changed hash → refetch tile. Unchanged → skip. The far-field artifact and each cell's digest are invalidated the same way, against `farField.hash` and `tiles[].digest.hash` respectively.
 
 **Manifest size**: ~800 tiles x ~110 bytes JSON ≈ 90 KB raw. Gzipped: **~20 KB**. Well under the 100 KB target.
 
@@ -252,14 +268,17 @@ The per-tile binary format is **identical** to the format documented in docs/bin
 
 The `deserializeBinary()` function from the [`spherical-delaunay`](https://github.com/ChrisSteinbach/spherical-delaunay) package works unchanged on tile files.
 
+The far-field tier and mid-field digests use a different, simpler format — a flat array of coordinates, weights and titles, with no triangulation involved — documented alongside the tile format in the same file (see [binary-format.md](binary-format.md#sampled-tier-format)).
+
 ### IDB cache keys
 
-Tiled cache keys use three prefixes:
+Tiled cache keys use five prefixes:
 
 - `tile-index-v1-{lang}` — tile index JSON (one per language)
 - `tile-v2-{lang}-{id}` — individual tile data (one entry per tile per language)
 - `tile-lru-v1-{lang}` — tile LRU eviction list (tracks access order for cache eviction)
 - `farfield-v1-{lang}` — far-field tier, invalidated by the `farField.hash` in the index
+- `digest-v1-{lang}-{id}` — one cell's mid-field digest, invalidated by that cell's `digest.hash` in the index
 
 ## Summary
 

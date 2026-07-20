@@ -4,13 +4,15 @@ import {
   buildBrowseList,
   coverageRadiusMeters,
   sampleByDistanceBand,
+  selectDigestCells,
 } from "./browse-list";
 import { tileBoxLowerBoundMeters } from "./tile-loader";
 import type { FarFieldEntry } from "../farfield";
-import type { TileEntry } from "../tiles";
+import type { SampledTierMeta, TileEntry } from "../tiles";
 import type { NearbyArticle } from "./types";
 
-function tileEntry(id: string): TileEntry {
+/** `digest` is set only when the caller wants this cell to carry mid-field metadata. */
+function tileEntry(id: string, digest?: SampledTierMeta): TileEntry {
   const [row, col] = id.split("-").map(Number);
   const south = row * 5 - 90;
   const west = col * 5 - 180;
@@ -25,6 +27,7 @@ function tileEntry(id: string): TileEntry {
     articles: 100,
     bytes: 1000,
     hash: "abcd1234",
+    ...(digest ? { digest } : {}),
   };
 }
 
@@ -68,6 +71,57 @@ describe("coverageRadiusMeters", () => {
     );
 
     expect(nearUnloaded).toBeLessThan(onlyFarUnloaded);
+  });
+});
+
+describe("selectDigestCells", () => {
+  const position = { lat: 0, lon: 0 }; // sits in tile 18-36
+  const DIGEST_META: SampledTierMeta = {
+    count: 250,
+    bytes: 2048,
+    hash: "aabbccdd",
+  };
+
+  it("skips a populated cell that has no digest", () => {
+    const tiles = new Map([
+      ["18-36", tileEntry("18-36", DIGEST_META)],
+      ["18-37", tileEntry("18-37")],
+    ]);
+
+    const cells = selectDigestCells(tiles, position.lat, position.lon);
+
+    expect(cells).toEqual(["18-36"]);
+  });
+
+  it("excludes cells beyond MID_FIELD_RADIUS_M and includes cells within it", () => {
+    const tiles = new Map([
+      ["18-38", tileEntry("18-38", DIGEST_META)], // ~1,056 km away: inside
+      ["18-39", tileEntry("18-39", DIGEST_META)], // ~1,612 km away: outside
+    ]);
+
+    const cells = selectDigestCells(tiles, position.lat, position.lon);
+
+    expect(cells).toEqual(["18-38"]);
+  });
+
+  it("orders results nearest cell first", () => {
+    const tiles = new Map([
+      ["18-38", tileEntry("18-38", DIGEST_META)], // ~1,056 km away
+      ["18-36", tileEntry("18-36", DIGEST_META)], // 0 km: contains the position
+      ["18-37", tileEntry("18-37", DIGEST_META)], // ~500 km away
+    ]);
+
+    const cells = selectDigestCells(tiles, position.lat, position.lon);
+
+    expect(cells).toEqual(["18-36", "18-37", "18-38"]);
+  });
+
+  it("includes the cell the position is standing in, even though it is already loaded", () => {
+    const tiles = new Map([["18-36", tileEntry("18-36", DIGEST_META)]]);
+
+    const cells = selectDigestCells(tiles, position.lat, position.lon);
+
+    expect(cells).toEqual(["18-36"]);
   });
 });
 
@@ -170,10 +224,30 @@ describe("buildBrowseList", () => {
       { title: "Another continent", lat: 50, lon: 0, weight: 200 },
     ];
 
-    const list = buildBrowseList({ position, local, farField });
+    const list = buildBrowseList({ position, local, midField: [], farField });
 
     expect(list.map((a) => a.title)).toEqual([
       "Next door",
+      "Another continent",
+    ]);
+  });
+
+  it("includes mid-field entries in the merged, distance-ordered list", () => {
+    const local: NearbyArticle[] = [
+      { title: "Next door", lat: 0.01, lon: 0, distanceM: 1_100 },
+    ];
+    const midField: FarFieldEntry[] = [
+      { title: "Mid-field town", lat: 2, lon: 0, weight: 100 },
+    ];
+    const farField: FarFieldEntry[] = [
+      { title: "Another continent", lat: 50, lon: 0, weight: 200 },
+    ];
+
+    const list = buildBrowseList({ position, local, midField, farField });
+
+    expect(list.map((a) => a.title)).toEqual([
+      "Next door",
+      "Mid-field town",
       "Another continent",
     ]);
   });
@@ -187,7 +261,7 @@ describe("buildBrowseList", () => {
       { title: "Middle", lat: 5, lon: 0, weight: 200 },
     ];
 
-    const list = buildBrowseList({ position, local, farField });
+    const list = buildBrowseList({ position, local, midField: [], farField });
 
     expect(list.map((a) => a.title)).toEqual(["Very close", "Middle", "Far"]);
   });
@@ -200,9 +274,43 @@ describe("buildBrowseList", () => {
       { title: "Notable Landmark", lat: 0.01, lon: 0, weight: 250 },
     ];
 
-    const list = buildBrowseList({ position, local, farField });
+    const list = buildBrowseList({ position, local, midField: [], farField });
 
     expect(list).toHaveLength(1);
+  });
+
+  it("lists an article once when both mid-field and far-field carry it", () => {
+    const midField: FarFieldEntry[] = [
+      { title: "Notable Landmark", lat: 2, lon: 0, weight: 250 },
+    ];
+    const farField: FarFieldEntry[] = [
+      { title: "Notable Landmark", lat: 2, lon: 0, weight: 250 },
+    ];
+
+    const list = buildBrowseList({ position, local: [], midField, farField });
+
+    expect(list).toHaveLength(1);
+  });
+
+  it("keeps the local entry when the same title also appears in mid-field", () => {
+    // local carries real query data (a real distanceM and weight); a sampled
+    // tier repeating the same title must not shadow it.
+    const local: NearbyArticle[] = [
+      { title: "Corner Cafe", lat: 0.001, lon: 0, distanceM: 50, weight: 12 },
+    ];
+    const midField: FarFieldEntry[] = [
+      { title: "Corner Cafe", lat: 0.001, lon: 0, weight: 250 },
+    ];
+
+    const list = buildBrowseList({
+      position,
+      local,
+      midField,
+      farField: [],
+    });
+
+    expect(list).toHaveLength(1);
+    expect(list[0].weight).toBe(12);
   });
 
   it("surfaces far-field articles from cells too sparse to have a tile", () => {
@@ -215,7 +323,7 @@ describe("buildBrowseList", () => {
       { title: "Lone Island", lat: 0.5, lon: 0, weight: 30 },
     ];
 
-    const list = buildBrowseList({ position, local, farField });
+    const list = buildBrowseList({ position, local, midField: [], farField });
 
     expect(list.map((a) => a.title)).toEqual(["Covered", "Lone Island"]);
   });
@@ -229,7 +337,25 @@ describe("buildBrowseList", () => {
     const list = buildBrowseList({
       position,
       local: [],
+      midField: [],
       farField,
+      minWeight: 204,
+    });
+
+    expect(list.map((a) => a.title)).toEqual(["Famous"]);
+  });
+
+  it("applies the Highlights floor to mid-field articles", () => {
+    const midField: FarFieldEntry[] = [
+      { title: "Famous", lat: 2, lon: 0, weight: 250 },
+      { title: "Unremarkable", lat: 2, lon: 0, weight: 10 },
+    ];
+
+    const list = buildBrowseList({
+      position,
+      local: [],
+      midField,
+      farField: [],
       minWeight: 204,
     });
 
@@ -250,7 +376,12 @@ describe("buildBrowseList", () => {
       { title: "Another continent", lat: 50, lon: 0, weight: 200 },
     ];
 
-    const list = buildBrowseList({ position, local: city, farField });
+    const list = buildBrowseList({
+      position,
+      local: city,
+      midField: [],
+      farField,
+    });
 
     expect(list.length).toBeLessThanOrEqual(7 * DISTANCE_BAND_QUOTA + 1);
     expect(list[list.length - 1].title).toBe("Another continent");
@@ -270,12 +401,19 @@ describe("buildBrowseList", () => {
       { title: "Bus stop 999", lat: 0.02, lon: 0, weight: 250 },
     ];
 
-    const list = buildBrowseList({ position, local: crowd, farField });
+    const list = buildBrowseList({
+      position,
+      local: crowd,
+      midField: [],
+      farField,
+    });
 
     expect(list.map((a) => a.title)).toContain("Bus stop 999");
   });
 
   it("is empty when neither tier has anything", () => {
-    expect(buildBrowseList({ position, local: [], farField: [] })).toEqual([]);
+    expect(
+      buildBrowseList({ position, local: [], midField: [], farField: [] }),
+    ).toEqual([]);
   });
 });

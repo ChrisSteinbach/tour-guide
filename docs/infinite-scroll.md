@@ -2,16 +2,17 @@
 
 The app shows Wikipedia articles in one distance-ordered list that spans the whole globe, rendered through a virtual scroll. The list is **materialized whole** before it is displayed: its length is exact from the first render, any index can be read without fetching anything, and the last entry really is the furthest article in the language.
 
-| Module                         | Concern                                                            |
-| ------------------------------ | ------------------------------------------------------------------ |
-| `virtual-scroll.ts`            | Viewport math, overscan buffer, RAF-throttled rendering            |
-| `browse-list.ts`               | Grading the local tier by distance band, merging with far-field    |
-| `browse-list-lifecycle.ts`     | Owns the list and the far-field tier; rebuilds when inputs change  |
-| `farfield.ts`                  | Far-field binary codec, shared by pipeline and app                 |
-| `farfield-loader.ts`           | Fetches and IDB-caches the tier, keyed by content hash             |
-| `infinite-scroll-lifecycle.ts` | Bundles virtual list, enrichment, and map sync as one lifecycle    |
-| `summary-loader.ts`            | Concurrency-limited, cancellable batch fetcher for summaries       |
-| `scroll-pause-detector.ts`     | Detects user scroll to trigger live-location → infinite transition |
+| Module                         | Concern                                                                    |
+| ------------------------------ | -------------------------------------------------------------------------- |
+| `virtual-scroll.ts`            | Viewport math, overscan buffer, RAF-throttled rendering                    |
+| `browse-list.ts`               | Grading the local tier by distance band, merging with the sampled tiers    |
+| `browse-list-lifecycle.ts`     | Owns the list and both sampled tiers; rebuilds when inputs change          |
+| `farfield.ts`                  | Binary codec shared by the far-field tier and mid-field digests            |
+| `farfield-loader.ts`           | Fetches and IDB-caches the far-field tier, keyed by content hash           |
+| `digest-loader.ts`             | Fetches and IDB-caches one cell's mid-field digest, keyed by cell and hash |
+| `infinite-scroll-lifecycle.ts` | Bundles virtual list, enrichment, and map sync as one lifecycle            |
+| `summary-loader.ts`            | Concurrency-limited, cancellable batch fetcher for summaries               |
+| `scroll-pause-detector.ts`     | Detects user scroll to trigger live-location → infinite transition         |
 
 ## Levels of detail
 
@@ -24,7 +25,8 @@ So the list has level of detail, the way a map thins labels as it zooms out:
 
 1. **Full detail**, out to `FULL_DETAIL_RADIUS_M` (1 km) — everything, unsampled. "Everything within walking distance" is the promise the app exists to keep, so this innermost band is never thinned.
 2. **Distance-banded sampling**, beyond that out to the tile coverage radius — the `DISTANCE_BAND_QUOTA` (250) most notable articles per doubling of distance.
-3. **The far-field tier**, beyond the coverage radius — the most notable articles from every populated 5° cell on Earth.
+3. **The mid-field tier**, beyond the coverage radius out to `MID_FIELD_RADIUS_M` (1,200 km) — up to `MIDFIELD_TOP_K` (250) articles from each cell in range, refilling the band the coverage radius leaves too thin for the far field to carry on its own.
+4. **The far-field tier**, everywhere — `FARFIELD_TOP_K` (25) articles from every populated 5° cell on Earth.
 
 ### Why bands, not a flat cap
 
@@ -36,6 +38,18 @@ A flat cap on article count fails at global scale: a limit generous enough to ma
 | Manhattan      | 7.1 km                         | 43 km                |
 
 A cap like that spends its whole local budget on one neighbourhood and then falls straight to the far-field tier's 25-articles-per-populated-cell, leaving tens of thousands of already-downloaded articles in between unused. Distance banding spends the same number of rows on each doubling of distance instead. Bands are geometric rather than linear because a band's area — and so its article count — grows with its radius; equal-width bands would put almost every row in the outermost one. The quota is also self-calibrating: a band holding fewer articles than `DISTANCE_BAND_QUOTA` keeps all of them, so sparse regions like rural Wyoming stay fully exhaustive and only dense cities are thinned.
+
+### The mid-field tier
+
+The far field's per-cell sample is deliberately thin, because every cell on Earth is in it. That thinness is invisible past roughly 1,000 km, where the number of populated cells within reach grows with the square of the distance, so 25 articles apiece already adds up to a dense list — but it bites just outside the loaded tiles, where only a handful of cells are in range: from Times Square, the whole 100-300 km band held just 39 articles, even though the loaded tiles already cover out to 43 km. No merge policy can fix that gap; the articles were never downloaded.
+
+So the pipeline also writes a per-cell digest, `data/tiles/{lang}/{id}.digest.bin`, for every cell with more candidates than `FARFIELD_TOP_K` — cells at or below that are already fully represented in the far field, so a digest would just duplicate it under a second URL and a second fetch. A digest holds up to `MIDFIELD_TOP_K` (250) of the cell's most notable articles, in the exact binary codec the far-field tier uses (see [binary-format.md](binary-format.md#sampled-tier-format)): a digest is the far-field idea at a smaller scale, so it gets the far field's format rather than a bespoke one.
+
+The app fetches the digest for every cell whose box lies within `MID_FIELD_RADIUS_M` (1,200 km) of the user (`selectDigestCells` in `browse-list.ts`), nearest first so that whichever part of the gap matters most arrives first on a slow connection. 1,200 km is chosen to cover the trench with margin and stop once the far field is already dense enough to carry itself; measured over the globe this costs about 10 digests at the median position and 45 at the worst — ~30 KB brotli typically, ~185 KB at the worst — against 8.5 MB to load the same neighbourhood as tiles.
+
+Cells whose tiles are already loaded still get their digest fetched. The local tier stops at the coverage radius precisely because density past it depends on which way the user faces, so a loaded tile's own articles beyond that radius are dropped — which leaves the user's own cell thinner than its neighbours once those neighbours have digests. Fetching its digest too puts it back on the same per-cell terms as everything around it, at the cost of one small file's worth of duplicate bytes.
+
+The tier is optional in the same way the far field is. An index built before digests existed simply has no `digest` entry on any tile, and a 404, a network failure, or corrupt data all degrade to `[]` for that cell, and the list falls back to whatever reach it had for that band before this tier existed.
 
 ### The far-field tier
 
@@ -56,6 +70,8 @@ The tier is optional. An index without a `farField` entry, a 404, a network fail
 full detail       every article within FULL_DETAIL_RADIUS_M (1 km)
 distance bands    DISTANCE_BAND_QUOTA most notable per doubling of
                   distance beyond that, out to the coverage radius
+mid-field tier    every entry not already listed, from the digests
+                  fetched within MID_FIELD_RADIUS_M
 far-field tier    every entry not already listed, deduped by title
                   → concat, sort by distance
 ```
@@ -74,14 +90,14 @@ The range query also outruns a k-nearest one at this size. `NearestQuery.withinR
 
 So the range scan returns twice the articles, six times further out, in under half the time the old capped query took.
 
-**Deduplication is by title alone.** A far-field entry inside the covered radius is either already listed — caught here — or it is one the distance-band sampling dropped, or it comes from a cell too sparse to have produced a tile at all. In the last two cases it belongs: the far-field tier is itself a notability ranking, so an entry it carries has already earned a row.
+**Deduplication is by title alone,** and it applies identically to both sampled tiers — nothing about the merge depends on which order they're merged in, or on whether their entries overlap. An entry inside the covered radius is either already listed — caught here — or it is one the distance-band sampling dropped, or it comes from a cell too sparse to have produced a tile at all. In the last two cases it belongs: the mid-field and far-field tiers are themselves notability rankings, so an entry either one carries has already earned a row.
 
 ## Lifecycle
 
-`BrowseListLifecycle` (`browse-list-lifecycle.ts`) owns the list and the tier.
+`BrowseListLifecycle` (`browse-list-lifecycle.ts`) owns the list and both sampled tiers.
 
-- **`rebuild(position)`** — Fetches the far-field tier if the language changed, then rebuilds synchronously from the current position, filter, and loaded tiles. The first build does not wait on the tier: a list that is instantly correct-but-short beats a spinner, and the tier is usually an IDB hit. When it lands, the list is rebuilt and re-rendered.
-- **`reset()`** — Drops the list. The tier survives, since it is scoped to the language rather than the position.
+- **`rebuild(position)`** — Fetches the far-field tier if the language changed, and the mid-field digests for whichever cells are now within `MID_FIELD_RADIUS_M`, then rebuilds synchronously from the current position, filter, and loaded tiles. Neither fetch is awaited: a list that is instantly correct-but-short beats a spinner, and both are usually IDB hits. Digests are fetched with bounded concurrency (6 at a time) and the list is rebuilt once at the end of the batch rather than once per digest, since re-sorting every row below the insertion point eight times running is worse than doing it once, late.
+- **`reset()`** — Drops the list. Both tiers survive: the far-field tier because it's scoped to the language rather than the position, and cached digests because they're simply pruned against whatever cells the next position needs.
 - **`attachObserver(fn)`** — Exactly one subscriber. `compose-app.ts` wires it to dispatch `articlesSync` (making the list `state.phase.articles`) and then resize the virtual list.
 
 Rebuilds are triggered by the `requery` effect, and **must run after** its `queryResult` dispatch: `getNearby` returns only `INFINITE_SCROLL_INITIAL` articles as a viewport seed, so rebuilding first would let that seed overwrite the full list.

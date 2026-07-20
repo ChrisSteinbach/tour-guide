@@ -4,6 +4,7 @@ import {
   readFileSync,
   readdirSync,
   writeFileSync,
+  existsSync,
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -19,8 +20,10 @@ import {
   attachWeights,
   mergeCoincident,
   buildFarField,
+  cellCandidates,
+  buildMidFieldDigest,
 } from "./build.js";
-import { decodeFarField } from "../farfield.js";
+import { decodeFarField, FARFIELD_TOP_K } from "../farfield.js";
 import type { TileIndex } from "../tiles.js";
 import type { Article } from "./extract-dump.js";
 
@@ -456,6 +459,115 @@ describe("buildFarField", () => {
   });
 });
 
+describe("cellCandidates", () => {
+  it("flattens a cell's units into candidates tagged with each unit's coordinates", () => {
+    const index = buildArticleIndex(
+      mergeCoincident([
+        { title: "North Point", lat: 14, lon: 2, weight: 50 },
+        { title: "South Point", lat: 11, lon: 2, weight: 10 },
+      ]),
+    );
+
+    const candidates = cellCandidates(index, "20-36");
+
+    expect(candidates).toEqual(
+      expect.arrayContaining([
+        { title: "North Point", lat: 14, lon: 2, weight: 50 },
+        { title: "South Point", lat: 11, lon: 2, weight: 10 },
+      ]),
+    );
+    expect(candidates).toHaveLength(2);
+  });
+});
+
+describe("buildMidFieldDigest", () => {
+  it("returns null when a cell has FARFIELD_TOP_K candidates or fewer", () => {
+    // Exactly 25 (== FARFIELD_TOP_K): the boundary the far field already
+    // covers in full, so this cell should get no digest at all.
+    const articles = Array.from({ length: 25 }, (_, i) => ({
+      title: `Article ${i}`,
+      lat: 12 + i * 0.01,
+      lon: 2,
+      weight: i,
+    }));
+    const index = buildArticleIndex(mergeCoincident(articles));
+
+    expect(buildMidFieldDigest(index, "20-36")).toBeNull();
+  });
+
+  it("keeps the top-K most notable articles once a cell exceeds FARFIELD_TOP_K candidates", () => {
+    // 30 distinct articles in one cell — comfortably more than
+    // FARFIELD_TOP_K (25) — each at a slightly different coordinate so they
+    // don't merge into one unit.
+    const articles = Array.from({ length: 30 }, (_, i) => ({
+      title: `Article ${i}`,
+      lat: 12 + i * 0.01,
+      lon: 2,
+      weight: i,
+    }));
+    const index = buildArticleIndex(mergeCoincident(articles));
+
+    const digest = buildMidFieldDigest(index, "20-36", 3);
+
+    expect(digest?.map((e) => e.title)).toEqual([
+      "Article 29",
+      "Article 28",
+      "Article 27",
+    ]);
+  });
+
+  it("lets coincident articles compete individually for digest slots", () => {
+    // 24 unremarkable filler articles clear the FARFIELD_TOP_K threshold on
+    // their own; three more share one coordinate (one triangulation vertex)
+    // but stay individually ranked, so all three should take the top slots.
+    const filler = Array.from({ length: 24 }, (_, i) => ({
+      title: `Filler ${i}`,
+      lat: 12 + i * 0.01,
+      lon: 2,
+      weight: 0,
+    }));
+    const coincident = [
+      { title: "The Institution", lat: 13, lon: 2, weight: 900 },
+      { title: "The Building", lat: 13, lon: 2, weight: 500 },
+      { title: "The Society", lat: 13, lon: 2, weight: 100 },
+    ];
+    const index = buildArticleIndex(
+      mergeCoincident([...filler, ...coincident]),
+    );
+
+    const digest = buildMidFieldDigest(index, "20-36", 3);
+
+    expect(digest?.map((e) => e.title)).toEqual([
+      "The Institution",
+      "The Building",
+      "The Society",
+    ]);
+  });
+});
+
+describe("far field and mid-field digest nesting", () => {
+  it("has far-field entries that are exactly the first FARFIELD_TOP_K of the cell's digest", () => {
+    // The two tiers share a sort (weight desc, then title asc), so slicing
+    // the same candidate list at two different depths must nest — the far
+    // field is always a prefix of the digest, never a divergent selection.
+    const articles = Array.from({ length: 30 }, (_, i) => ({
+      title: `Article ${i}`,
+      lat: 12 + i * 0.01,
+      lon: 2,
+      weight: i,
+    }));
+    const index = buildArticleIndex(mergeCoincident(articles));
+
+    const farField = buildFarField(index);
+    const digest = buildMidFieldDigest(index, "20-36");
+
+    expect(digest).not.toBeNull();
+    expect(farField.map((e) => e.title)).toEqual(
+      digest!.slice(0, FARFIELD_TOP_K).map((e) => e.title),
+    );
+  });
+});
+
 describe("buildTile (coincident articles)", () => {
   it("keeps every co-located article in one vertex group instead of dropping it", () => {
     // Four distinct corners plus two articles sharing the center coordinate.
@@ -670,6 +782,86 @@ describe("tiled pipeline (e2e)", () => {
     } finally {
       rmSync(testDir1, { recursive: true, force: true });
       rmSync(testDir2, { recursive: true, force: true });
+    }
+  });
+
+  it("writes a mid-field digest only for tiles whose candidate count exceeds FARFIELD_TOP_K", () => {
+    const digestTestDir = join(tmpdir(), "build-digest-test-" + Date.now());
+    const digestDataDir = join(digestTestDir, "data");
+
+    try {
+      mkdirSync(digestDataDir, { recursive: true });
+
+      const lines: string[] = [];
+      // 30 articles in one tile (tile 28-36, same grid cell as the "London"
+      // cluster above) — comfortably over FARFIELD_TOP_K (25) — each with a
+      // distinct view count so ranking is unambiguous.
+      for (let i = 0; i < 30; i++) {
+        lines.push(
+          JSON.stringify({
+            title: `Big_${i}`,
+            lat: 52.0 + (i % 10) * 0.1,
+            lon: 2.0 + Math.floor(i / 10) * 0.1,
+            views: (i + 1) * 100,
+          }),
+        );
+      }
+      // An ordinary 10-article tile (tile 29-39, the "Stockholm" cluster's
+      // grid cell) that should get no digest at all.
+      for (let i = 0; i < 10; i++) {
+        lines.push(
+          JSON.stringify({
+            title: `Small_${i}`,
+            lat: 57.0 + (i % 5) * 0.2,
+            lon: 17.0 + Math.floor(i / 5) * 0.2,
+          }),
+        );
+      }
+      writeFileSync(
+        join(digestDataDir, "articles-en.json"),
+        lines.join("\n"),
+        "utf-8",
+      );
+
+      execFileSync(
+        join(process.cwd(), "node_modules", ".bin", "tsx"),
+        [join(process.cwd(), "src/pipeline/build.ts")],
+        { cwd: digestTestDir, timeout: 30_000, env: pipelineEnv },
+      );
+
+      const tilesDir = join(digestDataDir, "tiles", "en");
+      const index: TileIndex = JSON.parse(
+        readFileSync(join(tilesDir, "index.json"), "utf-8"),
+      );
+
+      const bigTile = index.tiles.find((t) => t.id === "28-36");
+      const smallTile = index.tiles.find((t) => t.id === "29-39");
+      expect(bigTile).toBeDefined();
+      expect(smallTile).toBeDefined();
+
+      // Too few candidates to earn a digest: no metadata, no file on disk.
+      expect(smallTile!.digest).toBeUndefined();
+      expect(existsSync(join(tilesDir, "29-39.digest.bin"))).toBe(false);
+
+      // Comfortably over the threshold: metadata in the index and a file on
+      // disk that decodes back to every one of its 30 articles.
+      expect(bigTile!.digest).toBeDefined();
+      expect(bigTile!.digest!.count).toBe(30);
+      expect(bigTile!.digest!.hash).toMatch(/^[0-9a-f]{8}$/);
+
+      const digestBuf = readFileSync(join(tilesDir, "28-36.digest.bin"));
+      expect(digestBuf.byteLength).toBe(bigTile!.digest!.bytes);
+
+      const digest = decodeFarField(
+        digestBuf.buffer.slice(
+          digestBuf.byteOffset,
+          digestBuf.byteOffset + digestBuf.byteLength,
+        ),
+      );
+      expect(digest).toHaveLength(30);
+      expect(digest[0].title).toBe("Big_29"); // highest views → ranked first
+    } finally {
+      rmSync(digestTestDir, { recursive: true, force: true });
     }
   });
 });

@@ -126,9 +126,10 @@ npm run pipeline -- --lang=en --limit=10000        # quick local test
 npm run pipeline -- --lang=en --bounds=5.73,49.44,6.53,50.19
 ```
 
-Output: `data/tiles/{lang}/` containing `index.json` and per-tile `.bin` files.
-See [`docs/binary-format.md`](docs/binary-format.md) for the serialization
-format and [`docs/tiling.md`](docs/tiling.md) for the tiling strategy.
+Output: `data/tiles/{lang}/` containing `index.json`, per-tile `.bin` files,
+`farfield.bin`, and per-tile `.digest.bin` files. See
+[`docs/binary-format.md`](docs/binary-format.md) for the serialization format
+and [`docs/tiling.md`](docs/tiling.md) for the tiling strategy.
 
 ### Automated refresh
 

@@ -63,7 +63,7 @@ npm run pipeline -- --lang=en --bounds=5.73,49.44,6.53,50.19
 ```
 
 Input: `data/articles-{lang}.json` (NDJSON from extraction step)
-Output: `data/tiles/{lang}/` (index.json + per-tile .bin files)
+Output: `data/tiles/{lang}/` (index.json, per-tile .bin files, farfield.bin, and per-tile {id}.digest.bin files)
 
 ## Local Tile Data
 

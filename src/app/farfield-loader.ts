@@ -4,7 +4,7 @@
 
 import { decodeFarField } from "../farfield";
 import type { FarFieldEntry } from "../farfield";
-import type { FarFieldEntryMeta } from "../tiles";
+import type { SampledTierMeta } from "../tiles";
 import type { Lang } from "../lang";
 import { defaultDeps } from "./tile-loader";
 import type { TileLoaderDeps } from "./tile-loader";
@@ -41,7 +41,7 @@ function isCachedFarField(value: unknown): value is CachedFarField {
 export async function loadFarField(
   baseUrl: string,
   lang: Lang,
-  meta: FarFieldEntryMeta | undefined,
+  meta: SampledTierMeta | undefined,
   signal?: AbortSignal,
   deps: TileLoaderDeps = defaultDeps,
 ): Promise<FarFieldEntry[]> {
