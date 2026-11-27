@@ -246,6 +246,57 @@ describe("streamDump", () => {
     expect(rows[1]).toEqual([2, "Statue_of_Liberty"]);
   });
 
+  it("streams rows from INSERT statements that put one tuple per line", async () => {
+    const sql = [
+      "CREATE TABLE `page` (",
+      "  `page_id` int NOT NULL,",
+      "  `page_title` varbinary(255) NOT NULL,",
+      ") ENGINE=InnoDB;",
+      "",
+      "INSERT INTO `page` VALUES",
+      "(1,'Eiffel_Tower'),",
+      "(2,'Semi;colon_(x),');",
+      "/*!40000 ALTER TABLE `page` ENABLE KEYS */;",
+      "INSERT INTO `page` VALUES",
+      "(3,'Statue_of_Liberty');",
+    ].join("\n");
+    const path = writeGzFixture("multiline.sql.gz", sql);
+
+    const rows = await collectRows({
+      filePath: path,
+      tableName: "page",
+      requiredColumns: ["page_id", "page_title"],
+    });
+
+    expect(rows).toEqual([
+      [1, "Eiffel_Tower"],
+      [2, "Semi;colon_(x),"],
+      [3, "Statue_of_Liberty"],
+    ]);
+  });
+
+  it("ignores tuple lines belonging to another table's INSERT", async () => {
+    const sql = [
+      "CREATE TABLE `page` (",
+      "  `page_id` int NOT NULL,",
+      ") ENGINE=InnoDB;",
+      "INSERT INTO `other` VALUES",
+      "(99);",
+      "INSERT INTO `page` VALUES",
+      "(1);",
+      "(98);",
+    ].join("\n");
+    const path = writeGzFixture("other_table.sql.gz", sql);
+
+    const rows = await collectRows({
+      filePath: path,
+      tableName: "page",
+      requiredColumns: ["page_id"],
+    });
+
+    expect(rows).toEqual([[1]]);
+  });
+
   it("throws when required column is missing", async () => {
     const sql = dumpSql("geo_tags", ["gt_id"], [[1]]);
     const path = writeGzFixture("missing_col.sql.gz", sql);

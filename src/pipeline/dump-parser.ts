@@ -1,8 +1,12 @@
 /**
  * Stream-parse gzipped MySQL dump files from Wikipedia/Wikidata.
  *
- * Dumps use extended-insert format:
+ * Dumps use extended-insert format, either on a single line:
  *   INSERT INTO `table` VALUES (v1,v2,...),(v1,v2,...);
+ * or with one tuple per line (MariaDB dump 10.11+):
+ *   INSERT INTO `table` VALUES
+ *   (v1,v2,...),
+ *   (v1,v2,...);
  *
  * We stream line-by-line, extract column names from CREATE TABLE,
  * and yield typed rows from INSERT statements.
@@ -175,12 +179,13 @@ export async function* streamDump(
   let projectionIndices: number[] | null = null;
   let rowCount = 0;
 
-  const insertPrefix = `INSERT INTO \`${tableName}\` VALUES `;
+  const insertPrefix = `INSERT INTO \`${tableName}\` VALUES`;
+  let inInsert = false;
 
   try {
     for await (const line of rl) {
       // Collect CREATE TABLE block
-      if (line.includes("CREATE TABLE")) {
+      if (line.startsWith("CREATE TABLE")) {
         createTableLines = [line];
         continue;
       }
@@ -207,9 +212,15 @@ export async function* streamDump(
         continue;
       }
 
-      // Parse INSERT lines and project to required columns
-      if (line.startsWith(insertPrefix) && projectionIndices) {
-        const valuesStr = line.substring(insertPrefix.length);
+      // Parse INSERT statements and project to required columns
+      const startsInsert = line.startsWith(insertPrefix);
+      if ((startsInsert || inInsert) && projectionIndices) {
+        const valuesStr = startsInsert
+          ? line.substring(insertPrefix.length)
+          : line;
+        // Newlines inside values are escaped, so only the statement's last
+        // line ends with ";".
+        inInsert = !line.endsWith(";");
         const rows = parseValues(valuesStr);
         for (const row of rows) {
           yield projectionIndices.map((i) => row[i]);
